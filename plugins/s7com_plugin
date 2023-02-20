@@ -1,0 +1,20 @@
+Protocol {
+	Properties {
+		label = "s7comm"
+		id = "638"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct s7commphdr {
+			uint8_t proto_id;
+			uint8_t rosctr;
+			uint16_t reserved;
+			uint16_t pdur;
+			uint16_t param_length;
+			uint16_t data_length;
+		}
+	}
+}

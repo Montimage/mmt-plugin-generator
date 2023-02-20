@@ -1,0 +1,43 @@
+Protocol {
+	Properties {
+		label = "arp"
+		id = "30"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct arphdr {
+			unsigned short ar_hrd, ar_pro; 
+			unsigned char ar_hln, ar_pln; 
+			unsigned short ar_op; 
+		}
+		
+		if( val(ar_hrd) == 0x0001 AND val(ar_pro) == 0x0800) {
+			struct ethernet_arp_data {
+				MMT_DATA_MAC_ADDR ar_sha; 
+				int ar_sip; 
+				MMT_DATA_MAC_ADDR ar_tha; 
+				int ar_tip; 
+			}
+		} else {
+			attribute {
+				alias="ar_pro" data_type="MMT_BINARY_DATA" data_len="val(ar_hln)" 
+				offset="sizeof(struct arphdr)" scope="SCOPE_PACKET"
+			}
+			attribute {
+				alias="SRC_PROTO" data_type="MMT_BINARY_DATA" data_len="val(ar_pln)" 
+				offset="sizeof(struct arphdr) + val(ar_hln)" scope="SCOPE_PACKET"
+			}
+			attribute {
+				alias="DST_HARD" data_type="MMT_BINARY_DATA" data_len="val(ar_hln)" 
+				offset="sizeof(struct arphdr) + val(ar_pln) + val(ar_hln)" scope="SCOPE_PACKET"
+			}
+			attribute {
+				alias="DST_PROTO" data_type="MMT_BINARY_DATA" data_len="val(ar_pln)" 
+				offset="sizeof(struct arphdr) + val(ar_pln) + 2*val(ar_hln)" scope="SCOPE_PACKET"
+			}
+		}
+	}
+}

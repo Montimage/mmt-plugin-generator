@@ -1,0 +1,16 @@
+Protocol {
+	Properties {
+		label = "NDN"
+		id = "628"
+		context = "false"
+		session = "true"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+            alias="packet_type" data_type="MMT_U8_DATA" data_len="sizeof(char)" 
+            offset="0" scope="SCOPE_PACKET"
+        }
+	}
+}

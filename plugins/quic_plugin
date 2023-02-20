@@ -1,0 +1,20 @@
+Protocol {
+	Properties {
+		label = "QUIC"
+		id = "630"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+            alias="connection_id" data_type="MMT_U32_DATA" data_len="sizeof(int)" 
+            offset="0" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="sequence" data_type="MMT_U32_DATA" data_len="sizeof(int)" 
+            offset="0" scope="SCOPE_PACKET"
+        }
+	}
+}

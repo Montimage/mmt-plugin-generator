@@ -1,0 +1,21 @@
+Protocol {
+	Properties {
+		label = "ABB"
+		id = "658"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct abb_hdr {
+			uint32_t size;
+			uint32_t type;
+			uint32_t frame_number;
+			uint32_t capture_time;
+			uint32_t flags_checksum;
+			uint32_t number_of_markers;
+			uint32_t reserved_timestamp;
+		}
+	}
+}

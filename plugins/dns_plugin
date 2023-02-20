@@ -1,0 +1,21 @@
+Protocol {
+	Properties {
+		label = "DNS"
+		id = "11"
+		context = "false"
+		session_context = "true"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct dnshdr {
+			uint16_t tid;            
+			uint16_t qr:1, opcode:4, aa:1, tc : 1, rd:1, ra:1, z:1, ans_auth:1, data_auth:1, rcode:4;
+			uint16_t qdcount;       
+			uint16_t ancount;       
+			uint16_t nscount;          
+			uint16_t arcount;        
+		}
+	}
+}

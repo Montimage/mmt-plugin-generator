@@ -1,0 +1,22 @@
+Protocol {
+	Properties {
+		label = "TCP"
+		id = "19"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct tcphdr {
+			uint16_t source;
+			uint16_t dest, a, b:4, c:4, d:8, e, f:4, g:8, h:4;
+			uint32_t seq;
+			uint32_t ack_seq;
+			uint16_t flags;
+			uint16_t window;
+			uint16_t check;
+			uint16_t urg_ptr;
+		}
+	}
+}

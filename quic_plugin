@@ -1,0 +1,17 @@
+Protocol {
+	Properties {
+		label = "http2"
+		id = "700"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+Attributes {
+	attribute {
+            alias="type" data_type="MMT_U16_DATA" data_len="sizeof(int)" 
+            offset="3" scope="SCOPE_PACKET"
+        }
+	
+	}
+}

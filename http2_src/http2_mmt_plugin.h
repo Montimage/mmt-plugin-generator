@@ -107,7 +107,9 @@ struct http2_session_data_struct {
     int http2_method;
    // field_value_t sssion_field_values[HTTP_HEADERS_NB];
 };
-#
+#define HTTP2_WINDOW_UPDATE 8
+
+
 #define PROTO_HTTP2_ALIAS "http2"
 #define HTTP2_TYPE_ALIAS "type"
 #define HTTP2_HEADER_METHOD_ALIAS "header_method"

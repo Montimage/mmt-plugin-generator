@@ -1,0 +1,28 @@
+Protocol {
+	Properties {
+		label = "CPM"
+		id = "701"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+        attribute {
+            alias="protocolVersion" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="0" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="messageID" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="1" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="stationID" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="2" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="generationTime" data_type="MMT_U16_DATA" data_len="sizeof(short)"
+            offset="6" scope="SCOPE_PACKET"
+        }
+	}
+}

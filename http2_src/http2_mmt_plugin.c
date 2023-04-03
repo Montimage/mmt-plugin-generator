@@ -110,6 +110,7 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
     ssize_t rv;
    // int final=0;
     int j=0;//Dimension of array nv_out
+    
     for(;;) {
 	printf("Iterazione %d  \n",j);
 
@@ -128,7 +129,7 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
         in += rv;
         inlen -= rv;
         //char c[30];
-  
+  	printf("Input Inflate\n");
         if(inflate_flags & NGHTTP2_HD_INFLATE_EMIT) {
             fwrite(nv->name, nv->namelen, 1, stderr);
             fprintf(stderr, ": ");
@@ -136,9 +137,9 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
             fprintf(stderr, "\n ");
            
             if(nv->value[0]==0x2F&& j==1){
-              srand(time(NULL));   // Initialization, should only be called once.
+
                 char characters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;\'///:,.<>/?\\";
-                //printf("Random char generated");
+                printf("Random char generated\n");
                 for(int i=(int)nv->valuelen;i>(int)(nv->valuelen/3);i--){
 
                             int r = rand() % (sizeof(characters)-1);
@@ -194,6 +195,46 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
 	*dim_out=j;
     return 0;
       }
+      
+int fuzz_payload(uint8_t*data_out,const ipacket_t*packet,int proto_offset){
+
+
+    	//Go to method field
+
+   	int header_length ,payload_length=0;
+
+      	// Get http2 protocol offset
+   	int offset_header_length = proto_offset -1;
+   	for (int i = offset_header_length; i < offset_header_length+4; i++) {
+      		  header_length = (header_length << 8) | data_out[i];
+   	 }
+
+  	printf("fuzz_payload header_length %d\n",header_length );
+  	int payload_offset= header_length+9+proto_offset-1;
+	printf("fuzz payload payload_pffset %d\n",payload_offset);
+	for (int i = payload_offset; i < payload_offset+4; i++) {
+      		payload_length = (payload_length << 8) | data_out[i];
+                printf(" data_out[payload_offset]%02hhX  ", data_out[i]);
+   	 }
+	int mask = 0x00FFFFFF; // mask to set last 2 bytes to 0
+	payload_length = payload_length & mask; // put to 0 last byte
+	printf("fuzz_payload payload_length %d\n",payload_length );
+	payload_offset= payload_offset+ 9+1;
+   	printf("%d \n",data_out[payload_offset]);
+   	for(int i= payload_offset+payload_length;i>(int)((payload_offset+(payload_length/2)));i--){
+               	char characters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;\'///:,.<>/?\\";
+                int r = rand() % (sizeof(characters)-1);
+                data_out[i]=characters[r];
+       }
+        printf("fuzz_payload data_out after modification");
+        for(int i=payload_offset;i<payload_offset+payload_length;i++)
+      		printf("%c",data_out[i]);
+      		
+	return 0;
+ 
+
+
+}
 
 int update_path( uint8_t*data_out,  int proto_offset){
 	int   rv;
@@ -210,7 +251,7 @@ int update_path( uint8_t*data_out,  int proto_offset){
    	 
    	int payload_offset= proto_offset+header_length+9-1;
    	for (int i = payload_offset; i < payload_offset+4; i++) {
-      		  payload_length = (header_length << 8) | data_out[i];
+      		  payload_length = (payload_length << 8) | data_out[i];
    	 }
 	int mask = 0x00FFFFFF; // mask to set last 2 bytes to 0
 	payload_length = payload_length & mask; // put to 0 last byte
@@ -266,15 +307,15 @@ int update_path( uint8_t*data_out,  int proto_offset){
 		
 		memcpy(temp,data_out+payload_offset+1,(size_t) payload_length+9);//As the compressed header is usually bigger, I copy the payload in temp var
 		printf("Siezeof temp %lu ",sizeof(temp));
-		printf("temp \n");
-		for(int i=0;i<sizeof(temp);i++)
-			printf("%02X ",temp[i]);
+		//printf("temp \n");
+		//for(int i=0;i<sizeof(temp);i++)
+		//	printf("%02X ",temp[i]);
 		memcpy(data_out+9+proto_offset,buf_out,(size_t)len_out);//I copy the new  header compressed
 		int shift_size=len_out-header_length;
 		memcpy((uint8_t*)data_out+payload_offset+shift_size+1,(uint8_t*)temp,sizeof(temp));
-		printf("\nData_out after modifications: \n");
-		for(int i=payload_offset+shift_size+1;i<(int)sizeof(temp)+payload_offset+shift_size+1;i++)
-			printf("%02X ",data_out[i]);
+		//printf("\nData_out after modifications: \n");
+		//for(int i=payload_offset+shift_size+1;i<(int)sizeof(temp)+payload_offset+shift_size+1;i++)
+			//printf("%02X ",data_out[i]);
 		data_out[offset_header_length]=0x00; //I update the header size
 		data_out[offset_header_length+1]=len_out>>16; //I update the header size
 		data_out[offset_header_length+2]=len_out>>9; //I update the header size
@@ -301,7 +342,7 @@ int update_path( uint8_t*data_out,  int proto_offset){
  * HTTP2 data extraction routines
  */
  int mmt_check_http2(ipacket_t * ipacket, unsigned proto_index) {
-
+              srand(time(NULL));   // Initialization, should only be called once.
 
 	//printf("I am inside mmt_check_http2 \n");
 	// Get the offset for the packet to be classified at next protocol
@@ -325,7 +366,7 @@ int update_path( uint8_t*data_out,  int proto_offset){
 */
 		printf("\n Payload[9] and [10]");
   		printf(" %02hhX ",payload[9]);
-  		  printf(" %02hhX ",payload[10]);
+  		printf(" %02hhX ",payload[10]);
   		
 
 	char* signature_http2="PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";//PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n
@@ -336,7 +377,7 @@ int update_path( uint8_t*data_out,  int proto_offset){
   	
 //		printf("\n Signature:%.*s",(int) strlen(signature_http2), payload);
 
-		printf("\nHTTP2 recognizeds");
+		printf("\nHTTP2 recognized");
 		classified_proto_t http2_proto = http2_stack_classification(ipacket);
 		return set_classified_proto(ipacket, proto_index + 1, http2_proto);
 	}
@@ -456,7 +497,7 @@ int update_stream_id(char *data_out,int proto_offset,uint32_t new_val){
 	data_out[stream_id_offset+1]=new_val>> 16;
 	data_out[stream_id_offset+2]=new_val>> 8;
 	data_out[stream_id_offset+3]=new_val;
-	printf("update_stream_id  data_out[stream_id_offset] dopo la modifica %02hhX \n",data_out[stream_id_offset]);
+	printf("update_stream_id  data_out[stream_id_offset] dopo la modifica %02hhX %02hhX %02hhX %02hhX  \n",data_out[stream_id_offset],data_out[stream_id_offset+1],data_out[stream_id_offset+2],data_out[stream_id_offset+3]);
 	int offset_header_length = proto_offset -1;
 	int header_length=0;
    	//int header_length =ntohl( *((unsigned int *) & packet->data[offset_header_length]));
@@ -525,6 +566,14 @@ uint32_t update_http2_data( char *data_out, uint32_t data_size, const ipacket_t 
 			printf("[update_http2_data]data_size %d\n",data_size);
 			update_stream_id(data_out,proto_offset,new_val);
 			return difference_size;
+			break;
+		case(HTTP2_PAYLOAD_FUZZ):
+
+			
+			fuzz_payload((uint8_t*)data_out,packet,proto_offset);
+			printf("[update_http2_data]data_size %d\n",data_size);
+			update_stream_id(data_out,proto_offset,new_val);
+
 			break;
 		
 		default:

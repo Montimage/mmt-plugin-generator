@@ -109,6 +109,8 @@ struct http2_session_data_struct {
 };
 #define HTTP2_WINDOW_UPDATE 8
 #define HTTP2_PATH_FUZZ 9
+#define HTTP2_PAYLOAD_FUZZ 10
+
 
 #define PROTO_HTTP2_ALIAS "http2"
 #define HTTP2_TYPE_ALIAS "type"

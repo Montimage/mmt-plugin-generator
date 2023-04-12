@@ -179,7 +179,39 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
 	*dim_out=j;
     return 0;
 }
+ int inject_http2_packet(uint8_t*data_out, uint8_t*data_to_inject,int proto_offset,int data_to_inject_len){
+   	int offset_header_length = proto_offset -1;
+   	int header_length=0;
+   	for (int i = offset_header_length; i < offset_header_length+4; i++) {
+      		  header_length = (header_length << 8) | data_out[i];
+   	 }
+
+
+   	 printf("inject_http2_packet Header_length %d",header_length);
+ 	memcpy(data_out+proto_offset,data_to_inject,data_to_inject_len);
+ 	return (data_to_inject_len- header_length-9);
  
+ 
+ }
+ int restore_http2_packet(uint8_t*data_out,const ipacket_t * packet,int proto_offset){
+ 	int header_length=0;
+
+ 	int offset_header_length = proto_offset -1;
+   	for (int i = offset_header_length; i < offset_header_length+4; i++) {
+      		  header_length = (header_length << 8) | data_out[i];
+   	 }
+   	 header_length=header_length & 0x00FFFFFF;
+   	 
+ 	int new_length=0;
+   	 for (int i = offset_header_length; i < offset_header_length+4; i++) {
+      		  new_length = (new_length << 8) | packet->data[i];
+   	 }
+   	 new_length=new_length & 0x00FFFFFF;
+   	 printf("new_length %d, header_length %d\n",new_length,header_length);
+   	 printf("data_out %02X packet_data %02X \n",data_out[proto_offset],packet->data[proto_offset]);
+ 	memcpy((uint8_t*)data_out+proto_offset,packet->data+proto_offset,new_length+9);
+ 	return new_length-header_length;
+ }
 int modify_get(uint8_t*data_out,int proto_offset){
     	//Go to method field
    	int header_length =0;
@@ -189,6 +221,7 @@ int modify_get(uint8_t*data_out,int proto_offset){
    	for (int i = offset_header_length; i < offset_header_length+4; i++) {
       		  header_length = (header_length << 8) | data_out[i];
    	 }
+   	header_length=header_length & 0x00FFFFFF;
 	uint8_t authority_amf[] = {0x41,0x8d,0x0b,0xa2,0x5c,0x2e,0x2e,0xdb,0xeb,0xba,0xcd,0xc7,0x80,0xf0,0x3f,0x7a,0x03,0x61,0x6d,0x66};
 	int authority_amf_length = sizeof(authority_amf) ;
 	printf("[modify_get]authority_amf_length %d\n",authority_amf_length);
@@ -598,8 +631,22 @@ int difference_size=0;
 			break;
 			
 		case(HTTP2_GET_MODIFY):
+
+			update_stream_id(data_out,proto_offset,new_val);
 			difference_size=modify_get((uint8_t*)data_out, proto_offset);
 
+			return difference_size;
+			break;
+		case(HTTP2_INJECT_WIN_UPDATE):
+			uint8_t window_update_frame[]={0x00,0x00,0x04,0x08,0x00,0x00,0x00,0x00,0x00,
+			0x0f,0xff,0x00,0x01//window size increment:set to a small value
+			};
+			int win_len=(int)sizeof(window_update_frame);
+			difference_size=inject_http2_packet((uint8_t*)data_out,window_update_frame,proto_offset,win_len);
+			return difference_size;
+			break;
+		case (HTTP2_RESTORE_PACKET):
+			difference_size=  restore_http2_packet((uint8_t*)data_out,packet,proto_offset);
 			return difference_size;
 			break;
 		default:

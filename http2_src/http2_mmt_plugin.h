@@ -113,7 +113,8 @@ struct http2_session_data_struct {
 #define HTTP2_PAYLOAD_FUZZ 10
 #define HTTP2_GET_MODIFY 11
 #define HTTP2_DISCARD_SETTINGS 12
-
+#define HTTP2_INJECT_WIN_UPDATE 13
+#define HTTP2_RESTORE_PACKET 14
 
 #define PROTO_HTTP2_ALIAS "http2"
 #define HTTP2_TYPE_ALIAS "type"

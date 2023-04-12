@@ -162,14 +162,7 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
             printf("\n");
             j=j+1;
 
-            //printf("Base address of value %p\n", nv_out[j].value);
 
-
-            
-           // fprintf(stderr, "\n");
-           // printf("Decompressed");
-     
-             //  printf(" %s  ",out);
           printf("Next Method\n");
 
         }
@@ -182,19 +175,34 @@ int inflate_header_block(nghttp2_hd_inflater *inflater, nghttp2_nv* nv,
           }
 
        }
-       /*
-       printf("j = %d\n",j);
-       deflate(deflater ,nv_out,buf_out,(size_t) j);
 
-      for(int x=0;x<j;x++){
-
-           free(nv_out[x].value);
-           free(nv_out[x].name);
-      }
-*/	
 	*dim_out=j;
     return 0;
-      }
+}
+ 
+int modify_get(uint8_t*data_out,int proto_offset){
+    	//Go to method field
+   	int header_length =0;
+
+      	// Get http2 protocol offset
+   	int offset_header_length = proto_offset -1;
+   	for (int i = offset_header_length; i < offset_header_length+4; i++) {
+      		  header_length = (header_length << 8) | data_out[i];
+   	 }
+	uint8_t authority_amf[] = {0x41,0x8d,0x0b,0xa2,0x5c,0x2e,0x2e,0xdb,0xeb,0xba,0xcd,0xc7,0x80,0xf0,0x3f,0x7a,0x03,0x61,0x6d,0x66};
+	int authority_amf_length = sizeof(authority_amf) ;
+	printf("[modify_get]authority_amf_length %d\n",authority_amf_length);
+	memcpy(data_out+proto_offset+9+header_length-2,authority_amf,authority_amf_length);
+	printf("modify get after update:\n");
+	for(int i=proto_offset+9+header_length-2;i<proto_offset+9+header_length-2+authority_amf_length;i++)
+		printf("%02hhX ",data_out[i]);
+	header_length+=authority_amf_length-2;
+	data_out[offset_header_length+1]=header_length>>16; //I update the header size
+	data_out[offset_header_length+2]=header_length>>9; //I update the header size
+	data_out[offset_header_length+3]=header_length ;//I update the header size
+		printf("[modify_get]offset_header_length %02hhX %02hhX %02hhX \n",data_out[offset_header_length+1],data_out[offset_header_length+2],data_out[offset_header_length+3]);
+		return (int)(sizeof(authority_amf)-2);
+}
       
 int fuzz_payload(uint8_t*data_out,const ipacket_t*packet,int proto_offset){
 
@@ -499,6 +507,15 @@ int update_stream_id(char *data_out,int proto_offset,uint32_t new_val){
 	data_out[stream_id_offset+3]=new_val;
 	printf("update_stream_id  data_out[stream_id_offset] dopo la modifica %02hhX %02hhX %02hhX %02hhX  \n",data_out[stream_id_offset],data_out[stream_id_offset+1],data_out[stream_id_offset+2],data_out[stream_id_offset+3]);
 	int offset_header_length = proto_offset -1;
+	int method_offset = proto_offset+9;
+    uint8_t method_value= ((uint8_t )  data_out[method_offset]);
+
+
+	
+    //int attr_data_len = protocol_struct->get_attribute_length(extracted_data->proto_id, extracted_data->field_id);
+
+	printf("method_value %d\n",method_value);
+	if(method_value==131){
 	int header_length=0;
    	//int header_length =ntohl( *((unsigned int *) & packet->data[offset_header_length]));
    	 for (int i = offset_header_length; i < offset_header_length+4; i++) {
@@ -514,6 +531,7 @@ int update_stream_id(char *data_out,int proto_offset,uint32_t new_val){
 	data_out[stream_id_payload_offset+2]=new_val>> 8;
 	data_out[stream_id_payload_offset+3]=new_val;
 	printf("update_stream_id  data_out[stream_id_payload_offset] dopo la modifica %02hhX \n",data_out[stream_id_payload_offset]);
+	}
 	return 1;
 }
 
@@ -535,7 +553,7 @@ uint32_t update_http2_data( char *data_out, uint32_t data_size, const ipacket_t 
    	//Go to http2
 	printf("update_http2_data Id of packet is   ");
   	printf(" %lu \n",packet->packet_id);
-
+int difference_size=0;
 	uint32_t ret = 0;
 	if( proto_id != PROTO_HTTP2 )
 		return ret;
@@ -559,10 +577,13 @@ uint32_t update_http2_data( char *data_out, uint32_t data_size, const ipacket_t 
 
 
 			break;
+		case(HTTP2_DISCARD_SETTINGS):
+			difference_size=-9;
+			return difference_size; 
 		case(HTTP2_PATH_FUZZ):
 
 			
-			int difference_size=update_path((uint8_t*)data_out,proto_offset);
+			difference_size=update_path((uint8_t*)data_out,proto_offset);
 			printf("[update_http2_data]data_size %d\n",data_size);
 			update_stream_id(data_out,proto_offset,new_val);
 			return difference_size;
@@ -575,14 +596,19 @@ uint32_t update_http2_data( char *data_out, uint32_t data_size, const ipacket_t 
 			update_stream_id(data_out,proto_offset,new_val);
 
 			break;
-		
+			
+		case(HTTP2_GET_MODIFY):
+			difference_size=modify_get((uint8_t*)data_out, proto_offset);
+
+			return difference_size;
+			break;
 		default:
 			printf("update_http2_data  INSERT A VALID ATT_ID  \n");
 			break;
 	
 	}
 
-	return 1;
+	return 0;
 	
 
 }

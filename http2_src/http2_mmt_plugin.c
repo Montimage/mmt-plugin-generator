@@ -230,11 +230,14 @@ int modify_get(uint8_t*data_out,int proto_offset){
 	for(int i=proto_offset+9+header_length-2;i<proto_offset+9+header_length-2+authority_amf_length;i++)
 		printf("%02hhX ",data_out[i]);
 	header_length+=authority_amf_length-2;
-	data_out[offset_header_length+1]=header_length>>16; //I update the header size
-	data_out[offset_header_length+2]=header_length>>9; //I update the header size
-	data_out[offset_header_length+3]=header_length ;//I update the header size
+	data_out[offset_header_length+1]=header_length>>16; //I update the last 24 bites
+	data_out[offset_header_length+2]=header_length>>9; //I update the last 16 bites
+	data_out[offset_header_length+3]=header_length ;//I update the last 8 bites
 		printf("[modify_get]offset_header_length %02hhX %02hhX %02hhX \n",data_out[offset_header_length+1],data_out[offset_header_length+2],data_out[offset_header_length+3]);
 		return (int)(sizeof(authority_amf)-2);
+}
+int shellcode_payload(uint8_t*data_out,int proto_offset){
+	
 }
       
 int fuzz_payload(uint8_t*data_out,const ipacket_t*packet,int proto_offset){
@@ -287,6 +290,7 @@ int update_path( uint8_t*data_out,  int proto_offset){
 	for (int i = offset_header_length; i < offset_header_length+4; i++) {
       		  header_length = (header_length << 8) | data_out[i];
    	 }
+   	header_length=header_length & 0x00FFFFFF;
    	printf("Header length %d \n",header_length);
    	uint8_t data_to_modify[header_length];
    	 
@@ -471,6 +475,7 @@ int http2_payload_stream_id_extraction(const ipacket_t * packet, unsigned proto_
       		// Get http2 protocol offset
    		 int offset_header_length = proto_offset -1;
    		 int header_length =ntohl( *((unsigned int *) & packet->data[offset_header_length]));
+   		 header_length=header_length & 0x00FFFFFF;
   	         printf("header_length %d\n",header_length );
   		 int payload_offset= header_length+9+proto_offset;
    		 int stream_id_payload_offset=payload_offset+5;
@@ -538,7 +543,7 @@ int update_stream_id(char *data_out,int proto_offset,uint32_t new_val){
 	data_out[stream_id_offset+1]=new_val>> 16;
 	data_out[stream_id_offset+2]=new_val>> 8;
 	data_out[stream_id_offset+3]=new_val;
-	printf("update_stream_id  data_out[stream_id_offset] dopo la modifica %02hhX %02hhX %02hhX %02hhX  \n",data_out[stream_id_offset],data_out[stream_id_offset+1],data_out[stream_id_offset+2],data_out[stream_id_offset+3]);
+	printf("update_stream_id  data_out[stream_id_offset] after the modification %02hhX %02hhX %02hhX %02hhX  \n",data_out[stream_id_offset],data_out[stream_id_offset+1],data_out[stream_id_offset+2],data_out[stream_id_offset+3]);
 	int offset_header_length = proto_offset -1;
 	int method_offset = proto_offset+9;
     uint8_t method_value= ((uint8_t )  data_out[method_offset]);
@@ -563,21 +568,28 @@ int update_stream_id(char *data_out,int proto_offset,uint32_t new_val){
 	data_out[stream_id_payload_offset+1]=new_val>> 16;
 	data_out[stream_id_payload_offset+2]=new_val>> 8;
 	data_out[stream_id_payload_offset+3]=new_val;
-	printf("update_stream_id  data_out[stream_id_payload_offset] dopo la modifica %02hhX \n",data_out[stream_id_payload_offset]);
+	printf("update_stream_id  data_out[stream_id_payload_offset] after the modification %02hhX \n",data_out[stream_id_payload_offset]);
 	}
 	return 1;
 }
 
-uint32_t update_window_update(char *data_out,int proto_offset){
+uint32_t update_window_update(char *data_out,int proto_offset,uint32_t modify){
 
 	int window_size_offset=proto_offset+9;
-	data_out[window_size_offset]=0x7F;
-	data_out[window_size_offset+1]=0xFF;
-	data_out[window_size_offset+2]=0xFF;
-	data_out[window_size_offset+3]=0xFF;	
+	//int offset_header_length = proto_offset -1;
+	if(modify==1){
+		data_out[window_size_offset]=0x00;
+		data_out[window_size_offset+1]=0x00;
+		data_out[window_size_offset+2]=0x00;
+		data_out[window_size_offset+3]=0xFF;	
+		int difference_size=-9;
+		return difference_size;
+	}
+	//int header_length=0;
+   	//int header_length =ntohl( *((unsigned int *) & packet->data[offset_header_length]));
 
-
-	return 1;
+	
+	return 0;
 
 }
 
@@ -605,8 +617,8 @@ int difference_size=0;
 		case(HTTP2_WINDOW_UPDATE):
 
 			
-			update_window_update(data_out,proto_offset);
-
+			difference_size=update_window_update(data_out,proto_offset,new_val);
+			return difference_size; 
 
 
 			break;

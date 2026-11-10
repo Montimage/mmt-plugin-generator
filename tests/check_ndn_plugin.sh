@@ -36,7 +36,7 @@ gcc "${CFLAGS[@]}" -DMMT_LOG_ENABLE_DEBUG -fPIC -shared -o "$WORK/ndn_debug.so" 
 pass "compile ndn_mmt_plugin.c with -DMMT_LOG_ENABLE_DEBUG"
 
 # 2. No C source uses the logging/branch macros mmt-dpi 1.10.0 made private.
-if grep -rnE '\b(debug|log_err|likely|unlikely)\(' \
+if grep -rnE '\b(debug|log_err|likely|unlikely)[[:space:]]*\(' \
         --include='*.c' --include='*.h' --exclude-dir=.mmt-prefix "$REPO_ROOT"; then
     fail "unprefixed debug()/log_err()/likely()/unlikely() found (use mmt_log_* / MMT_LIKELY)"
 fi
@@ -57,7 +57,16 @@ if grep -q 'cannot register_classification_function' "$WORK/load.err"; then
 fi
 pass "classifiers attached to PROTO_ETHERNET and PROTO_TCP"
 
-# 4. Informational: the debug build loads and logs through the mmt-dpi logger.
+# 4. Only the debug build logs, and it logs through the public mmt-dpi logger.
+nm -D "$WORK/ndn_debug.so" | grep -q ' U mmt_log_write' \
+    || fail "debug build does not import mmt_log_write"
+pass "debug build imports mmt_log_write"
+if nm -D "$WORK/ndn.so" | grep -E ' mmt_log_'; then
+    fail "release build imports mmt_log_* symbols"
+fi
+pass "release build imports no mmt_log_* symbol"
+
+# 5. Informational: the debug build loads and logs through the mmt-dpi logger.
 cp "$WORK/ndn_debug.so" "$WORK/plugins/$PLUGIN_NAME"
 if LD_LIBRARY_PATH="$LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         MMT_DPI_PLUGINS_DIR="$WORK/plugins" MMT_DPI_LOG_LEVEL=debug \

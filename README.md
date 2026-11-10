@@ -84,9 +84,20 @@ that is unique (names are compared case-insensitively). A duplicate id makes
 `init_extraction()` fail; a duplicate name is silently ignored. mmt-dpi 1.10.x
 registers many more protocols than older releases, so the ids used in the
 QUIC walkthrough below (630) and in several `plugins/` models now collide
-with built-in protocols. List the ids already taken with
-`grep -rhE '#define PROTO_[A-Z0-9_]+ +[0-9]+' <prefix>/dpi/include` and
-choose a free one.
+with built-in protocols. List the ids the SDK headers already define with
+
+```
+grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' <prefix>/dpi/include | grep -v MAX_IDENTIFIER
+```
+
+and choose a free one. (Some ids are defined with tabs, e.g.
+`PROTO_HTTP2` = 700, hence the `[[:space:]]` pattern.) The headers only list
+the SDK's own protocols: any other `.so` in the plugin directory can take ids
+too. The reliable check is at run time, with every plugin you deploy in the
+plugin directory: call `is_registered_protocol(id)` after
+`init_extraction()`, or build and run the installed
+`<prefix>/examples/proto_attributes_iterator.c`, which lists every
+registered protocol.
 
 ## NDN example and the built-in NDN dissector
 

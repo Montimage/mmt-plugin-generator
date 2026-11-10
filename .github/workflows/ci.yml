@@ -23,15 +23,33 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      # Pinned so CI and local runs use the same ShellCheck (the runner image
+      # ships an older one). The sha256 is the release asset's GitHub digest.
+      SHELLCHECK_VERSION: v0.11.0
+      SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install the pinned ShellCheck
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          tarball="shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          dir="$RUNNER_TEMP/shellcheck"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$tarball"
+          echo "$SHELLCHECK_SHA256  $dir/$tarball" | sha256sum -c -
+          tar -xJf "$dir/$tarball" -C "$dir" --strip-components=1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          echo "$dir" >> "$GITHUB_PATH"
       - name: Shellcheck the repo's shell scripts
         run: |
-          command -v shellcheck > /dev/null \
-            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck; }
+          [ "$(command -v shellcheck)" = "$RUNNER_TEMP/shellcheck/shellcheck" ] \
+            || { echo "shellcheck resolves to $(command -v shellcheck), not the pinned one"; exit 1; }
           shellcheck --version
+          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION#v}" \
+            || { echo "shellcheck is not $SHELLCHECK_VERSION"; exit 1; }
           mapfile -d '' scripts < <(git ls-files -z -- '*.sh' '*.bash')
           [ "${#scripts[@]}" -gt 0 ] || { echo "no shell scripts found"; exit 1; }
           printf '%s\n' "${scripts[@]}"
@@ -69,5 +87,10 @@ jobs:
           # The package uses the /opt/mmt layout that check_ndn_plugin.sh expects.
           dpkg -L mmt-dpi | grep -qx /opt/mmt/dpi/include/mmt_log.h
           dpkg -L mmt-dpi | grep -qx /opt/mmt/plugins/libmmt_tcpip.so
+          # The FHS pkg-config entry (/usr/share/pkgconfig/mmt-dpi.pc) resolves.
+          command -v pkg-config > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config; }
+          pkg-config --exists mmt-dpi || { echo "pkg-config cannot find mmt-dpi"; exit 1; }
+          echo "pkg-config mmt-dpi $(pkg-config --modversion mmt-dpi)"
       - name: Build and load the NDN example plugin
         run: MMT_BASE=/opt/mmt bash tests/check_ndn_plugin.sh

@@ -9,9 +9,10 @@ protocol model. A Python rewrite is planned in
 - `src/`, `lib/`, `dist/`, `pdl_grammar/`, `nbproject/`, `build.xml`,
   `manifest.mf`: the legacy Java generator (2015, NetBeans Ant project).
   The prebuilt jar is `dist/MMTPluginGenerator.jar`.
-- `plugins/`: example models (`*_plugin`, `cotp`, `tpkt`, ...) and generated
-  or hand-written C sources. Only 4 of the 16 models (abb, cotp, s7com,
-  tpkt) produce code that compiles against mmt-dpi 1.10.2.
+- `plugins/`: the 16 example models (`plugins/*_plugin`) and generated or
+  hand-written C sources (`*_src/`, `cotp/`, `tpkt/`, ...). Only 4 of the
+  16 models (abb, cotp, s7com, tpkt) produce code that compiles against
+  mmt-dpi 1.10.2.
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: the only automated check (build and load the
   NDN example).
@@ -23,6 +24,9 @@ Generate C sources from a model with the legacy tool (needs Java):
 ```
 java -jar dist/MMTPluginGenerator.jar plugins/tpkt_plugin <output dir>
 ```
+
+Create the output dir first: if it is missing, the tool prints
+`Error in writing to file` and still exits 0.
 
 Build and check the NDN example. It needs mmt-dpi >= 1.10.2 installed into a
 private prefix (see README, "Install mmt-dpi"); pass that prefix as an

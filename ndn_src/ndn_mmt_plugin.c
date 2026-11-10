@@ -220,6 +220,15 @@ int ndn_packet_type_extraction(const ipacket_t * ipacket, unsigned proto_index,
 
 
 	int init_ndn_proto_struct() {
+		/* mmt-dpi silently ignores a protocol name that is already registered
+		 * (names are compared case-insensitively): get_protocol_id_by_name()
+		 * would keep returning the other protocol. Refuse to load instead. */
+		if (get_protocol_id_by_name(PROTO_NDN_EXAMPLE_ALIAS) != 0) {
+			fprintf(stderr, "\n[err] init_ndn_proto_struct - protocol name \"%s\" is already registered\n", PROTO_NDN_EXAMPLE_ALIAS);
+			return 0;
+		}
+		/* NULL when the id is out of range or already registered; returning a
+		 * failure makes init_extraction() fail. */
 		protocol_t * protocol_struct = init_protocol_struct_for_registration(PROTO_NDN_EXAMPLE, PROTO_NDN_EXAMPLE_ALIAS);
 
 		if (protocol_struct != NULL) {
@@ -228,16 +237,23 @@ int ndn_packet_type_extraction(const ipacket_t * ipacket, unsigned proto_index,
 			for(; i < NDN_EXAMPLE_ATTRIBUTES_NB; i ++) {
 				register_attribute_with_protocol(protocol_struct, &ndn_attributes_metadata[i]);
 			}
+			/* These fail when PROTO_ETHERNET / PROTO_TCP are not registered yet,
+			 * i.e. when this plugin's file name sorts before libmmt_tcpip.so.
+			 * The protocol would still register but never classify anything,
+			 * so fail the load instead of continuing silently. */
 			if(!register_classification_function_with_parent_protocol(PROTO_ETHERNET, mmt_check_ndn_ethernet, 50)){
-				fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_ETHERNET\n");	
-			};
+				fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_ETHERNET (does the plugin file name sort after libmmt_tcpip.so?)\n");
+				return 0;
+			}
             // Register classification function of NDN protocol after TCP
             if(!register_classification_function_with_parent_protocol(PROTO_TCP, mmt_check_ndn_tcp, 50)){
-                fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_TCP\n");
-            };
+                fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_TCP (does the plugin file name sort after libmmt_tcpip.so?)\n");
+                return 0;
+            }
 			register_protocol_stack(PROTO_NDN_EXAMPLE, PROTO_NDN_EXAMPLE_ALIAS, ndn_stack_classification);
 			return register_protocol(protocol_struct, PROTO_NDN_EXAMPLE);
 		} else {
+			fprintf(stderr, "\n[err] init_ndn_proto_struct - protocol id %d is out of range or already registered\n", PROTO_NDN_EXAMPLE);
 			return -1;
 		}
 	}

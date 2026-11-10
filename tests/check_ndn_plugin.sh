@@ -15,8 +15,9 @@ LIB="$MMT_BASE/dpi/lib"
 CFLAGS=(-Wall -Werror -I "$INC")
 # The loader sorts plugins by file name: this one must sort after
 # libmmt_tcpip.so so that PROTO_ETHERNET and PROTO_TCP already exist when it
-# registers its classifiers.
-PLUGIN_NAME="ndn_example.so"
+# registers its classifiers. Override it to check another name.
+PLUGIN_NAME="${PLUGIN_NAME:-ndn_example.so}"
+HDR="$REPO_ROOT/ndn_src/ndn_mmt_plugin.h"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -26,6 +27,33 @@ pass() { echo "PASS: $*"; }
 
 [ -f "$INC/mmt_log.h" ] || fail "$INC/mmt_log.h not found (mmt-dpi >= 1.10.2 required)"
 [ -f "$MMT_BASE/plugins/libmmt_tcpip.so" ] || fail "$MMT_BASE/plugins/libmmt_tcpip.so not found"
+
+# 0. Cheap static guards for the two silent mmt-dpi loader behaviours
+#    (README, "Plugin load order, ids and names").
+# 0a. mmt-dpi loads plugins in scandir(alphasort) order (strcoll, so the
+#     host's LC_COLLATE can matter): the file name must sort after
+#     libmmt_tcpip.so in the C locale and in the current one.
+for loc in C "${LC_ALL:-${LC_COLLATE:-${LANG:-C}}}"; do
+    first="$(printf '%s\n' "$PLUGIN_NAME" libmmt_tcpip.so | LC_ALL="$loc" sort | head -n1)"
+    [ "$first" = libmmt_tcpip.so ] && [ "$PLUGIN_NAME" != libmmt_tcpip.so ] \
+        || fail "plugin file name $PLUGIN_NAME does not sort after libmmt_tcpip.so (LC_COLLATE=$loc)"
+done
+pass "plugin file name $PLUGIN_NAME sorts after libmmt_tcpip.so"
+
+# 0b. The id and name must not be taken by an SDK protocol. Headers list only
+#     the SDK's own protocols; the run-time checks in step 3 cover the rest.
+PROTO_ID="$(sed -nE 's/^#define[[:space:]]+PROTO_NDN_EXAMPLE[[:space:]]+([0-9]+).*/\1/p' "$HDR")"
+PROTO_NAME="$(sed -nE 's/^#define[[:space:]]+PROTO_NDN_EXAMPLE_ALIAS[[:space:]]+"([^"]*)".*/\1/p' "$HDR")"
+[ -n "$PROTO_ID" ] && [ -n "$PROTO_NAME" ] || fail "cannot read PROTO_NDN_EXAMPLE(_ALIAS) from $HDR"
+if grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' "$INC" | grep -v MAX_IDENTIFIER \
+        | awk -v id="$PROTO_ID" '$3 == id { print; found = 1 } END { exit !found }'; then
+    fail "protocol id $PROTO_ID is already defined by the SDK headers"
+fi
+if grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+_ALIAS[[:space:]]+"' "$INC" \
+        | grep -iE "\"$PROTO_NAME\""; then
+    fail "protocol name \"$PROTO_NAME\" is already defined by the SDK headers (case-insensitive)"
+fi
+pass "id $PROTO_ID and name \"$PROTO_NAME\" are not defined by the SDK headers"
 
 # 1. The example compiles cleanly, with and without debug logging.
 gcc "${CFLAGS[@]}" -fPIC -shared -o "$WORK/ndn.so" "$SRC" \
@@ -51,7 +79,8 @@ cp "$WORK/ndn.so" "$WORK/plugins/$PLUGIN_NAME"
 LD_LIBRARY_PATH="$LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     MMT_DPI_PLUGINS_DIR="$WORK/plugins" "$WORK/ndn_load_check" 2> "$WORK/load.err" \
     || { cat "$WORK/load.err"; fail "load $PLUGIN_NAME next to libmmt_tcpip.so"; }
-# init_ndn_proto_struct() reports a classifier it could not attach on stderr.
+# init_ndn_proto_struct() fails the load (and reports it on stderr) when a
+# classifier cannot be attached; this grep is a second line of defence.
 if grep -q 'cannot register_classification_function' "$WORK/load.err"; then
     cat "$WORK/load.err"; fail "NDN example classifiers not attached to ETHERNET/TCP"
 fi

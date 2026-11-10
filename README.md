@@ -71,33 +71,91 @@ or put it in a directory of your own and point `MMT_DPI_PLUGINS_DIR` at it
 also hold the built-in plugins the new one depends on, e.g. a copy or symlink
 of `<prefix>/plugins/libmmt_tcpip.so`.
 
-`init_extraction()` loads every `*.so` of the plugin directory in file-name
-order (`alphasort`), and fails if one of them fails to load. A plugin that
-registers its classifier under a built-in protocol (TCP, UDP, Ethernet...)
-must therefore have a file name that sorts **after** `libmmt_tcpip.so`
-(for example `ndn_example.so` or `lmmt_quic.so`): a name such as
-`aaa_ndn.so` loads first, before TCP and Ethernet exist, and its classifiers
-are not attached.
+### Plugin load order, ids and names
 
-Pick a protocol id that no loaded protocol uses (`0 < id < 1000`) and a name
-that is unique (names are compared case-insensitively). A duplicate id makes
-`init_extraction()` fail; a duplicate name is silently ignored. mmt-dpi 1.10.x
-registers many more protocols than older releases, so the ids used in the
-QUIC walkthrough below (630) and in several `plugins/` models now collide
-with built-in protocols. List the ids the SDK headers already define with
+mmt-dpi's loader has two behaviours that fail **silently**, so plugins in
+this repo must handle them. Line numbers are from mmt-dpi `main` 9ea989d7
+(1.10.2), under `src/mmt_core/src/`.
 
-```
-grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' <prefix>/dpi/include | grep -v MAX_IDENTIFIER
-```
+**(a) Load order: name the plugin file so it sorts after `libmmt_tcpip.so`.**
 
-and choose a free one. (Some ids are defined with tabs, e.g.
-`PROTO_HTTP2` = 700, hence the `[[:space:]]` pattern.) The headers only list
-the SDK's own protocols: any other `.so` in the plugin directory can take ids
-too. The reliable check is at run time, with every plugin you deploy in the
-plugin directory: call `is_registered_protocol(id)` after
-`init_extraction()`, or build and run the installed
-`<prefix>/examples/proto_attributes_iterator.c`, which lists every
-registered protocol.
+- `init_extraction()` loads every `*.so` of the plugin directory in
+  file-name order: `scandir(dir, ..., alphasort)` (`plugins_engine.c:71`).
+  `alphasort` compares with `strcoll`, so if the host program calls
+  `setlocale()` the order follows its `LC_COLLATE`.
+- The first plugin that fails to load or whose `init_proto()` returns `<= 0`
+  stops the load, and `init_extraction()` fails
+  (`plugins_engine.c:84-99`, `:149-150`; `packet_registry.c:668`).
+- A plugin that attaches its classifier under a built-in protocol (TCP, UDP,
+  Ethernet...) calls `register_classification_function_with_parent_protocol()`.
+  That function returns 0 when the parent protocol is not registered yet
+  (`packet_registry_classify.c:209-219`, through
+  `get_protocol_struct_by_protocol_id()`, `packet_registry.c:188-196`).
+- So a plugin loaded **before** `libmmt_tcpip.so` (e.g. `aaa_ndn.so`) still
+  registers its protocol, and `init_extraction()` still succeeds, but the
+  plugin never classifies a packet. Nothing reports it unless the plugin
+  checks that return value.
+
+What to do:
+
+- Give the file a name that sorts after `libmmt_tcpip.so` in the C locale
+  and in the host's locale: start it with a lowercase letter after `l`
+  (upper case sorts before `l` in the C locale), e.g. `ndn_example.so`, or
+  with `lm`, e.g. `lmmt_quic.so`. Check it with
+  `printf '%s\n' <plugin>.so libmmt_tcpip.so | LC_ALL=C sort`: the plugin must
+  come second.
+- In `init_proto()`, check the return value of every
+  `register_classification_function_with_parent_protocol()` call and return
+  0 when it fails. `init_extraction()` then fails with
+  `<path>: init_proto() failed (0)` instead of running with a plugin that
+  never classifies anything. The NDN example does this
+  (`ndn_src/ndn_mmt_plugin.c`, `init_ndn_proto_struct()`).
+
+**(b) Ids and names: pick a unique id AND a unique name.**
+
+- **Duplicate id: `init_extraction()` fails.**
+  `init_protocol_struct_for_registration()` returns NULL for an id that is
+  out of range (`>= PROTO_MAX_IDENTIFIER`, 1000) or already registered
+  (`packet_registry.c:381-389`, `:440-447`). The plugin's `init_proto()`
+  then returns `<= 0`, which fails the load, as in (a).
+- **Duplicate name: silently ignored.** `register_protocol()` adds the name
+  to the name index only if it is not there yet, and still returns
+  `PROTO_REGISTERED` (`packet_registry.c:555-559`). Names are compared
+  case-insensitively (`:74-76`). `get_protocol_id_by_name()` then returns
+  the protocol that registered the name first (`:810-813`), so anything that
+  looks your protocol up by name gets the other one.
+
+What to do:
+
+- Before registering, refuse a name that is already taken:
+  `if (get_protocol_id_by_name(MY_ALIAS) != 0) return 0;`. This catches the
+  built-in protocols and plugins that loaded earlier. The NDN example does
+  this too.
+- List the ids and names the SDK headers already define, and choose free
+  ones:
+
+  ```
+  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' <prefix>/dpi/include | grep -v MAX_IDENTIFIER
+  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+_ALIAS[[:space:]]+"' <prefix>/dpi/include
+  ```
+
+  Some ids are defined with tabs (e.g. `PROTO_HTTP2` = 700), hence the
+  `[[:space:]]` pattern. mmt-dpi 1.10.x registers many more protocols than
+  older releases, so the ids used in the QUIC walkthrough below (630) and
+  in several `plugins/` models now collide with built-in protocols.
+- The headers list only the SDK's own protocols: any other `.so` in the
+  plugin directory can take ids and names too. The reliable check is at run
+  time, with every plugin you deploy in the plugin directory: after
+  `init_extraction()` succeeds, `is_registered_protocol(id)` must be true
+  and `get_protocol_id_by_name(name)` must return **your** id
+  (`tests/ndn_load_check.c` does both). The installed
+  `<prefix>/examples/proto_attributes_iterator.c` lists every registered
+  protocol.
+
+`tests/check_ndn_plugin.sh` guards the cheap parts for the NDN example: it
+fails if the plugin file name (`PLUGIN_NAME`, default `ndn_example.so`)
+sorts before `libmmt_tcpip.so`, or if its id or name is defined by the SDK
+headers. It then runs the run-time checks above.
 
 ## NDN example and the built-in NDN dissector
 

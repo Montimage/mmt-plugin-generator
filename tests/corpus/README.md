@@ -267,7 +267,7 @@ should confirm:
 
 - bitfields numbered from the most significant bit (C compilers on
   little-endian targets number them from the least significant bit; the
-  dns, ip, tcp and topo_ind_sch values depend on this);
+  dns, ip, tcp, topo_ind_sch and pdl_bitfields values depend on this);
 - the omitted-scope default, and the width of an omitted `data_len`;
 - `host` meaning little-endian;
 - the `struct X` field type, and `T*` fields as pointers into the packet;

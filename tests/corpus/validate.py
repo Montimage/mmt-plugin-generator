@@ -680,7 +680,9 @@ def validate(corpus):
                     runnable.add(cid)
 
     mdir = corpus / "models"
-    for d in sorted(mdir.iterdir()) if mdir.is_dir() else []:
+    for d in sorted(p for p in mdir.iterdir() if p.is_dir()) if mdir.is_dir() else []:
+        if d.name.startswith("."):
+            continue
         if d.name not in names:
             rep.err(iw, f"models/{d.name} has no entry in the index")
     plugin_models = {f"plugins/{p.name}" for p in (repo / "plugins").glob("*_plugin")

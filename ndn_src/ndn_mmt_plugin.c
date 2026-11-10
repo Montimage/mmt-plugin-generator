@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include "ndn_mmt_plugin.h"
 #include "extraction_lib.h"
+#include "mmt_log.h"
 #include "tcpip/mmt_tcpip.h"
 #include <netinet/tcp.h>
 
@@ -46,7 +48,7 @@ ndn_tlv_t * ndn_TLV_parser(char *payload, int offset, int total_length){
     int type = ndn_TLV_check_type(payload[offset]);
 
     if(type == 0) {
-        debug("Wrong type : %d\n",payload[offset]);
+        mmt_log_debug("Wrong type : %d", payload[offset]);
         return NULL;
     }
     
@@ -63,7 +65,7 @@ ndn_tlv_t * ndn_TLV_parser(char *payload, int offset, int total_length){
             ndn_new_node->data_offset = offset + 2;
             return ndn_new_node;
         }else{
-            debug("First octet : %d\n",first_octet);
+            mmt_log_debug("First octet : %d", first_octet);
             // ndn_TLV_free(ndn_new_node);
             return NULL;
         }
@@ -95,12 +97,18 @@ ndn_tlv_t * ndn_TLV_parser(char *payload, int offset, int total_length){
         break;
     }
     if(ndn_new_node->nb_octets>0){
-        ndn_new_node->length = str_hex2int(payload,offset + 2, offset + 2 + ndn_new_node->nb_octets-1);    
+        int length = str_hex2int_n(payload, total_length, offset + 2, offset + 2 + ndn_new_node->nb_octets-1);
+        if(length < 0){
+            // the length field runs past the end of the payload
+            ndn_TLV_free(ndn_new_node);
+            return NULL;
+        }
+        ndn_new_node->length = length;
     }
     ndn_new_node->data_offset = offset + 2 + ndn_new_node->nb_octets;
 
     if(total_length < ndn_new_node->data_offset + ndn_new_node->length){
-        // log_err("Not correct length value : %d #  %lu\n",total_length,(ndn_new_node->data_offset + ndn_new_node->length));
+        // mmt_log_error("Not correct length value : %d #  %lu\n",total_length,(ndn_new_node->data_offset + ndn_new_node->length));
         ndn_TLV_free(ndn_new_node);
         return NULL;
     }
@@ -130,13 +138,14 @@ int mmt_check_ndn_payload(char* payload, int packet_len){
 		ndn_TLV_free(root);
 		return 0;
 	}
+	ndn_TLV_free(root);
 	return 1;
 }
 
 classified_proto_t ndn_stack_classification(ipacket_t * ipacket) {
         classified_proto_t retval;
         retval.offset = 0;
-        retval.proto_id = PROTO_NDN;
+        retval.proto_id = PROTO_NDN_EXAMPLE;
         retval.status = Classified;
         return retval;
     }
@@ -147,9 +156,9 @@ int mmt_check_ndn_tcp(ipacket_t * ipacket, unsigned index) {
     char * payload = (char*)&ipacket->data[ndn_offset];
 	classified_proto_t ndn_proto = ndn_stack_classification(ipacket);
 	ndn_proto.offset = ndn_offset - l3_offset;
-    char payload_len = ipacket->p_hdr->caplen - ndn_offset;
+    int payload_len = ipacket->p_hdr->caplen - ndn_offset;
 	if(mmt_check_ndn_payload(payload,payload_len)!=0){
-		debug("NDN: found ndn packet %lu",ipacket->packet_id);
+		mmt_log_debug("NDN: found ndn packet %" PRIu64, ipacket->packet_id);
 		return set_classified_proto(ipacket, index + 1, ndn_proto);
 	}
 	return 0;
@@ -173,7 +182,7 @@ int mmt_check_ndn_ethernet(ipacket_t * ipacket, unsigned index) {
     retval.proto_id = -1;
     retval.status = NonClassified;
     if(ntohs(ethernet->ether_type) == 0x8624){
-    	retval.proto_id = PROTO_NDN;
+    	retval.proto_id = PROTO_NDN_EXAMPLE;
         retval.offset = sizeof (struct ether_header);
         retval.status = Classified;	
     }	
@@ -196,38 +205,38 @@ int ndn_packet_type_extraction(const ipacket_t * ipacket, unsigned proto_index,
         return 0;
     }
 
-    uint8_t ret_v = NDN_UNKNOWN_PACKET;
-    if(payload[0] == 5) ret_v = NDN_INTEREST_PACKET;
-    else if(payload[0] == 6) ret_v = NDN_DATA_PACKET;
+    uint8_t ret_v = NDN_EXAMPLE_UNKNOWN_PACKET;
+    if(payload[0] == 5) ret_v = NDN_EXAMPLE_INTEREST_PACKET;
+    else if(payload[0] == 6) ret_v = NDN_EXAMPLE_DATA_PACKET;
     *((uint8_t*)extracted_data->data) = ret_v;
     return 1;
 }
 
-	static attribute_metadata_t ndn_attributes_metadata[NDN_ATTRIBUTES_NB] = {
+	static attribute_metadata_t ndn_attributes_metadata[NDN_EXAMPLE_ATTRIBUTES_NB] = {
 
-		{NDN_PACKET_TYPE, NDN_PACKET_TYPE_ALIAS, MMT_U8_DATA, sizeof(uint8_t), 0, SCOPE_PACKET, ndn_packet_type_extraction},
+		{NDN_EXAMPLE_PACKET_TYPE, NDN_EXAMPLE_PACKET_TYPE_ALIAS, MMT_U8_DATA, sizeof(uint8_t), 0, SCOPE_PACKET, ndn_packet_type_extraction},
 
 	};
 
 
 	int init_ndn_proto_struct() {
-		protocol_t * protocol_struct = init_protocol_struct_for_registration(PROTO_NDN, PROTO_NDN_ALIAS);
+		protocol_t * protocol_struct = init_protocol_struct_for_registration(PROTO_NDN_EXAMPLE, PROTO_NDN_EXAMPLE_ALIAS);
 
 		if (protocol_struct != NULL) {
 
 			int i = 0;
-			for(; i < NDN_ATTRIBUTES_NB; i ++) {
+			for(; i < NDN_EXAMPLE_ATTRIBUTES_NB; i ++) {
 				register_attribute_with_protocol(protocol_struct, &ndn_attributes_metadata[i]);
 			}
-			if(register_classification_function_with_parent_protocol(PROTO_ETHERNET, mmt_check_ndn_ethernet, 50)){
+			if(!register_classification_function_with_parent_protocol(PROTO_ETHERNET, mmt_check_ndn_ethernet, 50)){
 				fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_ETHERNET\n");	
 			};
             // Register classification function of NDN protocol after TCP
             if(!register_classification_function_with_parent_protocol(PROTO_TCP, mmt_check_ndn_tcp, 50)){
                 fprintf(stderr, "\n[err] init_ndn_proto_struct - cannot register_classification_function_with_parent_protocol: PROTO_TCP\n");
             };
-			register_protocol_stack(PROTO_NDN, PROTO_NDN_ALIAS, ndn_stack_classification);
-			return register_protocol(protocol_struct, PROTO_NDN);
+			register_protocol_stack(PROTO_NDN_EXAMPLE, PROTO_NDN_EXAMPLE_ALIAS, ndn_stack_classification);
+			return register_protocol(protocol_struct, PROTO_NDN_EXAMPLE);
 		} else {
 			return -1;
 		}

@@ -10,9 +10,18 @@ extern "C" {
 #include "mmt_core.h"
 
 
-#define PROTO_NDN 628
+/*
+ * mmt-dpi already ships a built-in NDN dissector in libmmt_tcpip
+ * (PROTO_NDN = 625, name "ndn", NDN_* attribute identifiers). This example
+ * is kept as a plugin-writing sample and registers as a separate protocol,
+ * "ndn_example" (id 980), with NDN_EXAMPLE_* identifiers, so that both can
+ * be loaded at the same time. A plugin must use an id that no other
+ * protocol has registered (0 < id < PROTO_MAX_IDENTIFIER) and a unique,
+ * case-insensitive name.
+ */
+#define PROTO_NDN_EXAMPLE 980
 
-#define PROTO_NDN_ALIAS "NDN"
+#define PROTO_NDN_EXAMPLE_ALIAS "ndn_example"
 
 /*
  * Structure of a 10Mb/s Ethernet header.
@@ -26,21 +35,21 @@ extern "C" {
 	enum 
 	{
 //     // Packet type
-		NDN_UNKNOWN_PACKET=4,
-		NDN_INTEREST_PACKET,
-		NDN_DATA_PACKET,
+		NDN_EXAMPLE_UNKNOWN_PACKET=4,
+		NDN_EXAMPLE_INTEREST_PACKET,
+		NDN_EXAMPLE_DATA_PACKET,
 	};
 
-	enum ndn_attributes {
+	enum ndn_example_attributes {
 
-		NDN_PACKET_TYPE = 1,
+		NDN_EXAMPLE_PACKET_TYPE = 1,
 
-		NDN_ATTRIBUTES_NB = NDN_PACKET_TYPE,
+		NDN_EXAMPLE_ATTRIBUTES_NB = NDN_EXAMPLE_PACKET_TYPE,
 
 	};
 
 
-#define NDN_PACKET_TYPE_ALIAS "packet_type"
+#define NDN_EXAMPLE_PACKET_TYPE_ALIAS "packet_type"
 
 
 	int init_ndn_proto_struct();

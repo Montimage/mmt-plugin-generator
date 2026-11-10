@@ -13,6 +13,9 @@ Checks that:
   - the label, id, encoding and encapsulation the fixtures assume match the
     model file.
 
+Before reading the corpus, a self-check proves that the value checks reject
+a bitfield wider than one byte in a model with no byte order.
+
 The corpus files use a strict YAML subset (README.md, "File format") so that
 this script needs no third-party parser. Every file in that subset is also
 plain YAML 1.1/1.2 and loads to the same data with a full YAML parser.
@@ -373,6 +376,9 @@ def _check_value(rep, where, attr, typ, payload, order):
         if length != INT_WIDTH[typ]:
             rep.err(where, f"a {typ} bitfield's storage unit is {INT_WIDTH[typ]} bytes, not {length}")
             return
+        if length > 1 and order == "none":
+            rep.err(where, f"{typ} wider than one byte needs a byte order")
+            return
         unit = int.from_bytes(data, "little" if order == "little" else "big")
         got = (unit >> (8 * length - bo - bw)) & ((1 << bw) - 1)
         if value != got:
@@ -668,6 +674,8 @@ def validate(corpus):
         packets = _need(rep, mw, model, "packets", list) or []
         pdir = corpus / "models" / name / "packets"
         on_disk = sorted(p.stem for p in pdir.glob("*.yaml")) if pdir.is_dir() else []
+        for stray in sorted(pdir.glob("*.yml")) if pdir.is_dir() else []:
+            rep.err(mw, f"packets/{stray.name}: packet files end in .yaml")
         if sorted(packets) != on_disk:
             rep.err(mw, f"packets {sorted(packets)} != files on disk {on_disk}")
         for stem in packets:
@@ -704,8 +712,27 @@ def validate(corpus):
     return rep, len(names), sum(len(v) for v in coverage.values()), len(declared)
 
 
+def self_check():
+    """Prove the value checks reject what they must; return the failures."""
+    failures = []
+    bitfield = {"offset": 0, "length": 2, "value": 1, "bit_offset": 0, "bit_width": 4}
+    for order, want in (("big", None), ("none", "wider than one byte needs a byte order")):
+        rep = Report()
+        _check_value(rep, "self-check", bitfield, "MMT_U16_DATA", b"\x10\x00", order)
+        if want is None and rep.errors:
+            failures.append(f"a U16 bitfield in {order} order was rejected: {rep.errors}")
+        elif want is not None and not any(want in e for e in rep.errors):
+            failures.append(f"a U16 bitfield with byte order {order!r} was accepted")
+    return failures
+
+
 def main(argv):
-    corpus = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parent
+    failures = self_check()
+    if failures:
+        for line in failures:
+            print(f"FAIL: self-check: {line}")
+        return 1
+    corpus = Path(argv[1]).resolve() if len(argv) > 1 else Path(__file__).resolve().parent
     result = validate(corpus)
     if isinstance(result, Report):
         rep, counts = result, None

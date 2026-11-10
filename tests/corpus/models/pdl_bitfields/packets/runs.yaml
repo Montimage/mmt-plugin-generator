@@ -15,7 +15,7 @@ parent:
   selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
   source: "corpus rule (README.md, Parent)"
 bytes:
-  - "b6 12 34 a5 c3 be ef aa 12 34 56 99 77"
+  - "d5 12 34 a5 c3 be ef aa 12 34 56 99 77"
 bytes_source: "model-declared: bitfield values packed MSB first"
 expect:
   protocol: "PDL_BITFIELDS"
@@ -28,7 +28,7 @@ expect:
       type: "MMT_U8_DATA"
       offset: 0
       length: 1
-      value: 5
+      value: 6
       bit_offset: 0
       bit_width: 3
       source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
@@ -44,7 +44,7 @@ expect:
       type: "MMT_U8_DATA"
       offset: 0
       length: 1
-      value: 6
+      value: 5
       bit_offset: 4
       bit_width: 4
       source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"

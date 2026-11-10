@@ -20,6 +20,14 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 5. **Third-party protocol ids:** ask mmt-dpi to reserve and document a range (950–999). `validate` warns outside it and fails on a taken id or name.
 6. **Java tool:** moved to `legacy/` and kept until the parity tests (#3) pass, then deleted.
 7. **Tracking:** one epic plus one issue per task below. Implementation by Claude Code; review by a separate agent session.
+8. **PDL semantics (T0.4 corpus, PR #35):** decided by Luong on 2026-11-10. Details in [`tests/corpus/README.md`, Decided rules](../../tests/corpus/README.md#decided-rules).
+   - Bitfields: numbered from the most significant bit of the storage unit, read in the model's byte order; the only rule. The `ip` model's `ihl:4, version:4` is a model bug, fixed in T5.1. A declared divergence from Java for T1.6. A per-struct `bit_order` key (default `msb`) may come later.
+   - `host` encoding: fixed little-endian, not the order of the machine running the plugin. `little` is an alias.
+   - Omitted scope: packet (T1.3 may warn). Omitted `data_len`: the type's width for fixed-width types; T1.3 reports an error for types without one.
+   - `struct X` field: `sizeof(struct X)` bytes, read as `MMT_BINARY_DATA`; `X` defined before use.
+   - `T*` field: 4 bytes on the wire, read as `MMT_DATA_POINTER`. "Value = offset" is a T2.4 harness convention. T1.3 discourages `T*` in new models.
+   - `ntohs`/`ntohl` of a literal: an unconditional byte swap.
+   - After if/else, R and the alignment state are the else branch's (Java behaviour, kept). T1.3 warns when a constant, aligned attribute follows an if/else whose branches advance R by different amounts.
 
 ## Branching and merge policy
 

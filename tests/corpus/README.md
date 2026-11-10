@@ -31,6 +31,9 @@ tests/corpus/
     packets/<stem>.yaml one packet fixture each
 ```
 
+A packet file must end in `.yaml`; the validator rejects a `packets/*.yml`
+file instead of skipping it.
+
 There are two kinds of model:
 
 - **example**: a byte-identical copy of `plugins/<name>_plugin`. The 16
@@ -196,8 +199,8 @@ restate inventory section 1 without the Java bugs. Sources that say
 "corpus rule" point here.
 
 - **Byte order.** `encoding = "network"`: integers wider than one byte are
-  big-endian. `encoding = "host"`: little-endian (both CI architectures,
-  amd64 and arm64, are little-endian). `ASCII`, `UNICODE` or no encoding:
+  big-endian. `encoding = "host"`: fixed little-endian, whatever machine
+  runs the plugin (see the decided rules below). `ASCII`, `UNICODE` or no encoding:
   the fixtures use only single-byte and byte-copy types, whose values do not
   depend on byte order (inventory bug 10).
 - **Byte copies.** Addresses and all non-integer types are copied byte for
@@ -240,7 +243,7 @@ restate inventory section 1 without the Java bugs. Sources that say
   (bug 11). `sizeof(T)` is the PDL width of T, so `sizeof(char)` is 1
   (bug 7), and `sizeof(struct X)` is the packed size. `offset(X)` and
   `len(X)` are attribute X's byte offset and length (bug 19).
-  `ntohs`/`ntohl` of a literal are evaluated on a little-endian host, so
+  `ntohs`/`ntohl` of a literal is an unconditional byte swap, so
   `ntohs(0x0300)` is 3.
 - **Conditionals.** A branch's attributes are present only when its
   condition holds. When none holds, they are absent (bug 13).
@@ -262,19 +265,48 @@ restate inventory section 1 without the Java bugs. Sources that say
 - **Protocol name.** The registered name is the upper-cased `label`
   (inventory section 1, Properties).
 
-Rules the inventory does not settle, which the corpus fixes and T1.2/T1.3
-should confirm:
+### Decided rules
 
-- bitfields numbered from the most significant bit (C compilers on
-  little-endian targets number them from the least significant bit; the
-  dns, ip, tcp, topo_ind_sch and pdl_bitfields values depend on this);
-- the omitted-scope default, and the width of an omitted `data_len`;
-- `host` meaning little-endian;
-- the `struct X` field type, and `T*` fields as pointers into the packet;
-- `offset()`/`len()`, and `ntohs`/`ntohl` of literals;
+The inventory left these rules open. The corpus follows them, and T1.2/T1.3
+implement them.
+
+- **Bitfield order** (decided by the maintainer, 2026-11-10, PR #35 review). Bitfields are numbered from the most significant
+  bit of the storage unit, read in the model's byte order. This is the only
+  rule. The `ip` model's `ihl:4, version:4` is a model bug, fixed when the
+  examples are ported (T5.1). Bitfields are a declared divergence from Java
+  for T1.6. A per-struct `bit_order` key may be added later, defaulting to
+  `msb`. The dns, ip, tcp, topo_ind_sch and pdl_bitfields values depend on
+  this rule.
+- **`host` encoding** (decided by the maintainer, 2026-11-10, PR #35 review). `host` means fixed little-endian, not the order
+  of the machine that runs the plugin. `little` is accepted as an alias.
+- **Omitted scope** (decided by the maintainer, 2026-11-10, PR #35 review). An omitted scope means packet. T1.3 may warn about
+  it.
+- **Omitted `data_len`** (decided by the maintainer, 2026-11-10, PR #35 review). An omitted `data_len` means the type's width
+  for fixed-width types. T1.3 reports an error for types without a fixed
+  width (`MMT_BINARY_DATA`, `MMT_STRING_DATA`, ...).
+- **`struct X` fields** (decided by the maintainer, 2026-11-10, PR #35 review). A `struct X` field covers `sizeof(struct X)`
+  bytes, read as `MMT_BINARY_DATA`. `X` must be defined before use.
+- **`T*` fields** (decided by the maintainer, 2026-11-10, PR #35 review). A `T*` field is 4 bytes on the wire, read as
+  `MMT_DATA_POINTER`. "Value = offset" is a harness convention: the T2.4
+  harness checks a pointer attribute by the offset it points at, since the
+  runtime pointer is 8 bytes on 64-bit hosts. T1.3 discourages `T*` in new
+  models.
+- **`ntohs`/`ntohl` of a literal** (decided by the maintainer, 2026-11-10, PR #35 review). It is an unconditional byte swap.
+- **R after if/else** (decided by the maintainer, 2026-11-10, PR #35 review). After `if/else`, the running offset R and the
+  alignment state are those of the else branch (Java behaviour, kept). T1.3
+  warns when a constant, aligned attribute follows an if/else whose branches
+  advance R by different amounts.
+
+Still open, fixed by the corpus for T1.2/T1.3 to confirm:
+
+- `offset()`/`len()`;
 - literal in-struct offsets after alignment stops;
 - keyword field names that are also C keywords (`sizeof`, `int`, `char` in
   `pdl_keyword_names`) need renaming in the generated C.
+
+The validator checks each expected value against the packet bytes at the
+offset the fixture states, not that offset against the model: the T1.x
+layout and golden tests must check fixture offsets against the model.
 
 ## Sources
 

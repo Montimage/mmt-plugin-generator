@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MMT_DPI_TAG: v1.10.2
+  # sha256 of the Release's SHA256SUMS file: a replaced Release asset fails CI.
+  MMT_DPI_SHA256SUMS_SHA256: 07b796d1d7fea1586e06f5b2872fc6c69b65543ae7c091eb2a70fe73d096306c
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Shellcheck the repo's shell scripts
+        run: |
+          command -v shellcheck > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck; }
+          shellcheck --version
+          mapfile -d '' scripts < <(git ls-files -z -- '*.sh' '*.bash')
+          [ "${#scripts[@]}" -gt 0 ] || { echo "no shell scripts found"; exit 1; }
+          printf '%s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+
+  ndn-check:
+    name: NDN example (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify the mmt-dpi package
+        env:
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          echo "MMT_DPI_PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Install mmt-dpi
+        run: |
+          sudo apt-get install -y --no-install-recommends "$MMT_DPI_PKG"
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' mmt-dpi
+          # The package uses the /opt/mmt layout that check_ndn_plugin.sh expects.
+          dpkg -L mmt-dpi | grep -qx /opt/mmt/dpi/include/mmt_log.h
+          dpkg -L mmt-dpi | grep -qx /opt/mmt/plugins/libmmt_tcpip.so
+      - name: Build and load the NDN example plugin
+        run: MMT_BASE=/opt/mmt bash tests/check_ndn_plugin.sh

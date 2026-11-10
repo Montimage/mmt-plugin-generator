@@ -35,8 +35,9 @@ pass() { echo "PASS: $*"; }
 #     libmmt_tcpip.so in the C locale and in the current one.
 for loc in C "${LC_ALL:-${LC_COLLATE:-${LANG:-C}}}"; do
     first="$(printf '%s\n' "$PLUGIN_NAME" libmmt_tcpip.so | LC_ALL="$loc" sort | head -n1)"
-    [ "$first" = libmmt_tcpip.so ] && [ "$PLUGIN_NAME" != libmmt_tcpip.so ] \
-        || fail "plugin file name $PLUGIN_NAME does not sort after libmmt_tcpip.so (LC_COLLATE=$loc)"
+    if [ "$first" != libmmt_tcpip.so ] || [ "$PLUGIN_NAME" = libmmt_tcpip.so ]; then
+        fail "plugin file name $PLUGIN_NAME does not sort after libmmt_tcpip.so (LC_COLLATE=$loc)"
+    fi
 done
 pass "plugin file name $PLUGIN_NAME sorts after libmmt_tcpip.so"
 
@@ -44,7 +45,9 @@ pass "plugin file name $PLUGIN_NAME sorts after libmmt_tcpip.so"
 #     the SDK's own protocols; the run-time checks in step 3 cover the rest.
 PROTO_ID="$(sed -nE 's/^#define[[:space:]]+PROTO_NDN_EXAMPLE[[:space:]]+([0-9]+).*/\1/p' "$HDR")"
 PROTO_NAME="$(sed -nE 's/^#define[[:space:]]+PROTO_NDN_EXAMPLE_ALIAS[[:space:]]+"([^"]*)".*/\1/p' "$HDR")"
-[ -n "$PROTO_ID" ] && [ -n "$PROTO_NAME" ] || fail "cannot read PROTO_NDN_EXAMPLE(_ALIAS) from $HDR"
+if [ -z "$PROTO_ID" ] || [ -z "$PROTO_NAME" ]; then
+    fail "cannot read PROTO_NDN_EXAMPLE(_ALIAS) from $HDR"
+fi
 if grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' "$INC" | grep -v MAX_IDENTIFIER \
         | awk -v id="$PROTO_ID" '$3 == id { print; found = 1 } END { exit !found }'; then
     fail "protocol id $PROTO_ID is already defined by the SDK headers"

@@ -1,0 +1,99 @@
+# Corpus packet pdl_alignment/a0-2. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_alignment/a0-2"
+model: "pdl_alignment"
+summary: "a0 = 2: else branch and the struct inside the if without else"
+constructs:
+  - "layout.align.plain"
+  - "layout.align.struct"
+  - "layout.align.stop"
+  - "layout.align.conditional_else"
+  - "layout.align.conditional_no_else"
+  - "conditional.struct"
+  - "conditional.if"
+  - "conditional.if_else"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "02 12 34 56 78 9a bc de f0 0f 1e 2d"
+bytes_source: "model-declared: a0 then eleven distinct bytes"
+expect:
+  protocol: "PDL_ALIGNMENT"
+  proto_id: 973
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "a0"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: aligned: running offset 0 + declared 0; the offset becomes 1"
+    - name: "a1"
+      type: "MMT_U16_DATA"
+      offset: 1
+      length: 2
+      value: 4660
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: aligned: 1 + 0; the offset becomes 3"
+    - name: "s0"
+      type: "MMT_U8_DATA"
+      offset: 3
+      length: 1
+      value: 86
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: a struct adds the running offset 3 to each field"
+    - name: "s1"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 30874
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: struct field at 3 + 1; the offset becomes 6"
+    - name: "c_if"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "model-declared: if branch not taken (a0 != 1)"
+    - name: "c_else"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 48350
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: else branch: 6 + 0; after the if/else the running offset is the else branch's, 8"
+    - name: "cs0"
+      type: "MMT_U8_DATA"
+      offset: 8
+      length: 1
+      value: 240
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: struct inside a branch: running offset 8 (from the else branch above) + 0"
+    - name: "cs1"
+      type: "MMT_U8_DATA"
+      offset: 9
+      length: 1
+      value: 15
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: 8 + 1; an if without else hands back the pre-if offset 8"
+    - name: "a2"
+      type: "MMT_U8_DATA"
+      offset: 10
+      length: 1
+      value: 30
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: aligned: running offset 8 + declared 2"
+    - name: "stop"
+      type: "MMT_U8_DATA"
+      offset: 3
+      length: 1
+      value: 86
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: data_len sizeof(char) is not a constant, so alignment stops: offset 3 is literal"
+    - name: "lit"
+      type: "MMT_U8_DATA"
+      offset: 11
+      length: 1
+      value: 45
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: after alignment stops, offset 11 is literal"
+    - name: "t0"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "corpus rule (README.md, Semantics): inventory section 1, Offset and alignment: after alignment stops, a struct's fields keep their in-struct offsets: t0 is at 0"

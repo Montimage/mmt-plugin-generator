@@ -1,0 +1,42 @@
+# Corpus packet pdl_properties_all/basic. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_properties_all/basic"
+model: "pdl_properties_all"
+summary: "Every Properties key set; the label is mixed case"
+constructs:
+  - "properties.label"
+  - "properties.id"
+  - "properties.context"
+  - "properties.session_context"
+  - "properties.session"
+  - "properties.encapsulation"
+  - "properties.encoding.network"
+  - "struct.plain"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "80 01 de ad be ef"
+bytes_source: "model-declared: flags (2 bytes) and token (4 bytes)"
+expect:
+  protocol: "PDL_PROPS_ALL"
+  proto_id: 962
+  next:
+    kind: "hook"
+    source: "model-declared: encapsulation is true without classifynext, so classify_next is a user hook"
+  attributes:
+    - name: "flags"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 32769
+      source: "model-declared: bytes 0-1, network order"
+    - name: "token"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 3735928559
+      source: "model-declared: bytes 2-5, network order"
+note: "protocol is the upper-cased label (inventory section 1, Properties: PROTO_X_ALIAS)"

@@ -1,0 +1,72 @@
+# Corpus packet abb/frame. Format and rules: tests/corpus/README.md
+schema: 1
+id: "abb/frame"
+model: "abb"
+summary: "Seven big-endian 32-bit header words"
+constructs:
+  - "struct.plain"
+  - "struct.type.uint32_t"
+  - "properties.label"
+  - "properties.id"
+  - "properties.encoding.network"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP port 12118"
+  source: "plugins/abb_src/abb_mmt_plugin.c (hand-written classification, no public spec)"
+bytes:
+  - "00 00 00 1c 00 00 00 01 00 00 00 2a 00 00 03 e8"
+  - "00 00 be ef 00 00 00 03 00 00 00 00"
+bytes_source: "model-declared: struct abb_hdr, seven uint32_t fields packed from byte 0; values chosen for the fixture"
+expect:
+  protocol: "ABB"
+  proto_id: 658
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "size"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 4
+      value: 28
+      source: "model-declared: struct abb_hdr field 1 (uint32_t, network order)"
+    - name: "type"
+      type: "MMT_U32_DATA"
+      offset: 4
+      length: 4
+      value: 1
+      source: "model-declared: struct abb_hdr field 2 (uint32_t, network order)"
+    - name: "frame_number"
+      type: "MMT_U32_DATA"
+      offset: 8
+      length: 4
+      value: 42
+      source: "model-declared: struct abb_hdr field 3 (uint32_t, network order)"
+    - name: "capture_time"
+      type: "MMT_U32_DATA"
+      offset: 12
+      length: 4
+      value: 1000
+      source: "model-declared: struct abb_hdr field 4 (uint32_t, network order)"
+    - name: "flags_checksum"
+      type: "MMT_U32_DATA"
+      offset: 16
+      length: 4
+      value: 48879
+      source: "model-declared: struct abb_hdr field 5 (uint32_t, network order)"
+    - name: "number_of_markers"
+      type: "MMT_U32_DATA"
+      offset: 20
+      length: 4
+      value: 3
+      source: "model-declared: struct abb_hdr field 6 (uint32_t, network order)"
+    - name: "reserved_timestamp"
+      type: "MMT_U32_DATA"
+      offset: 24
+      length: 4
+      value: 0
+      source: "model-declared: struct abb_hdr field 7 (uint32_t, network order)"

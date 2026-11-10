@@ -1,0 +1,130 @@
+# Corpus packet pdl_bitfields/runs. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_bitfields/runs"
+model: "pdl_bitfields"
+summary: "Bitfield runs in uint8_t, uint16_t and uint32_t, mixed with plain fields"
+constructs:
+  - "struct.bitfield"
+  - "struct.bitfield.mixed_line"
+  - "struct.bitfield.followed"
+  - "layout.align.struct"
+  - "layout.align.plain"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "d5 12 34 a5 c3 be ef aa 12 34 56 99 77"
+bytes_source: "model-declared: bitfield values packed MSB first"
+expect:
+  protocol: "PDL_BITFIELDS"
+  proto_id: 968
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "b_hi"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 6
+      bit_offset: 0
+      bit_width: 3
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "b_mid"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      bit_offset: 3
+      bit_width: 1
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "b_lo"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 5
+      bit_offset: 4
+      bit_width: 4
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "w_lead"
+      type: "MMT_U16_DATA"
+      offset: 1
+      length: 2
+      value: 4660
+      source: "corpus rule (README.md, Semantics): a plain field before bitfields on the same line takes its own 2 bytes"
+    - name: "w_a"
+      type: "MMT_U16_DATA"
+      offset: 3
+      length: 2
+      value: 10
+      bit_offset: 0
+      bit_width: 4
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "w_b"
+      type: "MMT_U16_DATA"
+      offset: 3
+      length: 2
+      value: 92
+      bit_offset: 4
+      bit_width: 8
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "w_c"
+      type: "MMT_U16_DATA"
+      offset: 3
+      length: 2
+      value: 3
+      bit_offset: 12
+      bit_width: 4
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "w_tail"
+      type: "MMT_U16_DATA"
+      offset: 5
+      length: 2
+      value: 48879
+      source: "corpus rule (README.md, Semantics): a bitfield run fills one storage unit; the next field follows it (inventory bug 2)"
+    - name: "d_a"
+      type: "MMT_U32_DATA"
+      offset: 7
+      length: 4
+      value: 1
+      bit_offset: 0
+      bit_width: 1
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "d_b"
+      type: "MMT_U32_DATA"
+      offset: 7
+      length: 4
+      value: 42
+      bit_offset: 1
+      bit_width: 7
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "d_c"
+      type: "MMT_U32_DATA"
+      offset: 7
+      length: 4
+      value: 4660
+      bit_offset: 8
+      bit_width: 16
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "d_d"
+      type: "MMT_U32_DATA"
+      offset: 7
+      length: 4
+      value: 86
+      bit_offset: 24
+      bit_width: 8
+      source: "corpus rule (README.md, Semantics): bitfields are numbered from the most significant bit of their storage unit, read in network order"
+    - name: "after"
+      type: "MMT_U8_DATA"
+      offset: 11
+      length: 1
+      value: 153
+      source: "corpus rule (README.md, Semantics): the field after a bitfield line starts after the storage unit (inventory bug 2)"
+    - name: "next_byte"
+      type: "MMT_U8_DATA"
+      offset: 12
+      length: 1
+      value: 119
+      source: "corpus rule (README.md, Semantics): aligned plain attribute: running offset 12 (the struct's storage bytes, inventory bug 3) + declared offset 0"

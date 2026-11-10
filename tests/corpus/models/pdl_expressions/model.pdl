@@ -1,0 +1,50 @@
+Protocol {
+	Properties {
+		label = "pdl_expressions"
+		id = "972"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_expr_hdr {
+			uint8_t hlen;
+			uint8_t count;
+			uint16_t total;
+		}
+		attribute {
+			alias="body" data_type="MMT_BINARY_DATA" data_len="val(total) - val(hlen)" offset="val(hlen)" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="items" data_type="MMT_BINARY_DATA" data_len="val(count) * 2" offset="val(hlen)" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="half" data_type="MMT_U8_DATA" data_len="1" offset="val(total) / 2" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="paren" data_type="MMT_U16_DATA" data_len="2" offset="(val(count) + 1) * 2" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="prec" data_type="MMT_U8_DATA" data_len="1" offset="val(count) + 1 * 2" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="hexoff" data_type="MMT_U16_DATA" data_len="sizeof(short)" offset="0x0A" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="sz_struct" data_type="MMT_U16_DATA" data_len="2" offset="sizeof(struct pdl_expr_hdr)" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="sz_mmt" data_type="MMT_U16_DATA" data_len="sizeof(MMT_U16_DATA)" offset="12" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="off_fn" data_type="MMT_U8_DATA" data_len="1" offset="offset(hexoff) + 1" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="len_fn" data_type="MMT_U16_DATA" data_len="len(hexoff)" offset="len(items) + 5" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="sh" data_type="MMT_U8_DATA" data_len="1" offset="ntohs(0x0300)" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="sl" data_type="MMT_U8_DATA" data_len="1" offset="ntohl(0x05000000)" scope="SCOPE_PACKET"
+		}
+	}
+}

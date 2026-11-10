@@ -1,0 +1,41 @@
+Protocol { 
+    Properties {
+        label = "MONGODB"
+        id = "640"
+        context = "false" 
+        session = "false" 
+        encapsulation = "false" 
+        encoding = "network"
+    }
+    
+    Attributes {
+        attribute {
+            alias = "message_length" 
+            data_type = "MMT_U32_DATA" 
+            data_len = "sizeof(int)"
+            offset = "POSITION_NOT_KNOWN" 
+            scope = "SCOPE_PACKET"
+        }
+        attribute {
+            alias = "request_id" 
+            data_type = "MMT_U32_DATA" 
+            data_len = "sizeof(int)" 
+            offset = "POSITION_NOT_KNOWN" 
+            scope = "SCOPE_PACKET" 
+        }
+        attribute {
+            alias = "response_to" 
+            data_type = "MMT_U32_DATA" 
+            data_len = "sizeof(int)" 
+            offset = "POSITION_NOT_KNOWN" 
+            scope = "SCOPE_PACKET" 
+        }
+        attribute {
+            alias = "op_code" 
+            data_type = "MMT_U32_DATA" 
+            data_len = "sizeof(int)" 
+            offset = "POSITION_NOT_KNOWN" 
+            scope = "SCOPE_PACKET" 
+        }
+    }
+}

@@ -1,0 +1,37 @@
+Protocol {
+	Properties {
+		label = "MSG_TOPO_IND_SCH"
+		id = "500"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct attrs {
+			uint8_t management_status : 4, reserve_bloc0_byte1 : 4;
+			uint8_t reserve_bloc0_byte2 : 3, channel_presence: 1, status : 2, mandatory : 2;
+			uint8_t neighbors_nb;
+			uint8_t elem_k_alloc;
+			uint8_t elem_j_alloc;
+			uint8_t elem_c_alloc;
+			uint8_t lc_channels_nb;
+		}
+				
+		attribute{
+			alias="LP_STATIONS_NB" data_type="MMT_U8_DATA" data_len="1" offset="7 + val(lc_channels_nb) * 3" scope="SCOPE_PACKET"
+		}
+		attribute{
+			alias="BLOC0" data_type="MMT_BINARY_DATA" data_len="3" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute{
+			alias="BLOC1" data_type="MMT_BINARY_DATA" data_len="3" offset="3" scope="SCOPE_PACKET"
+		}
+		attribute{
+			alias="BLOC2" data_type="MMT_BINARY_DATA" data_len="1 + val(lc_channels_nb) * 3" offset="6" scope="SCOPE_PACKET"
+		}
+		attribute{
+			alias="BLOC3" data_type="MMT_BINARY_DATA" data_len="1 + val(LP_STATIONS_NB) * 3" offset="7 + val(lc_channels_nb) * 3" scope="SCOPE_PACKET"
+		}
+	}
+}

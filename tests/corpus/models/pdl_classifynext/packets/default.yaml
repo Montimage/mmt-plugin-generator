@@ -1,0 +1,43 @@
+# Corpus packet pdl_classifynext/default. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_classifynext/default"
+model: "pdl_classifynext"
+summary: "type 7: default branch"
+constructs:
+  - "classifynext.default"
+  - "expr.sub"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "07 01 00 0a a0 a1 a2 a3 a4 a5"
+bytes_source: "model-declared: struct pdl_cn_hdr then filler bytes"
+expect:
+  protocol: "PDL_CLASSIFYNEXT"
+  proto_id: 961
+  next:
+    kind: "proto"
+    proto_id: 959
+    offset: 8
+    source: "model-declared: no case matches 7, so default: nextencaps 959, nextoffset val(length) - 2 = 8"
+  attributes:
+    - name: "type"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 7
+      source: "model-declared: struct pdl_cn_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      source: "model-declared: struct pdl_cn_hdr byte 1"
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 10
+      source: "model-declared: struct pdl_cn_hdr bytes 2-3"

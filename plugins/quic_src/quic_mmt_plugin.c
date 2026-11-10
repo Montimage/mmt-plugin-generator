@@ -103,7 +103,7 @@ int mmt_check_quic(ipacket_t * ipacket, unsigned index)
   int ver_offs;
   if (udp != NULL) {
     uint16_t sport = ntohs(udp->source), dport = ntohs(udp->dest);
-    // debug("QUIC: Calculating QUIC over UDP");
+    // mmt_log_debug("QUIC: Calculating QUIC over UDP");
     if ((((sport == 80) || (dport == 80) || (sport == 443) || (dport == 443))))
     {
       // Settings without version. First check if PUBLIC FLAGS & SEQ bytes are 0x0. SEQ must be 1 at least.

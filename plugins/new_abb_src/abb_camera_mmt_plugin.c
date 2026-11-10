@@ -39,7 +39,7 @@ int mmt_check_abb(ipacket_t *ipacket, unsigned index)
 	if (udp != NULL)
 	{
 		uint16_t sport = ntohs(udp->source), dport = ntohs(udp->dest);
-		// debug("QUIC: Calculating QUIC over UDP");
+		// mmt_log_debug("QUIC: Calculating QUIC over UDP");
 		if (((sport == 4868) && (dport == 12118))) //Clasification of packet
 		{
 			struct abbcamera *abb_header = (struct abbcamera *)&ipacket->data[abb_offset];

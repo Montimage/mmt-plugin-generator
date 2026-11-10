@@ -1,7 +1,7 @@
 Protocol {
 	Properties {
-		label = "NDN"
-		id = "628"
+		label = "NDN_EXAMPLE"
+		id = "980"
 		context = "false"
 		session = "true"
 		encapsulation = "false"

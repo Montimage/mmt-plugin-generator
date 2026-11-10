@@ -98,7 +98,7 @@ static attribute_metadata_t mongodb_attributes_metadata[MONGODB_ATTRIBUTES_NB] =
  */
 
 int mmt_check_mongodb_tcp(ipacket_t * ipacket, unsigned index) {
-	//debug("\n[MONGODBWIRE: Classification] Checking packet with ID: %lu", ipacket->packet_id);
+	//mmt_log_debug("\n[MONGODBWIRE: Classification] Checking packet with ID: %lu", ipacket->packet_id);
 
 	// Get the offset for the packet to be classified
 	int l4_offset = get_packet_offset_at_index(ipacket, index);
@@ -137,12 +137,12 @@ int mmt_check_mongodb_tcp(ipacket_t * ipacket, unsigned index) {
 		case OP_COMMAND:
 		case OP_COMMANDREPLY:
 		case OP_MSG:
-			//debug("[MONGODBWIRE: Classification] Packet %lu is mongodbwire!", ipacket->packet_id);
+			//mmt_log_debug("[MONGODBWIRE: Classification] Packet %lu is mongodbwire!", ipacket->packet_id);
 			retval = mongodb_stack_classification(ipacket);
 			retval.offset = mongodbwire_offset - l4_offset;
 			break;
 		default:
-			//debug("[MONGODBWIRE: Classification] Packet %lu is NOT mongodbwire!", ipacket->packet_id);
+			//mmt_log_debug("[MONGODBWIRE: Classification] Packet %lu is NOT mongodbwire!", ipacket->packet_id);
 			break;
 	}
 	

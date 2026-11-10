@@ -2,8 +2,8 @@
 
 ## Requirements
 
-- mmt-dpi **1.10.2 or later** (at the time of writing, mmt-dpi `main`; 1.10.2
-  is not released yet). 1.10.2 is the first version whose installed headers
+- mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**.
+  1.10.2 is the first version whose installed headers
   ship the public logger `mmt_log.h` (Montimage/mmt-dpi#68).
 - gcc (or clang) and, to generate code from a model, a Java runtime.
 
@@ -74,8 +74,8 @@ of `<prefix>/plugins/libmmt_tcpip.so`.
 ### Plugin load order, ids and names
 
 mmt-dpi's loader has two behaviours that fail **silently**, so plugins in
-this repo must handle them. Line numbers are from mmt-dpi `main` 9ea989d7
-(1.10.2), under `src/mmt_core/src/`.
+this repo must handle them. Line numbers are from mmt-dpi v1.10.2
+(commit a84a6050), under `src/mmt_core/src/`.
 
 **(a) Load order: name the plugin file so it sorts after `libmmt_tcpip.so`.**
 
@@ -184,8 +184,8 @@ removed macros, then loads it next to `libmmt_tcpip.so` (through a temporary
 `ndn` (625) both resolve and that its classifiers are attached. It prints one
 `PASS:`/`FAIL:` line per check and exits non-zero on failure.
 
-Verified with gcc 13.3 on Linux aarch64 against mmt-dpi `main` at commit
-9ea989d7 (version 1.10.2) installed into a private prefix. The other plugin
+Verified with gcc 13.3 on Linux aarch64 against mmt-dpi v1.10.2 (sources
+identical to commit 9ea989d7) installed into a private prefix. The other plugin
 sources under `plugins/` are not covered by this check (only comments in
 three of them were updated for the new logger names); several of them do not
 build against mmt-dpi 1.10.x, mostly because they redeclare protocols that

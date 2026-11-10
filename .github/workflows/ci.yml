@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # tests/fetch_mmt_dpi_package.sh pins the sha256 of this tag's SHA256SUMS;
+  # another tag also needs MMT_DPI_SHA256SUMS_SHA256.
   MMT_DPI_TAG: v1.10.2
-  # sha256 of the Release's SHA256SUMS file: a replaced Release asset fails CI.
-  MMT_DPI_SHA256SUMS_SHA256: 07b796d1d7fea1586e06f5b2872fc6c69b65543ae7c091eb2a70fe73d096306c
 
 jobs:
   shellcheck:

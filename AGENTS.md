@@ -44,7 +44,7 @@ MMT_BASE=<private prefix> bash tests/check_ndn_plugin.sh
 
 A private prefix can also come from the published package, without root.
 The package's `libmmt_*.so` links point to absolute `/opt/mmt/...` paths, so
-make them relative before linking against the prefix:
+make them relative before linking against the prefix (`<dir>` absolute):
 
 ```
 deb="$(bash tests/fetch_mmt_dpi_package.sh <download dir>)"

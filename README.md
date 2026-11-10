@@ -41,6 +41,12 @@ library as the default plugin directory (`$MMT_BASE/plugins`). Below,
 `<prefix>` is `/opt/mmt` or your private prefix, always as an absolute
 path (mmt-dpi refuses a relative `MMT_BASE`).
 
+Prebuilt `.deb` and `.rpm` packages for several distributions are attached
+to each mmt-dpi Release (see `manifest.json` and `SHA256SUMS` there). They
+install into `/opt/mmt`. CI installs the ubuntu-24.04 one after
+`tests/fetch_mmt_dpi_package.sh` has verified it; see `AGENTS.md` to extract
+it into a private prefix instead.
+
 ## Generate plugin code
 
 ```

@@ -16,6 +16,12 @@ protocol model. A Python rewrite is planned in
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: the only automated check (build and load the
   NDN example).
+- `tests/fetch_mmt_dpi_package.sh`: downloads a published mmt-dpi package
+  from its GitHub Release and verifies it (pinned `SHA256SUMS` hash, then
+  `SHA256SUMS` and `manifest.json`); it never installs.
+- `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
+  Runs shellcheck on every tracked `*.sh`, and `check_ndn_plugin.sh` against
+  the mmt-dpi v1.10.2 ubuntu-24.04 `.deb` (amd64 and arm64).
 
 ## Commands
 
@@ -34,6 +40,17 @@ absolute path:
 
 ```
 MMT_BASE=<private prefix> bash tests/check_ndn_plugin.sh
+```
+
+A private prefix can also come from the published package, without root.
+The package's `libmmt_*.so` links point to absolute `/opt/mmt/...` paths, so
+make them relative before linking against the prefix (`<dir>` absolute):
+
+```
+deb="$(bash tests/fetch_mmt_dpi_package.sh <download dir>)"
+dpkg-deb -x "$deb" <dir>
+for l in <dir>/opt/mmt/dpi/lib/*.so; do ln -sfn "$(basename "$(readlink "$l")")" "$l"; done
+MMT_BASE=<dir>/opt/mmt bash tests/check_ndn_plugin.sh
 ```
 
 It prints one `PASS:`/`FAIL:` line per check and exits non-zero on failure.

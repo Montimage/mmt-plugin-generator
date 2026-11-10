@@ -1,0 +1,46 @@
+Protocol {
+	Properties {
+		label = "pdl_alignment"
+		id = "973"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+			alias="a0" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="a1" data_type="MMT_U16_DATA" data_len="2" offset="0" scope="SCOPE_PACKET"
+		}
+		struct pdl_align_s {
+			uint8_t s0;
+			uint16_t s1;
+		}
+		if (val(a0) == 1) {
+			attribute {
+				alias="c_if" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
+			}
+		} else {
+			attribute {
+				alias="c_else" data_type="MMT_U16_DATA" data_len="2" offset="0" scope="SCOPE_PACKET"
+			}
+		}
+		if (val(a0) == 2) {
+			struct pdl_align_c {
+				uint8_t cs0;
+				uint8_t cs1;
+			}
+		}
+		attribute {
+			alias="a2" data_type="MMT_U8_DATA" data_len="1" offset="2" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="stop" data_type="MMT_U8_DATA" data_len="sizeof(char)" offset="3" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="lit" data_type="MMT_U8_DATA" data_len="1" offset="11" scope="SCOPE_PACKET"
+		}
+		struct pdl_align_t {
+			uint8_t t0;
+		}
+	}
+}

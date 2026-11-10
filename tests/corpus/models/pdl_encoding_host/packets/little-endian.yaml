@@ -1,0 +1,50 @@
+# Corpus packet pdl_encoding_host/little-endian. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_encoding_host/little-endian"
+model: "pdl_encoding_host"
+summary: "Host encoding: multi-byte values are read little-endian"
+constructs:
+  - "properties.encoding.host"
+  - "struct.type.uint16_t"
+  - "struct.type.uint32_t"
+  - "struct.type.mmt"
+  - "type.MMT_U64_DATA"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "34 12 78 56 34 12 f0 de bc 9a 78 56 34 12 7f"
+bytes_source: "model-declared: values packed little-endian"
+expect:
+  protocol: "PDL_HOST"
+  proto_id: 964
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "a16"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 4660
+      source: "corpus rule (README.md, Semantics): host order is little-endian"
+    - name: "a32"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 305419896
+      source: "corpus rule (README.md, Semantics): host order is little-endian"
+    - name: "a64"
+      type: "MMT_U64_DATA"
+      offset: 6
+      length: 8
+      value: 1311768467463790320
+      source: "corpus rule (README.md, Semantics): host order is little-endian; MMT_U64_DATA is 8 bytes in a struct"
+    - name: "a8"
+      type: "MMT_U8_DATA"
+      offset: 14
+      length: 1
+      value: 127
+      source: "model-declared: byte 14"

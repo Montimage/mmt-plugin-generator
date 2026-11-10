@@ -1,0 +1,53 @@
+# Corpus packet cpm/header. Format and rules: tests/corpus/README.md
+schema: 1
+id: "cpm/header"
+model: "cpm"
+summary: "CPM ItsPduHeader followed by six payload bytes"
+constructs:
+  - "attribute.full"
+  - "expr.sizeof.type"
+  - "type.MMT_U8_DATA"
+  - "type.MMT_U16_DATA"
+  - "type.MMT_U32_DATA"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP payload carrying an ITS PDU"
+  source: "plugins/cpm_plugin_src/cpm_mmt_plugin.c registers on UDP (hand-written); ETSI's own transport is BTP-B (ETSI EN 302 636-5-1)"
+bytes:
+  - "02 0e 00 0f 12 06 01 23 45 67 89 ab"
+bytes_source: "ETSI TS 103 324 V2.1.1: CollectivePerceptionMessage ::= SEQUENCE { header ItsPduHeader (protocolVersion (2), messageId(cpm)), payload CpmPayload }; bytes 6-11 are filler"
+expect:
+  protocol: "CPM"
+  proto_id: 701
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "protocolVersion"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "ETSI TS 102 894-2 V2.1.1 ItsPduHeader, UPER: protocolVersion OrdinalNumber1B, 8 bits at bit 0; TS 103 324 fixes it to 2"
+    - name: "messageID"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 14
+      source: "ETSI TS 102 894-2 V2.1.1 ItsPduHeader, UPER: messageId (0..255), 8 bits at bit 8; cpm(14)"
+    - name: "stationID"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 987654
+      source: "ETSI TS 102 894-2 V2.1.1 ItsPduHeader, UPER: StationId (0..4294967295), 32 bits at bit 16"
+    - name: "generationTime"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 291
+      source: "model-declared: in ETSI TS 103 324 V2.1.1 bytes 6-7 start the UPER CpmPayload (extension bits, then ManagementContainer.referenceTime, a 42-bit TimestampIts), not a 16-bit generation time"

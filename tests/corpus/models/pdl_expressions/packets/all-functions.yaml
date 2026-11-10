@@ -1,0 +1,128 @@
+# Corpus packet pdl_expressions/all-functions. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_expressions/all-functions"
+model: "pdl_expressions"
+summary: "Offsets and lengths built from every expression form"
+constructs:
+  - "expr.literal.decimal"
+  - "expr.literal.hex"
+  - "expr.add"
+  - "expr.sub"
+  - "expr.mul"
+  - "expr.div"
+  - "expr.parens"
+  - "expr.val"
+  - "expr.sizeof.type"
+  - "expr.sizeof.struct"
+  - "expr.sizeof.mmt"
+  - "expr.offset_fn"
+  - "expr.len_fn"
+  - "expr.ntohs"
+  - "expr.ntohl"
+  - "layout.align.stop"
+  - "attribute.full"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "06 02 00 0e aa bb c1 c2 c3 c4 d1 d2 d3 d4"
+bytes_source: "model-declared: hlen 6, count 2, total 14, then 10 data bytes"
+expect:
+  protocol: "PDL_EXPRESSIONS"
+  proto_id: 972
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 6
+      source: "model-declared: struct byte 0"
+    - name: "count"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct byte 1"
+    - name: "total"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 14
+      source: "model-declared: struct bytes 2-3"
+    - name: "body"
+      type: "MMT_BINARY_DATA"
+      offset: 6
+      length: 8
+      value: "c1 c2 c3 c4 d1 d2 d3 d4"
+      source: "model-declared expression: offset val(hlen) = 6, length val(total) - val(hlen) = 8 (inventory bug 5 folds this to -6); the first non-constant attribute, so alignment stops"
+    - name: "items"
+      type: "MMT_BINARY_DATA"
+      offset: 6
+      length: 4
+      value: "c1 c2 c3 c4"
+      source: "model-declared expression: offset val(hlen) = 6, length val(count) * 2 = 4"
+    - name: "half"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 194
+      source: "model-declared expression: offset val(total) / 2 = 7 (integer division)"
+    - name: "paren"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 49602
+      source: "model-declared expression: offset (val(count) + 1) * 2 = 6"
+    - name: "prec"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 170
+      source: "model-declared expression: offset val(count) + 1 * 2 = 4: * binds tighter than +"
+    - name: "hexoff"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 53714
+      source: "model-declared expression: offset 0x0A = 10, length sizeof(short) = 2"
+    - name: "sz_struct"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 43707
+      source: "model-declared expression: offset sizeof(struct pdl_expr_hdr) = 4"
+    - name: "sz_mmt"
+      type: "MMT_U16_DATA"
+      offset: 12
+      length: 2
+      value: 54228
+      source: "model-declared expression: length sizeof(MMT_U16_DATA) = 2, the PDL width of the type (inventory section 1, Data types)"
+    - name: "off_fn"
+      type: "MMT_U8_DATA"
+      offset: 11
+      length: 1
+      value: 210
+      source: "corpus rule (README.md, Semantics): offset(X) is attribute X's byte offset: offset(hexoff) + 1 = 11 (inventory bug 19)"
+    - name: "len_fn"
+      type: "MMT_U16_DATA"
+      offset: 9
+      length: 2
+      value: 50385
+      source: "corpus rule (README.md, Semantics): len(X) is attribute X's length: offset len(items) + 5 = 9, length len(hexoff) = 2"
+    - name: "sh"
+      type: "MMT_U8_DATA"
+      offset: 3
+      length: 1
+      value: 14
+      source: "corpus rule (README.md, Semantics): ntohs of a literal is evaluated on a little-endian host: ntohs(0x0300) = 3"
+    - name: "sl"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 187
+      source: "corpus rule (README.md, Semantics): ntohl(0x05000000) = 5 on a little-endian host"

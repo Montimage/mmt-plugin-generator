@@ -1,0 +1,97 @@
+# Corpus packet arp/request-ieee802. Format and rules: tests/corpus/README.md
+schema: 1
+id: "arp/request-ieee802"
+model: "arp"
+summary: "ARP request with hardware type 6 (IEEE 802): the else branch"
+constructs:
+  - "conditional.if_else"
+  - "expr.val"
+  - "expr.and"
+  - "expr.cmp.eq"
+  - "expr.sizeof.struct"
+  - "expr.add"
+  - "expr.mul"
+  - "attribute.full"
+  - "type.MMT_BINARY_DATA"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+  selector: "ethertype 0x0806"
+  source: "RFC 826 (ether_type$ADDRESS_RESOLUTION); plugins/arp_src registers under PROTO_ETHERNET"
+bytes:
+  - "00 06 08 00 06 04 00 01 00 00 5e 00 53 03 c0 00"
+  - "02 1e 00 00 00 00 00 00 c0 00 02 28"
+bytes_source: "RFC 826 Packet format; hardware type 6 = IEEE 802 Networks (IANA ARP Parameters, hardware types); hln 6, pln 4"
+expect:
+  protocol: "ARP"
+  proto_id: 30
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "ar_hrd"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 6
+      source: "RFC 826 Packet format: ar$hrd, 16 bits at byte 0"
+    - name: "ar_pro"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 2048
+      source: "RFC 826 Packet format: ar$pro, 16 bits at byte 2"
+    - name: "ar_hln"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 6
+      source: "RFC 826 Packet format: ar$hln, 8 bits at byte 4"
+    - name: "ar_pln"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 4
+      source: "RFC 826 Packet format: ar$pln, 8 bits at byte 5"
+    - name: "ar_op"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 1
+      source: "RFC 826 Packet format: ar$op, 16 bits at byte 6"
+    - name: "ar_sha"
+      type: "MMT_DATA_MAC_ADDR"
+      status: "absent"
+      source: "model-declared: if branch not taken (ar_hrd != 1)"
+    - name: "ar_sip"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "model-declared: if branch not taken (ar_hrd != 1)"
+    - name: "ar_tha"
+      type: "MMT_DATA_MAC_ADDR"
+      status: "absent"
+      source: "model-declared: if branch not taken (ar_hrd != 1)"
+    - name: "ar_tip"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "model-declared: if branch not taken (ar_hrd != 1)"
+    - name: "SRC_PROTO"
+      type: "MMT_BINARY_DATA"
+      offset: 14
+      length: 4
+      value: "c0 00 02 1e"
+      source: "RFC 826 ar$spa: offset sizeof(struct arphdr) + val(ar_hln) = 8 + 6, length val(ar_pln) = 4"
+    - name: "DST_HARD"
+      type: "MMT_BINARY_DATA"
+      offset: 18
+      length: 6
+      value: "00 00 00 00 00 00"
+      source: "RFC 826 ar$tha: offset 8 + val(ar_pln) + val(ar_hln) = 18, length val(ar_hln) = 6"
+    - name: "DST_PROTO"
+      type: "MMT_BINARY_DATA"
+      offset: 24
+      length: 4
+      value: "c0 00 02 28"
+      source: "RFC 826 ar$tpa: offset 8 + val(ar_pln) + 2*val(ar_hln) = 24, length val(ar_pln) = 4"
+note: "The else branch also redeclares ar_pro (the model's duplicate). Per RFC 826 it would be ar$sha: bytes 8-13 = 00 00 5e 00 53 03. It has no expected value because the model is invalid."

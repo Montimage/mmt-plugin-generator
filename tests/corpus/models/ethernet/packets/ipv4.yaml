@@ -1,0 +1,75 @@
+# Corpus packet ethernet/ipv4. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ethernet/ipv4"
+model: "ethernet"
+summary: "Ethernet II frame carrying an IPv4 header"
+constructs:
+  - "classifynext.switch"
+  - "classifynext.case.define"
+  - "classifynext.nextencaps.define"
+  - "classifynext.nextoffset"
+  - "expr.val"
+  - "expr.sizeof.struct"
+  - "define.hex"
+  - "define.decimal"
+  - "properties.encapsulation"
+  - "struct.type.mmt"
+parent:
+  kind: "link"
+  path: []
+  selector: "the bytes are a whole frame (pcap LINKTYPE_ETHERNET = 1, no FCS)"
+  source: "IEEE 802.3 clause 3.1.1 (MAC frame format)"
+bytes:
+  - "00 00 5e 00 53 0a 00 00 5e 00 53 0b 08 00 45 00"
+  - "00 14 00 01 40 00 40 3b b6 aa c0 00 02 01 c0 00"
+  - "02 02"
+bytes_source: "IEEE 802.3 clause 3.1.1 (destination, source, type); RFC 894 (type 0x0800); IPv4 header per RFC 791 section 3.1, protocol 59, no payload; addresses from RFC 5737; MACs from RFC 7042 section 2.1.2"
+expect:
+  protocol: "ETHERNET"
+  proto_id: 12
+  next:
+    kind: "proto"
+    proto_id: 15
+    offset: 14
+    source: "model-declared: case ETH_P_IP (0x0800) -> nextencaps PROTO_IP (define = 15), nextoffset sizeof(struct ethhdr) = 6 + 6 + 2"
+  attributes:
+    - name: "h_dest"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 0
+      length: 6
+      value: "00:00:5e:00:53:0a"
+      source: "IEEE 802.3 clause 3.1.1: destination address, bytes 0-5"
+    - name: "h_source"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 6
+      length: 6
+      value: "00:00:5e:00:53:0b"
+      source: "IEEE 802.3 clause 3.1.1: source address, bytes 6-11"
+    - name: "h_proto"
+      type: "MMT_U16_DATA"
+      offset: 12
+      length: 2
+      value: 2048
+      source: "IEEE 802.3 clause 3.1.1: Length/Type field, bytes 12-13"
+    - name: "src"
+      type: "MMT_DATA_MAC_ADDR"
+      status: "undefined"
+      reason: "data_len sizeof (mac_addr_t) does not parse"
+      spec:
+        offset: 6
+        length: 6
+        value: "00:00:5e:00:53:0b"
+        byte_order: "none"
+        source: "IEEE 802.3 clause 3.1.1: source address at byte 6 (the model declares offset 0)"
+      source: "IEEE 802.3 clause 3.2.4: the source address is the second address field"
+    - name: "dst"
+      type: "MMT_DATA_MAC_ADDR"
+      status: "undefined"
+      reason: "data_len sizeof (mac_addr_t) does not parse"
+      spec:
+        offset: 0
+        length: 6
+        value: "00:00:5e:00:53:0a"
+        byte_order: "none"
+        source: "IEEE 802.3 clause 3.1.1: destination address at byte 0 (the model declares offset 2)"
+      source: "IEEE 802.3 clause 3.2.3: the destination address is the first address field"

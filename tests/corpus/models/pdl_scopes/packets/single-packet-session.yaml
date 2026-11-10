@@ -1,0 +1,62 @@
+# Corpus packet pdl_scopes/single-packet-session. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_scopes/single-packet-session"
+model: "pdl_scopes"
+summary: "The four scope spellings and an omitted scope, on a one-packet session"
+constructs:
+  - "scope.SCOPE_PACKET"
+  - "scope.packet"
+  - "scope.SCOPE_SESSION"
+  - "scope.session"
+  - "attribute.no_scope"
+  - "properties.session"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "0a 0b 12 34 56 78 0c"
+bytes_source: "model-declared: seven bytes"
+expect:
+  protocol: "PDL_SCOPES"
+  proto_id: 970
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "s_packet_upper"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 10
+      scope: "packet"
+      source: "model-declared: byte 0"
+    - name: "s_packet_lower"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 11
+      scope: "packet"
+      source: "model-declared: byte 1; packet is an alias of SCOPE_PACKET"
+    - name: "s_session_upper"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 4660
+      scope: "session"
+      source: "corpus rule (README.md, Semantics): a session attribute on a one-packet session holds that packet's value"
+    - name: "s_session_lower"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 22136
+      scope: "session"
+      source: "corpus rule (README.md, Semantics): session is an alias of SCOPE_SESSION"
+    - name: "s_default"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 1
+      value: 12
+      scope: "packet"
+      source: "corpus rule (README.md, Semantics): an omitted scope means SCOPE_PACKET"

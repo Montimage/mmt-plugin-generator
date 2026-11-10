@@ -1,0 +1,40 @@
+# Corpus packet cotp/cr. Format and rules: tests/corpus/README.md
+schema: 1
+id: "cotp/cr"
+model: "cotp"
+summary: "COTP CR TPDU (class 0) with calling/called TSAP and TPDU size"
+constructs:
+  - "struct.plain"
+  - "struct.type.uint8_t"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+    - "tpkt"
+  selector: "the TPDU carried by a TPKT"
+  source: "RFC 1006 section 6; plugins/cotp registers under PROTO_TPKT"
+bytes:
+  - "11 e0 00 00 00 01 00 c1 02 01 00 c2 02 01 02 c0"
+  - "01 0a"
+bytes_source: "RFC 905 section 13.3 (CR TPDU: LI, CR code 1110 and CDT 0000, DST-REF 0, SRC-REF 1, class 0; parameters c1 calling TSAP, c2 called TSAP, c0 TPDU size)"
+expect:
+  protocol: "COTP"
+  proto_id: 637
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "length"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 17
+      source: "RFC 905 section 13.2.1: LI = header length excluding the LI octet (6 fixed + 11 parameter octets)"
+    - name: "pdu_type"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 224
+      source: "RFC 905 section 13.2.2.2 and Table 8: CR = 1110 xxxx, here CDT 0"

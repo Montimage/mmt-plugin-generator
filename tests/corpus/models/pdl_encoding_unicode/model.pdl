@@ -1,0 +1,15 @@
+Protocol {
+	Properties {
+		label = "pdl_unicode"
+		id = "966"
+		encoding = "UNICODE"
+	}
+	Attributes {
+		attribute {
+			alias="first" data_type="MMT_U8_DATA" data_len="sizeof(char)" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="text" data_type="MMT_STRING_DATA" data_len="6" offset="1" scope="SCOPE_PACKET"
+		}
+	}
+}

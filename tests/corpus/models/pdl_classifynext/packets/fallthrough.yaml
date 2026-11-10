@@ -1,0 +1,43 @@
+# Corpus packet pdl_classifynext/fallthrough. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_classifynext/fallthrough"
+model: "pdl_classifynext"
+summary: "type 3: case without break falls through to case 4"
+constructs:
+  - "classifynext.fallthrough"
+  - "expr.mul"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "03 03 00 10 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 aa ab"
+bytes_source: "model-declared: struct pdl_cn_hdr then filler bytes"
+expect:
+  protocol: "PDL_CLASSIFYNEXT"
+  proto_id: 961
+  next:
+    kind: "proto"
+    proto_id: 957
+    offset: 12
+    source: "model-declared: case 3 sets nextencaps 957 and has no break, so it falls into case 4: nextoffset val(hlen) * 4 = 12"
+  attributes:
+    - name: "type"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 3
+      source: "model-declared: struct pdl_cn_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 3
+      source: "model-declared: struct pdl_cn_hdr byte 1"
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 16
+      source: "model-declared: struct pdl_cn_hdr bytes 2-3"

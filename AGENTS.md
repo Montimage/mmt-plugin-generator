@@ -14,14 +14,18 @@ protocol model. A Python rewrite is planned in
   16 models (abb, cotp, s7com, tpkt) produce code that compiles against
   mmt-dpi 1.10.2.
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
-- `tests/check_ndn_plugin.sh`: the only automated check (build and load the
-  NDN example).
+- `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
+- `tests/corpus/`: the test corpus (T0.4): every `plugins/` model plus
+  targeted per-construct models, each with packet fixtures whose expected
+  values come from the protocol specs. `tests/corpus/README.md` defines the
+  format and the extraction rules; `tests/corpus/validate.py` checks it.
 - `tests/fetch_mmt_dpi_package.sh`: downloads a published mmt-dpi package
   from its GitHub Release and verifies it (pinned `SHA256SUMS` hash, then
   `SHA256SUMS` and `manifest.json`); it never installs.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
-  Runs shellcheck on every tracked `*.sh`, and `check_ndn_plugin.sh` against
-  the mmt-dpi v1.10.2 ubuntu-24.04 `.deb` (amd64 and arm64).
+  Runs shellcheck on every tracked `*.sh`, the corpus validator, and
+  `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
+  (amd64 and arm64).
 
 ## Commands
 
@@ -55,6 +59,14 @@ MMT_BASE=<dir>/opt/mmt bash tests/check_ndn_plugin.sh
 
 It prints one `PASS:`/`FAIL:` line per check and exits non-zero on failure.
 Always set `MMT_BASE`: the script defaults to `/opt/mmt`.
+
+Check the test corpus (Python 3.8+, no dependencies). Run it after any change
+under `tests/corpus/` or to a `plugins/*_plugin` model, since the corpus holds
+byte-identical copies of those models:
+
+```
+python3 tests/corpus/validate.py
+```
 
 ## Rules
 

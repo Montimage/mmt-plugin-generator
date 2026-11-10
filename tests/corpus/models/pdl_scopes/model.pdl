@@ -1,0 +1,25 @@
+Protocol {
+	Properties {
+		label = "pdl_scopes"
+		id = "970"
+		session = "true"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+			alias="s_packet_upper" data_type="MMT_U8_DATA" data_len="sizeof(char)" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="s_packet_lower" data_type="MMT_U8_DATA" data_len="1" offset="1" scope="packet"
+		}
+		attribute {
+			alias="s_session_upper" data_type="MMT_U16_DATA" data_len="2" offset="2" scope="SCOPE_SESSION"
+		}
+		attribute {
+			alias="s_session_lower" data_type="MMT_U16_DATA" data_len="2" offset="4" scope="session"
+		}
+		attribute {
+			alias="s_default" data_type="MMT_U8_DATA" data_len="1" offset="6"
+		}
+	}
+}

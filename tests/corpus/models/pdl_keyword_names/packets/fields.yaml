@@ -1,0 +1,65 @@
+# Corpus packet pdl_keyword_names/fields. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_keyword_names/fields"
+model: "pdl_keyword_names"
+summary: "Struct fields named after PDL keywords"
+constructs:
+  - "lexical.keyword_names"
+  - "struct.multi_name"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "01 02 00 03 04 05 06 07"
+bytes_source: "model-declared: eight bytes"
+expect:
+  protocol: "PDL_KEYWORDS"
+  proto_id: 974
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "id"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "model-declared: byte 0"
+    - name: "len"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: byte 1"
+    - name: "offset"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 3
+      source: "model-declared: bytes 2-3"
+    - name: "label"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 4
+      source: "model-declared: byte 4"
+    - name: "session"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 5
+      source: "model-declared: byte 5"
+    - name: "packet"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 1
+      value: 6
+      source: "model-declared: byte 6"
+    - name: "val"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 7
+      source: "model-declared: byte 7"

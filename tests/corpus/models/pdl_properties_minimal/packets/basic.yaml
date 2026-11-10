@@ -1,0 +1,45 @@
+# Corpus packet pdl_properties_minimal/basic. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_properties_minimal/basic"
+model: "pdl_properties_minimal"
+summary: "Only label and id: every optional key takes its default"
+constructs:
+  - "properties.optional_omitted"
+  - "properties.encoding.default"
+  - "layout.align.plain"
+  - "layout.align.struct"
+  - "type.MMT_BINARY_DATA"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "01 07 de ad be ef"
+bytes_source: "model-declared: version, code, 4 payload bytes"
+expect:
+  protocol: "PDL_PROPS_MIN"
+  proto_id: 963
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation defaults to false"
+  attributes:
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "model-declared: byte 0"
+    - name: "code"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 7
+      source: "model-declared: byte 1"
+    - name: "payload"
+      type: "MMT_BINARY_DATA"
+      offset: 2
+      length: 4
+      value: "de ad be ef"
+      source: "corpus rule (README.md, Semantics): aligned plain attribute: running offset 2 (after the struct) + declared offset 0"
+note: "With encoding omitted only single-byte and byte-copy types are used, so the values do not depend on byte order."

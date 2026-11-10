@@ -1,0 +1,59 @@
+Protocol {
+    
+    define ETH_P_IP = 0x0800
+    define ETH_P_ARP = 0x0806
+    define ETH_P_IPV6 = 0x86DD
+    define ETH_P_RARP = 0x8035
+    define PROTO_ARP = 11
+    define PROTO_IP = 15
+    define PROTO_IP6 = 16
+    
+    Properties {
+        label = "ETHERNET"
+        id = "12"
+        context = "false"
+        session = "false"
+        encapsulation = "true"
+        encoding = "network"
+    }
+    
+    Attributes {
+        struct ethhdr {
+            MMT_DATA_MAC_ADDR h_dest;
+            MMT_DATA_MAC_ADDR h_source;
+            uint16_t h_proto;
+        }
+        attribute {
+            alias="src" data_type="MMT_DATA_MAC_ADDR" data_len="sizeof (mac_addr_t)" 
+            offset="0" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="dst" data_type="MMT_DATA_MAC_ADDR" data_len="sizeof (mac_addr_t)" 
+            offset="2" scope="SCOPE_PACKET"
+        }
+    }
+    
+    classifynext {
+        switch(val(h_proto)) {
+            case ETH_P_IP: 
+                nextencaps = PROTO_IP
+                nextoffset = sizeof(struct ethhdr)
+                break
+            case ETH_P_ARP:
+                nextencaps = PROTO_ARP
+                nextoffset = sizeof(struct ethhdr)
+                break
+            case ETH_P_IPV6:
+                nextencaps = PROTO_IP6
+                nextoffset = sizeof(struct ethhdr)
+                break
+            case ETH_P_RARP:
+                nextencaps = PROTO_ARP
+                nextoffset = sizeof(struct ethhdr)
+                break
+            default:
+                break
+        }
+    }
+}
+

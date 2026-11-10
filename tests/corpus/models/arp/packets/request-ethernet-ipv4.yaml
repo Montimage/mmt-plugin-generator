@@ -1,0 +1,104 @@
+# Corpus packet arp/request-ethernet-ipv4. Format and rules: tests/corpus/README.md
+schema: 1
+id: "arp/request-ethernet-ipv4"
+model: "arp"
+summary: "ARP request, Ethernet hardware, IPv4 protocol: the if branch"
+constructs:
+  - "struct.multi_name"
+  - "struct.type.unsigned"
+  - "struct.type.short"
+  - "struct.type.char"
+  - "struct.type.int"
+  - "struct.type.mmt"
+  - "conditional.if_else"
+  - "conditional.struct"
+  - "expr.val"
+  - "expr.and"
+  - "expr.cmp.eq"
+  - "expr.literal.hex"
+  - "type.MMT_DATA_MAC_ADDR"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+  selector: "ethertype 0x0806"
+  source: "RFC 826 (ether_type$ADDRESS_RESOLUTION); plugins/arp_src registers under PROTO_ETHERNET"
+bytes:
+  - "00 01 08 00 06 04 00 01 00 00 5e 00 53 01 c0 00"
+  - "02 0a 00 00 00 00 00 00 c0 00 02 01"
+bytes_source: "RFC 826 Packet format; ares_hrd$Ethernet = 1, ar$pro 0x0800 (IPv4, RFC 894), ares_op$REQUEST = 1; MAC from RFC 7042 section 2.1.2, IPv4 from RFC 5737"
+expect:
+  protocol: "ARP"
+  proto_id: 30
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "ar_hrd"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 1
+      source: "RFC 826 Packet format: ar$hrd, 16 bits at byte 0"
+    - name: "ar_pro"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 2048
+      source: "RFC 826 Packet format: ar$pro, 16 bits at byte 2"
+    - name: "ar_hln"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 6
+      source: "RFC 826 Packet format: ar$hln, 8 bits at byte 4"
+    - name: "ar_pln"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 4
+      source: "RFC 826 Packet format: ar$pln, 8 bits at byte 5"
+    - name: "ar_op"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 1
+      source: "RFC 826 Packet format: ar$op, 16 bits at byte 6"
+    - name: "ar_sha"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 8
+      length: 6
+      value: "00:00:5e:00:53:01"
+      source: "RFC 826 Packet format: ar$sha at byte 8 (hln = 6)"
+    - name: "ar_sip"
+      type: "MMT_U32_DATA"
+      offset: 14
+      length: 4
+      value: 3221225994
+      note: "192.0.2.10 as a 32-bit integer"
+      source: "RFC 826 Packet format: ar$spa at byte 8 + hln = 14; the model types it int, so it reads as a network-order U32"
+    - name: "ar_tha"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 18
+      length: 6
+      value: "00:00:00:00:00:00"
+      source: "RFC 826 Packet format: ar$tha at byte 8 + hln + pln = 18"
+    - name: "ar_tip"
+      type: "MMT_U32_DATA"
+      offset: 24
+      length: 4
+      value: 3221225985
+      note: "192.0.2.1 as a 32-bit integer"
+      source: "RFC 826 Packet format: ar$tpa at byte 8 + 2*hln + pln = 24"
+    - name: "SRC_PROTO"
+      type: "MMT_BINARY_DATA"
+      status: "absent"
+      source: "model-declared: else branch not taken"
+    - name: "DST_HARD"
+      type: "MMT_BINARY_DATA"
+      status: "absent"
+      source: "model-declared: else branch not taken"
+    - name: "DST_PROTO"
+      type: "MMT_BINARY_DATA"
+      status: "absent"
+      source: "model-declared: else branch not taken"

@@ -1,0 +1,66 @@
+# Corpus packet s7com/setup-communication-ack. Format and rules: tests/corpus/README.md
+schema: 1
+id: "s7com/setup-communication-ack"
+model: "s7com"
+summary: "S7comm Ack_Data for Setup communication (PDU length 240)"
+constructs:
+  - "struct.plain"
+  - "struct.type.uint8_t"
+  - "struct.type.uint16_t"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+    - "tpkt"
+    - "cotp"
+  selector: "the user data of a COTP DT TPDU"
+  source: "plugins/s7comm/s7comm_mmt_plugin.c registers under PROTO_COTP"
+bytes:
+  - "32 03 00 00 04 00 00 08 00 00 00 00 f0 00 00 01"
+  - "00 01 00 f0"
+bytes_source: "de-facto (Wireshark packet-s7comm.c header): 12-byte Ack_Data header (adds error class and code, both 0, which the model does not read), then the Setup communication parameter with PDU length 240"
+expect:
+  protocol: "S7COMM"
+  proto_id: 638
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "proto_id"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 50
+      source: "de-facto (Wireshark packet-s7comm.c header): protocol id 0x32, byte 0"
+    - name: "rosctr"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 3
+      source: "de-facto (Wireshark packet-s7comm.c header): ROSCTR, byte 1 (1 = Job, 3 = Ack_Data)"
+    - name: "reserved"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 0
+      source: "de-facto (Wireshark packet-s7comm.c header): redundancy identification (reserved), bytes 2-3"
+    - name: "pdur"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 1024
+      source: "de-facto (Wireshark packet-s7comm.c header): PDU reference, bytes 4-5"
+    - name: "param_length"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 8
+      source: "de-facto (Wireshark packet-s7comm.c header): parameter length, bytes 6-7"
+    - name: "data_length"
+      type: "MMT_U16_DATA"
+      offset: 8
+      length: 2
+      value: 0
+      source: "de-facto (Wireshark packet-s7comm.c header): data length, bytes 8-9"

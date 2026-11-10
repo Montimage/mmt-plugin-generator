@@ -1,0 +1,133 @@
+Protocol {
+	Properties {
+		label = "RADIUS"
+		id = "11"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct radiushdr {
+			uint8_t code;
+			uint8_t rid;
+			uint16_t rlen;
+		}
+		
+		attribute {
+			alias="authenticator" data_type="MMT_BINARY_DATA" data_len="16" 
+			offset="sizeof(struct radiushdr)" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="User_Name" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="User_Password" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="CHAP_Password" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_IP_Address" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_Port" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Service_Type" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_Protocol" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_IP_Address" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_IP_Netmask" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_MTU" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Callback_Number" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Callback_Id" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="State" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Class" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Session_Timeout" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Idle_Timeout" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Called_Station_Id" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Calling_Station_Id" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_Identifier" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Status_Type" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Delay_Time" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Input_Octets" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Output_Octets" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Session_Id" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Authentic" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Session_Time" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Input_Packets" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Output_Packets" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Acct_Terminate_Cause" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Event_Timestamp" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_Port_Type" data_type="MMT_U32_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Message_Authenticator" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_Port_Id" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="NAS_IPv6_Address" data_type="MMT_DATA_IP6_ADDR" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_Interface_Id" data_type="MMT_DATA_IP6_ADDR" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_IPv6_Prefix" data_type="MMT_DATA_IP6_ADDR" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="Framed_IPv6_Pool" data_type="MMT_BINARY_DATA" scope="SCOPE_PACKET"
+		}
+	}
+}

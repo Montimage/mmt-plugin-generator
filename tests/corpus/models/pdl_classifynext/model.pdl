@@ -1,0 +1,36 @@
+Protocol {
+	Properties {
+		label = "pdl_classifynext"
+		id = "961"
+		encapsulation = "true"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_cn_hdr {
+			uint8_t type;
+			uint8_t hlen;
+			uint16_t length;
+		}
+	}
+	classifynext {
+		switch(val(type)) {
+			case 1:
+				nextencaps = 955
+				nextoffset = 4
+				break
+			case 0x02:
+				nextencaps = 0x3BC
+				nextoffset = sizeof(struct pdl_cn_hdr)
+				break
+			case 3:
+				nextencaps = 957
+			case 4:
+				nextoffset = val(hlen) * 4
+				break
+			default:
+				nextencaps = 959
+				nextoffset = val(length) - 2
+				break
+		}
+	}
+}

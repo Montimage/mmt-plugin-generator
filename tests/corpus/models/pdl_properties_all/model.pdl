@@ -1,0 +1,17 @@
+Protocol {
+	Properties {
+		label = "Pdl_Props_All"
+		id = "962"
+		context = "true"
+		session_context = "true"
+		session = "true"
+		encapsulation = "true"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_props_hdr {
+			uint16_t flags;
+			uint32_t token;
+		}
+	}
+}

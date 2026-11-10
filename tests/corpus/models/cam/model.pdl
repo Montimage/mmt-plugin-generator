@@ -1,0 +1,64 @@
+Protocol {
+	Properties {
+		label = "CAM"
+		id = "700"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+        attribute {
+            alias="protocolVersion" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="0" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="messageID" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="1" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="stationID" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="2" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="generationTime" data_type="MMT_U16_DATA" data_len="sizeof(short)"
+            offset="6" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="mobileItsStation" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="10" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="privateItsStation" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="10" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="physicalRelevantItsStation" data_type="MMT_U8_DATA" data_len="sizeof(char)"
+            offset="10" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="longitude_hem" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="11" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="longitude_deg" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="11" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="latitude_hem" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="15" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="latitude_deg" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="15" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="elevation" data_type="MMT_U32_DATA" data_len="sizeof(int)"
+            offset="19" scope="SCOPE_PACKET"
+        }
+        attribute {
+            alias="direction" data_type="MMT_U16_DATA" data_len="sizeof(short)"
+            offset="22" scope="SCOPE_PACKET"
+        }
+	}
+}

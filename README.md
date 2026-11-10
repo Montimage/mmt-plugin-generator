@@ -38,7 +38,8 @@ export LD_LIBRARY_PATH=$HOME/mmt/dpi/lib
 
 The same `MMT_BASE` must be given to both commands: it is compiled into the
 library as the default plugin directory (`$MMT_BASE/plugins`). Below,
-`<prefix>` is `/opt/mmt` or your private prefix.
+`<prefix>` is `/opt/mmt` or your private prefix, always as an absolute
+path (mmt-dpi refuses a relative `MMT_BASE`).
 
 ## Generate plugin code
 
@@ -83,8 +84,9 @@ that is unique (names are compared case-insensitively). A duplicate id makes
 `init_extraction()` fail; a duplicate name is silently ignored. mmt-dpi 1.10.x
 registers many more protocols than older releases, so the ids used in the
 QUIC walkthrough below (630) and in several `plugins/` models now collide
-with built-in protocols: check `<prefix>/dpi/include/*/*_protocols.h` and
-choose a free id.
+with built-in protocols. List the ids already taken with
+`grep -rhE '#define PROTO_[A-Z0-9_]+ +[0-9]+' <prefix>/dpi/include` and
+choose a free one.
 
 ## NDN example and the built-in NDN dissector
 
@@ -115,7 +117,10 @@ removed macros, then loads it next to `libmmt_tcpip.so` (through a temporary
 
 Verified with gcc 13.3 on Linux aarch64 against mmt-dpi `main` at commit
 9ea989d7 (version 1.10.2) installed into a private prefix. The other plugin
-sources under `plugins/` were not changed and are not covered by this check.
+sources under `plugins/` are not covered by this check (only comments in
+three of them were updated for the new logger names); several of them do not
+build against mmt-dpi 1.10.x, mostly because they redeclare protocols that
+mmt-dpi now ships.
 
 ## Example
 

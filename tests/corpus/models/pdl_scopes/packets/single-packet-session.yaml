@@ -2,13 +2,15 @@
 schema: 1
 id: "pdl_scopes/single-packet-session"
 model: "pdl_scopes"
-summary: "The four scope spellings and an omitted scope, on a one-packet session"
+summary: "The four scope spellings, an omitted scope, an omitted data_len and an omitted offset, on a one-packet session"
 constructs:
   - "scope.SCOPE_PACKET"
   - "scope.packet"
   - "scope.SCOPE_SESSION"
   - "scope.session"
   - "attribute.no_scope"
+  - "attribute.no_data_len"
+  - "attribute.no_offset"
   - "properties.session"
 parent:
   kind: "none"
@@ -16,8 +18,8 @@ parent:
   selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
   source: "corpus rule (README.md, Parent)"
 bytes:
-  - "0a 0b 12 34 56 78 0c"
-bytes_source: "model-declared: seven bytes"
+  - "0a 0b 12 34 56 78 0c 9a bc"
+bytes_source: "model-declared: nine bytes"
 expect:
   protocol: "PDL_SCOPES"
   proto_id: 970
@@ -60,3 +62,15 @@ expect:
       value: 12
       scope: "packet"
       source: "corpus rule (README.md, Semantics): an omitted scope means SCOPE_PACKET"
+    - name: "no_len"
+      type: "MMT_U16_DATA"
+      offset: 7
+      length: 2
+      value: 39612
+      scope: "packet"
+      source: "corpus rule (README.md, Semantics): an omitted data_len on a fixed-width type means the type's width (2 for MMT_U16_DATA)"
+    - name: "no_off"
+      type: "MMT_U8_DATA"
+      status: "undefined"
+      reason: "no offset: the position is a user hook"
+      source: "corpus rule (README.md, Semantics): an attribute without offset is a user-hook extraction"

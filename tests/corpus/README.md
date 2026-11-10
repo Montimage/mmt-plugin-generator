@@ -59,8 +59,9 @@ There are two kinds of model:
     checks) accepts the model. `invalid_reason` says why not.
   - `java`: what the legacy tool does with it. For examples this is the
     inventory section 4 outcome: `compiles`, `compile-fail`,
-    `syntax-errors` or `no-output`. Targeted models were only parsed:
-    `parses` (output written, no syntax error) or `syntax-errors`.
+    `syntax-errors` (output written despite syntax errors) or `no-output`.
+    Targeted models were only parsed: `parses` (output written, no syntax
+    error) or `no-output`.
   - `spec`: the specification the fixtures follow, or "model-declared".
   - `notes`: where the model and the spec disagree.
   - `packets`: the packet stems under `packets/`.
@@ -99,7 +100,7 @@ Model status:
 | `pdl_conditionals` | targeted | yes | parses | 5 |
 | `pdl_expressions` | targeted | yes | parses | 1 |
 | `pdl_alignment` | targeted | yes | parses | 2 |
-| `pdl_keyword_names` | targeted | yes | syntax-errors | 1 |
+| `pdl_keyword_names` | targeted | yes | no-output | 1 |
 
 The invalid examples:
 
@@ -208,6 +209,10 @@ restate inventory section 1 without the Java bugs. Sources that say
   `MMT_DATA_IP6_ADDR` 16, `MMT_U64_DATA` 8. All struct integer types are
   unsigned. A `T*` field reads as `MMT_DATA_POINTER`. A `struct X` field
   covers `sizeof(struct X)` bytes and reads as `MMT_BINARY_DATA` (bug 8).
+  The grammar's widths for the other `MMT_*` types are SDK struct sizes
+  (`MMT_BINARY_DATA` 68, `MMT_DATA_PATH` 68) or 0, not wire sizes, so the
+  corpus never puts them in a struct or in `sizeof`. `sizeof(MMT_U16_DATA)`
+  is 2.
 - **Bitfields.** A run of bitfields fills one storage unit of its declared
   type. Fields are numbered from the most significant bit, in declaration
   order, of the unit read in the model's byte order: the order protocol
@@ -221,10 +226,12 @@ restate inventory section 1 without the Java bugs. Sources that say
     and R grows by its length.
   - A struct adds R to each field's offset, and R grows by the struct size.
   - The first attribute that is not constant (or has no offset or length)
-    turns alignment off for good. From then on every offset is literal,
-    including a struct's in-struct offsets.
-  - After `if/else`, R is the else branch's R; after an `if` without
-    `else`, R is the R from before the `if`.
+    turns alignment off. From then on every offset is literal, including a
+    struct's in-struct offsets.
+  - After `if/else`, R and the alignment state are the else branch's; after
+    an `if` without `else`, they are the ones from before the `if`. So a
+    non-constant attribute inside an if branch turns alignment off only
+    inside that branch (no fixture depends on this yet).
   - `pdl_alignment` exercises each rule; most other models start with a
     non-constant attribute so that their offsets are literal.
 - **Expressions.** Integer arithmetic with C precedence and truncating
@@ -241,8 +248,11 @@ restate inventory section 1 without the Java bugs. Sources that say
   `SCOPE_SESSION`. An omitted scope means `SCOPE_PACKET` (bug 9). Session
   attributes are checked on a one-packet session, so they hold that packet's
   value.
-- **Attributes without `offset` and `data_len`** are user hooks: they are
-  `undefined` in the fixtures (radius).
+- **Omitted `offset` or `data_len`.** An attribute without `offset` is a
+  user hook: it is `undefined` in the fixtures (radius, `pdl_scopes`
+  `no_off`). An attribute without `data_len` but with an offset has the
+  width of its fixed-width type (`pdl_scopes` `no_len`). Either one stops
+  alignment.
 - **classifynext.** C `switch` semantics: a case without `break` falls
   through. `nextencaps` sets the next protocol and marks it classified;
   `nextoffset` sets its offset. A case that sets no `nextencaps` classifies
@@ -253,10 +263,18 @@ restate inventory section 1 without the Java bugs. Sources that say
   (inventory section 1, Properties).
 
 Rules the inventory does not settle, which the corpus fixes and T1.2/T1.3
-should confirm: the omitted-scope default, `host` meaning little-endian,
-the `struct X` field type, `T*` fields as pointers into the packet,
-`offset()`/`len()`, `ntohs`/`ntohl` of literals, and literal in-struct
-offsets after alignment stops.
+should confirm:
+
+- bitfields numbered from the most significant bit (C compilers on
+  little-endian targets number them from the least significant bit; the
+  dns, ip, tcp and topo_ind_sch values depend on this);
+- the omitted-scope default, and the width of an omitted `data_len`;
+- `host` meaning little-endian;
+- the `struct X` field type, and `T*` fields as pointers into the packet;
+- `offset()`/`len()`, and `ntohs`/`ntohl` of literals;
+- literal in-struct offsets after alignment stops;
+- keyword field names that are also C keywords (`sizeof`, `int`, `char` in
+  `pdl_keyword_names`) need renaming in the generated C.
 
 ## Sources
 

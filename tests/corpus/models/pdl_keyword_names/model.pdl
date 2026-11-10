@@ -11,6 +11,8 @@ Protocol {
 			uint16_t offset;
 			uint8_t label, session, packet;
 			uint8_t val;
+			uint8_t sizeof, int, char;
+			uint8_t AND, OR;
 		}
 	}
 }

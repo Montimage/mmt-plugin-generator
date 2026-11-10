@@ -21,5 +21,11 @@ Protocol {
 		attribute {
 			alias="s_default" data_type="MMT_U8_DATA" data_len="1" offset="6"
 		}
+		attribute {
+			alias="no_len" data_type="MMT_U16_DATA" offset="7" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="no_off" data_type="MMT_U8_DATA" data_len="1" scope="SCOPE_PACKET"
+		}
 	}
 }

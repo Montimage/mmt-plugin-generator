@@ -6,7 +6,7 @@ inventory: "Java generator behaviour inventory, Montimage/mmt-plugin-generator#3
 constructs:
   - id: "lexical.keyword_names"
     inventory: "section 1, Top level"
-    summary: "a field named after a PDL keyword (id, len, offset, val, label, session, packet); the Java lexer rejects it"
+    summary: "a field named after a PDL keyword (id, len, offset, val, sizeof, label, session, packet, int, char, AND, OR); the Java lexer rejects it"
     covered_by:
       - "ip/fragment-mf"
       - "ip/udp-df"
@@ -297,6 +297,16 @@ constructs:
   - id: "attribute.no_scope"
     inventory: "section 1, Attributes: attribute"
     summary: "attribute without scope (inventory bug 9)"
+    covered_by:
+      - "pdl_scopes/single-packet-session"
+  - id: "attribute.no_data_len"
+    inventory: "section 1, Attributes: attribute"
+    summary: "attribute without data_len (inventory bug 9)"
+    covered_by:
+      - "pdl_scopes/single-packet-session"
+  - id: "attribute.no_offset"
+    inventory: "section 1, Attributes: attribute"
+    summary: "attribute without offset: a user-hook extraction (inventory bug 9)"
     covered_by:
       - "pdl_scopes/single-packet-session"
   - id: "scope.SCOPE_PACKET"
@@ -879,7 +889,7 @@ models:
     valid: false
     invalid_reason: "sizeof (mac_addr_t) is not a PDL type: the src and dst attributes do not parse (inventory section 4: Java recovers and emits sizeof(null))"
     java: "syntax-errors"
-    spec: "IEEE 802.3 clause 3 (MAC frame); RFC 894 (IPv4 ethertype 0x0800); RFC 826 (0x0806); RFC 903 (RARP 0x8035); RFC 8200 / IEEE ethertype 0x86DD; IEEE 802.1AB (LLDP 0x88CC)"
+    spec: "IEEE 802.3 clause 3.1.1 (MAC frame); RFC 894 (IPv4, 0x0800); RFC 2464 (IPv6, 0x86DD); IANA IEEE 802 Numbers registry (ARP 0x0806, RARP 0x8035, LLDP 0x88CC)"
     notes: "PROTO_IP = 15, PROTO_ARP = 11 and PROTO_IP6 = 16 are the model's own defines, not mmt-dpi ids. The struct ethhdr fields and the classifynext switch are valid and keep their expected values."
     packets:
       - "ipv4"
@@ -1135,8 +1145,8 @@ models:
     model: "models/pdl_keyword_names/model.pdl"
     encoding: "network"
     valid: true
-    java: "syntax-errors"
+    java: "no-output"
     spec: "model-declared (targeted model)"
-    notes: "The Java grammar rejects these field names (global keywords); T1.2 makes keywords contextual."
+    notes: "Every keyword inventory section 1 lists as unusable as a name. The Java grammar rejects them (global keywords); T1.2 makes keywords contextual. sizeof, int and char are also C keywords, so generated C must rename those fields."
     packets:
       - "fields"

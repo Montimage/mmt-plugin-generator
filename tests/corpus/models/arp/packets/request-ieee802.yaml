@@ -18,7 +18,7 @@ parent:
   path:
     - "ethernet"
   selector: "ethertype 0x0806"
-  source: "RFC 826 (ether_type$ADDRESS_RESOLUTION); plugins/arp_src registers under PROTO_ETHERNET"
+  source: "IANA IEEE 802 Numbers registry (EtherType 0x0806 = ARP); plugins/arp_src registers under PROTO_ETHERNET"
 bytes:
   - "00 06 08 00 06 04 00 01 00 00 5e 00 53 03 c0 00"
   - "02 1e 00 00 00 00 00 00 c0 00 02 28"

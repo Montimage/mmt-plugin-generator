@@ -59,7 +59,7 @@ expect:
       offset: 6
       length: 8
       value: "c1 c2 c3 c4 d1 d2 d3 d4"
-      source: "model-declared expression: offset val(hlen) = 6, length val(total) - val(hlen) = 8 (inventory bug 5 folds this to -6); the first non-constant attribute, so alignment stops"
+      source: "model-declared expression: offset val(hlen) = 6, length val(total) - val(hlen) = 8; the first non-constant attribute, so alignment stops"
     - name: "items"
       type: "MMT_BINARY_DATA"
       offset: 6

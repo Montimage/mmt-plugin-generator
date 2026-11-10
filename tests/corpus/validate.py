@@ -63,6 +63,7 @@ REQUIRED_CONSTRUCTS = (
     "struct.type.pointer", "struct.type.mmt", "struct.type.nested",
     # Attributes: attribute
     "attribute.full", "attribute.no_offset_len", "attribute.no_scope",
+    "attribute.no_data_len", "attribute.no_offset",
     # Scopes
     "scope.SCOPE_PACKET", "scope.packet", "scope.SCOPE_SESSION",
     "scope.session",
@@ -342,7 +343,9 @@ def _decode(rep, where, typ, data, order, value, offset):
         if value != offset:
             rep.err(where, "a pointer value is the offset it points at")
     else:
-        if not isinstance(value, str) or bytes.fromhex(value) != data:
+        if not isinstance(value, str) or not HEX_BYTES.match(value):
+            rep.err(where, "value must be lower-case hex pairs separated by one space")
+        elif bytes.fromhex(value) != data:
             rep.err(where, f"value != the {len(data)} bytes at the offset")
 
 
@@ -366,6 +369,9 @@ def _check_value(rep, where, attr, typ, payload, order):
             return
         if typ not in INT_WIDTH or bw <= 0 or bo < 0 or bo + bw > 8 * length:
             rep.err(where, "bad bitfield position")
+            return
+        if length != INT_WIDTH[typ]:
+            rep.err(where, f"a {typ} bitfield's storage unit is {INT_WIDTH[typ]} bytes, not {length}")
             return
         unit = int.from_bytes(data, "little" if order == "little" else "big")
         got = (unit >> (8 * length - bo - bw)) & ((1 << bw) - 1)
@@ -673,6 +679,10 @@ def validate(corpus):
                 if valid is True:
                     runnable.add(cid)
 
+    mdir = corpus / "models"
+    for d in sorted(mdir.iterdir()) if mdir.is_dir() else []:
+        if d.name not in names:
+            rep.err(iw, f"models/{d.name} has no entry in the index")
     plugin_models = {f"plugins/{p.name}" for p in (repo / "plugins").glob("*_plugin")
                      if p.is_file()}
     for origin in sorted(plugin_models - origins):

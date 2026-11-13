@@ -39,6 +39,16 @@ CODES: Mapping[str, str] = MappingProxyType(
     {
         "internal.unexpected": "an unexpected exception: a bug in mmt-plugin",
         "internal.io": "an operating-system or I/O error with no better class",
+        # SDK detection and profiles (mmt_plugin.sdk, #13).
+        "sdk.not-found": "no mmt-dpi SDK prefix was found (--sdk, MMT_BASE, mmt-dpi.pc, /opt/mmt)",
+        "sdk.invalid-prefix": "an SDK prefix has no dpi/include/mmt_log.h",
+        "sdk.invalid-pkg-config": "the mmt-dpi.pc pkg-config file cannot be read, or its "
+        "includedir is not an absolute <prefix>/dpi/include",
+        "sdk.profile-not-found": "an explicitly requested SDK profile is not bundled",
+        "sdk.profile-fallback": "warning: no profile is bundled for the detected SDK version "
+        "(or it is unknown); the nearest bundled one is used",
+        "sdk.profile-default": "warning: no SDK found and no profile pinned; the newest bundled "
+        "profile is used",
         "usage.no-command": "no command was given",
         "usage.unknown-command": "the command name is not a known command",
         "usage.unknown-option": "an option that the command does not accept",

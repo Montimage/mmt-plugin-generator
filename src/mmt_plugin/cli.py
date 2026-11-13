@@ -35,6 +35,7 @@ from mmt_plugin import __version__, envelope
 from mmt_plugin.commands import COMMANDS, Command, Context, Outcome, Subparsers
 from mmt_plugin.diagnostics import CliError, Severity, sorted_diagnostics
 from mmt_plugin.exitcodes import ExitCode
+from mmt_plugin.sdk.profile import bundled_versions
 from mmt_plugin.ui import render
 from mmt_plugin.ui.streams import decide
 
@@ -336,7 +337,7 @@ def _version_outcome() -> Outcome:
         result={
             "version": __version__,
             "python": platform.python_version(),
-            "sdk_profiles": [],
+            "sdk_profiles": bundled_versions(),
         },
     )
 

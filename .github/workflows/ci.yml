@@ -236,3 +236,95 @@ jobs:
             grep -E '^(gcc|clang|python3|mmt-dpi) ' /usr/share/doc/mmt-test-image/packages.txt
       - name: Build and load the NDN example plugin inside the container
         run: make test-container MMT_DPI_TAG="$MMT_DPI_TAG"
+
+  sdk-profile:
+    name: SDK profile vs mmt-dpi headers (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both arches: the struct layout checks are per target ABI.
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            uv_target: uv-x86_64-unknown-linux-gnu
+            uv_sha256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            uv_target: uv-aarch64-unknown-linux-gnu
+            uv_sha256: 9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e
+    env:
+      # Pinned uv, as in the python job; each sha256 is copied from the
+      # release's upstream <target>.tar.gz.sha256 file.
+      UV_VERSION: 0.12.10
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download, verify and extract the mmt-dpi package
+        # Extracted, not installed: the check reads the headers of a private
+        # prefix, the one the package would install as /opt/mmt.
+        env:
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          dpkg-deb -x "$pkg" "$RUNNER_TEMP/sdk"
+          prefix="$RUNNER_TEMP/sdk/opt/mmt"
+          [ -f "$prefix/dpi/include/mmt_log.h" ] || { echo "no mmt_log.h in $prefix"; exit 1; }
+          echo "SDK_PREFIX=$prefix" >> "$GITHUB_ENV"
+      - name: Install the pinned uv
+        env:
+          UV_TARGET: ${{ matrix.uv_target }}
+          UV_SHA256: ${{ matrix.uv_sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$UV_TARGET.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$UV_TARGET.tar.gz"
+          echo "$UV_SHA256  $dir/$UV_TARGET.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$UV_TARGET.tar.gz" -C "$dir" --strip-components=1 "$UV_TARGET/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the tools
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+          command -v clang > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends clang; }
+          gcc --version | head -n 1
+          clang --version | head -n 1
+          uv sync
+      - name: Check the bundled profile against the headers (gcc and clang)
+        run: |
+          for cc in gcc clang; do
+            uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --cc "$cc"
+          done
+      - name: Check that a deliberately wrong signature fails
+        # A scratch copy of the profile whose attribute extraction callback
+        # takes an int proto_index (the Java generator's mistake).
+        run: |
+          wrong="$RUNNER_TEMP/wrong-profile.json"
+          uv run python - "$wrong" <<'PY'
+          import json, sys
+          from importlib import resources
+          path = resources.files("mmt_plugin").joinpath("sdk/profiles/1.10.2.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          cb = next(c for c in data["callbacks"] if c["role"] == "attribute_extraction")
+          cb["params"][1]["type"] = "int"
+          with open(sys.argv[1], "w", encoding="utf-8") as f:
+              json.dump(data, f)
+          PY
+          status=0
+          uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --profile "$wrong" \
+            > "$RUNNER_TEMP/wrong.txt" || status=$?
+          cat "$RUNNER_TEMP/wrong.txt"
+          [ "$status" -eq 1 ] || { echo "expected exit 1, got $status"; exit 1; }
+          grep -qF 'callbacks.attribute_extraction: generic_attribute_extraction_function is not int (*)(const ipacket_t *, int, attribute_t *)' \
+            "$RUNNER_TEMP/wrong.txt" || { echo "the wrong signature was not reported"; exit 1; }

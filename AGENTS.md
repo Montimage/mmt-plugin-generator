@@ -37,11 +37,16 @@ protocol model. A Python rewrite is planned in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
   envelope and its schema) but no command yet: each command registers itself
   in `src/mmt_plugin/commands/` with its own issue.
+- `src/mmt_plugin/sdk/`: the SDK profiles (T1.4), one JSON file per mmt-dpi
+  version in `sdk/profiles/` (only 1.10.2 so far; schema in
+  `schemas/sdk/v1/profile.json`), SDK prefix detection and profile choice.
+  Plain functions for the commands to call; no command of its own.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
-  (amd64 and arm64), `make test-container` on both arches, and the Python
-  checks below (Python 3.10, 3.12 and 3.14).
+  (amd64 and arm64), `make test-container` on both arches, the Python
+  checks below (Python 3.10, 3.12 and 3.14), and the SDK profile header
+  check (amd64 and arm64).
 
 ## Commands
 
@@ -112,6 +117,15 @@ uv run ruff format --check
 uv run mypy
 uv run pytest
 uv run mmt-plugin --version
+```
+
+Check the bundled SDK profile against real mmt-dpi headers (needs gcc or
+clang; `<dir>` is the extracted package of "A private prefix can also come
+from the published package"). It prints one `PASS:`/`FAIL:` line per check
+and exits non-zero on failure:
+
+```
+uv run python -m mmt_plugin.sdk.headercheck --sdk <dir>/opt/mmt --cc gcc
 ```
 
 ## Rules

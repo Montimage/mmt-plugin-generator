@@ -1,0 +1,564 @@
+{
+  "$comment": "What code generated for mmt-dpi 1.10.2 uses from the SDK, and the header that declares each entry, relative to <prefix>/dpi/include. Taken from the headers of the published v1.10.2 package and checked against them in CI (python -m mmt_plugin.sdk.headercheck). Schema: mmt_plugin/schemas/sdk/v1/profile.json. Types are C type names; a parameter type never holds a function or array declarator, so '<type> <name>' declares it.",
+  "schema_version": 1,
+  "profile": "1.10.2",
+  "sdk": "mmt-dpi",
+  "c_std": "gnu11",
+  "headers": [
+    {
+      "name": "data_defs.h",
+      "doc": "Core types (ipacket_t, attribute_t, protocol_t, mmt_session_t), the packet accessors and the classification status values."
+    },
+    {
+      "name": "types_defs.h",
+      "doc": "The MMT_* attribute data types (enum data_types)."
+    },
+    {
+      "name": "mmt_core.h",
+      "doc": "The attribute scopes, and the VERSION macro that SDK detection reads."
+    },
+    {
+      "name": "plugin_defs.h",
+      "doc": "The plugin callback typedefs, attribute_metadata_t, classified_proto_t and the registration calls."
+    },
+    {
+      "name": "extraction_lib.h",
+      "doc": "The general_* extraction functions for fixed-width attributes."
+    },
+    {
+      "name": "mmt_log.h",
+      "doc": "The SDK logger. No other installed header includes it: a plugin that logs includes it itself."
+    },
+    {
+      "name": "mmt_class_provider.h",
+      "doc": "The application and content class provider a plugin may register from init_proto()."
+    },
+    {
+      "name": "tcpip/mmt_tcpip.h",
+      "doc": "The ids of the libmmt_tcpip protocols, the parents most plugins classify under."
+    }
+  ],
+  "types": [
+    {
+      "name": "mmt_proto_id_t",
+      "header": "data_defs.h",
+      "definition": "uint32_t",
+      "doc": "A protocol id."
+    },
+    {
+      "name": "mmt_proto_index_t",
+      "header": "data_defs.h",
+      "definition": "unsigned",
+      "doc": "The index of a protocol in a packet's protocol path; the Java generator's int is wrong here."
+    },
+    {
+      "name": "mmt_opaque_t",
+      "header": "data_defs.h",
+      "definition": "void *",
+      "doc": "An opaque context or key pointer passed back to callbacks."
+    },
+    {
+      "name": "protocol_t",
+      "header": "data_defs.h",
+      "doc": "The opaque protocol structure being registered."
+    },
+    {
+      "name": "mmt_session_t",
+      "header": "data_defs.h",
+      "doc": "An opaque session (flow)."
+    },
+    {
+      "name": "mmt_classify_verdict_t",
+      "header": "plugin_defs.h",
+      "doc": "What a classification callback returns, in C (C++ sees int)."
+    }
+  ],
+  "structs": [
+    {
+      "name": "attribute_metadata_t",
+      "header": "plugin_defs.h",
+      "layout": "complete",
+      "doc": "One row of the generated attribute table, written as a positional initializer, so every field is listed, in order.",
+      "fields": [
+        {"name": "id", "type": "int"},
+        {"name": "alias", "type": "char [Max_Alias_Len + 1]"},
+        {"name": "data_type", "type": "int"},
+        {"name": "data_len", "type": "int"},
+        {"name": "position_in_packet", "type": "int"},
+        {"name": "scope", "type": "int"},
+        {"name": "extraction_function", "type": "generic_attribute_extraction_function"}
+      ]
+    },
+    {
+      "name": "classified_proto_t",
+      "header": "plugin_defs.h",
+      "layout": "complete",
+      "doc": "What the stack classification returns and set_classified_proto() records.",
+      "fields": [
+        {"name": "offset", "type": "uint16_t"},
+        {"name": "status", "type": "uint16_t"},
+        {"name": "proto_id", "type": "mmt_proto_id_t"}
+      ]
+    },
+    {
+      "name": "mmt_class_provider_t",
+      "header": "mmt_class_provider.h",
+      "layout": "complete",
+      "doc": "A plugin's class lookups; NULL for what it does not class.",
+      "fields": [
+        {"name": "application_class", "type": "int (*)(mmt_proto_id_t)"},
+        {"name": "application_class_name", "type": "char *(*)(mmt_proto_id_t)"},
+        {"name": "content_class_by_type", "type": "int (*)(char *)"},
+        {"name": "content_class_name_by_type", "type": "char *(*)(char *)"},
+        {"name": "content_class_by_flags", "type": "int (*)(uint32_t)"},
+        {"name": "content_class_name_by_flags", "type": "char *(*)(uint32_t)"}
+      ]
+    },
+    {
+      "name": "ipacket_t",
+      "header": "data_defs.h",
+      "layout": "partial",
+      "doc": "The packet being processed; generated code reads only these fields.",
+      "fields": [
+        {"name": "p_hdr", "type": "pkthdr_t *"},
+        {"name": "data", "type": "const u_char *"}
+      ]
+    },
+    {
+      "name": "pkthdr_t",
+      "header": "data_defs.h",
+      "layout": "partial",
+      "doc": "The packet's capture metadata; caplen bounds every read of ipacket->data.",
+      "fields": [
+        {"name": "caplen", "type": "unsigned int"}
+      ]
+    },
+    {
+      "name": "attribute_t",
+      "header": "data_defs.h",
+      "layout": "partial",
+      "doc": "The attribute an extraction function fills; it writes the value to data.",
+      "fields": [
+        {"name": "data", "type": "void *"}
+      ]
+    }
+  ],
+  "callbacks": [
+    {
+      "role": "attribute_extraction",
+      "typedef": "generic_attribute_extraction_function",
+      "header": "plugin_defs.h",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Extracts one attribute (attribute_metadata_t.extraction_function)."
+    },
+    {
+      "role": "stack_classification",
+      "typedef": "generic_stack_classification_function",
+      "header": "plugin_defs.h",
+      "returns": "classified_proto_t",
+      "params": [
+        {"name": "ipacket", "type": "ipacket_t *"}
+      ],
+      "doc": "Classifies a packet whose stack starts with this protocol (register_protocol_stack)."
+    },
+    {
+      "role": "classification",
+      "typedef": "generic_classification_function",
+      "header": "plugin_defs.h",
+      "returns": "mmt_classify_verdict_t",
+      "params": [
+        {"name": "ipacket", "type": "ipacket_t *"},
+        {"name": "previous_index", "type": "unsigned"}
+      ],
+      "doc": "Recognises this protocol above the layer at previous_index: records it with set_classified_proto() and returns MMT_CLASSIFY_MATCHED, or MMT_CLASSIFY_SKIP."
+    },
+    {
+      "role": "proto_context_init",
+      "typedef": "generic_proto_context_init_function",
+      "header": "plugin_defs.h",
+      "returns": "void *",
+      "params": [
+        {"name": "protocol_context", "type": "mmt_opaque_t"},
+        {"name": "args", "type": "mmt_opaque_t"}
+      ],
+      "doc": "Creates the protocol context; returns it."
+    },
+    {
+      "role": "proto_context_cleanup",
+      "typedef": "generic_proto_context_cleanup_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "protocol_context", "type": "mmt_opaque_t"},
+        {"name": "args", "type": "mmt_opaque_t"}
+      ],
+      "doc": "Frees the protocol context."
+    },
+    {
+      "role": "session_data_init",
+      "typedef": "generic_session_data_initialization_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "ipacket", "type": "ipacket_t *"},
+        {"name": "index", "type": "unsigned"}
+      ],
+      "doc": "Sets up the protocol's per-session data on a session's first packet."
+    },
+    {
+      "role": "session_data_cleanup",
+      "typedef": "generic_session_data_cleanup_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "session", "type": "mmt_session_t *"},
+        {"name": "index", "type": "unsigned"}
+      ],
+      "doc": "Frees the protocol's per-session data."
+    },
+    {
+      "role": "session_data_analysis",
+      "typedef": "generic_session_data_analysis_function",
+      "header": "plugin_defs.h",
+      "returns": "int",
+      "params": [
+        {"name": "ipacket", "type": "ipacket_t *"},
+        {"name": "index", "type": "unsigned"}
+      ],
+      "doc": "Analyses each packet of a session after classification."
+    },
+    {
+      "role": "sessionizer",
+      "typedef": "generic_sessionizer_function",
+      "header": "plugin_defs.h",
+      "returns": "void *",
+      "params": [
+        {"name": "protocol_context", "type": "mmt_opaque_t"},
+        {"name": "ipacket", "type": "ipacket_t *"},
+        {"name": "previous_index", "type": "unsigned"},
+        {"name": "is_new", "type": "int *"}
+      ],
+      "doc": "Finds or creates the packet's session; sets *is_new for a new one."
+    },
+    {
+      "role": "session_context_cleanup",
+      "typedef": "generic_session_context_cleanup_function",
+      "header": "plugin_defs.h",
+      "returns": "int",
+      "params": [
+        {"name": "protocol_context", "type": "mmt_opaque_t"},
+        {"name": "session_context", "type": "mmt_session_t *"},
+        {"name": "args", "type": "mmt_opaque_t"}
+      ],
+      "doc": "Cleans up a timed-out session."
+    },
+    {
+      "role": "session_key_comparison",
+      "typedef": "generic_comparison_fct",
+      "header": "data_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "key_1", "type": "mmt_opaque_t"},
+        {"name": "key_2", "type": "mmt_opaque_t"}
+      ],
+      "doc": "Compares two session keys."
+    },
+    {
+      "role": "init_proto",
+      "typedef": "generic_init_proto",
+      "header": "plugin_defs.h",
+      "returns": "int",
+      "params": [],
+      "doc": "The entry point the SDK looks up by the name init_proto when it loads the plugin; positive on success, 0 otherwise."
+    }
+  ],
+  "registrations": [
+    {
+      "name": "init_protocol_struct_for_registration",
+      "header": "plugin_defs.h",
+      "returns": "protocol_t *",
+      "params": [
+        {"name": "proto_id", "type": "mmt_proto_id_t"},
+        {"name": "protocol_name", "type": "const char *"}
+      ],
+      "doc": "Starts registering a protocol; NULL when the id is taken."
+    },
+    {
+      "name": "register_attribute_with_protocol",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "attribute_meta_data", "type": "attribute_metadata_t *"}
+      ],
+      "doc": "Registers one row of the attribute table."
+    },
+    {
+      "name": "register_classification_function",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "classification_fct", "type": "generic_classification_function"}
+      ],
+      "doc": "Registers the classifier of the protocols this one encapsulates."
+    },
+    {
+      "name": "register_classification_function_with_parent_protocol",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "proto_id", "type": "mmt_proto_id_t"},
+        {"name": "classification_fct", "type": "generic_classification_function"},
+        {"name": "weight", "type": "int"}
+      ],
+      "doc": "Registers this protocol's classifier under a parent; weight 0-9 or 90-100, lower runs first. Fails when the parent is not registered yet (load order)."
+    },
+    {
+      "name": "register_proto_context_init_cleanup_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "context_init_fct", "type": "generic_proto_context_init_function"},
+        {"name": "context_cleanup_fct", "type": "generic_proto_context_cleanup_function"},
+        {"name": "args", "type": "mmt_opaque_t"}
+      ],
+      "doc": "Registers the protocol context callbacks (the Java generator's register_proto_context_cleanup_function does not exist)."
+    },
+    {
+      "name": "register_session_data_initialization_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "session_data_init_fct", "type": "generic_session_data_initialization_function"}
+      ],
+      "doc": "Registers the session data init callback."
+    },
+    {
+      "name": "register_session_data_cleanup_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "session_data_cleanup_fct", "type": "generic_session_data_cleanup_function"}
+      ],
+      "doc": "Registers the session data cleanup callback."
+    },
+    {
+      "name": "register_session_data_analysis_function",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "session_data_analysis_fct", "type": "generic_session_data_analysis_function"}
+      ],
+      "doc": "Registers the session data analysis callback."
+    },
+    {
+      "name": "register_sessionizer_function",
+      "header": "plugin_defs.h",
+      "returns": "void",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "sessionizer_fct", "type": "generic_sessionizer_function"},
+        {"name": "session_context_cleanup_fct", "type": "generic_session_context_cleanup_function"},
+        {"name": "session_keys_comparison_fct", "type": "generic_comparison_fct"}
+      ],
+      "doc": "Registers the sessionizer and its cleanup and key comparison callbacks."
+    },
+    {
+      "name": "register_protocol_stack",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "s_id", "type": "uint32_t"},
+        {"name": "s_name", "type": "char *"},
+        {"name": "fct", "type": "generic_stack_classification_function"}
+      ],
+      "doc": "Registers a protocol stack that starts with this protocol."
+    },
+    {
+      "name": "register_protocol",
+      "header": "plugin_defs.h",
+      "returns": "bool",
+      "params": [
+        {"name": "protocol_struct", "type": "protocol_t *"},
+        {"name": "proto_id", "type": "mmt_proto_id_t"}
+      ],
+      "doc": "Ends the registration; init_proto() returns its result."
+    },
+    {
+      "name": "mmt_register_class_provider",
+      "header": "mmt_class_provider.h",
+      "returns": "bool",
+      "params": [
+        {"name": "provider", "type": "const mmt_class_provider_t *"}
+      ],
+      "doc": "Registers the class provider, from init_proto(); it must stay valid until close_extraction()."
+    }
+  ],
+  "helpers": [
+    {
+      "name": "set_classified_proto",
+      "header": "plugin_defs.h",
+      "returns": "int",
+      "params": [
+        {"name": "ipacket", "type": "ipacket_t *"},
+        {"name": "index", "type": "unsigned"},
+        {"name": "classified_proto", "type": "classified_proto_t"}
+      ],
+      "doc": "Records the protocol a classifier recognised; nonzero when recorded."
+    },
+    {
+      "name": "get_packet_offset_at_index",
+      "header": "data_defs.h",
+      "returns": "int",
+      "params": [
+        {"name": "ipacket", "type": "const ipacket_t *"},
+        {"name": "index", "type": "unsigned"}
+      ],
+      "doc": "The offset in the packet of the protocol at an index of its path."
+    },
+    {
+      "name": "get_protocol_id_by_name",
+      "header": "data_defs.h",
+      "returns": "uint32_t",
+      "params": [
+        {"name": "protocol_name", "type": "const char *"}
+      ],
+      "doc": "The id of a registered protocol (names compare case-insensitively), 0 when none: init_proto() refuses a taken name."
+    },
+    {
+      "name": "general_char_extraction",
+      "header": "extraction_lib.h",
+      "implements": "attribute_extraction",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Extracts a 1-byte attribute (MMT_U8_DATA)."
+    },
+    {
+      "name": "general_short_extraction_with_ordering_change",
+      "header": "extraction_lib.h",
+      "implements": "attribute_extraction",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Extracts a 2-byte attribute in network byte order (MMT_U16_DATA). general_short_extraction is deprecated and not listed."
+    },
+    {
+      "name": "general_int_extraction",
+      "header": "extraction_lib.h",
+      "implements": "attribute_extraction",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Extracts a 4-byte attribute in host byte order (MMT_U32_DATA)."
+    },
+    {
+      "name": "general_int_extraction_with_ordering_change",
+      "header": "extraction_lib.h",
+      "implements": "attribute_extraction",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Extracts a 4-byte attribute in network byte order (MMT_U32_DATA)."
+    },
+    {
+      "name": "general_byte_to_byte_extraction",
+      "header": "extraction_lib.h",
+      "implements": "attribute_extraction",
+      "returns": "int",
+      "params": [
+        {"name": "packet", "type": "const ipacket_t *"},
+        {"name": "proto_index", "type": "mmt_proto_index_t"},
+        {"name": "extracted_data", "type": "attribute_t *"}
+      ],
+      "doc": "Copies data_len bytes (addresses, binary data)."
+    }
+  ],
+  "constants": [
+    {"name": "Classified", "header": "data_defs.h", "group": "classification_status", "doc": "classified_proto_t.status of a recognised protocol."},
+    {"name": "NonClassified", "header": "data_defs.h", "group": "classification_status", "doc": "classified_proto_t.status of an unrecognised protocol."},
+    {"name": "Max_Alias_Len", "header": "data_defs.h", "group": "limit", "doc": "The longest protocol or attribute alias, in bytes."},
+    {"name": "MMT_CLASSIFY_MATCHED", "header": "plugin_defs.h", "group": "classify_verdict", "doc": "A classifier recognised the protocol."},
+    {"name": "MMT_CLASSIFY_SKIP", "header": "plugin_defs.h", "group": "classify_verdict", "doc": "A classifier did not recognise the protocol."},
+    {"name": "SCOPE_PACKET", "header": "mmt_core.h", "group": "scope", "doc": "PDL scope packet."},
+    {"name": "SCOPE_SESSION", "header": "mmt_core.h", "group": "scope", "doc": "PDL scope session."},
+    {"name": "MMT_CLASS_UNKNOWN", "header": "mmt_class_provider.h", "group": "class_provider", "doc": "What a class lookup returns for a key it does not know."},
+    {"name": "MMT_U8_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_U8_DATA."},
+    {"name": "MMT_U16_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_U16_DATA."},
+    {"name": "MMT_U32_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_U32_DATA."},
+    {"name": "MMT_U64_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_U64_DATA."},
+    {"name": "MMT_DATA_POINTER", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_POINTER."},
+    {"name": "MMT_DATA_MAC_ADDR", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_MAC_ADDR."},
+    {"name": "MMT_DATA_IP_NET", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_IP_NET."},
+    {"name": "MMT_DATA_IP_ADDR", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_IP_ADDR."},
+    {"name": "MMT_DATA_IP6_ADDR", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_IP6_ADDR."},
+    {"name": "MMT_DATA_PATH", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_PATH."},
+    {"name": "MMT_DATA_TIMEVAL", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_TIMEVAL."},
+    {"name": "MMT_DATA_BUFFER", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_BUFFER."},
+    {"name": "MMT_DATA_CHAR", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_CHAR."},
+    {"name": "MMT_DATA_PORT", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_PORT."},
+    {"name": "MMT_DATA_POINT", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_POINT."},
+    {"name": "MMT_DATA_PORT_RANGE", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_PORT_RANGE."},
+    {"name": "MMT_DATA_DATE", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_DATE."},
+    {"name": "MMT_DATA_TIMEARG", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_TIMEARG."},
+    {"name": "MMT_DATA_STRING_INDEX", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_STRING_INDEX."},
+    {"name": "MMT_DATA_FLOAT", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_FLOAT."},
+    {"name": "MMT_DATA_LAYERID", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_LAYERID."},
+    {"name": "MMT_DATA_FILTER_STATE", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_FILTER_STATE."},
+    {"name": "MMT_DATA_PARENT", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_DATA_PARENT."},
+    {"name": "MMT_BINARY_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_BINARY_DATA."},
+    {"name": "MMT_BINARY_VAR_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_BINARY_VAR_DATA."},
+    {"name": "MMT_STRING_DATA", "header": "types_defs.h", "group": "data_type", "doc": "PDL type MMT_STRING_DATA."}
+  ],
+  "macros": [
+    {"name": "mmt_log_error", "header": "mmt_log.h", "doc": "Logs one printf-style line at the error level."},
+    {"name": "mmt_log_warn", "header": "mmt_log.h", "doc": "Logs one printf-style line at the warn level."},
+    {"name": "mmt_log_info", "header": "mmt_log.h", "doc": "Logs one printf-style line at the info level."},
+    {"name": "mmt_log_debug", "header": "mmt_log.h", "doc": "Logs one printf-style line at the debug level; compiled out unless the plugin defines the debug opt-in."}
+  ],
+  "logger": {
+    "header": "mmt_log.h",
+    "error": "mmt_log_error",
+    "warn": "mmt_log_warn",
+    "info": "mmt_log_info",
+    "debug": "mmt_log_debug",
+    "debug_opt_in": "MMT_LOG_ENABLE_DEBUG",
+    "doc": "Generated code logs only through these macros (stderr, off by default, rate-limited); a plugin's own DEBUG does not enable mmt_log_debug(), -DMMT_LOG_ENABLE_DEBUG does."
+  },
+  "class_provider": {
+    "header": "mmt_class_provider.h",
+    "struct": "mmt_class_provider_t",
+    "register": "mmt_register_class_provider",
+    "unknown": "MMT_CLASS_UNKNOWN",
+    "doc": "A plugin that classes its protocols fills a static mmt_class_provider_t and registers it from init_proto()."
+  },
+  "parents": {
+    "header": "tcpip/mmt_tcpip.h",
+    "declared_in": "tcpip/mmt_tcpip_protocols.h",
+    "id_macro": "PROTO_{LABEL}",
+    "examples": ["PROTO_ETHERNET", "PROTO_IP", "PROTO_TCP", "PROTO_UDP"],
+    "doc": "A parent protocol of libmmt_tcpip is named by the macro PROTO_<LABEL>, with LABEL its upper-case label; the examples are the parents of the corpus models. A parent from another plugin comes from that plugin's header."
+  }
+}

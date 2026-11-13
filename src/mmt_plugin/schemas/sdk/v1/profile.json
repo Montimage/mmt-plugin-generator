@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin SDK profile",
+  "description": "What code generated for one mmt-dpi version uses from the SDK, each entry with the header that declares it, relative to <prefix>/dpi/include. Bundled as mmt_plugin/sdk/profiles/<profile>.json. Types are C type names. schema_version is bumped only on a breaking change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile",
+    "sdk",
+    "c_std",
+    "headers",
+    "types",
+    "structs",
+    "callbacks",
+    "registrations",
+    "helpers",
+    "constants",
+    "macros",
+    "logger",
+    "class_provider",
+    "parents"
+  ],
+  "properties": {
+    "$comment": {"type": "string"},
+    "schema_version": {"const": 1},
+    "profile": {"$ref": "#/$defs/version", "description": "The mmt-dpi version the profile describes; also the file name."},
+    "sdk": {"const": "mmt-dpi"},
+    "c_std": {"type": "string", "description": "The -std the headers need (gnu11: u_char and GNU statement expressions)."},
+    "headers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/header"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "definition": {"$ref": "#/$defs/ctype", "description": "What a scalar or pointer typedef stands for; absent for an opaque or enum type."},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "structs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "layout", "fields", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "layout": {"enum": ["complete", "partial"], "description": "complete: every field, in order (positional initializers rely on it); partial: only the fields generated code reads."},
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type"],
+              "properties": {
+                "name": {"$ref": "#/$defs/ident"},
+                "type": {"$ref": "#/$defs/ctype"}
+              }
+            }
+          },
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "callbacks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "typedef", "header", "returns", "params", "doc"],
+        "properties": {
+          "role": {"$ref": "#/$defs/ident", "description": "The name the generator looks the callback up by."},
+          "typedef": {"$ref": "#/$defs/ident", "description": "The SDK function-pointer typedef the callback converts to."},
+          "header": {"$ref": "#/$defs/header"},
+          "returns": {"$ref": "#/$defs/ctype"},
+          "params": {"$ref": "#/$defs/params"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "registrations": {"type": "array", "items": {"$ref": "#/$defs/function"}},
+    "helpers": {"type": "array", "items": {"$ref": "#/$defs/function"}},
+    "constants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "group", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "group": {"$ref": "#/$defs/ident"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "macros": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "logger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "error", "warn", "info", "debug", "debug_opt_in", "doc"],
+      "description": "The logging macro of each level (entries of macros) and the define that enables the debug one.",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "error": {"$ref": "#/$defs/ident"},
+        "warn": {"$ref": "#/$defs/ident"},
+        "info": {"$ref": "#/$defs/ident"},
+        "debug": {"$ref": "#/$defs/ident"},
+        "debug_opt_in": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "class_provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "struct", "register", "unknown", "doc"],
+      "description": "Names of the class provider's struct (in structs), registration call (in registrations) and unknown class (in constants).",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "struct": {"$ref": "#/$defs/ident"},
+        "register": {"$ref": "#/$defs/ident"},
+        "unknown": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "parents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "declared_in", "id_macro", "examples", "doc"],
+      "description": "How a libmmt_tcpip parent protocol's id is named: id_macro with {LABEL} replaced by the upper-case label, from header (which includes declared_in).",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "declared_in": {"$ref": "#/$defs/header"},
+        "id_macro": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\{LABEL\\}[A-Za-z0-9_]*$"},
+        "examples": {"type": "array", "items": {"$ref": "#/$defs/ident"}},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    }
+  },
+  "$defs": {
+    "version": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$"},
+    "ident": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "header": {"type": "string", "pattern": "^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\\.h$"},
+    "ctype": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "params": {
+      "type": "array",
+      "description": "Parameter types never hold a function or array declarator, so '<type> <name>' declares each.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "type": {"type": "string", "pattern": "^[^()\\[\\]]*\\S[^()\\[\\]]*$"}
+        }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "header", "returns", "params", "doc"],
+      "properties": {
+        "name": {"$ref": "#/$defs/ident"},
+        "header": {"$ref": "#/$defs/header"},
+        "implements": {"$ref": "#/$defs/ident", "description": "The callback role this function can stand in for."},
+        "returns": {"$ref": "#/$defs/ctype"},
+        "params": {"$ref": "#/$defs/params"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    }
+  }
+}

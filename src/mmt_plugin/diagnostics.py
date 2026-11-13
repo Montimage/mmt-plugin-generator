@@ -48,6 +48,22 @@ CODES: Mapping[str, str] = MappingProxyType(
         "usage.conflicting-options": "options that cannot be used together",
         "usage.invalid": "any other command-line error",
         "interrupted": "the run was interrupted (SIGINT)",
+        # PDL v1 syntax (mmt_plugin.pdl, #11).
+        "model.syntax.unexpected-character": "a PDL file has a character no token starts with",
+        "model.syntax.invalid-number": "a PDL number is malformed (`0x`, `12abc`)",
+        "model.syntax.unterminated-comment": "a PDL `/*` comment is not closed",
+        "model.syntax.unterminated-string": "a PDL quoted value does not end on its line",
+        "model.syntax.unexpected-token": "a PDL token that the grammar does not allow there",
+        "model.syntax.unexpected-end": "a PDL file ends before the model is complete",
+        "model.syntax.trailing-input": "a PDL file has text after the Protocol block",
+        "model.syntax.unknown-key": "a PDL key that the Properties or attribute block has not",
+        "model.syntax.duplicate-key": "a PDL key or switch default given twice",
+        "model.syntax.missing-key": "a required PDL key is missing (label, id, alias, data_type)",
+        "model.syntax.out-of-order": "a PDL key, block or branch is not in the grammar's order",
+        "model.syntax.invalid-value": "a PDL value outside its set (boolean, encoding, scope, id)",
+        "model.syntax.unknown-type": "a PDL data type or element type that does not exist",
+        "model.syntax.invalid-expression": "a PDL expression is malformed (bare name, unknown "
+        "function, chained comparison)",
     }
 )
 

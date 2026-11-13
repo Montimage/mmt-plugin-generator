@@ -27,6 +27,9 @@ protocol model. A Python rewrite is planned in
 - `tests/fetch_mmt_dpi_package.sh`: downloads a published mmt-dpi package
   from its GitHub Release and verifies it (pinned `SHA256SUMS` hash, then
   `SHA256SUMS` and `manifest.json`); it never installs.
+- `Dockerfile`, `Makefile`: the pinned build and test container (T0.3):
+  ubuntu:24.04 by digest, gcc, clang, Python 3.12 and the verified mmt-dpi
+  v1.10.2 `.deb`. `make test-container` builds it and runs the NDN check.
 - `pyproject.toml`, `uv.lock`, `python/`: the Python rewrite (T1.1 onwards).
   The package `mmt_plugin` is in `python/src/mmt_plugin/` (uv_build
   `module-root = "python/src"`; the Java tool is now in `legacy/`, and moving
@@ -34,9 +37,10 @@ protocol model. A Python rewrite is planned in
   in `python/tests/`. The `mmt-plugin` CLI only has `--help` and `--version`
   so far; exit codes are in `python/src/mmt_plugin/cli.py`.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
-  Runs shellcheck on every tracked `*.sh`, the corpus validator, and
+  Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
-  (amd64 and arm64), and the Python checks below (Python 3.10 and 3.12).
+  (amd64 and arm64), `make test-container` on both arches, and the Python
+  checks below (Python 3.10 and 3.12).
 
 ## Commands
 
@@ -78,6 +82,13 @@ MMT_BASE=<dir>/opt/mmt bash tests/check_ndn_plugin.sh
 
 It prints one `PASS:`/`FAIL:` line per check and exits non-zero on failure.
 Always set `MMT_BASE`: the script defaults to `/opt/mmt`.
+
+Or run the same check in the pinned container (docker, or
+`CONTAINER=podman`); it needs no mmt-dpi on the host and no root:
+
+```
+make test-container
+```
 
 Check the test corpus (Python 3.8+, no dependencies). Run it after any change
 under `tests/corpus/` or to a `plugins/*_plugin` model, since the corpus holds

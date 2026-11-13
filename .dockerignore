@@ -1,0 +1,4 @@
+# Build context of the Dockerfile: only what the image build copies. The
+# repo itself is mounted read-only at run time (see the Makefile).
+*
+!tests/fetch_mmt_dpi_package.sh

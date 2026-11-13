@@ -329,7 +329,10 @@ def _dispatch(run: _Run, argv: Sequence[str], commands: Sequence[Command] | None
     except _VersionRequested:
         if run.json:
             return _version_outcome()
-        run.out.write(f"{PROG} {__version__}\n")
+        try:
+            run.out.write(f"{PROG} {__version__}\n")
+        except BrokenPipeError:
+            _silence(run.out)
         raise SystemExit(EXIT_OK) from None
     command: Command = ns._command
     run.command = command.name
@@ -359,9 +362,9 @@ def _outcome(run: _Run, argv: Sequence[str], commands: Sequence[Command] | None)
         return Outcome(error=exc)
     except KeyboardInterrupt:
         return Outcome(error=_interrupted())
-    except BrokenPipeError:
-        raise
     except Exception as exc:
+        # Commands never write to stdout, so a BrokenPipeError here is theirs
+        # (a child's stdin, say): an I/O error, reported like any other.
         return Outcome(error=_internal_error(run, exc))
 
 

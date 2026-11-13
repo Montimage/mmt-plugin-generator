@@ -42,6 +42,7 @@ class DummyCommand:
         parser.add_argument("--return-error", metavar="CODE", help="return it in the Outcome")
         parser.add_argument("--crash", action="store_true", help="raise RuntimeError")
         parser.add_argument("--oserror", action="store_true", help="raise PermissionError")
+        parser.add_argument("--broken-pipe", action="store_true", help="raise BrokenPipeError")
         parser.add_argument("--bad-result", action="store_true", help="return a non-JSON result")
         parser.add_argument("--unregistered", action="store_true", help="use an unknown code")
         parser.add_argument("--warn", action="store_true", help="add a warning and a note")
@@ -65,6 +66,8 @@ class DummyCommand:
             raise RuntimeError("boom")
         if args.oserror:
             raise PermissionError(13, "Permission denied", "/nonexistent/x")
+        if args.broken_pipe:
+            raise BrokenPipeError(32, "Broken pipe")
         if args.fail:
             raise CliError(args.fail, "dummy failure", "dummy hint")
         if args.unregistered:

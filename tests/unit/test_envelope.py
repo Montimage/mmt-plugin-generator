@@ -33,6 +33,7 @@ OUTCOMES = [
     (["dummy", "--bogus"], 2, "usage.unknown-option", None),
     (["dummy", "--crash"], 1, "internal.unexpected", "dummy"),
     (["dummy", "--oserror"], 1, "internal.io", "dummy"),
+    (["dummy", "--broken-pipe"], 1, "internal.io", "dummy"),
     (["dummy", "--bad-result"], 1, "internal.unexpected", "dummy"),
     (["dummy", "--fail", "model.test-dummy"], 3, "model.test-dummy", "dummy"),
     (["dummy", "--fail", "sdk.test-dummy"], 4, "sdk.test-dummy", "dummy"),

@@ -77,6 +77,40 @@ CODES: Mapping[str, str] = MappingProxyType(
         "allows",
         "model.syntax.invalid-expression": "a PDL expression is malformed (bare name, unknown "
         "function, chained comparison)",
+        # Semantic checks (mmt_plugin.semantics, #12).
+        "model.duplicate-name": "an attribute, struct or define name is already used "
+        "(names are case-insensitive)",
+        "model.unknown-name": "a define value, case label or nextencaps value names no define "
+        "and no SDK protocol",
+        "model.unknown-attribute": "val(), offset() or len() names no attribute",
+        "model.unknown-struct": "`struct X` or `sizeof(struct X)` names no struct",
+        "model.use-before-definition": "a name is used before (or inside) its own definition",
+        "model.conditional-reference": "val(), offset() or len() of a conditional attribute, "
+        "outside the branch that declares it",
+        "model.not-an-integer": "val() of an attribute whose type is not an integer",
+        "model.missing-length": "data_len is omitted for a type without a fixed width",
+        "model.no-fixed-width": "an MMT_* type without a fixed width as a struct field or in "
+        "sizeof",
+        "model.invalid-bitfield": "a bitfield width outside 1 to its unit's bits, or a bitfield "
+        "of a type that is not an integer",
+        "model.bitfield-overflow": "a run of bitfields is wider than its storage unit",
+        "model.division-by-zero": "a folded expression divides by zero",
+        "model.out-of-range": "a folded offset, length or byte-swap operand is outside its range",
+        "model.duplicate-case": "two classifynext cases have the same value",
+        "model.leading-zero": "a decimal literal with a leading zero where the C would read it "
+        "as octal (or reject it)",
+        "model.alias-too-long": "a protocol label or attribute name is longer than the SDK's "
+        "Max_Alias_Len",
+        "model.id-out-of-range": "a protocol id that is not positive and below the SDK's "
+        "PROTO_MAX_IDENTIFIER",
+        "model.id-taken": "the protocol id is already an SDK protocol's",
+        "model.name-taken": "the protocol name is already an SDK protocol's",
+        "model.id-outside-reserved-range": "warning: the protocol id is outside the "
+        "third-party range 950-999",
+        "model.default-scope": "warning: an attribute has no scope, so it is packet",
+        "model.pointer-field": "warning: a `T*` struct field (4 bytes, read as MMT_DATA_POINTER)",
+        "model.branch-offset-mismatch": "warning: an aligned attribute follows an if/else whose "
+        "branches advance the running offset differently",
     }
 )
 

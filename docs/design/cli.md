@@ -441,7 +441,8 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | Envelope and its schema (section 6) | `mmt_plugin.envelope`, `mmt_plugin/schemas/cli/v1/envelope.json` | #43 |
 | Atomic writes, created/updated/unchanged by sha256 (section 8) | `mmt_plugin.fsio` | #43 |
 | Per-stream decisions, plain records, compiler-style diagnostics (section 10) | `mmt_plugin.ui.streams`, `mmt_plugin.ui.render` | #43 |
-| btop style, per-command `result` schemas, cross-command contract tests, `completion` | `mmt_plugin.ui.style`, `mmt_plugin/schemas/cli/v1/<command>.json` | #22 |
+| A command's `result` schema | `mmt_plugin/schemas/cli/v1/<command>.json` | the command's own issue (for example `validate.json` in #17, `generate.json` in #14) |
+| btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style` | #22 |
 | `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:

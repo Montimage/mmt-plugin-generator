@@ -11,8 +11,8 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 ## Decisions (approved)
 
 1. **Language:** Python 3.10 or later.
-   - Grammar: Lark or ANTLR 4, with line and column positions.
-   - Jinja2 templates, pydantic models, pytest with snapshot tests.
+   - PDL v1 parsing (amended by Luong on 2026-11-13, #11, PR #47; first planned as Lark or ANTLR 4 with pydantic models): a hand-written recursive-descent parser on the standard library builds a model of frozen dataclasses with line and column positions, and adds no runtime dependency. PDL v1 is frozen, LL(1) once keywords are contextual, and only a legacy input once `plugin.yaml` is canonical, so a grammar tool would save little: Lark would still need a contextual lexer, a transformer to build the positioned nodes and a layer that turns its generic errors into the per-site hints the CLI contract requires, and ANTLR 4 adds a Java build step on top. Keeping `dependencies = []` also suits `uv tool install` / `pipx`.
+   - Jinja2 templates, pydantic models (except the PDL v1 model above), pytest with snapshot tests.
    - scapy for crafting test packets.
    - Distributed with `uv tool install` / `pipx`.
 2. **Model format:** `plugin.yaml` with a published JSON Schema is the canonical format. PDL v1 models stay supported: `generate` reads them, and `import` converts them.

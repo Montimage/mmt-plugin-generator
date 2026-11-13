@@ -309,8 +309,12 @@ def _zaction(kind: str, choices: Sequence[str]) -> str:
 def _zsh_option(opt: Option) -> str:
     desc = f"[{_zdesc(opt.help)}]"
     value = ""
+    flags = opt.flags
     if opt.takes_value:
-        value = f":{_zq(opt.value.lower())}:{_zaction(opt.kind, opt.choices)}"
+        message = _zq(opt.value.lower().replace(":", " "))
+        value = f":{message}:{_zaction(opt.kind, opt.choices)}"
+        # "--opt=" takes the value after "=" or as the next word.
+        flags = tuple(f + "=" if f.startswith("--") else f for f in flags)
     if opt.repeat:
         head = "'*'"
     elif opt.flags[0] in ("-h", "--help") or "--version" in opt.flags:
@@ -319,7 +323,7 @@ def _zsh_option(opt: Option) -> str:
         head = "'(" + " ".join(opt.flags) + ")'"
     else:
         head = ""
-    names = opt.flags[0] if len(opt.flags) == 1 else "{" + ",".join(opt.flags) + "}"
+    names = flags[0] if len(flags) == 1 else "{" + ",".join(flags) + "}"
     return f"{head}{names}'{desc}{value}'"
 
 

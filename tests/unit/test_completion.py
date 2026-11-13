@@ -35,6 +35,7 @@ class TrickyCommand:
         parser.add_argument("model", metavar="MODEL", help="a file: it's [here]")
         parser.add_argument("--out", metavar="DIR", help="dir ]; echo pwned [")
         parser.add_argument("--level", choices=["low", "high"], help="one of: low, high")
+        parser.add_argument("--addr", metavar="HOST:PORT", help="an address: host:port")
         parser.add_argument("--hidden", help=argparse.SUPPRESS)
         return parser
 
@@ -148,6 +149,17 @@ def test_a_choice_with_shell_metacharacters_is_refused(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "[internal.unexpected]" in captured.err
+
+
+def test_zsh_specs_keep_their_fields(
+    commands: list[Command], capsys: pytest.CaptureFixture[str]
+) -> None:
+    script = _script("zsh", commands, capsys)
+    # A ':' in a metavar would start a new spec field, run as a command.
+    assert "--addr='[an address: host:port]:host port: '" in script
+    # "--opt=" completes the value after "=" and as the next word.
+    assert "{-C,--project=}'[" in script
+    assert "--level='[one of: low, high]:level:(low high)'" in script
 
 
 def test_spec_reads_choices_and_value_kinds(commands: list[Command]) -> None:

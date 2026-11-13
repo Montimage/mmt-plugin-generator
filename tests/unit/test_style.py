@@ -203,6 +203,17 @@ def test_every_renderer_honours_tier_none_and_plain(tier: ColorTier) -> None:
         assert ESC in sample(mode(tier))
 
 
+def test_join_escapes_text_and_keeps_styled_parts() -> None:
+    st = mode(ColorTier.ANSI16)
+    ok = style.status("pass", Level.OK, style=st)
+    joined = style.join(ok, " (3 \x1b checks)")
+    assert joined == ok + " (3 \\x1b checks)"
+    out = style.box("t", [joined], style=st)
+    assert "\x1b[92m●\x1b[0m pass (3 \\x1b checks)" in out
+    # Plain + gives a str, which the box escapes as user text.
+    assert "\\x1b[92m" in style.box("t", [ok + " (3)"], style=st)
+
+
 def test_paint_escapes_user_text_but_not_styled_text() -> None:
     st = mode(ColorTier.ANSI16)
     assert style.paint("a\x1bb", Role.TEXT, st) == "a\\x1bb"

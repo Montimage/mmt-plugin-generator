@@ -48,6 +48,7 @@ __all__ = [
     "format_error",
     "glyphs",
     "gradient_rgb",
+    "join",
     "meter",
     "paint",
     "progress_line",
@@ -314,8 +315,16 @@ def _pad(text: Styled, width: int, align: str = "left") -> Styled:
     return Styled(gap + text if align == "right" else text + gap)
 
 
+def join(*parts: str) -> Styled:
+    """Concatenate renderer output and text: ``Styled`` parts as they are, plain
+    ``str`` parts escaped as user text. Use it, never ``+`` or an f-string, to
+    put a status, meter or painted word next to other text: those give a
+    plain ``str``, which a renderer then escapes, escape codes included."""
+    return Styled("".join(_safe(part) for part in parts))
+
+
 def _join(parts: Iterable[str]) -> Styled:
-    return Styled("".join(parts))
+    return join(*parts)
 
 
 @dataclass(frozen=True)
@@ -434,7 +443,7 @@ def table(
                 shown = _pad(shown, widths[i], aligns[i])
             if n == 0 and header is not None:
                 shown = paint(shown, Role.TITLE, style)
-            parts.append(shown if last else shown + " " * gap)
+            parts.append(shown if last else join(shown, " " * gap))
         out.append(_join(parts))
     return out
 

@@ -87,6 +87,12 @@ def contract_problems(commands: Sequence[object]) -> list[str]:
     return problems
 
 
+@pytest.fixture(autouse=True)
+def in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every case in an empty directory, so no command writes into the repo."""
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def commands(dummy: Command) -> list[Command]:
     """The real registry plus the test-only dummy."""

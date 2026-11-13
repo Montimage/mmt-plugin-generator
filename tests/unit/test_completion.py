@@ -20,7 +20,7 @@ import pytest
 
 from mmt_plugin.cli import build_parser, main
 from mmt_plugin.commands import COMMANDS, Command, Context, Outcome, Subparsers
-from mmt_plugin.commands.completion import SHELLS, generate, spec_of
+from mmt_plugin.commands.completion import SHELLS, UnsafeWordError, generate, spec_of
 from mmt_plugin.exitcodes import ExitCode
 
 
@@ -122,6 +122,34 @@ def test_an_unknown_shell_is_a_usage_error(
     assert doc["result"] is None
 
 
+class UnsafeChoice:
+    """A command whose choice the shells would expand when completing it."""
+
+    name = "unsafe"
+    exit_codes = ()
+
+    def register(self, subparsers: Subparsers) -> argparse.ArgumentParser:
+        parser = subparsers.add_parser(self.name, help="has an unsafe choice")
+        parser.add_argument("--pick", choices=["ok", "a$(touch PWNED)"])
+        return parser
+
+    def run(self, args: argparse.Namespace, ctx: Context) -> Outcome:
+        return Outcome()
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_a_choice_with_shell_metacharacters_is_refused(
+    shell: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[Command] = [*COMMANDS, UnsafeChoice()]
+    with pytest.raises(UnsafeWordError, match="cannot be completed safely"):
+        generate(shell, build_parser(commands))
+    assert main(["completion", shell], commands=commands) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "[internal.unexpected]" in captured.err
+
+
 def test_spec_reads_choices_and_value_kinds(commands: list[Command]) -> None:
     spec = spec_of(build_parser(commands))
     tricky = next(c for c in spec.commands if c.name == "tricky")
@@ -191,6 +219,9 @@ t mmt-plugin completion ''
 t mmt-plugin --json completion z
 t mmt-plugin -C "$2/" ''
 t mmt-plugin -C "$2/su"
+t mmt-plugin --project = "$2/su"
+t mmt-plugin --project = "$2" comp
+t mmt-plugin completion --project = "$2" ''
 t mmt-plugin tricky --level ''
 t mmt-plugin tricky --le
 t mmt-plugin dummy --mode ''
@@ -224,6 +255,10 @@ def test_bash_loads_without_running_the_tool_and_completes(
     assert got["mmt-plugin completion "] == "bash zsh fish "
     assert got["mmt-plugin --json completion z"] == "zsh "
     assert got[f"mmt-plugin -C {tmp_path}/su"] == f"{tmp_path}/sub "
+    # --project=DIR, which bash splits at '='.
+    assert got[f"mmt-plugin --project = {tmp_path}/su"] == f"{tmp_path}/sub "
+    assert got[f"mmt-plugin --project = {tmp_path} comp"] == "completion "
+    assert got[f"mmt-plugin completion --project = {tmp_path} "] == "bash zsh fish "
     assert got["mmt-plugin tricky --level "] == "low high "
     assert got["mmt-plugin tricky --le"] == "--level "
     assert got["mmt-plugin dummy --mode "] == "a b "

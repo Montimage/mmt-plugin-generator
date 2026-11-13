@@ -15,6 +15,7 @@ completes nothing.
 from __future__ import annotations
 
 import argparse
+import re
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -22,13 +23,30 @@ from dataclasses import dataclass
 from mmt_plugin.commands import Context, Outcome, Subparsers
 from mmt_plugin.exitcodes import ExitCode
 
-__all__ = ["SHELLS", "CompletionCommand", "Spec", "generate", "spec_of"]
+__all__ = ["SHELLS", "CompletionCommand", "Spec", "UnsafeWordError", "generate", "spec_of"]
 
 PROG = "mmt-plugin"
 SHELLS = ("bash", "zsh", "fish")
 
 _DIR_NAMES = frozenset({"DIR", "PREFIX", "PROJECT"})
 _FILE_NAMES = frozenset({"FILE", "PATH", "MODEL", "PDL", "PCAP", "PACKETS", "OUTPUT"})
+
+#: What a command name, an option flag or a choice may contain: the shells
+#: expand completion words (bash ``compgen -W``, zsh ``(...)`` actions, fish
+#: ``-a``), so a word with a shell metacharacter could run code when completed.
+_SAFE_WORD = re.compile(r"-{0,2}[A-Za-z0-9][A-Za-z0-9_.+-]*")
+
+
+class UnsafeWordError(ValueError):
+    """A command name, flag or choice that the scripts cannot carry safely."""
+
+
+def _checked(word: str) -> str:
+    if not _SAFE_WORD.fullmatch(word):
+        raise UnsafeWordError(
+            f"{word!r} cannot be completed safely: use letters, digits, '_', '.', '+', '-'"
+        )
+    return word
 
 
 @dataclass(frozen=True)
@@ -91,7 +109,7 @@ def _kind(action: argparse.Action) -> str:
 
 
 def _choices(action: argparse.Action) -> tuple[str, ...]:
-    return tuple(str(c) for c in action.choices) if action.choices else ()
+    return tuple(_checked(str(c)) for c in action.choices) if action.choices else ()
 
 
 def _shown(action: argparse.Action) -> bool:
@@ -105,7 +123,7 @@ def _options(parser: argparse.ArgumentParser) -> tuple[Option, ...]:
             continue
         out.append(
             Option(
-                flags=tuple(action.option_strings),
+                flags=tuple(_checked(f) for f in action.option_strings),
                 help=_help(parser, action),
                 takes_value=action.nargs != 0,
                 value=str(action.metavar or action.dest.upper()),
@@ -147,7 +165,7 @@ def spec_of(parser: argparse.ArgumentParser) -> Spec:
         for name, sub in action.choices.items():
             commands.append(
                 CommandSpec(
-                    name=name,
+                    name=_checked(name),
                     help=" ".join(helps.get(name, "").split()),
                     options=_options(sub),
                     positionals=_positionals(sub),
@@ -208,10 +226,12 @@ def _bash(spec: Spec) -> str:
         "}",
         "",
         "_mmt_plugin_dirs() {",
+        "    compopt -o filenames 2>/dev/null",
         '    mapfile -t COMPREPLY < <(compgen -d -- "$cur")',
         "}",
         "",
         "_mmt_plugin_files() {",
+        "    compopt -o filenames 2>/dev/null",
         '    mapfile -t COMPREPLY < <(compgen -f -- "$cur")',
         "}",
         "",
@@ -221,6 +241,13 @@ def _bash(spec: Spec) -> str:
         '    cur="${COMP_WORDS[COMP_CWORD]}"',
         '    prev=""',
         '    (( COMP_CWORD > 0 )) && prev="${COMP_WORDS[COMP_CWORD-1]}"',
+        "    # COMP_WORDBREAKS splits --opt=value into --opt, =, value.",
+        "    if [[ $cur == = ]]; then",
+        '        cur=""',
+        '        prev="${COMP_WORDS[COMP_CWORD-1]}"',
+        "    elif [[ $prev == = ]] && (( COMP_CWORD > 1 )); then",
+        '        prev="${COMP_WORDS[COMP_CWORD-2]}"',
+        "    fi",
         '    cmd=""',
         "    for (( i = 1; i < COMP_CWORD; i++ )); do",
         '        word="${COMP_WORDS[i]}"',
@@ -228,7 +255,10 @@ def _bash(spec: Spec) -> str:
         "            --) break ;;",
     ]
     if valued:
-        lines.append(f"            {_bash_pattern(valued)}) (( i++ )) ;;")
+        lines.append(
+            f"            {_bash_pattern(valued)})"
+            " (( i++ )); [[ ${COMP_WORDS[i]} == = ]] && (( i++ )) ;;"
+        )
     lines += [
         "            -*) ;;",
         '            *) cmd="$word"; break ;;',

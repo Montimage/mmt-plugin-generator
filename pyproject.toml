@@ -1,0 +1,58 @@
+[project]
+name = "mmt-plugin"
+version = "0.1.0.dev0"
+description = "Generate, build and test mmt-dpi protocol plugins from a protocol model."
+requires-python = ">=3.10"
+authors = [{ name = "Montimage" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.scripts]
+mmt-plugin = "mmt_plugin.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "ruff>=0.17",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Supply-chain cooldown: resolve only releases at least two weeks old when
+# this was set. Move it forward on purpose when upgrading (`uv lock --upgrade`).
+exclude-newer = "2026-10-30T00:00:00Z"
+
+[tool.uv.build-backend]
+# The package lives under python/ while the repo root's src/ holds the legacy
+# Java tool. Once that moves to legacy/ (T0.5), the package can move to src/
+# and this line can go (uv_build defaults to "src").
+module-root = "python/src"
+
+[tool.ruff]
+# Only the Python package and its tests; tests/corpus/validate.py is a
+# stdlib-only script with its own style.
+include = ["python/**/*.py", "python/**/*.pyi"]
+src = ["python/src", "python/tests"]
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+files = ["python/src/mmt_plugin", "python/tests"]
+mypy_path = "python/src"
+strict = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true

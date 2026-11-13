@@ -143,3 +143,58 @@ jobs:
           echo "pkg-config mmt-dpi $(pkg-config --modversion mmt-dpi)"
       - name: Build and load the NDN example plugin
         run: MMT_BASE=/opt/mmt bash tests/check_ndn_plugin.sh
+
+  python:
+    name: Python package (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is requires-python's floor (plan decision 1); 3.12 is the
+        # Python of the pinned build container (T0.3).
+        python: ['3.10', '3.12']
+    env:
+      # Pinned uv; the sha256 is copied from the release's upstream
+      # uv-x86_64-unknown-linux-gnu.tar.gz.sha256 file.
+      UV_VERSION: 0.12.10
+      UV_SHA256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+      UV_PYTHON: ${{ matrix.python }}
+      # Fail instead of re-locking when uv.lock is out of date.
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the uv version
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Install the package and dev tools from uv.lock
+        run: |
+          uv sync
+          uv run python --version
+          uv run python -c 'import os, sys; v = "%d.%d" % sys.version_info[:2]; assert v == os.environ["UV_PYTHON"], v'
+      - name: Ruff lint
+        run: uv run ruff check
+      - name: Ruff format
+        run: uv run ruff format --check
+      - name: Mypy
+        run: uv run mypy
+      - name: Pytest
+        run: uv run pytest
+      - name: Run the console script
+        run: uv run mmt-plugin --version

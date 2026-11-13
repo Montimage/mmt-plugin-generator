@@ -41,7 +41,7 @@ protocol model. A Python rewrite is planned in
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
   (amd64 and arm64), `make test-container` on both arches, and the Python
-  checks below (Python 3.10 and 3.12).
+  checks below (Python 3.10, 3.12 and 3.14).
 
 ## Commands
 

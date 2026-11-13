@@ -115,6 +115,8 @@ HINTS: Mapping[str, str] = MappingProxyType(
         "model.default-scope": 'add scope="SCOPE_PACKET" (or SCOPE_SESSION) to say which you mean',
         "model.pointer-field": "prefer an MMT_U32_DATA or byte-array field: a pointer field "
         "only gives its offset",
+        "model.hook-reference": "give the attribute an offset and a data_len, or do not use "
+        "offset() or len() of it",
         "model.branch-offset-mismatch": "give the attribute an offset that does not depend on "
         "the if/else, or make both branches the same length",
     }
@@ -309,6 +311,9 @@ class _Analyser:
         self.conditionals: list[AnalysedConditional] = []
         self.conditional_count = 0
         self.helper_names: set[str] = set(self.declared_structs)
+        # Struct fields left out after an error of their own: a reference to
+        # one is not reported again.
+        self.dropped: set[str] = set()
         self.reported: set[Span] = set()
         self.defining: dict[str, str] = {}  # kind ("define", ...) -> key
 
@@ -588,10 +593,14 @@ class _Analyser:
             return ValueRef(node.attribute.text.lower(), node.span)
         if isinstance(node, pdl.OffsetOf):
             target = self._reference(node.attribute, guards, "offset")
+            if target is not None and target.offset is None:
+                self._hook_reference(node.attribute, target, "offset")
             value = None if target is None else target.offset_value
             return OffsetRef(node.attribute.text.lower(), value, node.span)
         if isinstance(node, pdl.LengthOf):
             target = self._reference(node.attribute, guards, "len")
+            if target is not None and target.length is None:
+                self._hook_reference(node.attribute, target, "data_len")
             value = None if target is None else target.length_value
             return LengthRef(node.attribute.text.lower(), value, node.span)
         if isinstance(node, pdl.SizeOf):
@@ -612,12 +621,24 @@ class _Analyser:
             return Swap(node.width, operand, _swap(node.width, operand), node.span)
         raise AssertionError(f"not an expression leaf: {node!r}")  # pragma: no cover
 
+    def _hook_reference(self, name: pdl.Name, target: AnalysedAttribute, key: str) -> None:
+        function = "offset" if key == "offset" else "len"
+        self.error(
+            "model.hook-reference",
+            f"{function}({name.text}) has no value: `{target.name}` has no {key}, so its "
+            "extraction is a user hook",
+            name.span,
+            related=[Related("declared here", target.span.location())],
+        )
+
     def _reference(
         self, name: pdl.Name, guards: tuple[Guard, ...], function: str
     ) -> AnalysedAttribute | None:
         """The attribute ``val()``, ``offset()`` or ``len()`` names (bug 12)."""
         key = name.text.lower()
         target = self.attrs.get(key)
+        if target is None and key in self.dropped:
+            return None  # already reported where it is declared
         if target is None:
             later = self.declared_attrs.get(key)
             if later is not None:
@@ -858,6 +879,7 @@ class _Analyser:
             run: _Run | None = None
             for f in element.fields:
                 if info is None:
+                    self.dropped.add(f.name.text.lower())
                     continue
                 if f.bit_width is None:
                     run = None
@@ -865,7 +887,9 @@ class _Analyser:
                     offset += info.width
                     continue
                 bitfield, run, offset = self._bitfield(f, info, run, runs, offset)
-                if bitfield is not None:
+                if bitfield is None:
+                    self.dropped.add(f.name.text.lower())
+                else:
                     fields.append(
                         (f, self._field(f, info, bitfield.unit_offset, bitfield), info.storage)
                     )

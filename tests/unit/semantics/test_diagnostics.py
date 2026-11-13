@@ -13,7 +13,7 @@ from mmt_plugin.diagnostics import CODES, Severity
 from mmt_plugin.exitcodes import ExitCode, for_class
 from mmt_plugin.semantics import HINTS
 
-from .conftest import attr, build, classify, covered, run, u8, whole
+from .conftest import attr, build, classify, covered, ok, run, u8, whole
 
 E, W = Severity.ERROR, Severity.WARNING
 
@@ -81,6 +81,12 @@ CASES: dict[str, Case] = {
         attr(BINARY) + u8("b", "val(blob)"),
         "blob",
         "val(blob) reads an integer, but `blob` is MMT_BINARY_DATA",
+        related=(("declared here", None),),
+    ),
+    "hook-reference": Case(
+        attr('alias="h" data_type="MMT_BINARY_DATA" scope="packet"') + u8("b", "offset(h)"),
+        "h",
+        "offset(h) has no value: `h` has no offset, so its extraction is a user hook",
         related=(("declared here", None),),
     ),
     "missing-length": Case(
@@ -293,3 +299,32 @@ def test_a_later_struct_named_like_the_attribute_is_not_a_self_reference() -> No
     _, diagnostics = run(text)
     assert [d.code for d in diagnostics] == ["model.use-before-definition"]
     assert diagnostics[0].message == "struct `h` is used before its definition"
+
+
+def test_len_of_a_hook_without_data_len() -> None:
+    text = whole(
+        attr('alias="h" data_type="MMT_BINARY_DATA" scope="packet"')
+        + u8("b", "0", length="len(h)")
+    )
+    _, diagnostics = run(text)
+    assert [d.code for d in diagnostics] == ["model.hook-reference"]
+    assert "`h` has no data_len" in diagnostics[0].message
+    # A hook with a data_len has a length: len() folds.
+    model = ok(
+        attr('alias="h" data_type="MMT_BINARY_DATA" data_len="3" scope="packet"')
+        + u8("b", "len(h)")
+    )
+    assert model.attribute("b").offset_value == 3
+
+
+@pytest.mark.parametrize(
+    ("field", "code"),
+    [
+        ("uint8_t a:4, b:5;", "model.bitfield-overflow"),
+        ("MMT_STRING_DATA b;", "model.no-fixed-width"),
+        ("uint8_t b:9;", "model.invalid-bitfield"),
+    ],
+)
+def test_a_field_dropped_on_error_is_not_reported_again(field: str, code: str) -> None:
+    _, diagnostics = run(struct("s", field) + u8("x", "val(b)"))
+    assert [d.code for d in diagnostics] == [code]

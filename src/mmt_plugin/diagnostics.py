@@ -88,6 +88,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.conditional-reference": "val(), offset() or len() of a conditional attribute, "
         "outside the branch that declares it",
         "model.not-an-integer": "val() of an attribute whose type is not an integer",
+        "model.hook-reference": "offset() or len() of an attribute without an offset or "
+        "data_len (a user hook)",
         "model.missing-length": "data_len is omitted for a type without a fixed width",
         "model.no-fixed-width": "an MMT_* type without a fixed width as a struct field or in "
         "sizeof",

@@ -15,7 +15,8 @@ first of:
 4. ``/opt/mmt``, when that directory exists.
 
 Relative paths (``--sdk``, ``MMT_BASE``, ``PKG_CONFIG_PATH`` entries) are
-resolved against the current directory, without following symlinks. A
+resolved against the current directory, without following symlinks. An
+empty ``--sdk`` is ``sdk.invalid-prefix``, not the current directory. A
 prefix without ``dpi/include/mmt_log.h`` (mmt-dpi >= 1.10.0 installs it) is
 ``sdk.invalid-prefix``; finding none is ``sdk.not-found`` for the commands
 that need one (``require_sdk``).
@@ -239,11 +240,15 @@ def find_sdk(
     ``/opt/mmt`` (tests point both into temporary directories); ``cwd`` is
     the directory relative paths are resolved against (default: the current
     one). An explicit prefix (``--sdk``, ``MMT_BASE``, the ``.pc`` file) that
-    is not valid raises ``CliError`` (class sdk, exit 4) instead of falling
+    is empty (``--sdk``) or not valid raises ``CliError`` (class sdk, exit 4) instead of falling
     through to the next source: silently using another SDK would hide the
     mistake.
     """
     if cli_prefix is not None:
+        if not cli_prefix:
+            raise CliError(
+                "sdk.invalid-prefix", "--sdk is empty: no SDK prefix given", _HINT_PREFIX
+            )
         return _sdk_at(_absolute(cli_prefix, cwd), SdkSource.CLI, cli_prefix)
     env_prefix = env.get("MMT_BASE", "")
     if env_prefix:

@@ -229,6 +229,22 @@ def test_an_explicit_prefix_without_mmt_log_h_does_not_fall_through(
     assert info.value.hint and "mmt_log.h" in info.value.hint
 
 
+def test_an_empty_sdk_option_is_invalid(
+    setup: dict[str, Path],
+    tmp_path: Path,
+    make_prefix: MakePrefix,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Even when the current directory is a valid prefix, "" is not ".".
+    monkeypatch.chdir(make_prefix(tmp_path / "cwd"))
+    with pytest.raises(CliError) as info:
+        _find(setup, "", {"MMT_BASE": str(setup["env"])})
+    assert info.value.code == "sdk.invalid-prefix"
+    assert info.value.exit_code is ExitCode.SDK
+    assert info.value.message == "--sdk is empty: no SDK prefix given"
+    assert info.value.hint and "mmt_log.h" in info.value.hint
+
+
 def test_a_missing_explicit_prefix_is_invalid(setup: dict[str, Path], tmp_path: Path) -> None:
     with pytest.raises(CliError) as info:
         _find(setup, "does-not-exist")

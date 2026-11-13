@@ -6,9 +6,14 @@ protocol model. A Python rewrite is planned in
 
 ## What exists today
 
-- `src/`, `lib/`, `dist/`, `pdl_grammar/`, `nbproject/`, `build.xml`,
-  `manifest.mf`: the legacy Java generator (2015, NetBeans Ant project).
-  The prebuilt jar is `dist/MMTPluginGenerator.jar`.
+- `legacy/`: the legacy Java generator (2015, NetBeans Ant project), frozen
+  by T0.5: `src/`, `lib/`, `dist/`, `pdl_grammar/`, `nbproject/`,
+  `build.xml`, `manifest.mf`. The prebuilt jar is
+  `legacy/dist/MMTPluginGenerator.jar`. `legacy/reference-output/` holds its
+  output for every `plugins/*_plugin` model (exit code, stdout and stderr
+  included) and a `MANIFEST` with the jar's sha256; CI regenerates it with
+  `legacy/check-reference-output.sh`. `docs/legacy/java-generator-inventory.md`
+  describes the tool's behaviour.
 - `plugins/`: the 16 example models (`plugins/*_plugin`) and generated or
   hand-written C sources (`*_src/`, `cotp/`, `tpkt/`, ...). Only 4 of the
   16 models (abb, cotp, s7com, tpkt) produce code that compiles against
@@ -24,9 +29,10 @@ protocol model. A Python rewrite is planned in
   `SHA256SUMS` and `manifest.json`); it never installs.
 - `pyproject.toml`, `uv.lock`, `python/`: the Python rewrite (T1.1 onwards).
   The package `mmt_plugin` is in `python/src/mmt_plugin/` (uv_build
-  `module-root = "python/src"`, since `src/` is still the Java tool) and its
-  unit tests in `python/tests/`. The `mmt-plugin` CLI only has `--help` and
-  `--version` so far; exit codes are in `python/src/mmt_plugin/cli.py`.
+  `module-root = "python/src"`; the Java tool is now in `legacy/`, and moving
+  the package to `src/` is a separate, pending decision) and its unit tests
+  in `python/tests/`. The `mmt-plugin` CLI only has `--help` and `--version`
+  so far; exit codes are in `python/src/mmt_plugin/cli.py`.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator, and
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -37,11 +43,19 @@ protocol model. A Python rewrite is planned in
 Generate C sources from a model with the legacy tool (needs Java):
 
 ```
-java -jar dist/MMTPluginGenerator.jar plugins/tpkt_plugin <output dir>
+java -jar legacy/dist/MMTPluginGenerator.jar plugins/tpkt_plugin <output dir>
 ```
 
 Create the output dir first: if it is missing, the tool prints
 `Error in writing to file` and still exits 0.
+
+Check that the jar still reproduces `legacy/reference-output/` byte for byte
+(needs a Java 8 runtime; set `JAVA` to pick one). It exits non-zero on any
+difference; `--write` regenerates the reference instead:
+
+```
+bash legacy/check-reference-output.sh
+```
 
 Build and check the NDN example. It needs mmt-dpi >= 1.10.2 installed into a
 private prefix (see README, "Install mmt-dpi"); pass that prefix as an

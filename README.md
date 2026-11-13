@@ -243,7 +243,7 @@ Protocol {
 ```
 cd plugin_generator/plugins/
 mkdir quic_src
-java -jar ../dist/MMTPluginGenerator.jar quic_plugin quic_src
+java -jar ../legacy/dist/MMTPluginGenerator.jar quic_plugin quic_src
 ```
 
 After executing the abow commands, we should have 2 source files in `quic_src/`

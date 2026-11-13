@@ -31,9 +31,9 @@ build-backend = "uv_build"
 exclude-newer = "2026-10-30T00:00:00Z"
 
 [tool.uv.build-backend]
-# The package lives under python/ while the repo root's src/ holds the legacy
-# Java tool. Once that moves to legacy/ (T0.5), the package can move to src/
-# and this line can go (uv_build defaults to "src").
+# The package lives under python/src, set by this line. The legacy Java tool
+# is now in legacy/ (T0.5); moving the package to src/, which would drop this
+# line (uv_build defaults to "src"), is a separate, pending decision.
 module-root = "python/src"
 
 [tool.ruff]

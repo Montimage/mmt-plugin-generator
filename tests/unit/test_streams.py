@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
 import io
+import os
+import pty
+import struct
+import termios
 
 import pytest
 
@@ -73,3 +78,25 @@ def test_a_stream_without_isatty_is_plain() -> None:
 
     # StringIO has no encoding: ASCII glyphs.
     assert decide(Bare(), env=TERM) == StreamStyle(False, ColorTier.NONE, False)
+
+
+@pytest.mark.parametrize(
+    ("columns", "width"), [("120", 120), ("1", 1), ("0", 80), ("-5", 80), ("wide", 80), ("", 80)]
+)
+def test_width_comes_from_columns_else_80(columns: str, width: int) -> None:
+    assert decide(PIPE, env={**TERM, "COLUMNS": columns}).width == width
+    assert decide(PIPE, env=TERM).width == 80
+
+
+def test_a_terminal_reports_its_own_width_and_is_a_tty() -> None:
+    leader, follower = pty.openpty()
+    try:
+        fcntl.ioctl(follower, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 101, 0, 0))
+        with open(follower, "w", encoding="utf-8", closefd=False) as stream:
+            style = decide(stream, env=TERM)
+            assert (style.tty, style.width) == (True, 101)
+            assert decide(stream, env={**TERM, "COLUMNS": "50"}).width == 50
+        assert decide(PIPE, env=TERM).tty is False
+    finally:
+        os.close(leader)
+        os.close(follower)

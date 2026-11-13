@@ -4,11 +4,13 @@
 ``mmt_plugin.commands``), runs it, and turns its ``Outcome`` into output and
 an exit code (``mmt_plugin.exitcodes``):
 
-- stdout carries only the result: plain records, or with ``--json`` exactly
+- stdout carries only the result: plain records, the command's styled
+  ``view`` when stdout is styled (``mmt_plugin.ui.style``), or with ``--json`` exactly
   one envelope (``mmt_plugin.envelope``), for every outcome, usage errors,
   ``--version``, internal errors and SIGINT included;
-- stderr carries diagnostics in compiler style with a ``hint:``, and the
-  ``-v`` logs; with ``--json``, only the ``-v`` logs;
+- stderr carries diagnostics in compiler style with a ``hint:`` (styled
+  ``✗ error:`` and ``▲ warning:`` on a styled stderr), and the ``-v`` logs;
+  with ``--json``, only the ``-v`` logs;
 - a closed stdout ends the run quietly and keeps its exit code; any other
   failure to write stdout (a full disk, say) is exit 1 with one
   ``internal.io`` line on stderr; nothing is ever read from the terminal.
@@ -36,8 +38,8 @@ from mmt_plugin.commands import COMMANDS, Command, Context, Outcome, Subparsers
 from mmt_plugin.diagnostics import CliError, Severity, sorted_diagnostics
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.sdk.profile import bundled_versions
-from mmt_plugin.ui import render
-from mmt_plugin.ui.streams import decide
+from mmt_plugin.ui import render, style
+from mmt_plugin.ui.streams import StreamStyle, decide
 
 PROG = "mmt-plugin"
 
@@ -53,14 +55,26 @@ _GLOBALS = ("project", "json", "no_color", "quiet", "verbose")
 _SUB = "global_after_command_"
 
 
+#: The exit codes every command can return.
+ALWAYS = (ExitCode.SUCCESS, ExitCode.INTERNAL, ExitCode.USAGE, ExitCode.INTERRUPTED)
+
+
+def exit_codes_of(command: Command) -> tuple[ExitCode, ...]:
+    """The exit codes ``command`` can return, in order: 0, 1, 2, 130 and its own."""
+    return tuple(sorted({*ALWAYS, *command.exit_codes}))
+
+
+def _codes_text(codes: Sequence[ExitCode]) -> str:
+    return "exit codes:\n" + "\n".join(f"  {int(code):<4} {code.meaning}" for code in codes)
+
+
 def _epilog() -> str:
-    codes = "\n".join(f"  {int(code):<4} {code.meaning}" for code in ExitCode)
     return (
         "Supported platform: Linux (amd64, arm64). The global options are accepted\n"
         "before or after the command. Nothing is ever prompted for.\n"
         f"Run '{PROG} <command> --help' for the options of a command.\n"
         "\n"
-        f"exit codes:\n{codes}"
+        f"{_codes_text(tuple(ExitCode))}"
     )
 
 
@@ -219,6 +233,8 @@ def build_parser(commands: Sequence[Command] | None = None) -> argparse.Argument
     for command in registered:
         sub = command.register(subparsers)
         _add_global_options(sub, after_command=True)
+        codes = _codes_text(exit_codes_of(command))
+        sub.epilog = f"{sub.epilog}\n\n{codes}" if sub.epilog else codes
         sub.set_defaults(_command=command)
     return parser
 
@@ -254,14 +270,19 @@ def _command_parser(
 
 
 def parse_args(
-    argv: Sequence[str], commands: Sequence[Command] | None = None
+    argv: Sequence[str],
+    commands: Sequence[Command] | None = None,
+    *,
+    parser: argparse.ArgumentParser | None = None,
 ) -> argparse.Namespace:
     """Parse ``argv``; raise ``UsageError`` on a bad command line or no command.
 
     The result has the global options (wherever they were given), ``command``
     (the name) and ``_command`` (the ``Command``), plus the command's own.
+    ``parser`` is ``build_parser(commands)`` when not given.
     """
-    parser = build_parser(commands)
+    if parser is None:
+        parser = build_parser(commands)
     ns, extras = parser.parse_known_args(list(argv))
     if extras:
         # Report them against the command's parser (its usage, its --help).
@@ -277,15 +298,19 @@ def parse_args(
     return ns
 
 
-def _wants_json(argv: Sequence[str]) -> bool:
-    """Whether ``--json`` appears before ``--``: decided before parsing, so that
-    a usage error is still an envelope."""
+def _has_flag(argv: Sequence[str], flag: str) -> bool:
     for arg in argv:
         if arg == "--":
             return False
-        if arg == "--json":
+        if arg == flag:
             return True
     return False
+
+
+def _wants_json(argv: Sequence[str]) -> bool:
+    """Whether ``--json`` appears before ``--``: decided before parsing, so that
+    a usage error is still an envelope."""
+    return _has_flag(argv, "--json")
 
 
 def _project_path(project: str) -> str:
@@ -306,6 +331,8 @@ class _Run:
     json: bool
     out: TextIO
     err: TextIO
+    out_style: StreamStyle
+    err_style: StreamStyle
     command: str | None = None
     quiet: bool = False
     verbose: int = 0
@@ -343,8 +370,9 @@ def _version_outcome() -> Outcome:
 
 
 def _dispatch(run: _Run, argv: Sequence[str], commands: Sequence[Command] | None) -> Outcome:
+    parser = build_parser(commands)
     try:
-        ns = parse_args(argv, commands)
+        ns = parse_args(argv, parser=parser)
     except _VersionRequested:
         if run.json:
             return _version_outcome()
@@ -358,15 +386,18 @@ def _dispatch(run: _Run, argv: Sequence[str], commands: Sequence[Command] | None
     run.quiet = ns.quiet
     run.verbose = ns.verbose
     run.context = {"project": _project_path(ns.project), "sdk": None}
+    run.out_style = decide(run.out, env=os.environ, no_color=ns.no_color, json=ns.json)
+    run.err_style = decide(run.err, env=os.environ, no_color=ns.no_color)
     ctx = Context(
         project=Path(ns.project),
         json=ns.json,
         quiet=ns.quiet,
         verbose=ns.verbose,
         no_color=ns.no_color,
-        stdout_style=decide(run.out, env=os.environ, no_color=ns.no_color, json=ns.json),
-        stderr_style=decide(run.err, env=os.environ, no_color=ns.no_color),
+        stdout_style=run.out_style,
+        stderr_style=run.err_style,
         stderr=run.err,
+        parser=parser,
     )
     try:
         return command.run(ns, ctx)
@@ -406,6 +437,17 @@ def _envelope_text(run: _Run, outcome: Outcome) -> tuple[str, int]:
         return envelope.dumps(doc), doc["exit_code"]
 
 
+def _human(run: _Run, outcome: Outcome) -> str:
+    """The human stdout: the command's ``text`` as is; else its ``view`` when
+    stdout is styled; else the plain records."""
+    if outcome.text is not None:
+        return outcome.text
+    if outcome.view is not None and run.out_style.styled:
+        text = outcome.view(run.out_style)
+        return text if not text or text.endswith("\n") else text + "\n"
+    return "".join(render.record(fields) for fields in outcome.records)
+
+
 def _emit(run: _Run, outcome: Outcome) -> int:
     if run.json:
         text, code = _envelope_text(run, outcome)
@@ -413,18 +455,23 @@ def _emit(run: _Run, outcome: Outcome) -> int:
         run.out.flush()
         return code
     if not run.quiet:
-        for fields in outcome.records:
-            run.out.write(render.record(fields))
+        try:
+            text = _human(run, outcome)
+        except Exception as exc:  # a view that fails is a bug, reported as one
+            failure = _internal_error(run, exc)
+            outcome = Outcome(diagnostics=outcome.diagnostics, error=failure)
+            text = ""
+        run.out.write(text)
     run.out.flush()
     for diagnostic in sorted_diagnostics(outcome.diagnostics):
         if run.quiet and diagnostic.severity is not Severity.ERROR:
             continue
-        run.err.write(render.format_diagnostic(diagnostic, prog=PROG))
+        run.err.write(style.format_diagnostic(diagnostic, prog=PROG, style=run.err_style))
     error = outcome.error
     if error is not None:
         if isinstance(error, UsageError):
             run.err.write(error.usage)
-        run.err.write(render.format_error(error, prog=PROG))
+        run.err.write(style.format_error(error, prog=PROG, style=run.err_style))
     run.err.flush()
     return int(outcome.exit_code)
 
@@ -475,7 +522,7 @@ def _write_failed(run: _Run, exc: OSError) -> int:
         traceback.print_exception(type(exc), exc, exc.__traceback__, file=run.err)
     error = CliError("internal.io", f"cannot write to stdout: {exc.strerror or exc}")
     try:
-        run.err.write(render.format_error(error, prog=PROG))
+        run.err.write(style.format_error(error, prog=PROG, style=run.err_style))
         run.err.flush()
     except OSError:
         pass
@@ -488,7 +535,17 @@ def main(argv: Sequence[str] | None = None, *, commands: Sequence[Command] | Non
     ``commands`` replaces the registry (tests only).
     """
     args = sys.argv[1:] if argv is None else list(argv)
-    run = _Run(json=_wants_json(args), out=_stdout(), err=sys.stderr)
+    wants_json = _wants_json(args)
+    no_color = _has_flag(args, "--no-color")
+    out, err = _stdout(), sys.stderr
+    run = _Run(
+        json=wants_json,
+        out=out,
+        err=err,
+        # Decided again after parsing; these cover a usage error before it.
+        out_style=decide(out, env=os.environ, no_color=no_color, json=wants_json),
+        err_style=decide(err, env=os.environ, no_color=no_color),
+    )
     code = int(ExitCode.INTERNAL)
     try:
         try:

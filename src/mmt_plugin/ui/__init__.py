@@ -1,6 +1,8 @@
-"""Terminal output: per-stream decisions and plain renderers.
+"""Terminal output: per-stream decisions, plain renderers and the btop style.
 
-The styled (btop) renderers come with ``mmt_plugin.ui.style`` (#22). Commands
-never probe the terminal: the CLI decides once per stream, right after
-parsing, and passes the decision in the command context.
+``streams`` decides, once per stream right after parsing, whether output is
+styled or plain, its color tier, glyph set and width; ``render`` writes the
+plain records and compiler-style diagnostics; ``style`` draws the styled
+(btop) output. Commands never probe the terminal: they read the decision in
+the command context.
 """

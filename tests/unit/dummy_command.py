@@ -1,4 +1,6 @@
-"""A test-only ``dummy`` command, used to test option placement and the envelope.
+"""A test-only ``dummy`` command, used to test option placement, the envelope
+and the styled output (``--box``). Its ``result`` schema is
+``dummy_result.json``, next to this file.
 
 Loaded by ``conftest.py`` for in-process tests; run as a script
 (``python dummy_command.py ARGS``) for the subprocess tests. Its test-only
@@ -17,6 +19,12 @@ from types import MappingProxyType
 from mmt_plugin import diagnostics
 from mmt_plugin.commands import Context, Outcome, Subparsers
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Related, Severity
+from mmt_plugin.exitcodes import ExitCode
+from mmt_plugin.ui import style
+from mmt_plugin.ui.streams import StreamStyle
+
+#: The ``result`` schema of ``dummy``.
+RESULT_SCHEMA = Path(__file__).with_name("dummy_result.json")
 
 #: One test-only code per failure class that commands will use.
 TEST_CODES: Mapping[str, str] = {
@@ -34,6 +42,7 @@ class DummyCommand:
     """``mmt-plugin dummy [VALUE]``: echoes VALUE; flags make it fail in each way."""
 
     name = "dummy"
+    exit_codes = (ExitCode.MODEL, ExitCode.SDK, ExitCode.BUILD, ExitCode.TEST, ExitCode.STATE)
 
     def register(self, subparsers: Subparsers) -> argparse.ArgumentParser:
         parser = subparsers.add_parser(self.name, help="test-only command")
@@ -49,6 +58,8 @@ class DummyCommand:
         parser.add_argument("--log", action="store_true", help="log at -v and -vv")
         parser.add_argument("--sleep", metavar="MARKER", help="touch MARKER, then sleep")
         parser.add_argument("--records", type=int, default=0, help="extra output records")
+        parser.add_argument("--box", action="store_true", help="print a styled box on a TTY")
+        parser.add_argument("--bad-view", action="store_true", help="a view that raises")
         parser.add_argument("--mode", choices=["a", "b"])
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--left", action="store_true")
@@ -97,7 +108,35 @@ class DummyCommand:
             diags.append(Diagnostic(Severity.NOTE, "model.test-dummy", "a dummy note"))
         records = [("value", args.value)] + [("n", str(i)) for i in range(args.records)]
         error = CliError(args.return_error, "returned failure") if args.return_error else None
-        return Outcome(result=result, records=records, diagnostics=diags, error=error)
+        view = None
+        if args.box:
+
+            def view(st: StreamStyle) -> str:
+                return box_view(args.value, st)
+
+        if args.bad_view:
+
+            def view(st: StreamStyle) -> str:
+                raise RuntimeError("view failed")
+
+        return Outcome(result=result, records=records, view=view, diagnostics=diags, error=error)
+
+
+def box_view(value: str, st: StreamStyle) -> str:
+    """The styled ``dummy --box`` output: a box with a table, a meter and a sparkline."""
+    rows = style.table(
+        ["field", "status", "detail"],
+        [
+            ["value", style.status("pass", style.Level.OK, style=st), value],
+            ["meter", style.status("warn", style.Level.WARN, style=st), style.meter(50, style=st)],
+            ["samples", style.status("skip", style.Level.SKIP, style=st), "1 4 9 2"],
+        ],
+        style=st,
+        width=st.width - 4,
+    )
+    spark = style.sparkline([1, 4, 9, 2], style=st)
+    footer = f"3 fields{style.glyphs(st).separator}1 warning"
+    return style.box(f"dummy {value}", [*rows, "", spark], style=st, footer=footer)
 
 
 if __name__ == "__main__":

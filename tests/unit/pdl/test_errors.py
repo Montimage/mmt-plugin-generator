@@ -214,6 +214,12 @@ CASES = {
         "second `classifynext`",
         nth=1,
     ),
+    "after-attributes": Case(
+        'Protocol { Properties { label = "p" id = "1" } Attributes { } extra }',
+        "unexpected-token",
+        "extra",
+        "expected `classifynext` or the `}` that closes `Protocol`",
+    ),
     # --- Properties keys (G:179) -----------------------------------------------
     # JAVA: keys out of order were "mismatched input"; no files were written.
     "properties-order": Case(

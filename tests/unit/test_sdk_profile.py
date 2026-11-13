@@ -89,6 +89,14 @@ def test_what_the_generator_needs(profile: Profile) -> None:
     assert profile.logger.debug_opt_in == "MMT_LOG_ENABLE_DEBUG"
     assert profile.class_provider.register == "mmt_register_class_provider"
     assert profile.parents.id_for("tcp") == "PROTO_TCP"
+    # The ids that model checks compare a plugin's id and name with (#12).
+    assert profile.constant("PROTO_MAX_IDENTIFIER").value == 1000
+    assert profile.constant("PROTO_META").value == 1
+    assert profile.parents.id_of("PROTO_TCP") == 354
+    assert profile.parents.id_of("PROTO_TPKT") == 637
+    assert profile.parents.id_of("PROTO_NOTHING") is None
+    assert len(profile.parents.ids) == 670
+    assert all(profile.parents.id_of(name) is not None for name in profile.parents.examples)
     for lookup in (profile.callback, profile.function, profile.struct, profile.constant):
         with pytest.raises(KeyError):
             lookup("nothing")
@@ -191,6 +199,16 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     ),
     "fractional value": (lambda d: _const(d, "Max_Alias_Len").update(value=64.5), "an integer"),
     "boolean value": (lambda d: _const(d, "Max_Alias_Len").update(value=True), "an integer"),
+    "ids not an object": (lambda d: d["parents"].update(ids=[1]), "expected an object"),
+    "id not a name": (lambda d: d["parents"]["ids"].update({"1x": 3}), "not a C identifier"),
+    "negative id": (
+        lambda d: d["parents"]["ids"].update(PROTO_TCP=-1),
+        "expected a non-negative integer",
+    ),
+    "string id": (
+        lambda d: d["parents"]["ids"].update(PROTO_TCP="354"),
+        "expected a non-negative integer",
+    ),
 }
 
 #: Invalid profiles only the loader can see (cross-references).
@@ -212,6 +230,10 @@ LOADER_ERRORS: dict[str, tuple[Mutation, str]] = {
         lambda d: d["class_provider"].update(unknown="Classified"),
         "class_provider.unknown",
     ),
+    "duplicate id": (
+        lambda d: d["parents"]["ids"].update(PROTO_NEW=354),
+        "PROTO_NEW and PROTO_TCP are both 354",
+    ),
 }
 
 
@@ -232,6 +254,13 @@ def test_the_loader_checks_cross_references(name: str) -> None:
     mutate(data)
     with pytest.raises(ProfileError, match=message):
         parse_profile(data)
+
+
+def test_parent_ids_are_optional() -> None:
+    data = copy.deepcopy(_raw())
+    del data["parents"]["ids"]
+    assert Draft202012Validator(load_schema()).is_valid(data)
+    assert parse_profile(data).parents.ids == ()
 
 
 def test_a_constant_value_is_optional() -> None:

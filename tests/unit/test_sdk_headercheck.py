@@ -147,6 +147,7 @@ def _stub_data() -> dict[str, Any]:
             "declared_in": "stub.h",
             "id_macro": "PROTO_{LABEL}",
             "examples": ["PROTO_TCP"],
+            "ids": {"PROTO_TCP": 354},
             "doc": "parents",
         },
     }
@@ -228,6 +229,14 @@ MUTATIONS: dict[str, tuple[Mutation, str]] = {
         "not declared there: PROTO_SCTP",
     ),
     "unknown version": (lambda d: d.update(profile="1.11.0"), "profile 1.11.0 is the SDK version"),
+    "parent id value": (
+        lambda d: d["parents"]["ids"].update(PROTO_TCP=355),
+        "parents.ids.PROTO_TCP is not 355",
+    ),
+    "unknown parent id": (
+        lambda d: d["parents"]["ids"].update(PROTO_SCTP=9),
+        "not declared there: PROTO_SCTP",
+    ),
     "constant value": (
         lambda d: d["constants"][2].update(value=63),
         "constants.K_LEN is not 63",
@@ -333,12 +342,10 @@ def test_declared_names_cover_every_entry() -> None:
     flat = {n for ns in names.values() for n in ns}
     assert "get_packet_offset_at_index" in names["data_defs.h"]
     assert "MMT_LOG_ENABLE_DEBUG" in names["mmt_log.h"]
-    assert names["tcpip/mmt_tcpip_protocols.h"] == [
-        "PROTO_ETHERNET",
-        "PROTO_IP",
-        "PROTO_TCP",
-        "PROTO_UDP",
-    ]
+    protocols = names["tcpip/mmt_tcpip_protocols.h"]
+    assert protocols[:4] == ["PROTO_ETHERNET", "PROTO_IP", "PROTO_TCP", "PROTO_UDP"]
+    assert protocols[4:] == [name for name, _ in profile.parents.ids]
+    assert names["proto_meta.h"] == ["PROTO_UNKNOWN", "PROTO_META"]
     expected = {
         *(t.name for t in profile.types),
         *(s.name for s in profile.structs),

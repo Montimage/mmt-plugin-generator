@@ -16,6 +16,7 @@ cross-references a schema cannot express.
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -236,17 +237,30 @@ class ClassProvider:
 
 @dataclass(frozen=True)
 class Parents:
-    """How generated code names a libmmt_tcpip parent protocol's id."""
+    """How generated code names a libmmt_tcpip parent protocol's id.
+
+    ``ids`` lists the id of every protocol ``declared_in`` defines, as
+    ``(macro, id)`` pairs sorted by id; it is empty when the profile records
+    none.
+    """
 
     header: str
     declared_in: str
     id_macro: str
     examples: tuple[str, ...]
     doc: str
+    ids: tuple[tuple[str, int], ...] = ()
 
     def id_for(self, label: str) -> str:
         """The id macro of a parent label: ``"tcp"`` -> ``"PROTO_TCP"``."""
         return self.id_macro.replace("{LABEL}", label.upper())
+
+    def id_of(self, macro: str) -> int | None:
+        """The id of a protocol macro (``"PROTO_TCP"`` -> 354), or ``None``."""
+        for name, value in self.ids:
+            if name == macro:
+                return value
+        return None
 
 
 @dataclass(frozen=True)
@@ -499,6 +513,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         top.value["parents"],
         f"{source}.parents",
         ("header", "declared_in", "id_macro", "examples", "doc"),
+        ("ids",),
     )
     examples = []
     for i, ex in enumerate(pa.array("examples")):
@@ -514,6 +529,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         id_macro=id_macro,
         examples=tuple(examples),
         doc=pa.text("doc"),
+        ids=_parent_ids(pa),
     )
     version = top.text("profile", _VERSION)
     profile = Profile(
@@ -534,6 +550,29 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     )
     _check_references(profile, source)
     return profile
+
+
+def _parent_ids(pa: _Reader) -> tuple[tuple[str, int], ...]:
+    """``parents.ids``: macro names to ids, sorted by id; each id once."""
+    if "ids" not in pa.value:
+        return ()
+    raw = pa.value["ids"]
+    if not isinstance(raw, dict):
+        raise ProfileError(f"{pa.where}.ids: expected an object")
+    ids = []
+    for name, value in raw.items():
+        if not _IDENT.match(name):
+            raise ProfileError(f"{pa.where}.ids: {name!r} is not a C identifier")
+        if type(value) is float and value.is_integer():
+            value = int(value)
+        if type(value) is not int or value < 0:
+            raise ProfileError(f"{pa.where}.ids.{name}: expected a non-negative integer")
+        ids.append((name, value))
+    ids.sort(key=lambda item: (item[1], item[0]))
+    for (a, x), (b, y) in itertools.pairwise(ids):
+        if x == y:
+            raise ProfileError(f"{pa.where}.ids: {a} and {b} are both {x}")
+    return tuple(ids)
 
 
 def _sdk_name(top: _Reader) -> str:

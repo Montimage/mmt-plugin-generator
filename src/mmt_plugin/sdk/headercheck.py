@@ -17,7 +17,8 @@ alone and asserts, with ``_Static_assert`` and ``__builtin_types_compatible_p``
 - a constant is an integer constant expression, equal to its ``value`` when
   the profile records one, and a macro is defined; the
   logger macros are also called with a format string, once with the debug
-  opt-in defined.
+  opt-in defined;
+- each protocol id of ``parents.ids`` has its recorded value.
 
 The unit is compiled with ``-std=<c_std> -Wall -Wextra -Werror -fsyntax-only``,
 so a deprecated function also fails. Separately, each entry's name must
@@ -181,6 +182,8 @@ def _entries(profile: Profile, header: str) -> Iterator[str]:
                 f"(long long)({name}) == (long long)({name})",
                 f"parents.examples: {name} is not an integer constant",
             )
+        for name, value in pa.ids:
+            yield _assert(f"({name}) == {value}", f"parents.ids.{name} is not {value}")
 
 
 def _extra_headers(profile: Profile, header: str) -> list[str]:
@@ -230,6 +233,8 @@ def declared_names(profile: Profile) -> dict[str, list[str]]:
         add(m.header, m.name)
     add(profile.logger.header, profile.logger.debug_opt_in)
     for name in profile.parents.examples:
+        add(profile.parents.declared_in, name)
+    for name, _ in profile.parents.ids:
         add(profile.parents.declared_in, name)
     return names
 

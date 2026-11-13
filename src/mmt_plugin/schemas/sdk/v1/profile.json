@@ -165,6 +165,12 @@
         "declared_in": {"$ref": "#/$defs/header"},
         "id_macro": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\{LABEL\\}[A-Za-z0-9_]*$"},
         "examples": {"type": "array", "items": {"$ref": "#/$defs/ident"}},
+        "ids": {
+          "type": "object",
+          "description": "The id of every protocol declared_in defines, by its macro name (the header check asserts each value). Model checks use it to find a plugin id or name that libmmt_tcpip already takes. Absent: no id is known.",
+          "propertyNames": {"$ref": "#/$defs/ident"},
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
         "doc": {"$ref": "#/$defs/text"}
       }
     }

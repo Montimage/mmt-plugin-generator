@@ -1,0 +1,484 @@
+{
+  "file": "tests/corpus/models/pdl_struct_types/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_struct_types",
+        "span": "3:12-3:28"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 967,
+        "text": "967",
+        "span": "4:9-4:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": null,
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "5:15-5:22"
+      },
+      "span": "2:2-6:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_inner",
+            "span": "8:10-8:19"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "9:4-9:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "in_a",
+                    "span": "9:12-9:16"
+                  },
+                  "bit_width": null,
+                  "span": "9:12-9:16"
+                }
+              ],
+              "span": "9:4-9:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "10:4-10:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "in_b",
+                    "span": "10:12-10:16"
+                  },
+                  "bit_width": null,
+                  "span": "10:12-10:16"
+                }
+              ],
+              "span": "10:4-10:17"
+            }
+          ],
+          "span": "8:3-11:4"
+        },
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_types_hdr",
+            "span": "12:10-12:23"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "int",
+                "unsigned": false,
+                "pointer": false,
+                "span": "13:4-13:7"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_int",
+                    "span": "13:8-13:13"
+                  },
+                  "bit_width": null,
+                  "span": "13:8-13:13"
+                }
+              ],
+              "span": "13:4-13:14"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "long",
+                "unsigned": false,
+                "pointer": false,
+                "span": "14:4-14:8"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_long",
+                    "span": "14:9-14:15"
+                  },
+                  "bit_width": null,
+                  "span": "14:9-14:15"
+                }
+              ],
+              "span": "14:4-14:16"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint32_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "15:4-15:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_u32",
+                    "span": "15:13-15:18"
+                  },
+                  "bit_width": null,
+                  "span": "15:13-15:18"
+                }
+              ],
+              "span": "15:4-15:19"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "short",
+                "unsigned": false,
+                "pointer": false,
+                "span": "16:4-16:9"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_short",
+                    "span": "16:10-16:17"
+                  },
+                  "bit_width": null,
+                  "span": "16:10-16:17"
+                }
+              ],
+              "span": "16:4-16:18"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint16_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "17:4-17:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_u16",
+                    "span": "17:13-17:18"
+                  },
+                  "bit_width": null,
+                  "span": "17:13-17:18"
+                }
+              ],
+              "span": "17:4-17:19"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "char",
+                "unsigned": false,
+                "pointer": false,
+                "span": "18:4-18:8"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_char",
+                    "span": "18:9-18:15"
+                  },
+                  "bit_width": null,
+                  "span": "18:9-18:15"
+                }
+              ],
+              "span": "18:4-18:16"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "u_char",
+                "unsigned": false,
+                "pointer": false,
+                "span": "19:4-19:10"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_uchar",
+                    "span": "19:11-19:18"
+                  },
+                  "bit_width": null,
+                  "span": "19:11-19:18"
+                }
+              ],
+              "span": "19:4-19:19"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "20:4-20:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_u8",
+                    "span": "20:12-20:16"
+                  },
+                  "bit_width": null,
+                  "span": "20:12-20:16"
+                }
+              ],
+              "span": "20:4-20:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "int",
+                "unsigned": true,
+                "pointer": false,
+                "span": "21:4-21:16"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_uint",
+                    "span": "21:17-21:23"
+                  },
+                  "bit_width": null,
+                  "span": "21:17-21:23"
+                }
+              ],
+              "span": "21:4-21:24"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "short",
+                "unsigned": true,
+                "pointer": false,
+                "span": "22:4-22:18"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_ushort",
+                    "span": "22:19-22:27"
+                  },
+                  "bit_width": null,
+                  "span": "22:19-22:27"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_ushort2",
+                    "span": "22:29-22:38"
+                  },
+                  "bit_width": null,
+                  "span": "22:29-22:38"
+                }
+              ],
+              "span": "22:4-22:39"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "char",
+                "unsigned": true,
+                "pointer": false,
+                "span": "23:4-23:17"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_uc",
+                    "span": "23:18-23:22"
+                  },
+                  "bit_width": null,
+                  "span": "23:18-23:22"
+                }
+              ],
+              "span": "23:4-23:23"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": true,
+                "span": "24:4-24:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_ptr",
+                    "span": "24:13-24:18"
+                  },
+                  "bit_width": null,
+                  "span": "24:13-24:18"
+                }
+              ],
+              "span": "24:4-24:19"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "MmtType",
+                "type": "MMT_DATA_MAC_ADDR",
+                "span": "25:4-25:21"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_mac",
+                    "span": "25:22-25:27"
+                  },
+                  "bit_width": null,
+                  "span": "25:22-25:27"
+                }
+              ],
+              "span": "25:4-25:28"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "MmtType",
+                "type": "MMT_DATA_IP_ADDR",
+                "span": "26:4-26:20"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_ip",
+                    "span": "26:21-26:25"
+                  },
+                  "bit_width": null,
+                  "span": "26:21-26:25"
+                }
+              ],
+              "span": "26:4-26:26"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "StructType",
+                "name": {
+                  "node": "Name",
+                  "text": "pdl_inner",
+                  "span": "27:11-27:20"
+                },
+                "span": "27:4-27:20"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_inner",
+                    "span": "27:21-27:28"
+                  },
+                  "bit_width": null,
+                  "span": "27:21-27:28"
+                }
+              ],
+              "span": "27:4-27:29"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "28:4-28:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "f_last",
+                    "span": "28:12-28:18"
+                  },
+                  "bit_width": null,
+                  "span": "28:12-28:18"
+                }
+              ],
+              "span": "28:4-28:19"
+            }
+          ],
+          "span": "12:3-29:4"
+        }
+      ],
+      "span": "7:2-30:3"
+    },
+    "classify_next": null,
+    "span": "1:1-31:2"
+  }
+}

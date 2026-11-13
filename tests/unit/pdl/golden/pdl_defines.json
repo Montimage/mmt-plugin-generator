@@ -1,0 +1,322 @@
+{
+  "file": "tests/corpus/models/pdl_defines/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_KIND_A",
+          "span": "2:9-2:17"
+        },
+        "value": {
+          "node": "IntLiteral",
+          "value": 1,
+          "text": "1",
+          "span": "2:20-2:21"
+        },
+        "span": "2:2-2:21"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_KIND_B",
+          "span": "3:9-3:17"
+        },
+        "value": {
+          "node": "IntLiteral",
+          "value": 2,
+          "text": "0x02",
+          "span": "3:20-3:24"
+        },
+        "span": "3:2-3:24"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_KIND_BASE",
+          "span": "4:9-4:20"
+        },
+        "value": {
+          "node": "IntLiteral",
+          "value": 3,
+          "text": "3",
+          "span": "4:23-4:24"
+        },
+        "span": "4:2-4:24"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_KIND_C",
+          "span": "5:9-5:17"
+        },
+        "value": {
+          "node": "Name",
+          "text": "T_KIND_BASE",
+          "span": "5:20-5:31"
+        },
+        "span": "5:2-5:31"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_NEXT_A",
+          "span": "6:9-6:17"
+        },
+        "value": {
+          "node": "IntLiteral",
+          "value": 951,
+          "text": "951",
+          "span": "6:20-6:23"
+        },
+        "span": "6:2-6:23"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_NEXT_B",
+          "span": "7:9-7:17"
+        },
+        "value": {
+          "node": "IntLiteral",
+          "value": 952,
+          "text": "0x3B8",
+          "span": "7:20-7:25"
+        },
+        "span": "7:2-7:25"
+      },
+      {
+        "node": "Define",
+        "name": {
+          "node": "Name",
+          "text": "T_NEXT_C",
+          "span": "8:9-8:17"
+        },
+        "value": {
+          "node": "Name",
+          "text": "T_NEXT_A",
+          "span": "8:20-8:28"
+        },
+        "span": "8:2-8:28"
+      }
+    ],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_defines",
+        "span": "10:12-10:23"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 960,
+        "text": "960",
+        "span": "11:9-11:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": {
+        "node": "Flag",
+        "value": true,
+        "span": "12:20-12:24"
+      },
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "13:15-13:22"
+      },
+      "span": "9:2-14:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_defines_hdr",
+            "span": "16:10-16:25"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "17:4-17:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "kind",
+                    "span": "17:12-17:16"
+                  },
+                  "bit_width": null,
+                  "span": "17:12-17:16"
+                }
+              ],
+              "span": "17:4-17:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "18:4-18:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "hlen",
+                    "span": "18:12-18:16"
+                  },
+                  "bit_width": null,
+                  "span": "18:12-18:16"
+                }
+              ],
+              "span": "18:4-18:17"
+            }
+          ],
+          "span": "16:3-19:4"
+        }
+      ],
+      "span": "15:2-20:3"
+    },
+    "classify_next": {
+      "node": "ClassifyNext",
+      "switch": {
+        "node": "Switch",
+        "subject": {
+          "node": "ValueOf",
+          "attribute": {
+            "node": "Name",
+            "text": "kind",
+            "span": "22:14-22:18"
+          },
+          "span": "22:10-22:19"
+        },
+        "cases": [
+          {
+            "node": "Case",
+            "label": {
+              "node": "Name",
+              "text": "T_KIND_A",
+              "span": "23:9-23:17"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "Name",
+                  "text": "T_NEXT_A",
+                  "span": "24:18-24:26"
+                },
+                "span": "24:5-24:26"
+              },
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 2,
+                  "text": "2",
+                  "span": "25:18-25:19"
+                },
+                "span": "25:5-25:19"
+              }
+            ],
+            "has_break": true,
+            "span": "23:4-26:10"
+          },
+          {
+            "node": "Case",
+            "label": {
+              "node": "Name",
+              "text": "T_KIND_B",
+              "span": "27:9-27:17"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "Name",
+                  "text": "T_NEXT_B",
+                  "span": "28:18-28:26"
+                },
+                "span": "28:5-28:26"
+              },
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 2,
+                  "text": "2",
+                  "span": "29:18-29:19"
+                },
+                "span": "29:5-29:19"
+              }
+            ],
+            "has_break": true,
+            "span": "27:4-30:10"
+          },
+          {
+            "node": "Case",
+            "label": {
+              "node": "Name",
+              "text": "T_KIND_C",
+              "span": "31:9-31:17"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "Name",
+                  "text": "T_NEXT_C",
+                  "span": "32:18-32:26"
+                },
+                "span": "32:5-32:26"
+              },
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 2,
+                  "text": "2",
+                  "span": "33:18-33:19"
+                },
+                "span": "33:5-33:19"
+              }
+            ],
+            "has_break": true,
+            "span": "31:4-34:10"
+          }
+        ],
+        "default": {
+          "node": "Default",
+          "statements": [],
+          "has_break": true,
+          "span": "35:4-36:10"
+        },
+        "span": "22:3-37:4"
+      },
+      "span": "21:2-38:3"
+    },
+    "span": "1:1-39:2"
+  }
+}

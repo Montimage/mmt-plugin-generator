@@ -6,6 +6,7 @@ import argparse
 import io
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -614,3 +615,46 @@ def test_stdout_write_failure_is_one_internal_io_line(
         assert b"Traceback" not in proc.stderr
         # The stdout write fails first: a returned error is not reported.
         assert proc.stderr == line
+
+
+def _one_envelope(proc: subprocess.CompletedProcess[bytes]) -> dict[str, object]:
+    out = proc.stdout.decode()
+    doc, end = json.JSONDecoder().raw_decode(out)
+    assert out[end:] == "\n"
+    assert isinstance(doc, dict)
+    return doc
+
+
+# A digit int() cannot read in COLUMNS (review W1): str.isdigit() is true for
+# "²" and "③", and main() calls decide() before its try.
+@pytest.mark.parametrize("columns", ["\u00b2", "\u2462"])
+def test_a_columns_value_int_cannot_read_falls_back(
+    columns: str,
+    run_cli: Callable[..., subprocess.CompletedProcess[bytes]],
+    clean_env: Callable[..., dict[str, str]],
+) -> None:
+    env = clean_env(COLUMNS=columns)
+
+    proc = run_cli(["dummy", "x"], env=env)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (EXIT_OK, b"value\tx\n", b"")
+
+    proc = run_cli(["dummy", "--box"], env=clean_env(COLUMNS=columns, FORCE_COLOR="1"))
+    assert (proc.returncode, proc.stderr) == (EXIT_OK, b"")
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", proc.stdout.decode())
+    assert {len(line) for line in plain.splitlines()} == {80}  # the fallback width
+
+    for argv in (["--json", "--version"], ["--version", "--json"]):
+        proc = run_cli(argv, env=env)
+        assert (proc.returncode, proc.stderr) == (EXIT_OK, b"")
+        assert _one_envelope(proc)["ok"] is True
+
+    proc = run_cli(["--json", "nosuch"], env=env)
+    assert (proc.returncode, proc.stderr) == (EXIT_USAGE, b"")
+    error = _one_envelope(proc)["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == "usage.unknown-command"
+
+    proc = run_cli(["nosuch"], env=env)
+    assert (proc.returncode, proc.stdout) == (EXIT_USAGE, b"")
+    assert b"Traceback" not in proc.stderr
+    assert proc.stderr.count(b"[usage.unknown-command]") == 1

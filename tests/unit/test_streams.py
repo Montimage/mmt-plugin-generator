@@ -81,7 +81,22 @@ def test_a_stream_without_isatty_is_plain() -> None:
 
 
 @pytest.mark.parametrize(
-    ("columns", "width"), [("120", 120), ("1", 1), ("0", 80), ("-5", 80), ("wide", 80), ("", 80)]
+    ("columns", "width"),
+    [
+        ("120", 120),
+        ("1", 1),
+        ("0", 80),
+        ("-5", 80),
+        ("wide", 80),
+        ("abc", 80),
+        (" 40", 80),
+        ("", 80),
+        ("\u0664\u0660", 40),  # Arabic-Indic digits: int() reads them
+        # isdigit() is true, but int() rejects them (review W1).
+        ("\u00b2", 80),  # superscript two
+        ("\u2462", 80),  # circled digit three
+        ("4\u00b2", 80),
+    ],
 )
 def test_width_comes_from_columns_else_80(columns: str, width: int) -> None:
     assert decide(PIPE, env={**TERM, "COLUMNS": columns}).width == width
@@ -96,7 +111,19 @@ def test_a_terminal_reports_its_own_width_and_is_a_tty() -> None:
             style = decide(stream, env=TERM)
             assert (style.tty, style.width) == (True, 101)
             assert decide(stream, env={**TERM, "COLUMNS": "50"}).width == 50
+            assert decide(stream, env={**TERM, "COLUMNS": "\u00b2"}).width == 101
         assert decide(PIPE, env=TERM).tty is False
     finally:
         os.close(leader)
         os.close(follower)
+
+
+@pytest.mark.parametrize(
+    "name", ["TERM", "COLORTERM", "NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE"]
+)
+@pytest.mark.parametrize("value", ["²", "③", "İ", "\udcff", "a\tb\x1b", ""])
+def test_odd_style_variables_never_raise(name: str, value: str) -> None:
+    # Only string comparisons: no value of these can raise (review W1).
+    for stream in (TTY, PIPE):
+        style = decide(stream, env={**TERM, name: value})
+        assert style.width == 80

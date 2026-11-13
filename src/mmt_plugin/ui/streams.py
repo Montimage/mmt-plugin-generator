@@ -66,10 +66,20 @@ def _is_utf8(stream: TextIO) -> bool:
 
 
 def _width(stream: TextIO, env: Mapping[str, str], tty: bool) -> int:
-    """``COLUMNS`` when it is a positive number, else the terminal's width, else 80."""
+    """``COLUMNS`` when it is a positive number, else the terminal's width, else 80.
+
+    ``str.isdigit()`` is also true for characters ``int()`` rejects (``²``,
+    ``③``), and ``int()`` refuses over 4300 digits, so whatever it cannot
+    parse falls back like any other bad value.
+    """
     columns = env.get("COLUMNS", "")
-    if columns.isdigit() and int(columns) > 0:
-        return int(columns)
+    if columns.isdigit():
+        try:
+            value = int(columns)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
     if tty:
         try:
             size = os.get_terminal_size(stream.fileno()).columns

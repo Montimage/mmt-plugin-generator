@@ -2,6 +2,7 @@
 
 Status: approved by Luong on 2026-11-10. Owner: Dex (orchestrator). Repo: Montimage/mmt-plugin-generator.
 Inputs: the behaviour inventory of the Java tool (Montimage/mmt-plugin-generator#3, first comment) and the NDN example work (#1, #2). Related mmt-dpi changes: #62, #66/#68, #70/#71.
+CLI design: [`cli.md`](cli.md) (approved by Luong on 2026-11-13) specifies the `mmt-plugin` command line that the tasks below implement: commands, options, exit codes, the `--json` envelope, I/O rules and the terminal style.
 
 ## Goal
 
@@ -76,7 +77,12 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
   - `pyproject.toml` with a src layout, a `mmt-plugin` console entry point, ruff, mypy (strict on the package) and pytest.
   - A CI job for lint, type checks and unit tests.
   - Verify: `uv run mmt-plugin --version` and `uv run pytest` pass in CI.
-- **T1.2 PDL v1 parser into a typed model.** Depends on T1.1.
+- **T1.1a Move the package to `src/` and add the CLI contract core (#43).** Depends on T1.1 and T0.5.
+  - PR A: move the package to `src/mmt_plugin/` and its tests to `tests/unit/`, which T0.5 made possible by moving the Java tool to `legacy/`.
+  - PR B: the contract core of [`cli.md`](cli.md) that every command builds on: the argparse command tree and its registry; the global options `-C/--project`, `--json`, `--no-color`, `-q` and `-v`, before or after the command; exit codes 0, 1 internal, 2 usage, 3 model, 4 sdk, 5 build, 6 test, 7 state and 130 interrupted; diagnostics with registered dotted codes; exactly one `--json` envelope (schema version 1, JSON Schema in the package) for every outcome; results on stdout and diagnostics on stderr; atomic writes reported as created, updated or unchanged by content hash.
+  - No command is registered yet: each one arrives with its own task.
+  - Verify: unit tests for option placement, the envelope against its schema for every outcome, byte-identical re-runs, SIGINT (exit 130), a closed stdout and atomic writes.
+- **T1.2 PDL v1 parser into a typed model.** Depends on T1.1a.
   - Accepts every construct of the inventory, with the same meaning.
   - Keywords are contextual, so fields named `id`, `len` or `offset` work.
   - Comments are supported, and the parser is anchored at EOF.
@@ -87,7 +93,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
   - Typed expressions and constant folding, fixing bugs 5, 6, 7 and 19.
   - Validation, fixing bugs 9, 12, 16, 17 and 23: duplicates are checked case-insensitively, `val()` targets are checked, and ids are checked.
   - Verify: each fixed bug has a regression test named after its inventory number.
-- **T1.4 SDK profile for mmt-dpi 1.10.2 and SDK detection.** Depends on T1.1.
+- **T1.4 SDK profile for mmt-dpi 1.10.2 and SDK detection.** Depends on T1.1a.
   - A data file describing callback signatures (`mmt_proto_index_t`), registration calls, helpers, the logger (`mmt_log.h`) and the class provider (`mmt_class_provider.h`).
   - Detection order: `MMT_BASE`, the FHS pkg-config file, then `/opt/mmt`.
   - An unknown SDK version falls back to the nearest profile with a warning.
@@ -96,6 +102,9 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
   - Jinja2 templates emit the header and source from the model and the SDK profile.
   - Output is deterministic: byte-identical on re-run, with stable ordering.
   - Hooks are declared for user code, writes are atomic, and existing files are never overwritten silently.
+  - `mmt-plugin generate [MODEL]` as in [`cli.md`](cli.md), writing `generated/` by default.
+  - `plugin.lock` (moved from T2.6) records the generator version, SDK profile, model hash and each generated file's sha256, and is written last. A generated file whose hash differs from it is not overwritten without `--force`.
+  - `generate --check` (moved from T2.6) writes nothing and exits 7 when any generated file or `plugin.lock` would change.
   - Fixes bugs 1, 10, 11, 13, 14, 15, 18, 20, 21, 22 and 25.
   - Verify: golden snapshot tests of the generated C for every corpus model.
 - **T1.6 Parity and behaviour-changes record.** Depends on T1.5 and T0.5.
@@ -127,11 +136,14 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 - **T2.5 `install`, `uninstall` and `doctor`.** Depends on T2.3.
   - `install` defaults to a user prefix; `--system` targets `/opt/mmt`. Both write an install manifest that `uninstall` follows.
   - `doctor` reports the toolchain, SDK version, plugin directory, load order and id/name clashes.
-  - Verify: tests in a temporary prefix; no sudo in CI.
-- **T2.6 Consistency and resilience across commands.** Depends on T1.5.
-  - Every command takes `--json`.
-  - Documented exit-code classes: usage, model, SDK, build, test.
-  - `plugin.lock` records the generator version, SDK profile and model hash, and `generate --check` fails when the generated files are stale.
+  - The default user prefix, `${XDG_DATA_HOME:-~/.local/share}/mmt`, is provisional ([`cli.md`](cli.md), D11). First check, citing the mmt-dpi 1.10.2 source, which plugin directories mmt-dpi 1.10.2 scans. Keep the default only if an unmodified mmt-dpi 1.10.2 loads a plugin installed there (directly or through `MMT_DPI_PLUGINS_DIR`); otherwise change it and record why. `doctor` reports whether the install directory is scanned.
+  - Verify: tests in a temporary prefix; no sudo in CI; a load test shows mmt-dpi 1.10.2 finds a plugin installed at the default prefix.
+- **T2.6 Consistency and resilience across commands.** Depends on T1.1a.
+  - Every command takes `--json`: contract tests iterate the parser, and each command prints exactly one envelope valid against the envelope schema and its own `result` schema, with `--json` before or after the command name.
+  - Exit codes as documented in [`cli.md`](cli.md); each command's `--help` lists the codes it can return.
+  - `mmt_plugin.ui.style`: the zero-dependency btop style of [`cli.md`](cli.md), with styled renderers for every command registered when it merges. `--json`, piped and `NO_COLOR` output carry no ESC byte.
+  - `mmt-plugin completion {bash,zsh,fish}`, generated from the parser.
+  - `plugin.lock` and `generate --check` moved to T1.5, since `generate` needs the lock to detect hand-edited files.
   - Verify: CLI contract tests, including the JSON schema of each command's output.
 - **T2.7 `mmt-plugin init`.** Depends on T2.2.
   - Scaffolds a plugin project (`plugin.yaml`, `src/`, `tests/`) that builds and tests green out of the box.
@@ -181,4 +193,6 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 
 ## Critical path
 
-T0.1 → T0.2 → T1.1 → T1.2 → T1.3 → T1.5 → T2.3 → T2.4 → T5.1 → T5.5.
+T0.1 → T0.2 → T1.1 → T1.1a → T1.2 → T1.3 → T1.5 → T2.3 → T2.4 → T5.1 → T5.5.
+
+T2.6 runs in parallel with T1.2–T1.5. The commands of T2.1, T2.3, T2.4, T2.5, T2.7, T3.2 and T4.1 also wait for it (their issues depend on #22), so T2.6 joins the critical path if it is not done by the time T1.5 is.

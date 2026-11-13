@@ -33,8 +33,10 @@ protocol model. A Python rewrite is planned in
 - `pyproject.toml`, `uv.lock`, `src/`, `tests/unit/`: the Python rewrite
   (T1.1 onwards). The package `mmt_plugin` is in `src/mmt_plugin/` (uv_build's
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
-  only has `--help` and `--version` so far; exit codes are in
-  `src/mmt_plugin/cli.py`.
+  has the contract core of `docs/design/cli.md` (exit codes in
+  `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
+  envelope and its schema) but no command yet: each command registers itself
+  in `src/mmt_plugin/commands/` with its own issue.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`

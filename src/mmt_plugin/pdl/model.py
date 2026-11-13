@@ -102,10 +102,17 @@ class Name:
 
 @dataclass(frozen=True)
 class IntLiteral:
-    """An integer literal: decimal (``-4``, ``007`` is 7) or hex (``0x3BC``).
+    """An integer literal: decimal (``-4``, ``007``) or hex (``0x3BC``).
 
-    ``text`` is the spelling, sign included; ``value`` is what it means
-    (``Integer.parseInt``, G:704-705). Ranges are not checked here.
+    ``value`` is the base-10 value of a decimal literal (``010`` is 10) and
+    the value of a hex one. That is what the Java tool computed only where it
+    folded the literal with ``Integer.parseInt``: ``id``, bit widths and simple
+    expressions (G:704-705). Elsewhere (a define value, a case label, a
+    ``nextencaps`` value, a literal inside a non-simple expression) it copied
+    the literal into the C as text, where a leading zero means octal: ``010``
+    is 8 and ``08`` does not compile. ``text`` keeps the spelling, sign
+    included, so nothing is lost; the semantic passes (T1.3, #12) diagnose
+    leading zeros. Ranges are not checked here.
     """
 
     value: int

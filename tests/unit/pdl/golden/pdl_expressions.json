@@ -1,0 +1,661 @@
+{
+  "file": "tests/corpus/models/pdl_expressions/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_expressions",
+        "span": "3:12-3:27"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 972,
+        "text": "972",
+        "span": "4:9-4:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": null,
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "5:15-5:22"
+      },
+      "span": "2:2-6:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_expr_hdr",
+            "span": "8:10-8:22"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "9:4-9:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "hlen",
+                    "span": "9:12-9:16"
+                  },
+                  "bit_width": null,
+                  "span": "9:12-9:16"
+                }
+              ],
+              "span": "9:4-9:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "10:4-10:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "count",
+                    "span": "10:12-10:17"
+                  },
+                  "bit_width": null,
+                  "span": "10:12-10:17"
+                }
+              ],
+              "span": "10:4-10:18"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint16_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "11:4-11:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "total",
+                    "span": "11:13-11:18"
+                  },
+                  "bit_width": null,
+                  "span": "11:13-11:18"
+                }
+              ],
+              "span": "11:4-11:19"
+            }
+          ],
+          "span": "8:3-12:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "body",
+            "span": "14:11-14:15"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_BINARY_DATA",
+            "span": "14:28-14:43"
+          },
+          "data_len": {
+            "node": "BinaryOp",
+            "op": "-",
+            "left": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "total",
+                "span": "14:59-14:64"
+              },
+              "span": "14:55-14:65"
+            },
+            "right": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "hlen",
+                "span": "14:72-14:76"
+              },
+              "span": "14:68-14:77"
+            },
+            "span": "14:55-14:77"
+          },
+          "offset": {
+            "node": "ValueOf",
+            "attribute": {
+              "node": "Name",
+              "text": "hlen",
+              "span": "14:91-14:95"
+            },
+            "span": "14:87-14:96"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "14:105-14:117"
+          },
+          "span": "13:3-15:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "items",
+            "span": "17:11-17:16"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_BINARY_DATA",
+            "span": "17:29-17:44"
+          },
+          "data_len": {
+            "node": "BinaryOp",
+            "op": "*",
+            "left": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "count",
+                "span": "17:60-17:65"
+              },
+              "span": "17:56-17:66"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 2,
+              "text": "2",
+              "span": "17:69-17:70"
+            },
+            "span": "17:56-17:70"
+          },
+          "offset": {
+            "node": "ValueOf",
+            "attribute": {
+              "node": "Name",
+              "text": "hlen",
+              "span": "17:84-17:88"
+            },
+            "span": "17:80-17:89"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "17:98-17:110"
+          },
+          "span": "16:3-18:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "half",
+            "span": "20:11-20:15"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "20:28-20:39"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "20:51-20:52"
+          },
+          "offset": {
+            "node": "BinaryOp",
+            "op": "/",
+            "left": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "total",
+                "span": "20:66-20:71"
+              },
+              "span": "20:62-20:72"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 2,
+              "text": "2",
+              "span": "20:75-20:76"
+            },
+            "span": "20:62-20:76"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "20:85-20:97"
+          },
+          "span": "19:3-21:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "paren",
+            "span": "23:11-23:16"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "23:29-23:41"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 2,
+            "text": "2",
+            "span": "23:53-23:54"
+          },
+          "offset": {
+            "node": "BinaryOp",
+            "op": "*",
+            "left": {
+              "node": "BinaryOp",
+              "op": "+",
+              "left": {
+                "node": "ValueOf",
+                "attribute": {
+                  "node": "Name",
+                  "text": "count",
+                  "span": "23:69-23:74"
+                },
+                "span": "23:65-23:75"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "value": 1,
+                "text": "1",
+                "span": "23:78-23:79"
+              },
+              "span": "23:64-23:80"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 2,
+              "text": "2",
+              "span": "23:83-23:84"
+            },
+            "span": "23:64-23:84"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "23:93-23:105"
+          },
+          "span": "22:3-24:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "prec",
+            "span": "26:11-26:15"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "26:28-26:39"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "26:51-26:52"
+          },
+          "offset": {
+            "node": "BinaryOp",
+            "op": "+",
+            "left": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "count",
+                "span": "26:66-26:71"
+              },
+              "span": "26:62-26:72"
+            },
+            "right": {
+              "node": "BinaryOp",
+              "op": "*",
+              "left": {
+                "node": "IntLiteral",
+                "value": 1,
+                "text": "1",
+                "span": "26:75-26:76"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "value": 2,
+                "text": "2",
+                "span": "26:79-26:80"
+              },
+              "span": "26:75-26:80"
+            },
+            "span": "26:62-26:80"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "26:89-26:101"
+          },
+          "span": "25:3-27:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "hexoff",
+            "span": "29:11-29:17"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "29:30-29:42"
+          },
+          "data_len": {
+            "node": "SizeOf",
+            "type": {
+              "node": "CType",
+              "name": "short",
+              "unsigned": false,
+              "pointer": false,
+              "span": "29:61-29:66"
+            },
+            "span": "29:54-29:67"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 10,
+            "text": "0x0A",
+            "span": "29:77-29:81"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "29:90-29:102"
+          },
+          "span": "28:3-30:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "sz_struct",
+            "span": "32:11-32:20"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "32:33-32:45"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 2,
+            "text": "2",
+            "span": "32:57-32:58"
+          },
+          "offset": {
+            "node": "SizeOf",
+            "type": {
+              "node": "StructType",
+              "name": {
+                "node": "Name",
+                "text": "pdl_expr_hdr",
+                "span": "32:82-32:94"
+              },
+              "span": "32:75-32:94"
+            },
+            "span": "32:68-32:95"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "32:104-32:116"
+          },
+          "span": "31:3-33:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "sz_mmt",
+            "span": "35:11-35:17"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "35:30-35:42"
+          },
+          "data_len": {
+            "node": "SizeOf",
+            "type": {
+              "node": "MmtType",
+              "type": "MMT_U16_DATA",
+              "span": "35:61-35:73"
+            },
+            "span": "35:54-35:74"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 12,
+            "text": "12",
+            "span": "35:84-35:86"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "35:95-35:107"
+          },
+          "span": "34:3-36:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "off_fn",
+            "span": "38:11-38:17"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "38:30-38:41"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "38:53-38:54"
+          },
+          "offset": {
+            "node": "BinaryOp",
+            "op": "+",
+            "left": {
+              "node": "OffsetOf",
+              "attribute": {
+                "node": "Name",
+                "text": "hexoff",
+                "span": "38:71-38:77"
+              },
+              "span": "38:64-38:78"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 1,
+              "text": "1",
+              "span": "38:81-38:82"
+            },
+            "span": "38:64-38:82"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "38:91-38:103"
+          },
+          "span": "37:3-39:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "len_fn",
+            "span": "41:11-41:17"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "41:30-41:42"
+          },
+          "data_len": {
+            "node": "LengthOf",
+            "attribute": {
+              "node": "Name",
+              "text": "hexoff",
+              "span": "41:58-41:64"
+            },
+            "span": "41:54-41:65"
+          },
+          "offset": {
+            "node": "BinaryOp",
+            "op": "+",
+            "left": {
+              "node": "LengthOf",
+              "attribute": {
+                "node": "Name",
+                "text": "items",
+                "span": "41:79-41:84"
+              },
+              "span": "41:75-41:85"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 5,
+              "text": "5",
+              "span": "41:88-41:89"
+            },
+            "span": "41:75-41:89"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "41:98-41:110"
+          },
+          "span": "40:3-42:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "sh",
+            "span": "44:11-44:13"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "44:26-44:37"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "44:49-44:50"
+          },
+          "offset": {
+            "node": "ByteSwap",
+            "width": 16,
+            "operand": {
+              "node": "IntLiteral",
+              "value": 768,
+              "text": "0x0300",
+              "span": "44:66-44:72"
+            },
+            "span": "44:60-44:73"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "44:82-44:94"
+          },
+          "span": "43:3-45:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "sl",
+            "span": "47:11-47:13"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "47:26-47:37"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "47:49-47:50"
+          },
+          "offset": {
+            "node": "ByteSwap",
+            "width": 32,
+            "operand": {
+              "node": "IntLiteral",
+              "value": 83886080,
+              "text": "0x05000000",
+              "span": "47:66-47:76"
+            },
+            "span": "47:60-47:77"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "47:86-47:98"
+          },
+          "span": "46:3-48:4"
+        }
+      ],
+      "span": "7:2-49:3"
+    },
+    "classify_next": null,
+    "span": "1:1-50:2"
+  }
+}

@@ -37,6 +37,12 @@ protocol model. A Python rewrite is planned in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
   envelope and its schema) but no command yet: each command registers itself
   in `src/mmt_plugin/commands/` with its own issue.
+- `src/mmt_plugin/pdl/` (T1.2): the PDL v1 lexer and parser.
+  `parse(text, filename=...)` returns a typed model (`pdl/model.py`) or
+  raises `PdlSyntaxError` with `model.syntax.*` diagnostics. It checks syntax
+  only; names, layouts and values are T1.3. Its tests are in
+  `tests/unit/pdl/`, with golden model dumps in `tests/unit/pdl/golden/`
+  (regenerate with `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/pdl`).
 - `src/mmt_plugin/sdk/`: the SDK profiles (T1.4), one JSON file per mmt-dpi
   version in `sdk/profiles/` (only 1.10.2 so far; schema in
   `schemas/sdk/v1/profile.json`), SDK prefix detection and profile choice.

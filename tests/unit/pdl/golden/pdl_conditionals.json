@@ -1,0 +1,493 @@
+{
+  "file": "tests/corpus/models/pdl_conditionals/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_conditionals",
+        "span": "3:12-3:28"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 971,
+        "text": "971",
+        "span": "4:9-4:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": null,
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "5:15-5:22"
+      },
+      "span": "2:2-6:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "kind",
+            "span": "9:11-9:15"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "9:28-9:39"
+          },
+          "data_len": {
+            "node": "SizeOf",
+            "type": {
+              "node": "CType",
+              "name": "char",
+              "unsigned": false,
+              "pointer": false,
+              "span": "9:58-9:62"
+            },
+            "span": "9:51-9:63"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 0,
+            "text": "0",
+            "span": "9:73-9:74"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "9:83-9:95"
+          },
+          "span": "8:3-10:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "sub",
+            "span": "12:11-12:14"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "12:27-12:38"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "12:50-12:51"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "12:61-12:62"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "12:71-12:83"
+          },
+          "span": "11:3-13:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "size",
+            "span": "15:11-15:15"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U16_DATA",
+            "span": "15:28-15:40"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 2,
+            "text": "2",
+            "span": "15:52-15:53"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 2,
+            "text": "2",
+            "span": "15:63-15:64"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "15:73-15:85"
+          },
+          "span": "14:3-16:4"
+        },
+        {
+          "node": "Conditional",
+          "condition": {
+            "node": "BinaryOp",
+            "op": "==",
+            "left": {
+              "node": "ValueOf",
+              "attribute": {
+                "node": "Name",
+                "text": "kind",
+                "span": "17:11-17:15"
+              },
+              "span": "17:7-17:16"
+            },
+            "right": {
+              "node": "IntLiteral",
+              "value": 1,
+              "text": "1",
+              "span": "17:20-17:21"
+            },
+            "span": "17:7-17:21"
+          },
+          "then_branch": [
+            {
+              "node": "Attribute",
+              "alias": {
+                "node": "Name",
+                "text": "one_val",
+                "span": "19:12-19:19"
+              },
+              "data_type": {
+                "node": "DataTypeValue",
+                "type": "MMT_U16_DATA",
+                "span": "19:32-19:44"
+              },
+              "data_len": {
+                "node": "IntLiteral",
+                "value": 2,
+                "text": "2",
+                "span": "19:56-19:57"
+              },
+              "offset": {
+                "node": "IntLiteral",
+                "value": 4,
+                "text": "4",
+                "span": "19:67-19:68"
+              },
+              "scope": {
+                "node": "ScopeValue",
+                "value": "SCOPE_PACKET",
+                "spelling": "SCOPE_PACKET",
+                "span": "19:77-19:89"
+              },
+              "span": "18:4-20:5"
+            },
+            {
+              "node": "Conditional",
+              "condition": {
+                "node": "BinaryOp",
+                "op": ">",
+                "left": {
+                  "node": "ValueOf",
+                  "attribute": {
+                    "node": "Name",
+                    "text": "sub",
+                    "span": "21:12-21:15"
+                  },
+                  "span": "21:8-21:16"
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "value": 7,
+                  "text": "7",
+                  "span": "21:19-21:20"
+                },
+                "span": "21:8-21:20"
+              },
+              "then_branch": [
+                {
+                  "node": "Attribute",
+                  "alias": {
+                    "node": "Name",
+                    "text": "one_big",
+                    "span": "23:13-23:20"
+                  },
+                  "data_type": {
+                    "node": "DataTypeValue",
+                    "type": "MMT_U8_DATA",
+                    "span": "23:33-23:44"
+                  },
+                  "data_len": {
+                    "node": "IntLiteral",
+                    "value": 1,
+                    "text": "1",
+                    "span": "23:56-23:57"
+                  },
+                  "offset": {
+                    "node": "IntLiteral",
+                    "value": 6,
+                    "text": "6",
+                    "span": "23:67-23:68"
+                  },
+                  "scope": {
+                    "node": "ScopeValue",
+                    "value": "SCOPE_PACKET",
+                    "spelling": "SCOPE_PACKET",
+                    "span": "23:77-23:89"
+                  },
+                  "span": "22:5-24:6"
+                }
+              ],
+              "else_branch": null,
+              "span": "21:4-25:5"
+            }
+          ],
+          "else_branch": [
+            {
+              "node": "Attribute",
+              "alias": {
+                "node": "Name",
+                "text": "other_val",
+                "span": "28:12-28:21"
+              },
+              "data_type": {
+                "node": "DataTypeValue",
+                "type": "MMT_U8_DATA",
+                "span": "28:34-28:45"
+              },
+              "data_len": {
+                "node": "IntLiteral",
+                "value": 1,
+                "text": "1",
+                "span": "28:57-28:58"
+              },
+              "offset": {
+                "node": "IntLiteral",
+                "value": 4,
+                "text": "4",
+                "span": "28:68-28:69"
+              },
+              "scope": {
+                "node": "ScopeValue",
+                "value": "SCOPE_PACKET",
+                "spelling": "SCOPE_PACKET",
+                "span": "28:78-28:90"
+              },
+              "span": "27:4-29:5"
+            },
+            {
+              "node": "Conditional",
+              "condition": {
+                "node": "BinaryOp",
+                "op": "AND",
+                "left": {
+                  "node": "BinaryOp",
+                  "op": "<=",
+                  "left": {
+                    "node": "ValueOf",
+                    "attribute": {
+                      "node": "Name",
+                      "text": "sub",
+                      "span": "30:12-30:15"
+                    },
+                    "span": "30:8-30:16"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "value": 7,
+                    "text": "7",
+                    "span": "30:20-30:21"
+                  },
+                  "span": "30:8-30:21"
+                },
+                "right": {
+                  "node": "BinaryOp",
+                  "op": "!=",
+                  "left": {
+                    "node": "ValueOf",
+                    "attribute": {
+                      "node": "Name",
+                      "text": "size",
+                      "span": "30:30-30:34"
+                    },
+                    "span": "30:26-30:35"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "value": 0,
+                    "text": "0",
+                    "span": "30:39-30:40"
+                  },
+                  "span": "30:26-30:40"
+                },
+                "span": "30:8-30:40"
+              },
+              "then_branch": [
+                {
+                  "node": "Attribute",
+                  "alias": {
+                    "node": "Name",
+                    "text": "other_small",
+                    "span": "32:13-32:24"
+                  },
+                  "data_type": {
+                    "node": "DataTypeValue",
+                    "type": "MMT_U8_DATA",
+                    "span": "32:37-32:48"
+                  },
+                  "data_len": {
+                    "node": "IntLiteral",
+                    "value": 1,
+                    "text": "1",
+                    "span": "32:60-32:61"
+                  },
+                  "offset": {
+                    "node": "IntLiteral",
+                    "value": 5,
+                    "text": "5",
+                    "span": "32:71-32:72"
+                  },
+                  "scope": {
+                    "node": "ScopeValue",
+                    "value": "SCOPE_PACKET",
+                    "spelling": "SCOPE_PACKET",
+                    "span": "32:81-32:93"
+                  },
+                  "span": "31:5-33:6"
+                }
+              ],
+              "else_branch": [
+                {
+                  "node": "Attribute",
+                  "alias": {
+                    "node": "Name",
+                    "text": "other_alt",
+                    "span": "36:13-36:22"
+                  },
+                  "data_type": {
+                    "node": "DataTypeValue",
+                    "type": "MMT_U8_DATA",
+                    "span": "36:35-36:46"
+                  },
+                  "data_len": {
+                    "node": "IntLiteral",
+                    "value": 1,
+                    "text": "1",
+                    "span": "36:58-36:59"
+                  },
+                  "offset": {
+                    "node": "IntLiteral",
+                    "value": 6,
+                    "text": "6",
+                    "span": "36:69-36:70"
+                  },
+                  "scope": {
+                    "node": "ScopeValue",
+                    "value": "SCOPE_PACKET",
+                    "spelling": "SCOPE_PACKET",
+                    "span": "36:79-36:91"
+                  },
+                  "span": "35:5-37:6"
+                }
+              ],
+              "span": "30:4-38:5"
+            }
+          ],
+          "span": "17:3-39:4"
+        },
+        {
+          "node": "Conditional",
+          "condition": {
+            "node": "BinaryOp",
+            "op": "OR",
+            "left": {
+              "node": "BinaryOp",
+              "op": ">=",
+              "left": {
+                "node": "ValueOf",
+                "attribute": {
+                  "node": "Name",
+                  "text": "kind",
+                  "span": "40:11-40:15"
+                },
+                "span": "40:7-40:16"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "value": 5,
+                "text": "5",
+                "span": "40:20-40:21"
+              },
+              "span": "40:7-40:21"
+            },
+            "right": {
+              "node": "BinaryOp",
+              "op": "<",
+              "left": {
+                "node": "ValueOf",
+                "attribute": {
+                  "node": "Name",
+                  "text": "sub",
+                  "span": "40:29-40:32"
+                },
+                "span": "40:25-40:33"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "value": 2,
+                "text": "2",
+                "span": "40:36-40:37"
+              },
+              "span": "40:25-40:37"
+            },
+            "span": "40:7-40:37"
+          },
+          "then_branch": [
+            {
+              "node": "Attribute",
+              "alias": {
+                "node": "Name",
+                "text": "tail",
+                "span": "42:12-42:16"
+              },
+              "data_type": {
+                "node": "DataTypeValue",
+                "type": "MMT_U8_DATA",
+                "span": "42:29-42:40"
+              },
+              "data_len": {
+                "node": "IntLiteral",
+                "value": 1,
+                "text": "1",
+                "span": "42:52-42:53"
+              },
+              "offset": {
+                "node": "IntLiteral",
+                "value": 7,
+                "text": "7",
+                "span": "42:63-42:64"
+              },
+              "scope": {
+                "node": "ScopeValue",
+                "value": "SCOPE_PACKET",
+                "spelling": "SCOPE_PACKET",
+                "span": "42:73-42:85"
+              },
+              "span": "41:4-43:5"
+            }
+          ],
+          "else_branch": null,
+          "span": "40:3-44:4"
+        }
+      ],
+      "span": "7:2-45:3"
+    },
+    "classify_next": null,
+    "span": "1:1-46:2"
+  }
+}

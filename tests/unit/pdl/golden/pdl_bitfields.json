@@ -1,0 +1,315 @@
+{
+  "file": "tests/corpus/models/pdl_bitfields/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_bitfields",
+        "span": "3:12-3:25"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 968,
+        "text": "968",
+        "span": "4:9-4:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": null,
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "5:15-5:22"
+      },
+      "span": "2:2-6:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_bits_hdr",
+            "span": "8:10-8:22"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "9:4-9:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "b_hi",
+                    "span": "9:12-9:16"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 3,
+                    "text": "3",
+                    "span": "9:17-9:18"
+                  },
+                  "span": "9:12-9:18"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "b_mid",
+                    "span": "9:20-9:25"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 1,
+                    "text": "1",
+                    "span": "9:26-9:27"
+                  },
+                  "span": "9:20-9:27"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "b_lo",
+                    "span": "9:29-9:33"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 4,
+                    "text": "4",
+                    "span": "9:34-9:35"
+                  },
+                  "span": "9:29-9:35"
+                }
+              ],
+              "span": "9:4-9:36"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint16_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "10:4-10:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "w_lead",
+                    "span": "10:13-10:19"
+                  },
+                  "bit_width": null,
+                  "span": "10:13-10:19"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "w_a",
+                    "span": "10:21-10:24"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 4,
+                    "text": "4",
+                    "span": "10:25-10:26"
+                  },
+                  "span": "10:21-10:26"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "w_b",
+                    "span": "10:28-10:31"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 8,
+                    "text": "8",
+                    "span": "10:32-10:33"
+                  },
+                  "span": "10:28-10:33"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "w_c",
+                    "span": "10:35-10:38"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 4,
+                    "text": "4",
+                    "span": "10:39-10:40"
+                  },
+                  "span": "10:35-10:40"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "w_tail",
+                    "span": "10:42-10:48"
+                  },
+                  "bit_width": null,
+                  "span": "10:42-10:48"
+                }
+              ],
+              "span": "10:4-10:49"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint32_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "11:4-11:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "d_a",
+                    "span": "11:13-11:16"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 1,
+                    "text": "1",
+                    "span": "11:17-11:18"
+                  },
+                  "span": "11:13-11:18"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "d_b",
+                    "span": "11:20-11:23"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 7,
+                    "text": "7",
+                    "span": "11:24-11:25"
+                  },
+                  "span": "11:20-11:25"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "d_c",
+                    "span": "11:27-11:30"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 16,
+                    "text": "16",
+                    "span": "11:31-11:33"
+                  },
+                  "span": "11:27-11:33"
+                },
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "d_d",
+                    "span": "11:35-11:38"
+                  },
+                  "bit_width": {
+                    "node": "IntLiteral",
+                    "value": 8,
+                    "text": "8",
+                    "span": "11:39-11:40"
+                  },
+                  "span": "11:35-11:40"
+                }
+              ],
+              "span": "11:4-11:41"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "12:4-12:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "after",
+                    "span": "12:12-12:17"
+                  },
+                  "bit_width": null,
+                  "span": "12:12-12:17"
+                }
+              ],
+              "span": "12:4-12:18"
+            }
+          ],
+          "span": "8:3-13:4"
+        },
+        {
+          "node": "Attribute",
+          "alias": {
+            "node": "Name",
+            "text": "next_byte",
+            "span": "15:11-15:20"
+          },
+          "data_type": {
+            "node": "DataTypeValue",
+            "type": "MMT_U8_DATA",
+            "span": "15:33-15:44"
+          },
+          "data_len": {
+            "node": "IntLiteral",
+            "value": 1,
+            "text": "1",
+            "span": "15:56-15:57"
+          },
+          "offset": {
+            "node": "IntLiteral",
+            "value": 0,
+            "text": "0",
+            "span": "15:67-15:68"
+          },
+          "scope": {
+            "node": "ScopeValue",
+            "value": "SCOPE_PACKET",
+            "spelling": "SCOPE_PACKET",
+            "span": "15:77-15:89"
+          },
+          "span": "14:3-16:4"
+        }
+      ],
+      "span": "7:2-17:3"
+    },
+    "classify_next": null,
+    "span": "1:1-18:2"
+  }
+}

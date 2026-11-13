@@ -1,0 +1,316 @@
+{
+  "file": "tests/corpus/models/pdl_classifynext/model.pdl",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "pdl_classifynext",
+        "span": "3:12-3:28"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 961,
+        "text": "961",
+        "span": "4:9-4:12"
+      },
+      "context": null,
+      "session_context": null,
+      "session": null,
+      "encapsulation": {
+        "node": "Flag",
+        "value": true,
+        "span": "5:20-5:24"
+      },
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "6:15-6:22"
+      },
+      "span": "2:2-7:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "pdl_cn_hdr",
+            "span": "9:10-9:20"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "10:4-10:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "type",
+                    "span": "10:12-10:16"
+                  },
+                  "bit_width": null,
+                  "span": "10:12-10:16"
+                }
+              ],
+              "span": "10:4-10:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "11:4-11:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "hlen",
+                    "span": "11:12-11:16"
+                  },
+                  "bit_width": null,
+                  "span": "11:12-11:16"
+                }
+              ],
+              "span": "11:4-11:17"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint16_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "12:4-12:12"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "length",
+                    "span": "12:13-12:19"
+                  },
+                  "bit_width": null,
+                  "span": "12:13-12:19"
+                }
+              ],
+              "span": "12:4-12:20"
+            }
+          ],
+          "span": "9:3-13:4"
+        }
+      ],
+      "span": "8:2-14:3"
+    },
+    "classify_next": {
+      "node": "ClassifyNext",
+      "switch": {
+        "node": "Switch",
+        "subject": {
+          "node": "ValueOf",
+          "attribute": {
+            "node": "Name",
+            "text": "type",
+            "span": "16:14-16:18"
+          },
+          "span": "16:10-16:19"
+        },
+        "cases": [
+          {
+            "node": "Case",
+            "label": {
+              "node": "IntLiteral",
+              "value": 1,
+              "text": "1",
+              "span": "17:9-17:10"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 955,
+                  "text": "955",
+                  "span": "18:18-18:21"
+                },
+                "span": "18:5-18:21"
+              },
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 4,
+                  "text": "4",
+                  "span": "19:18-19:19"
+                },
+                "span": "19:5-19:19"
+              }
+            ],
+            "has_break": true,
+            "span": "17:4-20:10"
+          },
+          {
+            "node": "Case",
+            "label": {
+              "node": "IntLiteral",
+              "value": 2,
+              "text": "0x02",
+              "span": "21:9-21:13"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 956,
+                  "text": "0x3BC",
+                  "span": "22:18-22:23"
+                },
+                "span": "22:5-22:23"
+              },
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "SizeOf",
+                  "type": {
+                    "node": "StructType",
+                    "name": {
+                      "node": "Name",
+                      "text": "pdl_cn_hdr",
+                      "span": "23:32-23:42"
+                    },
+                    "span": "23:25-23:42"
+                  },
+                  "span": "23:18-23:43"
+                },
+                "span": "23:5-23:43"
+              }
+            ],
+            "has_break": true,
+            "span": "21:4-24:10"
+          },
+          {
+            "node": "Case",
+            "label": {
+              "node": "IntLiteral",
+              "value": 3,
+              "text": "3",
+              "span": "25:9-25:10"
+            },
+            "statements": [
+              {
+                "node": "NextEncaps",
+                "value": {
+                  "node": "IntLiteral",
+                  "value": 957,
+                  "text": "957",
+                  "span": "26:18-26:21"
+                },
+                "span": "26:5-26:21"
+              }
+            ],
+            "has_break": false,
+            "span": "25:4-26:21"
+          },
+          {
+            "node": "Case",
+            "label": {
+              "node": "IntLiteral",
+              "value": 4,
+              "text": "4",
+              "span": "27:9-27:10"
+            },
+            "statements": [
+              {
+                "node": "NextOffset",
+                "value": {
+                  "node": "BinaryOp",
+                  "op": "*",
+                  "left": {
+                    "node": "ValueOf",
+                    "attribute": {
+                      "node": "Name",
+                      "text": "hlen",
+                      "span": "28:22-28:26"
+                    },
+                    "span": "28:18-28:27"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "value": 4,
+                    "text": "4",
+                    "span": "28:30-28:31"
+                  },
+                  "span": "28:18-28:31"
+                },
+                "span": "28:5-28:31"
+              }
+            ],
+            "has_break": true,
+            "span": "27:4-29:10"
+          }
+        ],
+        "default": {
+          "node": "Default",
+          "statements": [
+            {
+              "node": "NextEncaps",
+              "value": {
+                "node": "IntLiteral",
+                "value": 959,
+                "text": "959",
+                "span": "31:18-31:21"
+              },
+              "span": "31:5-31:21"
+            },
+            {
+              "node": "NextOffset",
+              "value": {
+                "node": "BinaryOp",
+                "op": "-",
+                "left": {
+                  "node": "ValueOf",
+                  "attribute": {
+                    "node": "Name",
+                    "text": "length",
+                    "span": "32:22-32:28"
+                  },
+                  "span": "32:18-32:29"
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "value": 2,
+                  "text": "2",
+                  "span": "32:32-32:33"
+                },
+                "span": "32:18-32:33"
+              },
+              "span": "32:5-32:33"
+            }
+          ],
+          "has_break": true,
+          "span": "30:4-33:10"
+        },
+        "span": "16:3-34:4"
+      },
+      "span": "15:2-35:3"
+    },
+    "span": "1:1-36:2"
+  }
+}

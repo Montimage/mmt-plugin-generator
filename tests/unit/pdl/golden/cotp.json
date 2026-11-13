@@ -1,0 +1,109 @@
+{
+  "file": "plugins/cotp_plugin",
+  "model": {
+    "node": "Model",
+    "defines": [],
+    "properties": {
+      "node": "Properties",
+      "label": {
+        "node": "Name",
+        "text": "cotp",
+        "span": "3:12-3:16"
+      },
+      "id": {
+        "node": "IntLiteral",
+        "value": 637,
+        "text": "637",
+        "span": "4:9-4:12"
+      },
+      "context": {
+        "node": "Flag",
+        "value": false,
+        "span": "5:14-5:19"
+      },
+      "session_context": null,
+      "session": {
+        "node": "Flag",
+        "value": false,
+        "span": "6:14-6:19"
+      },
+      "encapsulation": {
+        "node": "Flag",
+        "value": false,
+        "span": "7:20-7:25"
+      },
+      "encoding": {
+        "node": "EncodingValue",
+        "value": "network",
+        "spelling": "network",
+        "span": "8:15-8:22"
+      },
+      "span": "2:2-9:3"
+    },
+    "attributes": {
+      "node": "Attributes",
+      "elements": [
+        {
+          "node": "Struct",
+          "name": {
+            "node": "Name",
+            "text": "cotphdr",
+            "span": "11:10-11:17"
+          },
+          "elements": [
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "12:4-12:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "length",
+                    "span": "12:12-12:18"
+                  },
+                  "bit_width": null,
+                  "span": "12:12-12:18"
+                }
+              ],
+              "span": "12:4-12:19"
+            },
+            {
+              "node": "Element",
+              "type": {
+                "node": "CType",
+                "name": "uint8_t",
+                "unsigned": false,
+                "pointer": false,
+                "span": "13:4-13:11"
+              },
+              "fields": [
+                {
+                  "node": "StructField",
+                  "name": {
+                    "node": "Name",
+                    "text": "pdu_type",
+                    "span": "13:12-13:20"
+                  },
+                  "bit_width": null,
+                  "span": "13:12-13:20"
+                }
+              ],
+              "span": "13:4-13:21"
+            }
+          ],
+          "span": "11:3-14:4"
+        }
+      ],
+      "span": "10:2-15:3"
+    },
+    "classify_next": null,
+    "span": "1:1-16:2"
+  }
+}

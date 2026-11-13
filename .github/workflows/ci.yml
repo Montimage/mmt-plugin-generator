@@ -157,6 +157,11 @@ jobs:
         # uv sync downloads a managed CPython when the runner has no match
         # (uv 0.12.10 provides 3.14.7).
         python: ['3.10', '3.12', '3.14']
+        include:
+          # Only this job installs zsh and fish; their completion tests then
+          # fail instead of skipping (MMT_REQUIRE_SHELLS below).
+          - python: '3.12'
+            shells: true
     env:
       # Pinned uv; the sha256 is copied from the release's upstream
       # uv-x86_64-unknown-linux-gnu.tar.gz.sha256 file.
@@ -186,6 +191,13 @@ jobs:
             || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
           uv --version
           uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Install zsh and fish
+        if: matrix.shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh fish
+          zsh --version
+          fish --version
       - name: Install the package and dev tools from uv.lock
         run: |
           uv sync
@@ -198,7 +210,15 @@ jobs:
       - name: Mypy
         run: uv run mypy
       - name: Pytest
+        env:
+          MMT_REQUIRE_SHELLS: ${{ matrix.shells && '1' || '0' }}
         run: uv run pytest
+      - name: Show the zsh and fish completion tests
+        # Verbose, so the log shows each of them passing, none skipped.
+        if: matrix.shells
+        env:
+          MMT_REQUIRE_SHELLS: '1'
+        run: uv run pytest -v -rA tests/unit/test_completion.py -k 'zsh or fish'
       - name: Run the console script
         run: uv run mmt-plugin --version
 

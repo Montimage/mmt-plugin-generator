@@ -57,8 +57,9 @@ protocol model. A Python rewrite is planned in
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
   (amd64 and arm64), `make test-container` on both arches, the Python
-  checks below (Python 3.10, 3.12 and 3.14), and the SDK profile header
-  check (amd64 and arm64).
+  checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
+  fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
+  instead of skipping), and the SDK profile header check (amd64 and arm64).
 
 ## Commands
 

@@ -179,6 +179,15 @@ def test_spec_reads_choices_and_value_kinds(commands: list[Command]) -> None:
 # --- syntax ------------------------------------------------------------------
 
 
+def _need(shell: str) -> None:
+    """Skip when ``shell`` is missing, or fail when ``MMT_REQUIRE_SHELLS=1``
+    (set in the CI job that installs zsh and fish)."""
+    if shutil.which(shell) is None:
+        if os.environ.get("MMT_REQUIRE_SHELLS") == "1":
+            pytest.fail(f"{shell} is not installed, and MMT_REQUIRE_SHELLS=1 requires it")
+        pytest.skip(f"{shell} is not installed")
+
+
 def _check_syntax(shell: str, script: str, tmp_path: Path) -> None:
     path = tmp_path / f"script.{shell}"
     path.write_text(script)
@@ -191,8 +200,7 @@ def _check_syntax(shell: str, script: str, tmp_path: Path) -> None:
 def test_the_script_parses(
     shell: str, commands: list[Command], capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    if shutil.which(shell) is None:
-        pytest.skip(f"{shell} is not installed: cannot run '{shell} -n'")
+    _need(shell)
     _check_syntax(shell, _script(shell, commands, capsys), tmp_path)
 
 
@@ -282,8 +290,7 @@ def test_zsh_loads_without_running_the_tool_and_registers(
     tmp_path: Path,
     trap: tuple[dict[str, str], Path],
 ) -> None:
-    if shutil.which("zsh") is None:
-        pytest.skip("zsh is not installed")
+    _need("zsh")
     env, marker = trap
     fpath = tmp_path / "zfunc"
     fpath.mkdir()
@@ -313,14 +320,116 @@ def test_zsh_loads_without_running_the_tool_and_registers(
     assert not marker.exists()
 
 
+# Drives a real interactive zsh through zpty: types each line and a TAB, and
+# records the words the completion system offers. The shell in the pty
+# sources _ZSH_SETUP first.
+# usage: zsh -f driver SETUP FPATH CWD HITS LINE...; prints "LINE|word ...".
+_ZSH_DRIVER = r"""
+zmodload zsh/zpty zsh/zselect || exit 3
+setup=$1
+export ZT_FPATH=$2 ZT_CWD=$3 ZT_HITS=$4
+shift 4
+zpty z zsh -f -i
+zpty -w z "source ${(q)setup}"
+for line in "$@"; do
+  : >| $ZT_HITS
+  zpty -w z 'comppostfuncs=(_zt_done)'
+  zpty -w -n z "$line"$'\t'
+  ok=0
+  for i in {1..300}; do
+    while zpty -r -t z junk; do :; done
+    [[ "$(<$ZT_HITS)" == *'<DONE>'* ]] && { ok=1; break }
+    zselect -t 5
+  done
+  (( ok )) || { print -r -- "$line|TIMEOUT"; continue }
+  got=(${${(M)${(f)"$(<$ZT_HITS)"}:#<HIT>*}#<HIT>})
+  print -r -- "$line|${(j: :)${(@ou)got}}"
+  zpty -w -n z $'\C-u'
+done
+zpty -d z
+"""
+
+_ZSH_SETUP = r"""
+PROMPT= RPROMPT=
+fpath=($ZT_FPATH $fpath)
+autoload -Uz compinit
+compinit -u -d $HOME/zcompdump
+cd $ZT_CWD
+compadd() {
+  # Record the offered words; compadd's own queries (-O, -A, -D) pass through.
+  if [[ ${@[1,(i)(-|--)]} == *-(O|A|D)\ * ]]; then
+    builtin compadd "$@"
+    return
+  fi
+  local -a hits
+  builtin compadd -A hits "$@"
+  (( $#hits )) && print -rl -- "<HIT>"${^hits} >&2
+  builtin compadd "$@"
+}
+_zt_done() { print -r -- "<DONE>" >&2 }
+zstyle ':completion:*' menu no
+zstyle ':completion:*' list-prompt ''
+exec 2>>$ZT_HITS
+"""
+
+
+def test_zsh_completes_commands_options_and_values(
+    commands: list[Command],
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    trap: tuple[dict[str, str], Path],
+) -> None:
+    _need("zsh")
+    env, marker = trap
+    fpath = tmp_path / "zfunc"
+    fpath.mkdir()
+    (fpath / "_mmt-plugin").write_text(_script("zsh", commands, capsys))
+    work = tmp_path / "work"
+    (work / "subdir").mkdir(parents=True)
+    driver = tmp_path / "driver.zsh"
+    driver.write_text(_ZSH_DRIVER)
+    setup = tmp_path / "setup.zsh"
+    setup.write_text(_ZSH_SETUP)
+    expected = {
+        "mmt-plugin ": "completion dummy tricky",
+        "mmt-plugin --js": "--json",
+        "mmt-plugin completion ": "bash fish zsh",
+        "mmt-plugin tricky --le": "--level",
+        "mmt-plugin tricky --level ": "high low",
+        "mmt-plugin tricky --level=": "high low",
+        "mmt-plugin -C su": "subdir",
+        "mmt-plugin --project=su": "subdir",
+    }
+    proc = subprocess.run(
+        [
+            "zsh",
+            "-f",
+            str(driver),
+            str(setup),
+            str(fpath),
+            str(work),
+            str(tmp_path / "hits"),
+            *expected,
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    got = dict(line.split("|", 1) for line in proc.stdout.splitlines())
+    assert got == expected
+    assert not marker.exists()
+
+
 def test_fish_loads_without_running_the_tool(
     commands: list[Command],
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     trap: tuple[dict[str, str], Path],
 ) -> None:
-    if shutil.which("fish") is None:
-        pytest.skip("fish is not installed")
+    _need("fish")
     env, marker = trap
     script = tmp_path / "mmt-plugin.fish"
     script.write_text(_script("fish", commands, capsys))

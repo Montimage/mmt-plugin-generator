@@ -1,0 +1,498 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin --json envelope, schema_version 1",
+  "description": "The one JSON document mmt-plugin prints on stdout with --json, for every outcome (docs/design/cli.md, section 6). result is command-specific; its schemas come with each command.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "command",
+    "ok",
+    "exit_code",
+    "error",
+    "diagnostics",
+    "context",
+    "result"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "mmt-plugin"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "command": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The command that ran; null when none was dispatched (--version, a usage error before the command)."
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        130
+      ]
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      },
+      "description": "Sorted by file, line, column, code."
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "project",
+        "sdk"
+      ],
+      "description": "The resolved settings and where each came from. Commands add keys.",
+      "properties": {
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The project directory (-C), relative to the current directory when inside it; null when unknown (usage errors)."
+        },
+        "sdk": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The resolved SDK; null for commands that do not use one."
+        }
+      }
+    },
+    "result": {
+      "description": "Command-specific; null on usage errors."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 0
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "error": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "error": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "internal"
+              },
+              "code": {
+                "pattern": "^internal(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "usage"
+              },
+              "code": {
+                "pattern": "^usage(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 3
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "model"
+              },
+              "code": {
+                "pattern": "^model(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 4
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "sdk"
+              },
+              "code": {
+                "pattern": "^sdk(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 5
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "build"
+              },
+              "code": {
+                "pattern": "^build(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 6
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "test"
+              },
+              "code": {
+                "pattern": "^test(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 7
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "state"
+              },
+              "code": {
+                "pattern": "^state(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit_code": {
+            "const": 130
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "class": {
+                "const": "interrupted"
+              },
+              "code": {
+                "pattern": "^interrupted(\\.|$)"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "error": {
+      "type": "object",
+      "required": [
+        "class",
+        "code",
+        "message",
+        "hint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "enum": [
+            "internal",
+            "usage",
+            "model",
+            "sdk",
+            "build",
+            "test",
+            "state",
+            "interrupted"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z]+(\\.[a-z0-9]+(-[a-z0-9]+)*)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "description": "1-based line and column; columns count Unicode code points. file is relative to the project when inside it (POSIX separators), absolute otherwise, <stdin> for standard input.",
+      "required": [
+        "file",
+        "line",
+        "column",
+        "end_line",
+        "end_column"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "column": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "end_line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "end_column": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "related": {
+      "type": "object",
+      "required": [
+        "message",
+        "location"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/location"
+            }
+          ]
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "severity",
+        "code",
+        "message",
+        "hint",
+        "location",
+        "related"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "note"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z]+(\\.[a-z0-9]+(-[a-z0-9]+)*)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/location"
+            }
+          ]
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/related"
+          }
+        }
+      }
+    }
+  }
+}

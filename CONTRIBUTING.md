@@ -29,8 +29,8 @@ uv run pytest
 uv run mmt-plugin --version
 ```
 
-CI runs the same commands on Python 3.10 and 3.12 and fails if `uv.lock` is
-out of date.
+CI runs the same commands on Python 3.10, 3.12 and 3.14 and fails if
+`uv.lock` is out of date.
 
 See `AGENTS.md` for build and test commands, and
 `docs/design/workflow-redesign.md` for the full branching policy.

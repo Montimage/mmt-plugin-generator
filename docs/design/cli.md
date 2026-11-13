@@ -1,0 +1,456 @@
+# mmt-plugin CLI design
+
+Status: approved by Luong on 2026-11-13, with decisions D1–D14 (section 12). **D11 is provisional** until #21 checks which plugin directories mmt-dpi 1.10.2 scans. Plan: [`workflow-redesign.md`](workflow-redesign.md) (tasks T1.1–T4.1, issues #10–#26 and #43).
+Inputs: the plan, the Python skeleton, and four answers from the maintainer: no config file beyond `plugin.yaml`; shell completions under #22; Linux only; no interactive prompts.
+Section 12 lists every point where this design goes beyond or against the plan, each as a decision with the recommendation that was approved. Section 13 says where each part is implemented.
+
+## 1. Tool name and entry points
+
+- Distribution: `mmt-plugin` (PyPI/uv name, unchanged). Binary: `mmt-plugin`. Module: `python -m mmt_plugin`. Entry: `mmt_plugin.cli:main(argv) -> int` (unchanged signature).
+- Parser: **argparse** (stdlib, already in place). Decision D1.
+- Platform: Linux (amd64, arm64). `--help` says so; macOS best-effort, no CI.
+
+## 2. Command tree
+
+```
+mmt-plugin [global options] <command> [command options] [args]
+
+  init        Create a plugin project that builds and tests green        T2.7  #23
+  import      Convert a PDL v1 model to plugin.yaml                      T3.2  #25
+  validate    Check a model: schema, semantics, SDK, ids, load order     T2.1  #17
+  generate    Write the generated C sources and plugin.lock              T1.5  #14 (incl. --check)
+  build       Compile build/mmtp_<label>.so                              T2.3  #19
+  test        Run the packet tests (tests/*.yaml) against the plugin     T2.4  #20
+  install     Copy the plugin into a prefix and record a manifest        T2.5  #21
+  uninstall   Remove an installed plugin by following its manifest       T2.5  #21
+  doctor      Report toolchain, SDK, plugin directory, load order, clashes T2.5 #21
+  scaffold    Draft packet tests and a field skeleton (--from-pcap)      T4.1  #26  (added in T4.1)
+  completion  Print a shell completion script: bash, zsh or fish         T2.6  #22
+```
+
+The workflow is the plan's: `init` (or `import`) → `validate` → `generate` → `build` → `test` → `install`. `completion` is the only command outside the plan's list (approved with the maintainer's answers, D9). A command that does not exist yet is not registered (no placeholder that exits 1): `--help` lists only what works.
+
+## 3. Global options
+
+Accepted before or after the command (`mmt-plugin --json validate` = `mmt-plugin validate --json`).
+
+| Option | Type | Default | Help |
+|---|---|---|---|
+| `-h`, `--help` | flag | — | Show help for this level and exit 0. Help is always plain text. |
+| `--version` | flag | — | Print `mmt-plugin <version>` and exit 0 (with `--json`: an envelope with `result.version`, `result.python`, `result.sdk_profiles`). |
+| `-C`, `--project DIR` | path | `.` | The plugin project directory (holds `plugin.yaml`). All relative paths in output are relative to it. |
+| `--json` | flag | off | Print exactly one JSON envelope (section 6) on stdout; nothing else on stdout. |
+| `--no-color` | flag | off | No escape codes at all (same as `NO_COLOR=1`). |
+| `-q`, `--quiet` | flag | off | Human mode: print nothing on stdout, only errors on stderr; the exit code is the result. Ignored with `--json`. |
+| `-v`, `--verbose` | count | 0 | `-v`: each stage and every external command line (gcc, harness) on stderr. `-vv`: debug, plus tracebacks on internal errors. |
+
+All parsers use `allow_abbrev=False` (an abbreviation would break when an option is added later). `--` ends options. No option is ever prompted for.
+
+**Shared option groups** (only on the commands that use them; never accepted and ignored):
+
+- *SDK*: `--sdk PREFIX` (an mmt-dpi prefix: `dpi/include`, `dpi/lib`, `plugins/`), `--sdk-profile VERSION` (e.g. `1.10.2`).
+- *Write safety*: `--dry-run` (report every action, write nothing, exit as if it ran), `--force` (overwrite a file the tool would otherwise refuse to; see section 8).
+- *Strictness*: `--strict` (warnings count as errors and fail with their class's exit code).
+- *Chaining*: `--no-deps` (do not run a stale upstream stage; fail with exit 7 instead). See D5.
+
+## 4. Arguments and options per command
+
+`MODEL` everywhere: a `plugin.yaml` path, a PDL v1 file (for example `plugins/tpkt_plugin`), or `-` for stdin. Default: `<project>/plugin.yaml`. The format is detected (`.yaml`/`.yml` → YAML, else PDL); `--model-format {auto,yaml,pdl}` overrides it (needed for `-`).
+`SELECTOR` everywhere: `<proto>[:<key>=<value>[,<key>=<value>...]]`, for example `udp:port=4433`, `tcp:port=102`, `ethernet:ethertype=0x8624`.
+
+### `init LABEL`
+| Arg/option | Type | Req | Default | Help |
+|---|---|---|---|---|
+| `LABEL` | `[a-z][a-z0-9_]*` | yes | — | Protocol label; names `mmtp_<label>.so`, `src/<label>_impl.c`. |
+| `--dir DIR` | path | no | `./<LABEL>` | Where to create the project (`.` allowed when empty or already this project). |
+| `--id N` | int | no | lowest id in 950–999 free in the detected SDK; 950 with a warning if no SDK is found | Protocol id. |
+| `--name NAME` | str | no | `LABEL` upper-cased | Registered protocol name. |
+| `--parent SELECTOR` | selector | no | none (warning `model.no-parent`: the plugin is never handed packets) | Parent protocol. |
+| `--sdk-profile VERSION` | str | no | newest bundled profile | Pinned into `plugin.yaml` (`sdk.profile`). |
+| `--dry-run`, `--force` | flags | no | off | Section 8. |
+
+Creates `plugin.yaml`, `src/<label>_impl.c`, `tests/<label>-basic.yaml`, `.gitignore` (`build/`). Generated sources are not created by `init`: `build`/`test` generate them (D5).
+
+### `import PDL`
+| Arg/option | Type | Req | Default | Help |
+|---|---|---|---|---|
+| `PDL` | path or `-` | yes | — | PDL v1 model file. |
+| `-o`, `--output FILE` | path or `-` | no | `<project>/plugin.yaml` | `-` writes the YAML to stdout (usage error with `--json`). |
+| `--dry-run`, `--force`, `--strict` | flags | no | off | Warnings flag constructs that relied on Java bugs (`model.legacy-*`). |
+
+### `validate [MODEL]`
+| Option | Type | Default | Help |
+|---|---|---|---|
+| `--model-format` | enum | `auto` | See above. |
+| `--sdk`, `--sdk-profile` | | detected | SDK used for the id/name, parent and load-order checks. |
+| `--no-sdk` | flag | off | Skip the checks that need an installed SDK (reported as `skip`). Without it, a missing SDK is exit 4 (D12). |
+| `--strict` | flag | off | Warnings fail. |
+
+Checks (each reported pass/warn/fail/skip, with a stable `id`): `schema`, `semantics`, `sdk-profile`, `id-free`, `name-free` (case-insensitive; SDK headers plus installed plugins), `parents-exist`, `load-order` (`mmtp_<label>.so` after `libmmt_tcpip.so` in the C and the current `LC_COLLATE`), `id-range` (950–999, warning).
+
+### `generate [MODEL]`
+| Option | Type | Default | Help |
+|---|---|---|---|
+| `-o`, `--output DIR` | path | `<project>/generated/` | Output directory for the generated `.h`/`.c` (D6). |
+| `--model-format` | enum | `auto` | |
+| `--sdk-profile VERSION` | str | CLI > env > `plugin.yaml` > detected SDK > newest (warning) | Generation needs a profile, not an installed SDK. |
+| `--sdk PREFIX` | path | detected | Only used to pick the profile. |
+| `--check` | flag | off | Write nothing; exit 7 if any generated file or `plugin.lock` would change, 0 if up to date. |
+| `--dry-run`, `--force`, `--strict` | flags | off | `--force` overwrites a generated file that was hand-edited. |
+
+Writes `plugin.lock` at the project root; for a `MODEL` outside a project (no `plugin.yaml` in `--project`), into the output directory. Never writes under `src/`.
+
+### `build`
+| Option | Type | Default | Help |
+|---|---|---|---|
+| `--sdk`, `--sdk-profile` | | detected | |
+| `--cc CC` | str | `CC` env, else `gcc` | Compiler (gcc or clang). |
+| `--build-dir DIR` | path | `<project>/build/` | Output: `<build-dir>/mmtp_<label>.so`. |
+| `--rebuild` | flag | off | Compile even when the inputs are unchanged. |
+| `--no-deps`, `--dry-run`, `--strict` | flags | off | `--dry-run` prints the compiler command lines and writes nothing. |
+
+Flags: hardened (`-O2 -fPIC -shared -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now`) with `-Wall -Wextra -Werror`; the exact list is fixed in #19 and reported in `result.cflags`.
+
+### `test [PACKETS...]`
+| Arg/option | Type | Default | Help |
+|---|---|---|---|
+| `PACKETS` | paths/globs | `<project>/tests/*.yaml` | Packet tests (corpus schema 1). |
+| `--sanitize` | flag | off | Rebuild with ASan/UBSan and also run truncated and random packets; any crash fails. |
+| `--seed N` | int | `0` | Seed for random packets: the same seed gives the same packets. |
+| `--fuzz-count N` | int | `1000` | Random/truncated packets per test with `--sanitize`. |
+| `--bench` | flag | off | Packets per second vs an empty-plugin baseline. Advisory: never changes the exit code. |
+| `--fail-fast` | flag | off | Stop at the first failing packet. |
+| `--sdk`, `--sdk-profile`, `--cc`, `--no-deps`, `--strict` | | | |
+
+### `install` / `uninstall [LABEL]`
+| Option | Type | Default | Help |
+|---|---|---|---|
+| `--prefix DIR` | path | `MMT_PLUGIN_PREFIX`, else `${XDG_DATA_HOME:-~/.local/share}/mmt` (D11, provisional) | Install prefix; the plugin goes to `<prefix>/plugins/`. |
+| `--system` | flag | off | Prefix `/opt/mmt`. Never uses sudo; not writable → exit 4. Exclusive with `--prefix`. |
+| `--sdk` | path | detected | (`install`) for the load-order and clash checks. |
+| `--no-deps`, `--dry-run`, `--force` | flags | off | |
+| `LABEL` | str | the project's label | (`uninstall`) which plugin to remove. |
+
+Both read/write the manifest `<prefix>/plugins/.mmt-plugin/<label>.json` (files, sha256, tool version). `uninstall` removes only files listed there whose hash still matches; a modified file is kept and is exit 7 unless `--force`. Uninstalling something not installed: exit 0, `result.removed: []`, warning `state.not-installed`.
+
+### `doctor`
+Options: `--sdk`, `--prefix`/`--system`, `--cc`. Runs inside or outside a project. Checks: Python, compiler and version, SDK prefix/version/profile (and where each came from), plugin directories, load order of the installed plugins, id/name clashes among them (and with this project's model when run in one). Exit 0 when nothing fails (warnings allowed), 4 otherwise.
+
+### `scaffold --from-pcap PCAP --parent SELECTOR` (T4.1)
+Options: `--max-packets N` (default 20), `--tests-dir DIR` (default `<project>/tests/`), `--dry-run`, `--force`. Writes packet tests and `plugin.proposed.yaml`; never edits `plugin.yaml`. A malformed pcap is exit 3.
+
+### `completion {bash,zsh,fish}`
+Prints the script on stdout, generated from the argparse tree (so it cannot drift from the parser). Install: `mmt-plugin completion bash > ~/.local/share/bash-completion/completions/mmt-plugin`.
+
+## 5. Exit codes (D2)
+
+Aligned with the cli-builder skill's canonical table (0, 1, 2, 3, 130) and the plan's classes (usage, model, SDK, build, test), plus one class for on-disk state.
+
+| Code | Class (`error.class`) | Meaning | Examples (`error.code`) |
+|---|---|---|---|
+| 0 | — | Success (warnings allowed unless `--strict`) | |
+| 1 | `internal` | Unexpected failure: a bug, an I/O error with no better class | `internal.unexpected`, `internal.io` |
+| 2 | `usage` | Bad arguments or option combination | `usage.unknown-option`, `usage.conflicting-options` |
+| 3 | `model` | The input model or data is wrong (= skill "input error") | `model.syntax`, `model.duplicate-name`, `model.id-taken`, `model.bad-pcap` |
+| 4 | `sdk` | SDK, toolchain or prefix problem | `sdk.not-found`, `sdk.profile-not-found`, `sdk.cc-not-found`, `sdk.prefix-not-writable` |
+| 5 | `build` | The compiler or linker failed | `build.compile-failed`, `build.missing-hook` |
+| 6 | `test` | A packet test failed, or a sanitizer/crash | `test.packet-failed`, `test.crash` |
+| 7 | `state` | Files on disk are not what the command needs | `state.stale` (`generate --check`, `--no-deps`), `state.exists`, `state.modified` |
+| 130 | `interrupted` | SIGINT; temp files removed, child processes killed | `interrupted` |
+
+Rules:
+- A command runs its stages in order and stops at the first failing stage; the exit code is that stage's class. A taken id or name is `model` (3): the fix is in the model.
+- Warnings never change the exit code, except with `--strict`.
+- A closed stdout (`| head`) ends the run quietly (no traceback).
+- `--help` lists the codes; each command's help lists only the codes it can return.
+
+Per command (besides 0, 1, 2, 130 everywhere):
+
+| | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|
+| init | ✓ | | | | ✓ |
+| import | ✓ | | | | ✓ |
+| validate | ✓ | ✓ | | | |
+| generate | ✓ | ✓ | | | ✓ |
+| build | ✓ | ✓ | ✓ | | ✓ |
+| test | ✓ | ✓ | ✓ | ✓ | ✓ |
+| install | ✓ | ✓ | ✓ | | ✓ |
+| uninstall | | ✓ | | | ✓ |
+| doctor | | ✓ | | | |
+| scaffold | ✓ | | | | ✓ |
+| completion | | | | | |
+
+## 6. The `--json` envelope (shared by every command)
+
+One JSON document on stdout, UTF-8, keys in schema order, ending in one newline. Paths relative to the project when inside it (POSIX separators), absolute otherwise. No timestamps or durations outside `result.stats` (so two runs on the same inputs give the same bytes, timings aside).
+
+```json
+{
+  "schema_version": 1,
+  "tool": {"name": "mmt-plugin", "version": "0.3.0"},
+  "command": "validate",
+  "ok": false,
+  "exit_code": 3,
+  "error": {
+    "class": "model",
+    "code": "model.duplicate-name",
+    "message": "1 error in plugin.yaml",
+    "hint": "fix the errors in diagnostics, then re-run validate"
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "model.duplicate-name",
+      "message": "attribute name \"LEN\" is already used by \"len\" (names are case-insensitive)",
+      "hint": "rename one of the two attributes",
+      "location": {"file": "plugin.yaml", "line": 14, "column": 9, "end_line": 14, "end_column": 12},
+      "related": [{"message": "first defined here", "location": {"file": "plugin.yaml", "line": 9, "column": 9}}]
+    }
+  ],
+  "context": {
+    "project": ".",
+    "sdk": {"prefix": "/home/u/mmt/opt/mmt", "version": "1.10.2", "profile": "1.10.2", "source": "MMT_BASE"}
+  },
+  "result": {"...": "command-specific, below"}
+}
+```
+
+- `schema_version` (int): bumped only on a breaking change (a key removed, renamed or changing meaning). New keys are additive and do not bump it. Consumers must ignore unknown keys.
+- `ok` = (`exit_code` == 0). `error` is `null` when `ok`. `diagnostics` is always an array (sorted by file, line, column, code).
+- `severity`: `error` | `warning` | `note`. `location` is `null` for diagnostics with no file. `line`/`column` are 1-based; columns count Unicode code points. Compiler diagnostics are mapped into the same shape (`code: "build.cc"`, the compiler's file:line:col relative to the project).
+- Codes (`error.code`, `diagnostics[].code`) are stable dotted slugs whose prefix is the class (D8). The list is documented and tested; a code is never reused for another meaning.
+- `context`: the resolved settings and where each came from (`source`: `--sdk`, `MMT_BASE`, `pkg-config`, `/opt/mmt`, `plugin.yaml`, `default`). `sdk` is `null` for commands that do not use it.
+- `result` is `null` on usage errors. With `--json`, a usage error is still an envelope (the CLI checks for a `--json` token before `--` before parsing). `--help --json` prints plain help.
+- JSON Schemas: one for the envelope and one per command's `result`, shipped in the package (`mmt_plugin/schemas/cli/v1/*.json`) and in each release; contract tests validate every command's output against them (#22).
+
+`result` per command (main keys; lists sorted by path or id):
+
+| Command | `result` |
+|---|---|
+| init | `project`, `files: [{path, action}]` (`created`/`unchanged`/`would-create`) |
+| import | `input`, `output`, `model_hash`, `files: [{path, action}]` |
+| validate | `model`, `format` (`yaml`/`pdl`), `protocol: {label, name, id}`, `checks: [{id, status, detail}]` |
+| generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
+| build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` |
+| test | `stages`, `summary: {total, passed, failed, skipped}`, `packets: [{id, file, status, failures: [{attribute, expected, actual}]}]`, `sanitize: {seed, count, crashes}` or `null`, `bench: {pps, baseline_pps, ratio, samples}` or `null`, `stats: {elapsed_ms}` |
+| install | `prefix`, `manifest`, `files: [{path, action, sha256}]` |
+| uninstall | `prefix`, `removed`, `kept`, `missing` |
+| doctor | `checks: [{id, status, detail}]`, `toolchain`, `plugin_dirs`, `load_order`, `clashes` |
+| scaffold | `pcap`, `parent`, `files: [{path, action}]`, `skeleton` |
+| completion | `shell`, `script` |
+
+Not used: NDJSON/streaming events. One document at the end is enough for the loop the agent skill (T4.2) runs (validate → generate → build → test); long commands show progress only on a TTY stderr.
+
+## 7. I/O behaviour
+
+- **stdout**: the command's result only: the human summary (styled or plain, section 10) or the JSON envelope. Nothing else, ever, so `--json` output always parses.
+- **stderr**: everything for humans that is not the result: diagnostics in compiler style, warnings, `-v` logs, progress. With `--json`, stderr carries nothing except `-v`/`-vv` logs (diagnostics are in the envelope).
+- **Diagnostics on stderr** (human mode), one per line, editors can jump to them:
+  ```
+  plugin.yaml:14:9: error: attribute name "LEN" is already used by "len" (names are case-insensitive) [model.duplicate-name]
+    plugin.yaml:9:9: note: first defined here
+    hint: rename one of the two attributes
+  ```
+- **stdin**: `-` as `MODEL` (`validate -`, `generate -`) or `PDL` (`import -`); the location's file is `<stdin>`. `import PDL -o -` writes YAML to stdout.
+- **Compiler output**: captured, parsed into diagnostics, and shown on stderr (human) or in the envelope (`--json`); `-v` also echoes the raw compiler output on stderr.
+- **No prompts**: no command ever reads from the terminal. A choice the tool cannot make is a usage error or an exit 7 with a hint naming the flag (`--force`, `--id`, ...).
+- **Signals**: SIGINT kills the compiler/harness process group, removes temp files, prints the envelope (`--json`) or one line on stderr, exit 130. A closed stdout pipe ends quietly.
+
+## 8. Idempotency, atomic writes and `--dry-run`
+
+| Command | Re-run on unchanged inputs | Refuses (exit 7) unless `--force` | `--dry-run` |
+|---|---|---|---|
+| init | no-op (files with identical content are `unchanged`) | a target file exists with other content | yes |
+| import | no-op | output exists with other content | yes |
+| generate | no-op: unchanged files are not rewritten (mtimes kept) | a generated file was hand-edited (hash ≠ `plugin.lock`) | yes; `--check` = dry run + exit 7 on drift |
+| build | no-op when the input hash (sources, flags, cc, profile) is unchanged | — | yes (prints commands) |
+| test | always runs the tests; builds only if stale | — | no |
+| install | no-op when the same file is installed | a different file at the target that is not in the manifest | yes |
+| uninstall | no-op when not installed | a manifest file was modified since install | yes |
+| scaffold | no-op | output exists with other content | yes |
+
+- Atomic writes: each file is written to a temp file in the same directory, fsynced, then `os.replace`d. `generate` renders the whole set first and writes `plugin.lock` last, so an interrupted run leaves either the old set (and `--check` reports it) or the new one. `build` links to a temp name and renames, so a failed build never leaves a broken `.so`.
+- Output is deterministic: byte-identical on re-run (plan T1.5); staleness is hash-based, never mtime-based.
+- `generate` removes a file it generated before and no longer produces only when `plugin.lock` lists it and it is unmodified.
+
+## 9. Config strategy (precedence: CLI > env > `plugin.yaml` > defaults)
+
+No other config file (maintainer's answer). Machine-specific values (prefixes, compiler) are never read from `plugin.yaml`, which is committed.
+
+| Setting | CLI | Env | `plugin.yaml` | Default |
+|---|---|---|---|---|
+| Project dir | `-C` | — | — | `.` |
+| SDK prefix | `--sdk` | `MMT_BASE` | — | the mmt-dpi pkg-config file (named in #13), then `/opt/mmt` |
+| SDK profile | `--sdk-profile` | `MMT_PLUGIN_SDK_PROFILE` | `sdk.profile` | detected SDK version → nearest profile (warning `sdk.profile-fallback`); no SDK → newest profile (warning) |
+| Compiler | `--cc` | `CC` | — | `gcc` |
+| Install prefix | `--prefix` / `--system` | `MMT_PLUGIN_PREFIX` | — | `${XDG_DATA_HOME:-~/.local/share}/mmt` (D11, provisional) |
+| Color | `--no-color` | `NO_COLOR`, `FORCE_COLOR`, `TERM` | — | auto (section 10) |
+| Width | — | `COLUMNS` | — | terminal size, else 80 |
+| Strictness | `--strict` | — | — | off |
+
+Relative paths in `--sdk`/`MMT_BASE`/`--prefix` are resolved against the current directory and reported absolute in `context`. A prefix without `dpi/include/mmt_log.h` is `sdk.invalid-prefix` (exit 4) with a hint.
+
+## 10. Visual style (btop)
+
+**Components per command** (stdout, styled mode; plain mode prints the same records, tab-separated):
+
+| Command | Styled stdout | Plain stdout records |
+|---|---|---|
+| validate | box `validate <label>`, checks table with status symbols, footer `N checks · N pass · N warnings` | `check⇥status⇥detail` |
+| generate | box `generate <label>`, files table (`● created`, `● unchanged`, `▲ updated`, `✗ stale` for `--check`) | `action⇥path` |
+| build | box `build <label>`: stages, artifact, size, cc, flags | `stage⇥status`, then `artifact⇥path⇥sha256` |
+| test | box `test <label>`: packets table, pass meter; with `--bench` a pps meter vs baseline and a braille sparkline of the samples (with min/max/last numbers) | `packet⇥status⇥detail`; bench `bench⇥pps⇥baseline_pps⇥ratio` |
+| install / uninstall | box with prefix and files table | `action⇥path` |
+| doctor | one box, four sections divided by `├───┤` (toolchain, SDK, plugin dirs, load order/clashes), each with its own border role, status symbols | `check⇥status⇥detail` |
+| init / import / scaffold | box with files table | `action⇥path` |
+| completion, `--version`, `--help` | plain text only | same |
+
+stderr: errors `✗ error:` (high, bold) + `hint:` (dim), compiler-style locations first; warnings `▲ warning:` (mid). Progress (TTY stderr only, operations > 2 s): one `\r`-redrawn line, `compiling mmtp_tpkt.so · 3.1s`, or a meter `■■■■■····· 52/100 packets` in `test`; cleared before the result prints. Append-only otherwise; no alternate screen, no cursor movement upward.
+
+**Theme**: the cli-builder skill's btop roles, unchanged: `text` (terminal default), `title` (bold), `accent` (`#b54040` bold / 16-color `91` bold), `dim` (faint), `border` (`cpu_box #556d59`/`32` by default; `mem_box`, `net_box`, `proc_box` for doctor's sections), `low → mid → high` (`#77ca9b → #cbc06c → #dc4c4c` / `92 93 91`) for meters and pass/warn/fail. Statuses always print their word, so color never carries meaning alone.
+
+**Fallbacks** (decided per stream, once, right after parsing; commands never probe the terminal):
+- stdout is plain with `--json` (wins over `FORCE_COLOR`), when `TERM=dumb`, or when it is not a TTY and `FORCE_COLOR` is unset/empty/`0`. Plain = records only, tab-separated, no header, no frames or escape codes; control characters in user text escaped (`\t`, `\n`, `\xNN`, `\\`).
+- Color tier: `--no-color` or non-empty `NO_COLOR` → none (no SGR at all, not even bold); `COLORTERM=truecolor|24bit` → 24-bit; `TERM=*256color*` → 256; else 16.
+- Glyphs: Unicode when the stream encoding is UTF-8, else ASCII (`+ - |`, `[title]`, `#`/`.` meters, `+ ! x` statuses).
+- `--help` stays plain: argparse on Python 3.10–3.13 has no styling hook, and on 3.14+ the CLI passes `color=False` so help never carries escape codes (it would otherwise follow its own environment rules).
+- Guarantee: `--json`, piped and `NO_COLOR` output contain no ESC (0x1b) byte (tested).
+
+**Implementation**: a zero-dependency module `mmt_plugin/ui/style.py` (#22) (SGR codes, the three per-stream decisions, box/table/status/meter/sparkline/error/progress renderers, each taking an explicit mode). Width function: `cell_width()` from `unicodedata` (East Asian Wide/Fullwidth = 2, combining and zero-width = 0). No `rich` dependency (D7).
+
+**Mockup** — `mmt-plugin validate` in a project with id 900. Styled, Unicode, color tier none (with color: green border, bold title, `●` green, `▲` yellow):
+
+```text
+╭─┐validate tpkt┌────────────────────────────────────────────────╮
+│ check              status    detail                            │
+│ schema             ● pass    plugin.yaml, schema 1             │
+│ semantics          ● pass    7 attributes, 0 hooks             │
+│ sdk profile        ● pass    1.10.2 (MMT_BASE)                 │
+│ id free            ● pass    900: not in SDK or installed      │
+│ name free          ● pass    TPKT: not taken                   │
+│ parents exist      ● pass    tcp                               │
+│ load order         ● pass    after libmmt_tcpip.so             │
+│ reserved id range  ▲ warn    900 outside 950-999               │
+╰─┘8 checks · 7 pass · 1 warning└────────────────────────────────╯
+```
+
+ASCII glyphs:
+
+```text
++-[validate tpkt]------------------------------------------------+
+| check              status    detail                            |
+| schema             + pass    plugin.yaml, schema 1             |
+| semantics          + pass    7 attributes, 0 hooks             |
+| sdk profile        + pass    1.10.2 (MMT_BASE)                 |
+| id free            + pass    900: not in SDK or installed      |
+| name free          + pass    TPKT: not taken                   |
+| parents exist      + pass    tcp                               |
+| load order         + pass    after libmmt_tcpip.so             |
+| reserved id range  ! warn    900 outside 950-999               |
++-[8 checks, 7 pass, 1 warning]----------------------------------+
+```
+
+Plain (piped; `⇥` marks a tab): 
+
+```text
+schema⇥pass⇥plugin.yaml, schema 1
+semantics⇥pass⇥7 attributes, 0 hooks
+sdk-profile⇥pass⇥1.10.2 (MMT_BASE)
+id-free⇥pass⇥900: not in SDK or installed
+name-free⇥pass⇥TPKT: not taken
+parents-exist⇥pass⇥tcp
+load-order⇥pass⇥after libmmt_tcpip.so
+id-range⇥warn⇥900 outside 950-999
+```
+
+`mmt-plugin test` with one failing packet (exit 6), styled, tier none:
+
+```text
+╭─┐test tpkt┌────────────────────────────────────────────────────╮
+│ packet                 status    detail                        │
+│ tpkt/cotp-cr           ● pass    4 attributes                  │
+│ tpkt/cotp-dt           ● pass    4 attributes                  │
+│ tpkt/short-header      ✗ fail    length: expected 7, got 1792  │
+│ tpkt/version-3         ● pass    4 attributes                  │
+│                                                                │
+│ passed   ■■■■■■■■■■■■■■■·····  75%   3 of 4 packets            │
+╰─┘4 packets · 1 failed · build up to date└──────────────────────╯
+```
+
+## 11. Example invocations
+
+```sh
+# 1. New plugin, then the whole loop (build and test generate/build first if stale)
+mmt-plugin init tpkt --id 961 --parent tcp:port=102
+cd tpkt
+MMT_BASE=$HOME/mmt/opt/mmt mmt-plugin test
+
+# 2. Agent / CI loop: every step machine-readable, exit code = class
+mmt-plugin -C tpkt validate --json | jq '.diagnostics[] | select(.severity == "error")'
+mmt-plugin -C tpkt test --json --sdk "$HOME/mmt/opt/mmt" > result.json; echo "exit $?"
+
+# 3. Migrate a legacy PDL model, and generate from PDL without a project (old jar workflow)
+mmt-plugin import plugins/tpkt_plugin -o tpkt/plugin.yaml
+mmt-plugin generate plugins/tpkt_plugin -o /tmp/tpkt-out --sdk-profile 1.10.2
+
+# 4. CI drift gate: fails with exit 7 if committed generated files are stale
+mmt-plugin generate --check
+
+# 5. Install into a private prefix, preview first; then check the environment
+mmt-plugin install --prefix "$HOME/mmt/opt/mmt" --dry-run
+mmt-plugin install --prefix "$HOME/mmt/opt/mmt"
+mmt-plugin doctor --sdk "$HOME/mmt/opt/mmt"
+
+# 6. Fuzz under sanitizers, reproducibly; completions
+mmt-plugin test --sanitize --seed 42 --fuzz-count 5000
+mmt-plugin completion zsh > ~/.zfunc/_mmt-plugin
+```
+
+## 12. Decisions for the maintainer
+
+Each is where this design goes beyond the plan, conflicts with it, or follows the cli-builder skill where the plan is silent. Recommendation first.
+
+| # | Decision | Recommendation | Alternative |
+|---|---|---|---|
+| D1 | Parser | **Keep argparse**: already in place and tested, stdlib (no major-version churn), full control of usage errors (needed to put them in the `--json` envelope), small fixed tree so completions are generated from it in-house. | click: built-in bash/zsh/fish completions and `CliRunner`, but a new dependency, help formatting we do not control, and the 5 existing tests rewritten. |
+| D2 | Exit codes | **Table in section 5**: 0, 1 internal, 2 usage, 3 model, 4 SDK, 5 build, 6 test, 7 state, 130. Keeps the plan's five classes and the skill's 0/1/2/3/130; adds 7 for `generate --check` drift and refused overwrites. | Fold "state" into 3 (model): but then `--check` drift and a hand-edited file look like a broken model to CI and agents. |
+| D3 | JSON flag | **`--json`** (plan), accepted before or after the command; no `--format`. The skill's `--format json` wording is satisfied by `--json`. | Also accept `--format json\|text`: two ways to say one thing. |
+| D4 | Streams | **Human diagnostics on stderr in compiler style, result on stdout; `--json` = one envelope on stdout, usage errors included.** | Diagnostics on stdout (ruff style): mixes result and diagnostics for pipes. |
+| D5 | Stage chaining | **`build` runs `generate` when stale, `test` and `install` run `build` when stale** (hash-based, reported in `result.stages`); `--no-deps` turns that off (exit 7 when stale). Shortens the agent loop; commands and their order are the plan's. | Strict stages: each command fails with exit 7 if its input is stale; the agent always runs all four. |
+| D6 | Project layout | **`plugin.yaml`, `plugin.lock`, `src/<label>_impl.c` (user), `generated/` (generated, committed so `generate --check` gates CI), `tests/*.yaml`, `build/` (ignored).** The plan names `src/`, `tests/`, `plugin.lock` but not where generated code goes. | `gen/`, or generated files under `build/` (not committed; then `--check` has nothing to compare in CI). |
+| D7 | Visual style | **btop style, zero-dependency module, help plain** (section 10). | `rich`: less code, but a runtime dependency with its own detection to override. Or decline the btop style (plain text only). |
+| D8 | Error codes | **Dotted slugs** (`model.duplicate-name`), prefix = exit class; documented and never reused. | Numeric codes (`M201`): shorter, need a lookup table. |
+| D9 | `completion` command | **Add it** (maintainer's answer), under #22. | A hidden `--completion` flag. |
+| D10 | `--strict` | **Add it** on validate/import/generate/build/test (warnings fail). For CI and agents that want a warning-free model. | No flag; warnings never fail. |
+| D11 | Default user install prefix (**provisional**) | **`${XDG_DATA_HOME:-~/.local/share}/mmt`, manifest in `<prefix>/plugins/.mmt-plugin/`, `doctor` reports whether mmt-dpi scans that directory.** The directories mmt-dpi 1.10.2 actually scans must be checked in #21 before this default is final. | Default to the detected SDK prefix (`MMT_BASE`) when writable. |
+| D12 | `validate` without an SDK | **Exit 4 unless `--no-sdk`**: a silently skipped id/name check is how the #2 pitfalls ship. | Skip SDK checks with a warning, exit 0. |
+| D13 | `init` defaults | **`--id` = lowest free id in 950–999 from the detected SDK (950 + warning without one); `--parent` optional with a `model.no-parent` warning**, so `init <label>` alone works. | Require `--id` and `--parent`. |
+| D14 | Registered commands | **Only implemented commands appear**; each issue registers its command. | Register all now as stubs exiting 1 "not implemented". |
+
+Changes to the existing skeleton (`src/mmt_plugin/cli.py`): none breaking. `--version`, `--help`, the no-command usage error (exit 2) and `python -m` stay as they are; the epilog grows to the full exit-code table.
+
+## 13. Where it is implemented
+
+The contract core is in #43; each command arrives with its own issue (section 2, D14) and adds its codes to `CODES`, its `result` schema and its tests.
+
+| Part | Module | Issue |
+|---|---|---|
+| Command tree, global options, stream rules (sections 2, 3, 7) | `mmt_plugin.cli`, the registry `mmt_plugin.commands` (`register(subparsers)`, `run(args, ctx) -> Outcome`) | #43 |
+| Exit codes (section 5) | `mmt_plugin.exitcodes` | #43 |
+| Diagnostics, `CliError`, the code registry `CODES` (sections 5, 6, D8) | `mmt_plugin.diagnostics` | #43 |
+| Envelope and its schema (section 6) | `mmt_plugin.envelope`, `mmt_plugin/schemas/cli/v1/envelope.json` | #43 |
+| Atomic writes, created/updated/unchanged by sha256 (section 8) | `mmt_plugin.fsio` | #43 |
+| Per-stream decisions, plain records, compiler-style diagnostics (section 10) | `mmt_plugin.ui.streams`, `mmt_plugin.ui.render` | #43 |
+| A command's `result` schema | `mmt_plugin/schemas/cli/v1/<command>.json` | the command's own issue (for example `validate.json` in #17, `generate.json` in #14) |
+| btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style` | #22 |
+| `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
+
+Details fixed by #43 where section 6 or 7 leaves a choice:
+
+- The envelope is ASCII-only JSON (non-ASCII text as `\uXXXX` escapes), two-space indented, so its bytes do not depend on the stream encoding.
+- `command` is `null` when no command was dispatched (`--version`, or a usage error); `context.project` is `null` on usage errors.
+- `--version --json` returns `result.sdk_profiles: []` until #13 bundles the first profile.
+- The interrupt code is `interrupted` (its class name alone).
+- Diagnostics without a location sort first.
+- A closed stdout keeps the run's exit code (0 for `mmt-plugin --version | head -c0`).
+- The schema is closed (`additionalProperties: false`) except `context` and `result`; a new key is added to the schema in the same change.

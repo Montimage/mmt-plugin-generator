@@ -16,6 +16,7 @@ mmt-plugin = "mmt_plugin.cli:main"
 
 [dependency-groups]
 dev = [
+    "jsonschema>=4.26",
     "mypy>=2.4",
     "pytest>=9.2",
     "ruff>=0.17",
@@ -32,8 +33,9 @@ exclude-newer = "2026-10-30T00:00:00Z"
 
 [tool.ruff]
 # Only the Python package and its tests; tests/corpus/validate.py is a
-# stdlib-only script with its own style.
-include = ["src/**/*.py", "tests/unit/**/*.py"]
+# stdlib-only script with its own style. A custom include replaces ruff's
+# default, so stubs (*.pyi) are listed explicitly.
+include = ["src/**/*.py", "src/**/*.pyi", "tests/unit/**/*.py"]
 src = ["src", "tests/unit"]
 line-length = 99
 
@@ -45,6 +47,11 @@ files = ["src/mmt_plugin", "tests/unit"]
 mypy_path = "src"
 strict = true
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# jsonschema (dev group, tests only) ships no type information.
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]

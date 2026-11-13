@@ -69,6 +69,41 @@ jobs:
           python3 --version
           python3 tests/corpus/validate.py
 
+  legacy-reference:
+    name: Legacy generator reference output
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Eclipse Temurin 8 JRE, the same 8u502 the reference was written with.
+      # The sha256 is the one in the release's .sha256.txt file (it matches
+      # the release asset's GitHub digest).
+      TEMURIN_TAG: jdk8u502-b07
+      TEMURIN_JRE: OpenJDK8U-jre_x64_linux_hotspot_8u502b07.tar.gz
+      TEMURIN_JRE_SHA256: f1a7bea0804bfa5627dac412fe7a0d751c4228592e356d6a32a30da54a48ed7a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Java 8 JRE
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          dir="$RUNNER_TEMP/jre"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/$TEMURIN_JRE" \
+            "https://github.com/adoptium/temurin8-binaries/releases/download/$TEMURIN_TAG/$TEMURIN_JRE"
+          echo "$TEMURIN_JRE_SHA256  $RUNNER_TEMP/$TEMURIN_JRE" | sha256sum -c -
+          # A JRE is a tree (bin/java needs lib/), so the whole archive is unpacked.
+          tar -xzf "$RUNNER_TEMP/$TEMURIN_JRE" -C "$dir" --strip-components=1
+          "$dir/bin/java" -version
+          "$dir/bin/java" -version 2>&1 | grep -q '^openjdk version "1.8.0_502"$' \
+            || { echo "the JRE is not 1.8.0_502"; exit 1; }
+          # The script runs $JAVA, not whichever java is on the runner's PATH.
+          echo "JAVA=$dir/bin/java" >> "$GITHUB_ENV"
+      - name: Regenerate and diff against legacy/reference-output/
+        run: bash legacy/check-reference-output.sh
+
   ndn-check:
     name: NDN example (ubuntu-24.04, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

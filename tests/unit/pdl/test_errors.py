@@ -18,6 +18,7 @@ import pytest
 from mmt_plugin.diagnostics import CODES
 from mmt_plugin.exitcodes import ExitCode, for_class
 from mmt_plugin.pdl import STDIN, PdlSyntaxError, parse
+from mmt_plugin.pdl.parser import MAX_OPERANDS
 
 from .conftest import FILE, build, errors_of, parse_ok
 
@@ -476,6 +477,31 @@ CASES = {
     ),
     "nesting-ifs": Case(
         build("\t\t" + "if (1) { " * 500 + "}" * 500), "too-deep", "if (1)", "nested", nth=64
+    ),
+    # A flat chain parses in a loop but builds a tree as deep as it is long.
+    "operands": Case(
+        build(attr(ATTR + ' offset="' + "val(x) + " * MAX_OPERANDS + 'val(x)"')),
+        "too-many-operands",
+        "val(x)",
+        f"more than {MAX_OPERANDS} operands",
+        nth=MAX_OPERANDS,
+    ),
+    # Parentheses do not reset the count: it is per whole expression.
+    "operands-in-parentheses": Case(
+        build(
+            attr(
+                ATTR
+                + ' offset="'
+                + "val(x) + " * (MAX_OPERANDS // 2)
+                + "("
+                + "val(x) + " * (MAX_OPERANDS // 2)
+                + 'val(x))"'
+            )
+        ),
+        "too-many-operands",
+        "val(x)",
+        "operands",
+        nth=MAX_OPERANDS,
     ),
     "nextoffset-no-equals": Case(
         build(classify=classify("case 1: nextoffset 3")), "unexpected-token", "3\n", "`=`"

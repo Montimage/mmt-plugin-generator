@@ -63,6 +63,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.syntax.invalid-value": "a PDL value outside its set (boolean, encoding, scope, id)",
         "model.syntax.unknown-type": "a PDL data type or element type that does not exist",
         "model.syntax.too-deep": "PDL parentheses or if blocks nest deeper than the parser allows",
+        "model.syntax.too-many-operands": "a PDL expression has more operands than the parser "
+        "allows",
         "model.syntax.invalid-expression": "a PDL expression is malformed (bare name, unknown "
         "function, chained comparison)",
     }

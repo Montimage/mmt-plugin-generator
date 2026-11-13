@@ -8,6 +8,8 @@ grammar rule it follows).
 
 from __future__ import annotations
 
+import copy
+import pickle
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -15,6 +17,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 import pytest
 
+from mmt_plugin.pdl.dump import dumps
 from mmt_plugin.pdl.model import (
     Attribute,
     BinaryOp,
@@ -585,6 +588,38 @@ def test_nesting_up_to_the_limit_parses(ok: Parse, model: Build) -> None:
     assert isinstance(e, IntLiteral) and e.value == 1
     ifs = ok(model("if (1) { " * MAX_DEPTH + "}" * MAX_DEPTH))
     assert isinstance(ifs.attributes.elements[0], Conditional)
+
+
+def test_the_deepest_model_survives_every_operation(ok: Parse, model: Build) -> None:
+    # W1 (PR #47): a flat chain builds a tree as deep as it is long, and these
+    # operations recurse through it. The deepest model the parser accepts is
+    # MAX_DEPTH nested ifs around chains of MAX_OPERANDS operands, each of the
+    # deepest leaf, sizeof(struct X). Python 3.10 has the lowest limits; CI
+    # runs this test on 3.10, 3.12 and 3.14.
+    from mmt_plugin.pdl.parser import MAX_DEPTH, MAX_OPERANDS
+
+    chain = " + ".join(["sizeof(struct h)"] * MAX_OPERANDS)
+    keys = f'alias="x" data_type="MMT_U8_DATA" data_len="{chain}" offset="{chain}"'
+    inner = f"attribute {{ {keys} }}"
+    text = model(f"if ({chain}) {{ " * MAX_DEPTH + inner + " }" * MAX_DEPTH)
+    m, again = ok(text), ok(text)
+
+    node = m.attributes.elements[0]
+    for _ in range(MAX_DEPTH):
+        assert isinstance(node, Conditional)
+        node = node.then_branch[0]
+    assert isinstance(node, Attribute) and node.offset is not None
+    depth, e = 0, node.offset
+    while isinstance(e, BinaryOp):
+        depth, e = depth + 1, e.left
+    assert depth == MAX_OPERANDS - 1 and isinstance(e, SizeOf)
+
+    assert repr(m) == repr(again)
+    assert m == again
+    assert hash(m) == hash(again)
+    assert dumps(m) == dumps(again)
+    assert copy.deepcopy(m) == m
+    assert pickle.loads(pickle.dumps(m)) == m
 
 
 @covers("expr.ntohs", "expr.ntohl")

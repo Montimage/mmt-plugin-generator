@@ -118,6 +118,15 @@ SCOPES: dict[str, Scope] = {
 #: recursion far below Python's limit.
 MAX_DEPTH = 64
 
+#: How many operands one expression may have, counted over the whole
+#: expression, inside parentheses too. A chain such as ``1+1+...+1`` parses
+#: in a loop but builds a tree as deep as it is long, and ``repr``, ``==``,
+#: ``hash``, ``copy.deepcopy``, ``pickle`` and ``dumps`` of the model recurse
+#: through it. With this cap and ``MAX_DEPTH``, every operation works on the
+#: deepest model (tested on Python 3.10, which has the lowest limits); the
+#: example models use at most 4 operands.
+MAX_OPERANDS = 64
+
 #: Words that start the construct after a define's value: a missing value
 #: is reported instead of taking them as a name.
 _DEFINE_STOP = frozenset({"define", "Properties"})
@@ -194,6 +203,7 @@ class _Parser:
         self.i = 0
         self.errors: list[Diagnostic] = []
         self.depth = 0
+        self.operands = 0
 
     @contextlib.contextmanager
     def nested(self, opening: Token) -> Iterator[None]:
@@ -814,6 +824,11 @@ class _Parser:
     # --- Expressions (G:661-758) ----------------------------------------------
 
     def expression(self) -> Expr:
+        """A whole expression, of at most ``MAX_OPERANDS`` operands."""
+        self.operands = 0
+        return self.or_expr()
+
+    def or_expr(self) -> Expr:
         """``bformula``: OR binds loosest, then AND, comparison, ``+ -``, ``* /``."""
         left = self.and_expr()
         while self.peek().is_word("OR"):
@@ -866,6 +881,15 @@ class _Parser:
 
     def atom(self) -> Expr:
         token = self.peek()
+        if not token.is_punct("("):
+            self.operands += 1
+            if self.operands > MAX_OPERANDS:
+                self.fail(
+                    "model.syntax.too-many-operands",
+                    f"more than {MAX_OPERANDS} operands in one expression",
+                    "shorten the expression; no protocol needs this many operands",
+                    token,
+                )
         if token.kind in (Kind.NUMBER, Kind.HEX):
             return self.integer("a number", _EXPRESSION_HINT)
         if token.is_punct("-"):
@@ -881,7 +905,7 @@ class _Parser:
         if token.is_punct("("):
             self.advance()
             with self.nested(token):
-                inner = self.expression()
+                inner = self.or_expr()
             end = self.expect(")", "close the parenthesis", after="the expression")
             # The tree keeps the grouping; the span covers the parentheses.
             return dataclasses.replace(inner, span=token.span.to(end.span))

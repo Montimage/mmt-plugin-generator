@@ -23,6 +23,7 @@ import argparse
 import io
 import os
 import platform
+import re
 import sys
 import traceback
 from collections.abc import Sequence
@@ -71,19 +72,34 @@ class UsageError(CliError):
 
 
 def _classify(message: str) -> str:
-    """Map an argparse error message to a registered ``usage.*`` code."""
+    """Map an argparse error message to a registered ``usage.*`` code.
+
+    Only the fixed forms argparse writes are matched, anchored on their
+    start: a message is either ``argument NAME: TEXT`` (``NAME`` is an option
+    or metavar of the parser, ``TEXT`` starts with argparse's own words) or
+    one of the parser-level forms below. User text (a value, an unknown
+    argument) only ever follows those words, so it cannot change the code.
+    Any other form is ``usage.invalid``.
+    """
     if message.startswith("unrecognized arguments: "):
-        first = message.split(": ", 1)[1]
+        first = message[len("unrecognized arguments: ") :]
         return "usage.unknown-option" if first.startswith("-") else "usage.unexpected-argument"
-    if "invalid choice" in message:
-        if message.startswith(f"argument {COMMAND_METAVAR}"):
-            return "usage.unknown-command"
-        return "usage.invalid-value"
-    if "not allowed with" in message:
-        return "usage.conflicting-options"
-    if "required" in message or "expected" in message:
+    if message.startswith("the following arguments are required: "):
         return "usage.missing-argument"
-    if "invalid" in message or "ignored explicit argument" in message:
+    if message.startswith("one of the arguments ") and message.endswith(" is required"):
+        return "usage.missing-argument"
+    if not message.startswith("argument "):
+        return "usage.invalid"
+    name, sep, text = message[len("argument ") :].partition(": ")
+    if not sep:
+        return "usage.invalid"
+    if text.startswith("invalid choice: "):
+        return "usage.unknown-command" if name == COMMAND_METAVAR else "usage.invalid-value"
+    if text.startswith("not allowed with argument "):
+        return "usage.conflicting-options"
+    if text.startswith("expected "):
+        return "usage.missing-argument"
+    if text.startswith("ignored explicit argument ") or re.match(r"invalid .+ value: ", text):
         return "usage.invalid-value"
     return "usage.invalid"
 

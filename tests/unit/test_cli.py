@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from mmt_plugin import __version__
-from mmt_plugin.cli import EXIT_OK, EXIT_USAGE, build_parser, main, parse_args
+from mmt_plugin.cli import EXIT_OK, EXIT_USAGE, _classify, build_parser, main, parse_args
 from mmt_plugin.commands import Command, Context, Outcome
 from mmt_plugin.exitcodes import ExitCode
 
@@ -213,6 +213,86 @@ def test_usage_errors_have_a_registered_code(
 ) -> None:
     assert main(["--json", *argv], commands=[dummy]) == EXIT_USAGE
     assert json.loads(capsys.readouterr().out)["error"]["code"] == code
+
+
+#: The phrases ``_classify`` matches, as a user could type them.
+_MATCHED_PHRASES = [
+    "unrecognized arguments: -x",
+    "the following arguments are required: x",
+    "one of the arguments --left --right is required",
+    "argument <command>: invalid choice: 'x'",
+    "invalid choice: 'x'",
+    "not allowed with argument --left",
+    "not allowed with",
+    "expected one argument",
+    "required",
+    "ignored explicit argument 'x'",
+    "invalid int value: 'x'",
+]
+
+
+@pytest.mark.parametrize("phrase", _MATCHED_PHRASES)
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [
+        (["dummy", "--records", "{}"], "usage.invalid-value"),
+        (["dummy", "--json={}"], "usage.invalid-value"),
+        (["dummy", "--mode", "{}"], "usage.invalid-value"),
+        (["{}"], "usage.unknown-command"),
+        (["dummy", "a", "{}"], "usage.unexpected-argument"),
+        (["dummy", "a", "--bogus", "{}"], "usage.unknown-option"),
+    ],
+)
+def test_user_text_does_not_change_the_usage_code(
+    dummy: Command,
+    argv: list[str],
+    code: str,
+    phrase: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    argv = [arg.format(phrase) for arg in argv]
+    assert main(["--json", *argv], commands=[dummy]) == EXIT_USAGE
+    error = json.loads(capsys.readouterr().out)["error"]
+    assert phrase in error["message"]
+    assert error["code"] == code
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        ("unrecognized arguments: --x y", "usage.unknown-option"),
+        ("unrecognized arguments: y --x", "usage.unexpected-argument"),
+        ("the following arguments are required: <command>", "usage.missing-argument"),
+        ("one of the arguments --a --b is required", "usage.missing-argument"),
+        ("argument <command>: invalid choice: 'x' (choose from a, b)", "usage.unknown-command"),
+        (
+            "argument <command>: invalid choice: 'x', maybe you meant 'a'? (choose from a)",
+            "usage.unknown-command",
+        ),
+        ("argument --mode: invalid choice: 'c' (choose from 'a', 'b')", "usage.invalid-value"),
+        ("argument --left: not allowed with argument --right", "usage.conflicting-options"),
+        ("argument -C/--project: expected one argument", "usage.missing-argument"),
+        ("argument --x: expected at least one argument", "usage.missing-argument"),
+        ("argument --x: expected 2 arguments", "usage.missing-argument"),
+        ("argument -v/--verbose: ignored explicit argument 'x'", "usage.invalid-value"),
+        ("argument --records: invalid int value: 'x'", "usage.invalid-value"),
+        # User text in a fixed form never decides the code.
+        ("argument --records: invalid int value: 'not allowed with'", "usage.invalid-value"),
+        ("argument --json: ignored explicit argument 'required'", "usage.invalid-value"),
+        ("argument --mode: invalid choice: 'expected' (choose from a)", "usage.invalid-value"),
+        ("unrecognized arguments: invalid choice", "usage.unexpected-argument"),
+        # Any other form is the fallback, whatever words it carries.
+        ("ambiguous option: --not allowed with could match --a, --b", "usage.invalid"),
+        ("argument --x: can't open 'invalid int value: x': No such file", "usage.invalid"),
+        ("argument --x: 'f' is not callable", "usage.invalid"),
+        ("unexpected option string: --required", "usage.invalid"),
+        ("argument without a separator", "usage.invalid"),
+        ("not allowed with argument --a", "usage.invalid"),
+        ("expected one argument", "usage.invalid"),
+    ],
+)
+def test_classify_matches_only_the_fixed_argparse_forms(message: str, code: str) -> None:
+    assert _classify(message) == code
 
 
 def test_usage_error_in_human_mode_is_compiler_style_on_stderr(

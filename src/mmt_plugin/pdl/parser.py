@@ -23,8 +23,10 @@ Differences from the Java parser (T1.2, #11; the PR has the full table):
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import difflib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import NoReturn, TypeVar
 
 from mmt_plugin.diagnostics import Diagnostic, Related, Severity, sorted_diagnostics
@@ -112,6 +114,17 @@ SCOPES: dict[str, Scope] = {
     "session": Scope.SESSION,
 }
 
+#: How deep parentheses and ``if`` blocks may nest, together. It keeps the
+#: recursion far below Python's limit.
+MAX_DEPTH = 64
+
+#: Words that start the construct after a define's value: a missing value
+#: is reported instead of taking them as a name.
+_DEFINE_STOP = frozenset({"define", "Properties"})
+
+#: Words that start the next classifynext statement or branch.
+_STATEMENT_STOP = frozenset({"break", "case", "default", "nextencaps", "nextoffset"})
+
 #: Expression functions (G:703-758).
 FUNCTIONS = ("val", "sizeof", "offset", "len", "ntohs", "ntohl")
 
@@ -180,6 +193,23 @@ class _Parser:
         self.tokens = tokens
         self.i = 0
         self.errors: list[Diagnostic] = []
+        self.depth = 0
+
+    @contextlib.contextmanager
+    def nested(self, opening: Token) -> Iterator[None]:
+        """One more level of parentheses or ``if`` blocks, up to ``MAX_DEPTH``."""
+        if self.depth >= MAX_DEPTH:
+            self.fail(
+                "model.syntax.too-deep",
+                f"more than {MAX_DEPTH} nested parentheses or `if` blocks",
+                "flatten the expression or the conditionals; no protocol needs this depth",
+                opening,
+            )
+        self.depth += 1
+        try:
+            yield
+        finally:
+            self.depth -= 1
 
     # --- Token access ---------------------------------------------------
 
@@ -267,9 +297,19 @@ class _Parser:
             )
         self.unexpected(what, hint)
 
-    def int_or_name(self, what: str, hint: str) -> IntLiteral | Name:
-        if self.peek().kind is Kind.IDENT:
-            token = self.advance()
+    def int_or_name(
+        self, what: str, hint: str, stop: frozenset[str] = frozenset()
+    ) -> IntLiteral | Name:
+        """A number, or a define name that is not one of the ``stop`` words.
+
+        The ``stop`` words start the next construct, so a missing value is
+        reported instead of taking that word as a name.
+        """
+        token = self.peek()
+        if token.kind is Kind.IDENT:
+            if token.text in stop:
+                self.unexpected(what, hint)
+            self.advance()
             return Name(token.text, token.span)
         return self.integer(what, hint)
 
@@ -387,6 +427,7 @@ class _Parser:
         value = self.int_or_name(
             "a number or a name",
             "a define's value is a decimal number, a hex number (0x..) or another name",
+            stop=_DEFINE_STOP,
         )
         return Define(name, value, start.span.to(value.span))
 
@@ -747,6 +788,10 @@ class _Parser:
 
     def conditional(self) -> Conditional:
         start = self.advance()
+        with self.nested(start):
+            return self.conditional_body(start)
+
+    def conditional_body(self, start: Token) -> Conditional:
         self.expect("(", "write `if (condition) { ... }`", after="`if`")
         condition = self.expression()
         self.expect(")", "close the condition with `)`", after="the condition")
@@ -835,9 +880,11 @@ class _Parser:
             return self.integer("a number", _EXPRESSION_HINT)
         if token.is_punct("("):
             self.advance()
-            inner = self.expression()
-            self.expect(")", "close the parenthesis", after="the expression")
-            return inner
+            with self.nested(token):
+                inner = self.expression()
+            end = self.expect(")", "close the parenthesis", after="the expression")
+            # The tree keeps the grouping; the span covers the parentheses.
+            return dataclasses.replace(inner, span=token.span.to(end.span))
         if token.kind is Kind.IDENT:
             if self.peek(1).is_punct("("):
                 return self.function()
@@ -872,6 +919,8 @@ class _Parser:
             node = SizeOf(element_type, name.span.to(end.span))
         elif name.text in ("ntohs", "ntohl"):
             operand = self.peek()
+            if operand.is_punct("-"):
+                operand = self.peek(1)
             if operand.kind not in (Kind.NUMBER, Kind.HEX):
                 self.fail(
                     "model.syntax.invalid-expression",
@@ -952,7 +1001,9 @@ class _Parser:
     def case(self) -> Case:
         start = self.advance()
         label = self.int_or_name(
-            "a case label", "a case label is a decimal number, a hex number or a define name"
+            "a case label",
+            "a case label is a decimal number, a hex number or a define name",
+            stop=_STATEMENT_STOP,
         )
         colon = self.expect(":", "write `case N:`", after="the case label")
         statements, has_break, end = self.statements(colon)
@@ -975,6 +1026,7 @@ class _Parser:
                 value = self.int_or_name(
                     "a protocol id or a define name",
                     "nextencaps takes a number or a define name",
+                    stop=_STATEMENT_STOP,
                 )
                 statements.append(NextEncaps(value, token.span.to(value.span)))
             elif token.is_word("nextoffset"):

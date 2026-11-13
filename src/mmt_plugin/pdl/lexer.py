@@ -31,6 +31,11 @@ from mmt_plugin.pdl.model import Span
 __all__ = ["PUNCTUATION", "Kind", "LexError", "Token", "tokenize"]
 
 
+#: The most digits a number may have. It keeps every value far below
+#: CPython's limit on integer-string conversions (4300 digits).
+MAX_DIGITS = 100
+
+
 class Kind(str, Enum):
     """A token kind."""
 
@@ -216,6 +221,17 @@ class _Lexer:
         tail = self.pos
         while tail < len(text) and _is_word_char(text[tail]):
             tail += 1
+        if digits > MAX_DIGITS:
+            raise LexError(
+                Diagnostic(
+                    Severity.ERROR,
+                    "model.syntax.invalid-number",
+                    f"a number with {digits} digits is too long",
+                    hint=f"PDL numbers have at most {MAX_DIGITS} digits; "
+                    "no protocol field needs more",
+                    location=self.span(self.line, col).location(),
+                )
+            )
         if digits == 0 or tail > self.pos:
             spelled = text[start:tail]
             self.pos = tail

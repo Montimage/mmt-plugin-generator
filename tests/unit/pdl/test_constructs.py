@@ -567,12 +567,35 @@ def test_sizeof(ok: Parse, model: Build) -> None:
     assert isinstance(ptr, SizeOf) and isinstance(ptr.type, CType) and ptr.type.pointer
 
 
+def test_parenthesized_spans_cover_the_parentheses(ok: Parse, model: Build) -> None:
+    e = offset_expr(ok, model, "(1 + 2) * (3)")
+    assert isinstance(e, BinaryOp) and isinstance(e.left, BinaryOp)
+    text = model(attr('alias="x" data_type="MMT_U8_DATA" data_len="1" offset="(1 + 2) * (3)"'))
+    line = text.splitlines()[e.span.line - 1]
+    assert line[e.span.column - 1 : e.span.end_column - 1] == "(1 + 2) * (3)"
+    assert line[e.left.span.column - 1 : e.left.span.end_column - 1] == "(1 + 2)"
+    assert line[e.right.span.column - 1 : e.right.span.end_column - 1] == "(3)"
+    assert e.right == IntLiteral(3, "3", e.right.span)
+
+
+def test_nesting_up_to_the_limit_parses(ok: Parse, model: Build) -> None:
+    from mmt_plugin.pdl.parser import MAX_DEPTH
+
+    e = offset_expr(ok, model, "(" * MAX_DEPTH + "1" + ")" * MAX_DEPTH)
+    assert isinstance(e, IntLiteral) and e.value == 1
+    ifs = ok(model("if (1) { " * MAX_DEPTH + "}" * MAX_DEPTH))
+    assert isinstance(ifs.attributes.elements[0], Conditional)
+
+
 @covers("expr.ntohs", "expr.ntohl")
 def test_byte_swaps(ok: Parse, model: Build) -> None:
     s = offset_expr(ok, model, "ntohs(0x0300)")
     assert isinstance(s, ByteSwap) and (s.width, s.operand.value) == (16, 0x0300)
     lg = offset_expr(ok, model, "ntohl(83886080)")
     assert isinstance(lg, ByteSwap) and (lg.width, lg.operand.value) == (32, 83886080)
+    # The grammar's NBSTR operand may be negative (G:746).
+    neg = offset_expr(ok, model, "ntohs(-1)")
+    assert isinstance(neg, ByteSwap) and neg.operand.value == -1
 
 
 # --- Offset and alignment (G:274-311) -----------------------------------------

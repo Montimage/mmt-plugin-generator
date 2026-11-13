@@ -86,6 +86,15 @@ CASES = {
     "number-hex-upper-x": Case(
         build(attr(ATTR + ' offset="0X10"')), "invalid-number", "0X10", "`0X10`"
     ),
+    "number-too-long": Case(
+        build(properties='label = "p" id = "' + "9" * 4301 + '"'),
+        "invalid-number",
+        "9",
+        "too long",
+    ),
+    "number-hex-too-long": Case(
+        build(attr(ATTR + ' offset="0x' + "f" * 101 + '"')), "invalid-number", "0xf", "too long"
+    ),
     "comment-unclosed": Case(
         build("\t\t/* not closed\n"), "unterminated-comment", "/*", "not closed"
     ),
@@ -170,6 +179,10 @@ CASES = {
         "before `Properties`",
     ),
     "define-no-equals": Case(build(defines="\tdefine A 1\n"), "unexpected-token", "1", "`=`"),
+    # A missing value does not take the next construct's keyword as a name.
+    "define-missing-value": Case(
+        build(defines="\tdefine A =\n"), "unexpected-token", "Properties", "a number or a name"
+    ),
     "define-bad-value": Case(
         build(defines='\tdefine A = "1"\n'), "unexpected-token", '"1"', "a number or a name"
     ),
@@ -440,6 +453,29 @@ CASES = {
         "unexpected-token",
         '"3"',
         "protocol id",
+    ),
+    "nextencaps-missing-value": Case(
+        build(classify=classify("case 1: nextencaps =\n\t\t\t\tbreak")),
+        "unexpected-token",
+        "break",
+        "protocol id",
+    ),
+    "case-missing-label": Case(
+        build(classify=classify("case default: break")),
+        "unexpected-token",
+        "default",
+        "case label",
+    ),
+    # Python would overflow its stack long before; the parser stops at MAX_DEPTH.
+    "nesting-parentheses": Case(
+        build(attr(ATTR + ' offset="' + "(" * 200 + "1" + ")" * 200 + '"')),
+        "too-deep",
+        "(",
+        "nested",
+        nth=64,
+    ),
+    "nesting-ifs": Case(
+        build("\t\t" + "if (1) { " * 500 + "}" * 500), "too-deep", "if (1)", "nested", nth=64
     ),
     "nextoffset-no-equals": Case(
         build(classify=classify("case 1: nextoffset 3")), "unexpected-token", "3\n", "`=`"

@@ -129,7 +129,9 @@ BUNDLE = ["1.10.2", "2.0", "1.11.0"]
         ("1.10.2", "1.10.2"),
         ("1.10.5", "1.10.2"),  # newest not above it
         ("1.11", "1.11.0"),
-        ("1.11.0-rc1", "1.11.0"),  # numeric part
+        ("1.11.0-rc1", "1.10.2"),  # a pre-release is just below its release
+        ("1.11.1-rc1", "1.11.0"),
+        ("1.11-rc1", "1.10.2"),  # 1.11 is 1.11.0
         ("1.12.0", "1.11.0"),
         ("3.1", "2.0"),
         ("1.9.9", "1.10.2"),  # all newer: the oldest
@@ -140,6 +142,21 @@ BUNDLE = ["1.10.2", "2.0", "1.11.0"]
 )
 def test_nearest(detected: str | None, nearest: str) -> None:
     assert nearest_version(detected, BUNDLE) == nearest
+
+
+def test_a_pre_release_takes_the_profile_below_its_release() -> None:
+    assert nearest_version("1.10.2-rc1", ["1.10.1", "1.10.2"]) == "1.10.1"
+    assert nearest_version("1.10.2", ["1.10.1", "1.10.2"]) == "1.10.2"
+    # With only the release bundled, every profile is above it: the oldest.
+    assert nearest_version("1.10.2-rc1", ["1.10.2"]) == "1.10.2"
+
+
+def test_a_pre_release_of_the_bundled_profile_falls_back_with_a_warning() -> None:
+    choice = resolve_profile(None, {}, None, _sdk("1.10.2-rc1"))
+    _assert_choice(choice, "1.10.2", ProfileSource.SDK)
+    (warning,) = choice.diagnostics
+    assert (warning.severity, warning.code) == (Severity.WARNING, "sdk.profile-fallback")
+    assert warning.message.startswith("no profile is bundled for mmt-dpi 1.10.2-rc1")
 
 
 def test_nearest_needs_a_profile() -> None:

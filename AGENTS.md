@@ -25,10 +25,16 @@ protocol model. A Python rewrite is planned in
 - `Dockerfile`, `Makefile`: the pinned build and test container (T0.3):
   ubuntu:24.04 by digest, gcc, clang, Python 3.12 and the verified mmt-dpi
   v1.10.2 `.deb`. `make test-container` builds it and runs the NDN check.
+- `pyproject.toml`, `uv.lock`, `python/`: the Python rewrite (T1.1 onwards).
+  The package `mmt_plugin` is in `python/src/mmt_plugin/` (uv_build
+  `module-root = "python/src"`, since `src/` is still the Java tool) and its
+  unit tests in `python/tests/`. The `mmt-plugin` CLI only has `--help` and
+  `--version` so far; exit codes are in `python/src/mmt_plugin/cli.py`.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
-  Runs shellcheck on every tracked `*.sh`, the corpus validator, and
+  Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
-  (amd64 and arm64), and `make test-container` on both arches.
+  (amd64 and arm64), `make test-container` on both arches, and the Python
+  checks below (Python 3.10 and 3.12).
 
 ## Commands
 
@@ -76,6 +82,20 @@ byte-identical copies of those models:
 
 ```
 python3 tests/corpus/validate.py
+```
+
+Python package (needs [uv](https://docs.astral.sh/uv/); CI pins uv 0.12.10).
+Python >= 3.10; `.python-version` picks 3.12 locally, as in the build
+container. Run these checks before pushing a change under `python/` or to
+`pyproject.toml`; after a dependency change, commit the updated `uv.lock`:
+
+```
+uv sync
+uv run ruff check
+uv run ruff format --check
+uv run mypy
+uv run pytest
+uv run mmt-plugin --version
 ```
 
 ## Rules

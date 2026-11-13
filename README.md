@@ -1,5 +1,12 @@
 # MMT Protocol Description #
 
+## Python rewrite (in progress)
+
+A Python replacement for the Java generator is being built in `python/`
+(`mmt-plugin` command), following
+[docs/design/workflow-redesign.md](docs/design/workflow-redesign.md).
+It has no commands yet; this README still describes the Java tool.
+
 ## Requirements
 
 - mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**.

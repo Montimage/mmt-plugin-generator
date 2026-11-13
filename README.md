@@ -47,6 +47,26 @@ install into `/opt/mmt`. CI installs the ubuntu-24.04 one after
 `tests/fetch_mmt_dpi_package.sh` has verified it; see `AGENTS.md` to extract
 it into a private prefix instead.
 
+## Build and test container
+
+`Dockerfile` builds an Ubuntu 24.04 image, pinned by digest, with gcc, clang,
+Python 3.12 and mmt-dpi v1.10.2 installed in `/opt/mmt` from the Release
+`.deb` that `tests/fetch_mmt_dpi_package.sh` verified. To build it and run
+`tests/check_ndn_plugin.sh` inside it (no root on the host, nothing written
+to the checkout):
+
+```
+make test-container
+make test-container CONTAINER=podman
+```
+
+The repo is mounted read-only and the check runs as your uid with no
+network; on an SELinux host add `MOUNT_OPTS=ro,z`. apt packages are not
+pinned to exact versions (see the policy at the top of `Dockerfile`): the
+build fails if the gcc, clang or Python major version changes, and the image
+lists every installed version in `/usr/share/doc/mmt-test-image/packages.txt`.
+CI runs the same target on amd64 and arm64.
+
 ## Generate plugin code
 
 ```

@@ -108,3 +108,38 @@ jobs:
           echo "pkg-config mmt-dpi $(pkg-config --modversion mmt-dpi)"
       - name: Build and load the NDN example plugin
         run: MMT_BASE=/opt/mmt bash tests/check_ndn_plugin.sh
+
+  container:
+    name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the container image
+        # Plain docker through the Makefile, so CI and `make test-container`
+        # build the same image.
+        run: |
+          docker version --format 'docker {{.Server.Version}} {{.Server.Arch}}'
+          make container MMT_DPI_TAG="$MMT_DPI_TAG"
+      - name: Check the image architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          arch="$(docker run --rm --network none mmt-plugin-generator-test:local dpkg --print-architecture)"
+          [ "$arch" = "$EXPECTED_ARCH" ] || { echo "image arch is $arch, expected $EXPECTED_ARCH"; exit 1; }
+          docker run --rm --network none mmt-plugin-generator-test:local \
+            grep -E '^(gcc|clang|python3|mmt-dpi) ' /usr/share/doc/mmt-test-image/packages.txt
+      - name: Build and load the NDN example plugin inside the container
+        run: make test-container MMT_DPI_TAG="$MMT_DPI_TAG"

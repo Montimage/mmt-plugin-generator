@@ -63,6 +63,8 @@ _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEADER = re.compile(r"^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\.h$")
 _VERSION = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 _LAYOUTS = ("complete", "partial")
+_ID_MACRO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\{LABEL\}[A-Za-z0-9_]*$")
+_SDK_NAME = "mmt-dpi"
 
 
 class ProfileError(ValueError):
@@ -382,7 +384,8 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
             "parents",
         ),
     )
-    if top.value["schema_version"] != SCHEMA_VERSION:
+    schema_version = top.value["schema_version"]
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
         raise ProfileError(
             f"{source}.schema_version: {top.value['schema_version']!r} is not {SCHEMA_VERSION}"
         )
@@ -489,7 +492,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
             raise ProfileError(f"{source}.parents.examples[{i}]: expected a C identifier")
         examples.append(ex)
     id_macro = pa.text("id_macro")
-    if "{LABEL}" not in id_macro or not _IDENT.match(id_macro.replace("{LABEL}", "X")):
+    if not _ID_MACRO.match(id_macro):
         raise ProfileError(f"{source}.parents.id_macro: {id_macro!r} needs one {{LABEL}}")
     parents = Parents(
         header=pa.text("header", _HEADER),
@@ -501,7 +504,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     version = top.text("profile", _VERSION)
     profile = Profile(
         version=version,
-        sdk=top.text("sdk"),
+        sdk=_sdk_name(top),
         c_std=top.text("c_std"),
         headers=tuple(headers),
         types=tuple(types),
@@ -517,6 +520,13 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     )
     _check_references(profile, source)
     return profile
+
+
+def _sdk_name(top: _Reader) -> str:
+    sdk = top.text("sdk")
+    if sdk != _SDK_NAME:
+        raise ProfileError(f"{top.where}.sdk: {sdk!r} is not {_SDK_NAME!r}")
+    return sdk
 
 
 def _unique(names: Sequence[str], what: str, source: str) -> None:

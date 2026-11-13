@@ -149,6 +149,16 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     "no fields": (lambda d: d["structs"][0].update(fields=[]), "at least one field"),
     "empty doc": (lambda d: d["types"][0].update(doc=" "), "non-empty"),
     "bad id macro": (lambda d: d["parents"].update(id_macro="PROTO_"), "LABEL"),
+    "id macro starts with label": (
+        lambda d: d["parents"].update(id_macro="{LABEL}_ID"),
+        "LABEL",
+    ),
+    "id macro with two labels": (
+        lambda d: d["parents"].update(id_macro="P_{LABEL}{LABEL}"),
+        "LABEL",
+    ),
+    "boolean schema version": (lambda d: d.update(schema_version=True), "schema_version"),
+    "other sdk": (lambda d: d.update(sdk="other"), "'other' is not 'mmt-dpi'"),
     "not an object": (lambda d: d["types"].__setitem__(0, "x"), "expected an object"),
     "not an array": (lambda d: d.update(helpers={}), "expected an array"),
 }

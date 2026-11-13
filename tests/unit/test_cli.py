@@ -408,3 +408,129 @@ def test_closed_stdout_with_python_dash_m(clean_env: Callable[..., dict[str, str
     )
     assert proc.returncode == 0
     assert proc.stderr == b""
+
+
+def _strict_utf8_env(clean_env: Callable[..., dict[str, str]]) -> dict[str, str]:
+    """An environment in which Python's stdout is strict UTF-8 (not the
+    ``surrogateescape`` that C.UTF-8 gives), or a skip when no such locale."""
+    env = clean_env(LANG="en_US.UTF-8")
+    probe = subprocess.run(
+        [sys.executable, "-c", "import sys; print(sys.stdout.encoding, sys.stdout.errors)"],
+        capture_output=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    if probe.stdout.split() != [b"utf-8", b"strict"]:
+        pytest.skip(f"no strict UTF-8 locale (en_US.UTF-8 gives {probe.stdout!r})")
+    return env
+
+
+@pytest.mark.parametrize(
+    ("extra", "code"), [([], EXIT_OK), (["--return-error", "model.test-dummy"], 3)]
+)
+def test_undecodable_argv_is_escaped_on_a_strict_utf8_stdout(
+    extra: list[str],
+    code: int,
+    run_cli: Callable[..., subprocess.CompletedProcess[bytes]],
+    clean_env: Callable[..., dict[str, str]],
+) -> None:
+    env = _strict_utf8_env(clean_env)
+    proc = run_cli(["dummy", os.fsdecode(b"\xff"), *extra], env=env)
+    assert b"Traceback" not in proc.stderr
+    assert proc.returncode == code
+    assert proc.stdout == b"value\t\\udcff\n"
+    proc = run_cli(["--json", "dummy", os.fsdecode(b"\xff"), *extra], env=env)
+    assert proc.returncode == code
+    assert json.loads(proc.stdout)["result"]["value"] == "\udcff"
+    assert b'"value": "\\udcff"' in proc.stdout
+
+
+@pytest.mark.parametrize(
+    ("extra", "code"), [([], EXIT_OK), (["--return-error", "model.test-dummy"], 3)]
+)
+def test_unencodable_record_is_escaped_on_an_ascii_stdout(
+    extra: list[str],
+    code: int,
+    run_cli: Callable[..., subprocess.CompletedProcess[bytes]],
+    clean_env: Callable[..., dict[str, str]],
+) -> None:
+    env = clean_env(PYTHONIOENCODING="ascii")
+    proc = run_cli(["dummy", "é", *extra], env=env)
+    assert b"Traceback" not in proc.stderr
+    assert proc.returncode == code
+    assert proc.stdout == b"value\t\\xe9\n"
+    plain_json = run_cli(["--json", "dummy", "é", *extra])
+    proc = run_cli(["--json", "dummy", "é", *extra], env=env)
+    assert proc.returncode == code
+    assert proc.stdout == plain_json.stdout
+    assert b'"value": "\\u00e9"' in proc.stdout
+
+
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [
+        (["dummy"], EXIT_OK),
+        (["--json", "dummy"], EXIT_OK),
+        (["dummy", "--return-error", "model.test-dummy"], 3),
+        (["--json", "dummy", "--return-error", "model.test-dummy"], 3),
+        (["--version"], EXIT_OK),
+        (["--json", "--version"], EXIT_OK),
+        (["--help"], EXIT_OK),
+    ],
+)
+def test_stdout_closed_at_startup_ends_quietly(
+    argv: list[str], code: int, clean_env: Callable[..., dict[str, str]]
+) -> None:
+    # `>&-`: fd 1 is closed, so Python starts with sys.stdout set to None.
+    proc = subprocess.run(
+        ["sh", "-c", 'exec "$0" "$@" >&-', sys.executable, str(DUMMY_SCRIPT), *argv],
+        stdin=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        env=clean_env(),
+        timeout=60,
+        check=False,
+    )
+    assert b"Traceback" not in proc.stderr
+    assert proc.returncode == code
+    if code == EXIT_OK:
+        assert proc.stderr == b""
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["dummy"],
+        ["--json", "dummy"],
+        ["dummy", "--return-error", "model.test-dummy"],
+        ["--version"],
+        ["--json", "--version"],
+        ["--help"],
+        ["-vv", "dummy"],
+    ],
+)
+def test_stdout_write_failure_is_one_internal_io_line(
+    argv: list[str], clean_env: Callable[..., dict[str, str]]
+) -> None:
+    with open("/dev/full", "wb") as full:
+        proc = subprocess.run(
+            [sys.executable, str(DUMMY_SCRIPT), *argv],
+            stdin=subprocess.DEVNULL,
+            stdout=full,
+            stderr=subprocess.PIPE,
+            env=clean_env(),
+            timeout=60,
+            check=False,
+        )
+    assert proc.returncode == ExitCode.INTERNAL
+    line = b"mmt-plugin: error: cannot write to stdout: No space left on device [internal.io]\n"
+    assert b"Exception ignored" not in proc.stderr
+    if "-vv" in argv:
+        assert proc.stderr.startswith(b"Traceback")
+        assert proc.stderr.endswith(line)
+        assert proc.stderr.count(b"[internal.io]") == 1
+    else:
+        assert b"Traceback" not in proc.stderr
+        # The stdout write fails first: a returned error is not reported.
+        assert proc.stderr == line

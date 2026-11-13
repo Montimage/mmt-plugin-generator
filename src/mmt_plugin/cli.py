@@ -9,8 +9,9 @@ an exit code (``mmt_plugin.exitcodes``):
   ``--version``, internal errors and SIGINT included;
 - stderr carries diagnostics in compiler style with a ``hint:``, and the
   ``-v`` logs; with ``--json``, only the ``-v`` logs;
-- a closed stdout ends the run quietly; nothing is ever read from the
-  terminal.
+- a closed stdout ends the run quietly and keeps its exit code; any other
+  failure to write stdout (a full disk, say) is exit 1 with one
+  ``internal.io`` line on stderr; nothing is ever read from the terminal.
 
 ``--help`` and, without ``--json``, ``--version`` print and exit with
 ``SystemExit(0)``, as argparse does. Every other outcome returns its code.
@@ -19,6 +20,7 @@ an exit code (``mmt_plugin.exitcodes``):
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import platform
 import sys
@@ -430,13 +432,46 @@ def _flush(stream: TextIO) -> None:
         _silence(stream)
 
 
+def _stdout() -> TextIO:
+    """``sys.stdout``, ready for any text.
+
+    A stdout closed at startup (``>&-``: Python then sets ``sys.stdout`` to
+    None) becomes /dev/null, so the run ends quietly and keeps its exit code.
+    A strict encoder (a UTF-8 locale and non-UTF-8 argv bytes, or
+    ``PYTHONIOENCODING=ascii``) is switched to ``backslashreplace``, so a
+    record that it cannot encode comes out escaped; the JSON envelope is
+    ASCII and does not change.
+    """
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+    out = sys.stdout
+    if isinstance(out, io.TextIOWrapper) and out.errors == "strict":
+        out.reconfigure(errors="backslashreplace")
+    return out
+
+
+def _write_failed(run: _Run, exc: OSError) -> int:
+    """stdout cannot be written: point it at /dev/null, so that the final
+    flush at exit cannot fail again, and report one line on stderr."""
+    _silence(run.out)
+    if run.verbose >= 2:
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=run.err)
+    error = CliError("internal.io", f"cannot write to stdout: {exc.strerror or exc}")
+    try:
+        run.err.write(render.format_error(error, prog=PROG))
+        run.err.flush()
+    except OSError:
+        pass
+    return int(error.exit_code)
+
+
 def main(argv: Sequence[str] | None = None, *, commands: Sequence[Command] | None = None) -> int:
     """Run ``mmt-plugin`` and return its exit code.
 
     ``commands`` replaces the registry (tests only).
     """
     args = sys.argv[1:] if argv is None else list(argv)
-    run = _Run(json=_wants_json(args), out=sys.stdout, err=sys.stderr)
+    run = _Run(json=_wants_json(args), out=_stdout(), err=sys.stderr)
     code = int(ExitCode.INTERNAL)
     try:
         try:
@@ -448,6 +483,9 @@ def main(argv: Sequence[str] | None = None, *, commands: Sequence[Command] | Non
         code = _emit(run, outcome)
     except BrokenPipeError:
         _silence(run.out)
+    except OSError as exc:
+        # Also when flushing --help or --version fails: exit 1, not 0.
+        code = _write_failed(run, exc)
     except KeyboardInterrupt:
         code = int(ExitCode.INTERRUPTED)
     return code

@@ -29,9 +29,10 @@ protocol model. A Python rewrite is planned in
   `SHA256SUMS` and `manifest.json`); it never installs.
 - `pyproject.toml`, `uv.lock`, `python/`: the Python rewrite (T1.1 onwards).
   The package `mmt_plugin` is in `python/src/mmt_plugin/` (uv_build
-  `module-root = "python/src"`, since `src/` is still the Java tool) and its
-  unit tests in `python/tests/`. The `mmt-plugin` CLI only has `--help` and
-  `--version` so far; exit codes are in `python/src/mmt_plugin/cli.py`.
+  `module-root = "python/src"`; the Java tool is now in `legacy/`, and moving
+  the package to `src/` is a separate, pending decision) and its unit tests
+  in `python/tests/`. The `mmt-plugin` CLI only has `--help` and `--version`
+  so far; exit codes are in `python/src/mmt_plugin/cli.py`.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator, and
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`

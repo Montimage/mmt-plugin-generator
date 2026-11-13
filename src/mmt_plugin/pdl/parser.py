@@ -193,6 +193,11 @@ def _expr_or_none(value: object) -> Expr | None:
     return value
 
 
+def _a(word: str) -> str:
+    """``word`` in backquotes, after the article it takes."""
+    return f"{'an' if word[:1].lower() in 'aeiou' else 'a'} `{word}`"
+
+
 def _quoted_list(words: Sequence[str]) -> str:
     return ", ".join(f"`{w}`" for w in words)
 
@@ -402,7 +407,7 @@ class _Parser:
                     "move the defines to the top of the `Protocol` block",
                     token,
                 )
-            if token.is_word("Properties") or token.is_word("Attributes"):
+            if any(token.is_word(w) for w in ("Properties", "Attributes", "classifynext")):
                 self.fail(
                     "model.syntax.out-of-order",
                     f"a second `{token.text}` block, or one out of order",
@@ -457,7 +462,7 @@ class _Parser:
             token = self.peek()
             if token.is_punct("}"):
                 return values, self.advance()
-            closing = f"a `{block.text}` key or the `}}` that closes `{block.text}`"
+            closing = f"{_a(block.text)} key or the `}}` that closes `{block.text}`"
             if token.kind is not Kind.IDENT:
                 self.unexpected(closing, order_hint)
             if token.text not in allowed and not self.peek(1).is_punct("="):
@@ -465,7 +470,7 @@ class _Parser:
             if token.text not in allowed:
                 self.fail(
                     "model.syntax.unknown-key",
-                    f"`{token.text}` is not a `{block.text}` key",
+                    f"`{token.text}` is not {_a(block.text)} key",
                     _did_you_mean(token.text, allowed) + order_hint,
                     token,
                 )

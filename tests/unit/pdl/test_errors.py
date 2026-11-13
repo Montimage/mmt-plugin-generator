@@ -209,9 +209,9 @@ CASES = {
     ),
     "classifynext-twice": Case(
         build(classify=classify("default: break") * 2),
-        "unexpected-token",
+        "out-of-order",
         "classifynext",
-        "the `}` that closes `Protocol`",
+        "second `classifynext`",
         nth=1,
     ),
     # --- Properties keys (G:179) -----------------------------------------------
@@ -241,7 +241,10 @@ CASES = {
         build(properties='label "p" id = "1"'), "unexpected-token", '"p"', "`=`"
     ),
     "properties-not-a-key": Case(
-        build(properties='label = "p" id = "1" "x"'), "unexpected-token", '"x"', "key"
+        build(properties='label = "p" id = "1" "x"'),
+        "unexpected-token",
+        '"x"',
+        "expected a `Properties` key or",
     ),
     "label-not-a-word": Case(
         build(properties='label = "1" id = "1"'), "unexpected-token", '1"', "protocol name"
@@ -286,7 +289,10 @@ CASES = {
         build(attr(ATTR + ' data_len="2"')), "duplicate-key", "data_len", "twice", nth=1
     ),
     "attribute-unknown": Case(
-        build(attr(ATTR + ' size="2"')), "unknown-key", "size", "not a `attribute` key"
+        build(attr(ATTR + ' size="2"')), "unknown-key", "size", "not an `attribute` key"
+    ),
+    "attribute-not-a-key": Case(
+        build(attr(ATTR + " 2")), "unexpected-token", "2 }", "expected an `attribute` key or"
     ),
     "attribute-missing-alias": Case(
         build(attr('data_type="MMT_U8_DATA"')), "missing-key", "attribute", "no `alias`"

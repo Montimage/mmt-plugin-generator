@@ -93,7 +93,7 @@ def test_version_envelope(dummy: Command, capsys: pytest.CaptureFixture[str]) ->
     assert main(["--json", "--version"], commands=[dummy]) == 0
     result = json.loads(capsys.readouterr().out)["result"]
     assert result["version"] == __version__
-    assert result["sdk_profiles"] == []
+    assert result["sdk_profiles"] == ["1.10.2"]
     assert isinstance(result["python"], str)
 
 

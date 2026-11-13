@@ -152,7 +152,7 @@ Aligned with the cli-builder skill's canonical table (0, 1, 2, 3, 130) and the p
 | 1 | `internal` | Unexpected failure: a bug, an I/O error with no better class | `internal.unexpected`, `internal.io` |
 | 2 | `usage` | Bad arguments or option combination | `usage.unknown-option`, `usage.conflicting-options` |
 | 3 | `model` | The input model or data is wrong (= skill "input error") | `model.syntax`, `model.duplicate-name`, `model.id-taken`, `model.bad-pcap` |
-| 4 | `sdk` | SDK, toolchain or prefix problem | `sdk.not-found`, `sdk.profile-not-found`, `sdk.cc-not-found`, `sdk.prefix-not-writable` |
+| 4 | `sdk` | SDK, toolchain or prefix problem | `sdk.not-found`, `sdk.invalid-prefix`, `sdk.profile-not-found`, `sdk.cc-not-found`, `sdk.prefix-not-writable` |
 | 5 | `build` | The compiler or linker failed | `build.compile-failed`, `build.missing-hook` |
 | 6 | `test` | A packet test failed, or a sanitizer/crash | `test.packet-failed`, `test.crash` |
 | 7 | `state` | Files on disk are not what the command needs | `state.stale` (`generate --check`, `--no-deps`), `state.exists`, `state.modified` |
@@ -209,7 +209,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
   ],
   "context": {
     "project": ".",
-    "sdk": {"prefix": "/home/u/mmt/opt/mmt", "version": "1.10.2", "profile": "1.10.2", "source": "MMT_BASE"}
+    "sdk": {"prefix": "/home/u/mmt/opt/mmt", "version": "1.10.2", "profile": "1.10.2", "source": "MMT_BASE", "profile_source": "sdk"}
   },
   "result": {"...": "command-specific, below"}
 }
@@ -219,7 +219,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 - `ok` = (`exit_code` == 0). `error` is `null` when `ok`. `diagnostics` is always an array (sorted by file, line, column, code).
 - `severity`: `error` | `warning` | `note`. `location` is `null` for diagnostics with no file. `line`/`column` are 1-based; columns count Unicode code points. Compiler diagnostics are mapped into the same shape (`code: "build.cc"`, the compiler's file:line:col relative to the project).
 - Codes (`error.code`, `diagnostics[].code`) are stable dotted slugs whose prefix is the class (D8). The list is documented and tested; a code is never reused for another meaning.
-- `context`: the resolved settings and where each came from (`source`: `--sdk`, `MMT_BASE`, `pkg-config`, `/opt/mmt`, `plugin.yaml`, `default`). `sdk` is `null` for commands that do not use it.
+- `context`: the resolved settings and where each came from (`source`: `--sdk`, `MMT_BASE`, `pkg-config`, `/opt/mmt`, `plugin.yaml`, `default`). `sdk` is `null` for commands that do not use it. In `sdk` (#13), `source` is where the prefix came from (`null` with no SDK), `version` is the SDK's `VERSION` macro (`null` when unknown), and `profile_source` is where the profile came from: `--sdk-profile`, `MMT_PLUGIN_SDK_PROFILE`, `plugin.yaml`, `sdk` (the detected version) or `default` (no SDK).
 - `result` is `null` on usage errors. With `--json`, a usage error is still an envelope (the CLI checks for a `--json` token before `--` before parsing). `--help --json` prints plain help.
 - JSON Schemas: one for the envelope and one per command's `result`, shipped in the package (`mmt_plugin/schemas/cli/v1/*.json`) and in each release; contract tests validate every command's output against them (#22).
 
@@ -280,7 +280,7 @@ No other config file (maintainer's answer). Machine-specific values (prefixes, c
 | Setting | CLI | Env | `plugin.yaml` | Default |
 |---|---|---|---|---|
 | Project dir | `-C` | — | — | `.` |
-| SDK prefix | `--sdk` | `MMT_BASE` | — | the mmt-dpi pkg-config file (named in #13), then `/opt/mmt` |
+| SDK prefix | `--sdk` | `MMT_BASE` | — | `mmt-dpi.pc` on pkg-config's search path, then `/opt/mmt` |
 | SDK profile | `--sdk-profile` | `MMT_PLUGIN_SDK_PROFILE` | `sdk.profile` | detected SDK version → nearest profile (warning `sdk.profile-fallback`); no SDK → newest profile (warning) |
 | Compiler | `--cc` | `CC` | — | `gcc` |
 | Install prefix | `--prefix` / `--system` | `MMT_PLUGIN_PREFIX` | — | `${XDG_DATA_HOME:-~/.local/share}/mmt` (D11, provisional) |
@@ -289,6 +289,14 @@ No other config file (maintainer's answer). Machine-specific values (prefixes, c
 | Strictness | `--strict` | — | — | off |
 
 Relative paths in `--sdk`/`MMT_BASE`/`--prefix` are resolved against the current directory and reported absolute in `context`. A prefix without `dpi/include/mmt_log.h` is `sdk.invalid-prefix` (exit 4) with a hint.
+
+SDK detection and profiles (#13, `mmt_plugin.sdk`):
+
+- The pkg-config file is `mmt-dpi.pc` (the package installs `/usr/share/pkgconfig/mmt-dpi.pc`). It is read, not run: the directories of `PKG_CONFIG_PATH`, then of `PKG_CONFIG_LIBDIR` when set or else pkg-config's default search path, are searched in order, and the prefix is the file's `includedir` without its final `/dpi/include`. A file whose `includedir` is not such an absolute path is `sdk.invalid-pkg-config` (exit 4).
+- An explicit prefix that is not valid (`--sdk`, `MMT_BASE`, the `.pc` file) is an error, never a fall-through to the next source; an empty `--sdk` is `sdk.invalid-prefix`, not the current directory (an empty `MMT_BASE` is unset). `/opt/mmt` is only looked at when it exists; no SDK at all is `sdk.not-found` (exit 4) for the commands that need one.
+- The SDK version is the `VERSION` string macro of `dpi/include/mmt_core.h`, read from the prefix itself.
+- An explicit profile (CLI, env or `plugin.yaml`) that is not bundled is `sdk.profile-not-found` (exit 4). A detected version with no bundled profile gets the nearest one, with the warning `sdk.profile-fallback`: the newest bundled profile not above that version, else the oldest (a pre-release such as `1.10.2-rc1` is just below its release `1.10.2`); an unknown version gets the newest. With no SDK and nothing pinned, the newest profile is used with the warning `sdk.profile-default`.
+- The profiles are `mmt_plugin/sdk/profiles/<version>.json` (schema: `mmt_plugin/schemas/sdk/v1/profile.json`). CI checks each entry against the published mmt-dpi headers with `python -m mmt_plugin.sdk.headercheck --sdk PREFIX` (gcc and clang, amd64 and arm64).
 
 ## 10. Visual style (btop)
 
@@ -444,12 +452,13 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | A command's `result` schema | `mmt_plugin/schemas/cli/v1/<command>.json` | the command's own issue (for example `validate.json` in #17, `generate.json` in #14) |
 | btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style` | #22 |
 | `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
+| SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:
 
 - The envelope is ASCII-only JSON (non-ASCII text as `\uXXXX` escapes), two-space indented, so its bytes do not depend on the stream encoding.
 - `command` is `null` when no command was dispatched (`--version`, or a usage error); `context.project` is `null` on usage errors.
-- `--version --json` returns `result.sdk_profiles: []` until #13 bundles the first profile.
+- `--version --json` returns `result.sdk_profiles`, the bundled SDK profiles, oldest first: `["1.10.2"]` since #13.
 - The interrupt code is `interrupted` (its class name alone).
 - Diagnostics without a location sort first.
 - A closed stdout keeps the run's exit code (0 for `mmt-plugin --version | head -c0`).

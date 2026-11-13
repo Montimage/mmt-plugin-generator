@@ -6,12 +6,16 @@ alone and asserts, with ``_Static_assert`` and ``__builtin_types_compatible_p``
 
 - a typedef with a ``definition`` is that type; any other type exists;
 - a callback's SDK typedef is a pointer to the profile's function type;
-- a registration call or helper has the profile's function type, and a
-  helper that ``implements`` a callback converts to that callback's typedef;
+- a registration call or helper has the profile's function type and is
+  prototyped (an unprototyped ``R f()`` is compatible with any ``R (...)``
+  under gnu11, so the unit also asserts that it is not compatible with a
+  function of a parameter type no header declares), and a helper that
+  ``implements`` a callback converts to that callback's typedef;
 - a ``complete`` struct has exactly the listed fields, in order (a mirror
   struct built from the profile has the same size and offsets), and every
   listed field of any struct has the listed type;
-- a constant is an integer constant expression, and a macro is defined; the
+- a constant is an integer constant expression, equal to its ``value`` when
+  the profile records one, and a macro is defined; the
   logger macros are also called with a format string, once with the debug
   opt-in defined.
 
@@ -71,6 +75,16 @@ def _same(a: str, b: str) -> str:
     return f"__builtin_types_compatible_p({a}, {b})"
 
 
+#: A struct no header declares. Only an unprototyped function type, ``R ()``,
+#: is compatible with ``R (struct mmtp_never_ *)``.
+_NEVER_TAG = "struct mmtp_never_"
+
+
+def _never(returns: str) -> str:
+    """A pointer to a function that takes a ``_NEVER_TAG`` pointer."""
+    return f"{returns} (*)({_NEVER_TAG} *)"
+
+
 def _entries(profile: Profile, header: str) -> Iterator[str]:
     """The C checks of the entries declared in ``header``."""
     for t in profile.types:
@@ -107,6 +121,10 @@ def _entries(profile: Profile, header: str) -> Iterator[str]:
                 _same(cb.typedef, cb.pointer_type),
                 f"callbacks.{cb.role}: {cb.typedef} is not {cb.pointer_type}",
             )
+            yield _assert(
+                "!" + _same(cb.typedef, _never(cb.returns)),
+                f"callbacks.{cb.role}: {cb.typedef} is not prototyped",
+            )
     for kind, functions in (
         ("registrations", profile.registrations),
         ("helpers", profile.helpers),
@@ -117,6 +135,10 @@ def _entries(profile: Profile, header: str) -> Iterator[str]:
             yield _assert(
                 _same(f"__typeof__({fn.name})", fn.function_type),
                 f"{kind}.{fn.name} is not {fn.function_type}",
+            )
+            yield _assert(
+                "!" + _same(f"__typeof__(&{fn.name})", _never(fn.returns)),
+                f"{kind}.{fn.name} is not prototyped",
             )
             if fn.implements is not None:
                 typedef = profile.callback(fn.implements).typedef
@@ -130,6 +152,11 @@ def _entries(profile: Profile, header: str) -> Iterator[str]:
                 f"(long long)({c.name}) == (long long)({c.name})",
                 f"constants.{c.name} is not an integer constant",
             )
+            if c.value is not None:
+                yield _assert(
+                    f"({c.name}) == {c.value}",
+                    f"constants.{c.name} is not {c.value}",
+                )
     for m in profile.macros:
         if m.header == header:
             error = _c_string(f"macros.{m.name} is not defined")
@@ -174,6 +201,7 @@ def render_unit(profile: Profile, header: str) -> str:
         "#include <stddef.h>",
         f'#include "{header}"',
         *(f'#include "{h}" /* for a callback typedef */' for h in _extra_headers(profile, header)),
+        f"{_NEVER_TAG};",
         "",
         *_entries(profile, header),
         "",

@@ -26,7 +26,7 @@
     "schema_version": {"const": 1},
     "profile": {"$ref": "#/$defs/version", "description": "The mmt-dpi version the profile describes; also the file name."},
     "sdk": {"const": "mmt-dpi"},
-    "c_std": {"type": "string", "description": "The -std the headers need (gnu11: u_char and GNU statement expressions)."},
+    "c_std": {"type": "string", "description": "The -std the headers need (gnu11: data_defs.h uses u_char, which glibc's <sys/types.h> hides in strict -std=c11)."},
     "headers": {
       "type": "array",
       "minItems": 1,
@@ -109,6 +109,7 @@
           "name": {"$ref": "#/$defs/ident"},
           "header": {"$ref": "#/$defs/header"},
           "group": {"$ref": "#/$defs/ident"},
+          "value": {"type": "integer", "description": "The constant's value, when generated or checked code needs it as a number (the header check asserts it); absent otherwise."},
           "doc": {"$ref": "#/$defs/text"}
         }
       }

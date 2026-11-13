@@ -190,12 +190,14 @@ class Function:
 
 @dataclass(frozen=True)
 class Constant:
-    """An integer constant (a macro or an enumerator), with its group."""
+    """An integer constant (a macro or an enumerator), with its group, and its
+    value when the profile records it."""
 
     name: str
     header: str
     group: str
     doc: str
+    value: int | None = None
 
 
 @dataclass(frozen=True)
@@ -324,6 +326,17 @@ class _Reader:
     def opt_text(self, key: str) -> str | None:
         return self.text(key) if key in self.value else None
 
+    def opt_integer(self, key: str) -> int | None:
+        """An optional integer; like JSON Schema's ``integer``, ``64.0`` is 64."""
+        if key not in self.value:
+            return None
+        value = self.value[key]
+        if type(value) is float and value.is_integer():
+            return int(value)
+        if type(value) is not int:
+            raise ProfileError(f"{self.where}.{key}: expected an integer")
+        return value
+
     def array(self, key: str) -> list[Any]:
         value = self.value[key]
         if not isinstance(value, list):
@@ -442,13 +455,14 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     helpers = [_function(item, where) for item, where in _items(top, "helpers")]
     constants = []
     for item, where in _items(top, "constants"):
-        k = _Reader(item, where, ("name", "header", "group", "doc"))
+        k = _Reader(item, where, ("name", "header", "group", "doc"), ("value",))
         constants.append(
             Constant(
                 k.text("name", _IDENT),
                 k.text("header", _HEADER),
                 k.text("group", _IDENT),
                 k.text("doc"),
+                k.opt_integer("value"),
             )
         )
     macros = []

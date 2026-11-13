@@ -134,6 +134,13 @@ and exits non-zero on failure:
 uv run python -m mmt_plugin.sdk.headercheck --sdk <dir>/opt/mmt --cc gcc
 ```
 
+Check that it fails on broken scratch copies of those headers (an
+unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
+
+```
+bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
+```
+
 ## Rules
 
 - Never use `sudo`, and never write to `/opt/mmt`. Install mmt-dpi and

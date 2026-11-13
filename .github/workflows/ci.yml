@@ -328,3 +328,10 @@ jobs:
           [ "$status" -eq 1 ] || { echo "expected exit 1, got $status"; exit 1; }
           grep -qF 'callbacks.attribute_extraction: generic_attribute_extraction_function is not int (*)(const ipacket_t *, int, attribute_t *)' \
             "$RUNNER_TEMP/wrong.txt" || { echo "the wrong signature was not reported"; exit 1; }
+      - name: Check that broken copies of the headers fail (gcc and clang)
+        # Scratch copies of the extracted headers with an unprototyped
+        # register_protocol() and generic_init_proto, and Max_Alias_Len 32.
+        run: |
+          for cc in gcc clang; do
+            bash tests/check_headercheck_mutations.sh "$SDK_PREFIX" "$cc"
+          done

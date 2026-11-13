@@ -32,10 +32,12 @@ typedef struct opaque_struct opaque_t;
 typedef struct row_struct { int id; char alias[4 + 1]; } row_t;
 typedef struct view_struct { int hidden; const unsigned char *data; } view_t;
 typedef int (*cb_t)(const opaque_t *o, idx_t i);
+typedef int (*init_t)(void);
 bool reg(cb_t f, int weight);
 int helper(const opaque_t *o, idx_t i);
 int old_helper(const opaque_t *o, idx_t i) __attribute__((deprecated("gone")));
 #define K_ONE 1
+#define K_LEN 64
 enum { K_TWO = 2 };
 typedef struct cp_struct { int (*klass)(idx_t); } cp_t;
 bool cp_register(const cp_t *p);
@@ -100,7 +102,15 @@ def _stub_data() -> dict[str, Any]:
                     {"name": "i", "type": "idx_t"},
                 ],
                 "doc": "cb",
-            }
+            },
+            {
+                "role": "init",
+                "typedef": "init_t",
+                "header": "stub.h",
+                "returns": "int",
+                "params": [],
+                "doc": "init",
+            },
         ],
         "registrations": [
             _fn("reg", "bool", [("f", "cb_t"), ("weight", "int")]),
@@ -112,6 +122,7 @@ def _stub_data() -> dict[str, Any]:
         "constants": [
             entry("K_ONE", group="k"),
             entry("K_TWO", group="k"),
+            entry("K_LEN", group="k", value=64),
             entry("CP_UNKNOWN", group="cp"),
         ],
         "macros": [entry(m) for m in ("log_e", "log_w", "log_i", "log_d")],
@@ -217,6 +228,10 @@ MUTATIONS: dict[str, tuple[Mutation, str]] = {
         "not declared there: PROTO_SCTP",
     ),
     "unknown version": (lambda d: d.update(profile="1.11.0"), "profile 1.11.0 is the SDK version"),
+    "constant value": (
+        lambda d: d["constants"][2].update(value=63),
+        "constants.K_LEN is not 63",
+    ),
 }
 
 
@@ -231,6 +246,48 @@ def test_a_wrong_profile_fails(stub_sdk: Sdk, name: str) -> None:
     assert any(message in f for f in failures), failures
 
 
+#: Header changes the check must catch: (old, new) replacements of the stub
+#: header, and the failures they cause.
+HEADER_MUTATIONS: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
+    # gnu11 accepts R () as compatible with any parameter list.
+    "unprototyped": (
+        [
+            ("bool reg(cb_t f, int weight);", "bool reg();"),
+            ("typedef int (*init_t)(void);", "typedef int (*init_t)();"),
+            ("typedef int (*cb_t)(const opaque_t *o, idx_t i);", "typedef int (*cb_t)();"),
+        ],
+        [
+            "registrations.reg is not prototyped",
+            "callbacks.init: init_t is not prototyped",
+            "callbacks.cb: cb_t is not prototyped",
+        ],
+    ),
+    "unprototyped helper": (
+        [("int helper(const opaque_t *o, idx_t i);", "int helper();")],
+        ["helpers.helper is not prototyped"],
+    ),
+    "constant value": (
+        [("#define K_LEN 64", "#define K_LEN 32")],
+        ["constants.K_LEN is not 64"],
+    ),
+}
+
+
+@needs_cc
+@pytest.mark.parametrize("name", sorted(HEADER_MUTATIONS))
+def test_a_wrong_header_fails(stub_sdk: Sdk, name: str) -> None:
+    replacements, messages = HEADER_MUTATIONS[name]
+    header = Path(stub_sdk.include_dir) / "stub.h"
+    text = header.read_text()
+    for old, new in replacements:
+        assert old in text, old
+        text = text.replace(old, new)
+    header.write_text(text)
+    failures = _failures(parse_profile(_stub_data()), stub_sdk)
+    for message in messages:
+        assert any(message in f for f in failures), (message, failures)
+
+
 def test_render_unit_of_the_bundled_profile() -> None:
     profile = get_bundled("1.10.2")
     assert profile is not None
@@ -241,6 +298,26 @@ def test_render_unit_of_the_bundled_profile() -> None:
         " int (*)(const ipacket_t *, mmt_proto_index_t, attribute_t *))"
     ) in unit
     assert "__typeof__(register_protocol), bool (protocol_t *, mmt_proto_id_t))" in unit
+    assert "struct mmtp_never_;" in unit
+    assert (
+        "_Static_assert(!__builtin_types_compatible_p(__typeof__(&register_protocol),"
+        ' bool (*)(struct mmtp_never_ *)), "registrations.register_protocol is not prototyped");'
+    ) in unit
+    assert (
+        "_Static_assert(!__builtin_types_compatible_p(generic_init_proto,"
+        ' int (*)(struct mmtp_never_ *)), "callbacks.init_proto: generic_init_proto is not'
+        ' prototyped");'
+    ) in unit
+    defs = render_unit(profile, "data_defs.h")
+    assert '_Static_assert((Max_Alias_Len) == 64, "constants.Max_Alias_Len is not 64");' in defs
+    assert "((ipacket_t *)0)->packet_id), uint64_t)" in defs
+    types = render_unit(profile, "types_defs.h")
+    assert "typedef mac_addr_t mmtp_chk_type_mac_addr_t;" in types
+    for name in ("IPv6_ALEN", "BINARY_64DATA_TYPE_LEN"):
+        assert f'"constants.{name} is not an integer constant"' in types
+    assert '"constants.POSITION_NOT_KNOWN is not an integer constant"' in render_unit(
+        profile, "mmt_core.h"
+    )
     assert "struct mmtp_chk_mirror_attribute_metadata_t {" in unit
     lib = render_unit(profile, "extraction_lib.h")
     assert '#include "plugin_defs.h" /* for a callback typedef */' in lib

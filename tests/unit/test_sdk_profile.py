@@ -82,6 +82,8 @@ def test_what_the_generator_needs(profile: Profile) -> None:
         "extraction_function",
     ]
     assert profile.constant("SCOPE_PACKET").header == "mmt_core.h"
+    assert profile.constant("Max_Alias_Len").value == 64
+    assert profile.constant("SCOPE_PACKET").value is None
     assert len([c for c in profile.constants if c.group == "data_type"]) == 26
     assert profile.logger.header == "mmt_log.h"
     assert profile.logger.debug_opt_in == "MMT_LOG_ENABLE_DEBUG"
@@ -92,10 +94,27 @@ def test_what_the_generator_needs(profile: Profile) -> None:
             lookup("nothing")
 
 
+def test_the_sdk_names_of_the_java_output_and_the_corpus(profile: Profile) -> None:
+    # Used by legacy/reference-output/, the example sources and the corpus
+    # models (review of PR #49, F1).
+    assert [t.header for t in profile.types if t.name == "mac_addr_t"] == ["types_defs.h"]
+    layout = {c.name: c.header for c in profile.constants if c.group == "data_len_or_offset"}
+    assert layout == {
+        "POSITION_NOT_KNOWN": "mmt_core.h",
+        "IPv6_ALEN": "types_defs.h",
+        "BINARY_64DATA_TYPE_LEN": "types_defs.h",
+    }
+    fields = {f.name: f.type for f in profile.struct("ipacket_t").fields}
+    assert fields["packet_id"] == "uint64_t"
+    assert profile.function("hex2int").header == "mmt_utils.h"
+    assert profile.function("str_hex2int_n").function_type == "int (char *, size_t, int, int)"
+
+
 def test_deprecated_and_missing_sdk_functions_are_not_listed(profile: Profile) -> None:
     names = {f.name for f in (*profile.registrations, *profile.helpers)}
     # Deprecated in 1.10.2, and the Java generator's call that does not exist.
     assert "general_short_extraction" not in names
+    assert "str_hex2int" not in names
     assert "register_proto_context_cleanup_function" not in names
     assert "register_proto_context_init_cleanup_function" in names
 
@@ -134,6 +153,11 @@ def _cb(d: dict[str, Any], role: str) -> dict[str, Any]:
     return found
 
 
+def _const(d: dict[str, Any], name: str) -> dict[str, Any]:
+    found: dict[str, Any] = next(c for c in d["constants"] if c["name"] == name)
+    return found
+
+
 #: Invalid profiles that both the schema and the loader reject.
 SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     "schema version": (lambda d: d.update(schema_version=2), "schema_version"),
@@ -161,6 +185,12 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     "other sdk": (lambda d: d.update(sdk="other"), "'other' is not 'mmt-dpi'"),
     "not an object": (lambda d: d["types"].__setitem__(0, "x"), "expected an object"),
     "not an array": (lambda d: d.update(helpers={}), "expected an array"),
+    "string value": (
+        lambda d: _const(d, "Max_Alias_Len").update(value="64"),
+        "expected an integer",
+    ),
+    "fractional value": (lambda d: _const(d, "Max_Alias_Len").update(value=64.5), "an integer"),
+    "boolean value": (lambda d: _const(d, "Max_Alias_Len").update(value=True), "an integer"),
 }
 
 #: Invalid profiles only the loader can see (cross-references).
@@ -202,6 +232,21 @@ def test_the_loader_checks_cross_references(name: str) -> None:
     mutate(data)
     with pytest.raises(ProfileError, match=message):
         parse_profile(data)
+
+
+def test_a_constant_value_is_optional() -> None:
+    schema = Draft202012Validator(load_schema())
+    data = copy.deepcopy(_raw())
+    _const(data, "Max_Alias_Len").pop("value")
+    assert schema.is_valid(data)
+    assert parse_profile(data).constant("Max_Alias_Len").value is None
+    # JSON Schema's integer includes 64.0, so the loader takes it as 64.
+    _const(data, "Max_Alias_Len")["value"] = 64.0
+    assert schema.is_valid(data)
+    assert parse_profile(data).constant("Max_Alias_Len").value == 64
+    _const(data, "Max_Alias_Len")["value"] = -1
+    assert schema.is_valid(data)
+    assert parse_profile(data).constant("Max_Alias_Len").value == -1
 
 
 def test_the_profile_is_frozen(profile: Profile) -> None:

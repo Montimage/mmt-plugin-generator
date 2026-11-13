@@ -11,11 +11,11 @@
     },
     {
       "name": "types_defs.h",
-      "doc": "The MMT_* attribute data types (enum data_types)."
+      "doc": "The MMT_* attribute data types (enum data_types), mac_addr_t and the address and binary data lengths."
     },
     {
       "name": "mmt_core.h",
-      "doc": "The attribute scopes, and the VERSION macro that SDK detection reads."
+      "doc": "The attribute scopes, POSITION_NOT_KNOWN, and the VERSION macro that SDK detection reads."
     },
     {
       "name": "plugin_defs.h",
@@ -24,6 +24,10 @@
     {
       "name": "extraction_lib.h",
       "doc": "The general_* extraction functions for fixed-width attributes."
+    },
+    {
+      "name": "mmt_utils.h",
+      "doc": "Utility helpers of libmmt_core (hexadecimal conversions); mmt_core.h includes it."
     },
     {
       "name": "mmt_log.h",
@@ -61,6 +65,11 @@
       "name": "protocol_t",
       "header": "data_defs.h",
       "doc": "The opaque protocol structure being registered."
+    },
+    {
+      "name": "mac_addr_t",
+      "header": "types_defs.h",
+      "doc": "A MAC address (an array of ETH_ALEN bytes); sizeof(mac_addr_t) is the data_len of an MMT_DATA_MAC_ADDR attribute."
     },
     {
       "name": "mmt_session_t",
@@ -118,8 +127,9 @@
       "name": "ipacket_t",
       "header": "data_defs.h",
       "layout": "partial",
-      "doc": "The packet being processed; generated code reads only these fields.",
+      "doc": "The packet being processed; generated code reads only these fields (packet_id in log lines).",
       "fields": [
+        {"name": "packet_id", "type": "uint64_t"},
         {"name": "p_hdr", "type": "pkthdr_t *"},
         {"name": "data", "type": "const u_char *"}
       ]
@@ -494,14 +504,38 @@
         {"name": "extracted_data", "type": "attribute_t *"}
       ],
       "doc": "Copies data_len bytes (addresses, binary data)."
+    },
+    {
+      "name": "hex2int",
+      "header": "mmt_utils.h",
+      "returns": "int",
+      "params": [
+        {"name": "hc", "type": "char"}
+      ],
+      "doc": "The value of one hexadecimal digit character."
+    },
+    {
+      "name": "str_hex2int_n",
+      "header": "mmt_utils.h",
+      "returns": "int",
+      "params": [
+        {"name": "hstr", "type": "char *"},
+        {"name": "hstr_len", "type": "size_t"},
+        {"name": "start_index", "type": "int"},
+        {"name": "end_index", "type": "int"}
+      ],
+      "doc": "The value of the hexadecimal digits hstr[start_index..end_index], never reading past hstr_len bytes; -1 for a bad range. str_hex2int is deprecated and not listed."
     }
   ],
   "constants": [
     {"name": "Classified", "header": "data_defs.h", "group": "classification_status", "doc": "classified_proto_t.status of a recognised protocol."},
     {"name": "NonClassified", "header": "data_defs.h", "group": "classification_status", "doc": "classified_proto_t.status of an unrecognised protocol."},
-    {"name": "Max_Alias_Len", "header": "data_defs.h", "group": "limit", "doc": "The longest protocol or attribute alias, in bytes."},
+    {"name": "Max_Alias_Len", "header": "data_defs.h", "group": "limit", "value": 64, "doc": "The longest protocol or attribute alias, in bytes."},
     {"name": "MMT_CLASSIFY_MATCHED", "header": "plugin_defs.h", "group": "classify_verdict", "doc": "A classifier recognised the protocol."},
     {"name": "MMT_CLASSIFY_SKIP", "header": "plugin_defs.h", "group": "classify_verdict", "doc": "A classifier did not recognise the protocol."},
+    {"name": "POSITION_NOT_KNOWN", "header": "mmt_core.h", "group": "data_len_or_offset", "doc": "Used as an attribute's position_in_packet (offset) when the attribute has no fixed offset."},
+    {"name": "IPv6_ALEN", "header": "types_defs.h", "group": "data_len_or_offset", "doc": "Used as the data_len of an MMT_DATA_IP6_ADDR attribute: an IPv6 address, in bytes."},
+    {"name": "BINARY_64DATA_TYPE_LEN", "header": "types_defs.h", "group": "data_len_or_offset", "doc": "Used as the data_len of an MMT_BINARY_DATA attribute: an int length and 64 data bytes."},
     {"name": "SCOPE_PACKET", "header": "mmt_core.h", "group": "scope", "doc": "PDL scope packet."},
     {"name": "SCOPE_SESSION", "header": "mmt_core.h", "group": "scope", "doc": "PDL scope session."},
     {"name": "MMT_CLASS_UNKNOWN", "header": "mmt_class_provider.h", "group": "class_provider", "doc": "What a class lookup returns for a key it does not know."},

@@ -30,29 +30,23 @@ build-backend = "uv_build"
 # this was set. Move it forward on purpose when upgrading (`uv lock --upgrade`).
 exclude-newer = "2026-10-30T00:00:00Z"
 
-[tool.uv.build-backend]
-# The package lives under python/src, set by this line. The legacy Java tool
-# is now in legacy/ (T0.5); moving the package to src/, which would drop this
-# line (uv_build defaults to "src"), is a separate, pending decision.
-module-root = "python/src"
-
 [tool.ruff]
 # Only the Python package and its tests; tests/corpus/validate.py is a
 # stdlib-only script with its own style.
-include = ["python/**/*.py", "python/**/*.pyi"]
-src = ["python/src", "python/tests"]
+include = ["src/**/*.py", "tests/unit/**/*.py"]
+src = ["src", "tests/unit"]
 line-length = 99
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.mypy]
-files = ["python/src/mmt_plugin", "python/tests"]
-mypy_path = "python/src"
+files = ["src/mmt_plugin", "tests/unit"]
+mypy_path = "src"
 strict = true
 warn_unreachable = true
 
 [tool.pytest.ini_options]
-testpaths = ["python/tests"]
+testpaths = ["tests/unit"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
 xfail_strict = true

@@ -17,7 +17,7 @@ Commit messages and PR bodies must not carry AI co-author trailers or
 
 ## Python package
 
-The Python rewrite (`pyproject.toml`, `python/`) uses
+The Python rewrite (`pyproject.toml`, `src/`, `tests/unit/`) uses
 [uv](https://docs.astral.sh/uv/). Set up and check it with:
 
 ```

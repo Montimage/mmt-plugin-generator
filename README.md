@@ -2,7 +2,7 @@
 
 ## Python rewrite (in progress)
 
-A Python replacement for the Java generator is being built in `python/`
+A Python replacement for the Java generator is being built in `src/`
 (`mmt-plugin` command), following
 [docs/design/workflow-redesign.md](docs/design/workflow-redesign.md).
 It has no commands yet; this README still describes the Java tool.

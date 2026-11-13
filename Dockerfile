@@ -21,7 +21,7 @@ FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca
 ARG MMT_DPI_TAG=v1.10.2
 ARG MMT_DPI_SHA256SUMS_SHA256=
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# RUN steps are POSIX sh: podman's default OCI format ignores SHELL.
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -44,10 +44,10 @@ RUN fail() { echo "FAIL: $*" >&2; exit 1; }; \
     py="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"; \
     mmt="$(dpkg-query -W -f='${Version}' mmt-dpi)"; \
     [ "$gcc" = 13 ] || fail "gcc major version is $gcc, expected 13"; \
-    [[ "$clang" == 18.* ]] || fail "clang version is $clang, expected 18.x"; \
+    case "$clang" in 18.*) ;; *) fail "clang version is $clang, expected 18.x" ;; esac; \
     [ "$py" = 3.12 ] || fail "python3 is $py, expected 3.12"; \
-    [[ "$mmt" == "${MMT_DPI_TAG#v}" || "$mmt" == "${MMT_DPI_TAG#v}-"* ]] \
-        || fail "mmt-dpi is $mmt, expected ${MMT_DPI_TAG#v}"; \
+    case "$mmt" in "${MMT_DPI_TAG#v}" | "${MMT_DPI_TAG#v}"-*) ;; \
+        *) fail "mmt-dpi is $mmt, expected ${MMT_DPI_TAG#v}" ;; esac; \
     mkdir -p /usr/share/doc/mmt-test-image \
     && dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' \
         > /usr/share/doc/mmt-test-image/packages.txt \

@@ -165,6 +165,31 @@ CODES: Mapping[str, str] = MappingProxyType(
         "test.no-packets": "warning: no packet test was found, so nothing was tested",
         "test.bench-failed": "warning: --bench could not measure (advisory: the exit code does "
         "not change)",
+        # `install`, `uninstall` (mmt_plugin.commands.install, mmt_plugin.manifest, #21).
+        "sdk.prefix-not-writable": "the install prefix's plugins directory cannot be written "
+        "(mmt-plugin never uses sudo)",
+        "state.exists": "a file at the install target that no install manifest lists; install "
+        "does not replace it without --force",
+        "state.installed-modified": "an installed file's sha256 is not the one its install "
+        "manifest records; install and uninstall leave it without --force",
+        "state.invalid-manifest": "an install manifest "
+        "(<prefix>/plugins/.mmt-plugin/<label>.json) cannot be read, or is not a manifest this "
+        "mmt-plugin knows",
+        "state.not-installed": "warning: uninstall found no install manifest for the label: "
+        "nothing was removed",
+        # `doctor` (mmt_plugin.commands.doctor, #21).
+        "sdk.invalid-plugin-dir": "MMT_DPI_PLUGINS_DIR is relative or not a readable directory, "
+        "so mmt-dpi loads no plugin and init_extraction() fails",
+        "sdk.plugin-dir-unknown": "warning: the plugin directory compiled into libmmt_core "
+        "cannot be read, so doctor cannot tell what mmt-dpi scans",
+        "sdk.install-dir-not-scanned": "warning: mmt-dpi does not scan the install prefix's "
+        "plugins directory, so the plugins installed there do not load",
+        "sdk.no-tcpip-plugin": "warning: the plugin directory mmt-dpi scans has no "
+        "libmmt_tcpip.so, so no Ethernet, IP, TCP or UDP protocol is registered",
+        "sdk.plugin-load-order": "an installed plugin's file name sorts before libmmt_tcpip.so "
+        "(C locale or LC_COLLATE), so its parents are not registered when it loads",
+        "sdk.plugin-clash": "two installed plugins, or one and the project's model, register "
+        "the same protocol id or name (names are case-insensitive)",
     }
 )
 

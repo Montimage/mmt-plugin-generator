@@ -136,7 +136,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 - **T2.5 `install`, `uninstall` and `doctor`.** Depends on T2.3.
   - `install` defaults to a user prefix; `--system` targets `/opt/mmt`. Both write an install manifest that `uninstall` follows.
   - `doctor` reports the toolchain, SDK version, plugin directory, load order and id/name clashes.
-  - The default user prefix, `${XDG_DATA_HOME:-~/.local/share}/mmt`, is provisional ([`cli.md`](cli.md), D11). First check, citing the mmt-dpi 1.10.2 source, which plugin directories mmt-dpi 1.10.2 scans. Keep the default only if an unmodified mmt-dpi 1.10.2 loads a plugin installed there (directly or through `MMT_DPI_PLUGINS_DIR`); otherwise change it and record why. `doctor` reports whether the install directory is scanned.
+  - The default user prefix, `${XDG_DATA_HOME:-~/.local/share}/mmt`, was provisional ([`cli.md`](cli.md), D11; checked and kept in #21, cli.md section 13). First check, citing the mmt-dpi 1.10.2 source, which plugin directories mmt-dpi 1.10.2 scans. Keep the default only if an unmodified mmt-dpi 1.10.2 loads a plugin installed there (directly or through `MMT_DPI_PLUGINS_DIR`); otherwise change it and record why. `doctor` reports whether the install directory is scanned.
   - Verify: tests in a temporary prefix; no sudo in CI; a load test shows mmt-dpi 1.10.2 finds a plugin installed at the default prefix.
 - **T2.6 Consistency and resilience across commands.** Depends on T1.1a.
   - Every command takes `--json`: contract tests iterate the parser, and each command prints exactly one envelope valid against the envelope schema and its own `result` schema, with `--json` before or after the command name.

@@ -14,8 +14,9 @@ later issue registers is checked without a new test:
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
 A command whose shortest successful run needs input files (``generate``
-and ``validate`` need a model, ``build`` and ``test`` also an SDK and a
-compiler) gets them from ``SETUP``. ``result.stats`` holds the only timings
+and ``validate`` need a model, ``build``, ``test``, ``install`` and
+``doctor`` also an SDK and a compiler, ``uninstall`` and ``install`` a
+prefix) gets them from ``SETUP``. ``result.stats`` holds the only timings
 (section 6), so the two runs are compared without it. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
@@ -233,11 +234,10 @@ def _build_args(directory: Path) -> list[str]:
     return ["model.pdl", "--sdk", str(sdk), "--cc", str(cc), "--dry-run"]
 
 
-def _test_args(directory: Path) -> list[str]:
-    # build's fake compiler (tests/unit/build/fakes.py), which compiles and
-    # links, and a build made here, quietly: test finds the plugin up to date
-    # and, with no packet test (a test.no-packets warning), runs no harness,
-    # so a second run prints the same envelope.
+def _built_project(directory: Path) -> list[str]:
+    """build's fake compiler (tests/unit/build/fakes.py), which compiles and
+    links, and a build made here, quietly; the ``--sdk`` and ``--cc``
+    arguments."""
     spec = importlib.util.spec_from_file_location(
         "contract_build_fakes", Path(__file__).parent / "build" / "fakes.py"
     )
@@ -246,7 +246,7 @@ def _test_args(directory: Path) -> list[str]:
     spec.loader.exec_module(fakes)
     (directory / "model.pdl").write_text(CONTRACT_MODEL)
     sdk = fakes.fake_sdk(directory / "sdk")
-    (sdk / "plugins").mkdir()
+    (sdk / "plugins").mkdir(exist_ok=True)
     (sdk / "plugins" / "libmmt_tcpip.so").write_text("")
     cc = fakes.fake_cc(directory / "bin")
     choice = resolve_profile("1.10.2", {}, None, None)
@@ -255,9 +255,35 @@ def _test_args(directory: Path) -> list[str]:
     impl = scaffold(generation, choice.profile)
     (directory / impl.path).parent.mkdir(exist_ok=True)
     (directory / impl.path).write_text(impl.text)
-    args = ["--model", "model.pdl", "--sdk", str(sdk), "--cc", str(cc)]
-    assert main(["-q", "build", "model.pdl", *args[2:]]) == 0
+    args = ["--sdk", str(sdk), "--cc", str(cc)]
+    assert main(["-q", "build", "model.pdl", *args]) == 0
     return args
+
+
+def _test_args(directory: Path) -> list[str]:
+    # A plugin built here: test finds it up to date and, with no packet test
+    # (a test.no-packets warning), runs no harness, so a second run prints
+    # the same envelope.
+    return ["--model", "model.pdl", *_built_project(directory)]
+
+
+def _install_args(directory: Path) -> list[str]:
+    # A plugin built here, installed with --dry-run into a prefix here: the
+    # run writes nothing, so a second run prints the same envelope.
+    args = _built_project(directory)
+    return ["model.pdl", *args, "--prefix", str(directory / "prefix"), "--dry-run"]
+
+
+def _uninstall_args(directory: Path) -> list[str]:
+    # Nothing is installed in the prefix: a state.not-installed warning, exit 0.
+    return ["contract", "--prefix", str(directory / "prefix")]
+
+
+def _doctor_args(directory: Path) -> list[str]:
+    # The fake SDK (its empty libmmt_core does not tell the plugin directory:
+    # a warning) and the fake compiler; nothing is written.
+    args = _built_project(directory)
+    return [*args, "--prefix", str(directory / "prefix")]
 
 
 SETUP: dict[str, Callable[[Path], list[str]]] = {
@@ -265,6 +291,9 @@ SETUP: dict[str, Callable[[Path], list[str]]] = {
     "validate": _validate_args,
     "build": _build_args,
     "test": _test_args,
+    "install": _install_args,
+    "uninstall": _uninstall_args,
+    "doctor": _doctor_args,
 }
 
 

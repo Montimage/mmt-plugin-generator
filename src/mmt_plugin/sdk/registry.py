@@ -41,9 +41,11 @@ __all__ = [
     "RegisteredProtocol",
     "Registry",
     "RegistryError",
+    "compiled_plugin_dir",
     "core_library",
     "plugin_dir",
     "read_registry",
+    "scanned_plugin_dir",
 ]
 
 #: The environment variable that replaces ``<prefix>/plugins`` in mmt-dpi.
@@ -94,6 +96,48 @@ def plugin_dir(sdk: Sdk, env: Mapping[str, str]) -> str:
     if given:
         return os.path.normpath(os.path.join(os.getcwd(), given))
     return os.path.join(sdk.prefix, "plugins")
+
+
+#: An absolute directory ending in ``/plugins``, as a NUL-terminated string
+#: of a shared object's read-only data.
+_PLUGINS_LITERAL = re.compile(rb"(?<=\x00)/[\x21-\x7e]*/plugins(?=\x00)")
+
+
+def compiled_plugin_dir(core: str) -> str | None:
+    """The plugin directory compiled into ``libmmt_core`` (``core``), or
+    ``None`` when it cannot be told.
+
+    mmt-dpi 1.10.2 (``src/mmt_core/src/plugins_engine.c``) scans exactly one
+    directory: ``$MMT_DPI_PLUGINS_DIR`` when set (absolute, else nothing
+    loads), else ``PLUGINS_REPOSITORY_OPT``, which ``rules/common.mk`` sets
+    to ``$(MMT_BASE)/plugins`` when the library is built (``/opt/mmt/plugins``
+    in the published package, also when it is extracted elsewhere). That
+    string is in the library's read-only data; it is the one absolute path
+    there ending in ``/plugins``. Several different ones, or none, is
+    ``None``.
+    """
+    try:
+        with open(core, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    found = {m.group(0).decode("ascii") for m in _PLUGINS_LITERAL.finditer(data)}
+    return found.pop() if len(found) == 1 else None
+
+
+def scanned_plugin_dir(sdk: Sdk | None, env: Mapping[str, str]) -> tuple[str | None, str]:
+    """The directory mmt-dpi programs scan for plugins, and where that comes
+    from: ``MMT_DPI_PLUGINS_DIR`` (as given: mmt-dpi refuses a relative one)
+    or ``libmmt_core`` (``compiled_plugin_dir``); ``(None, "unknown")`` when
+    neither tells."""
+    given = env.get(PLUGINS_DIR_ENV, "")
+    if given:
+        return given, PLUGINS_DIR_ENV
+    core = core_library(sdk) if sdk is not None else None
+    compiled = compiled_plugin_dir(core) if core is not None else None
+    if compiled is not None:
+        return compiled, "libmmt_core"
+    return None, "unknown"
 
 
 def core_library(sdk: Sdk) -> str | None:

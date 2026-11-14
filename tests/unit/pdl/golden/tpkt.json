@@ -121,12 +121,15 @@
               "span": "14:4-14:20"
             }
           ],
-          "span": "11:3-15:4"
+          "span": "11:3-15:4",
+          "offset": null
         }
       ],
       "span": "10:2-16:3"
     },
     "classify_next": null,
-    "span": "1:1-17:2"
+    "span": "1:1-17:2",
+    "offsets": "running",
+    "parents": []
   }
 }

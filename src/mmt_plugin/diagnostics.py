@@ -115,8 +115,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "branches advance the running offset differently",
         # Code generation and `generate` (mmt_plugin.codegen, mmt_plugin.commands.generate, #14).
         "model.unreadable": "the model file cannot be read, or is not UTF-8 text",
-        "model.unsupported-format": "the model is plugin.yaml, which generate and validate "
-        "read only once #24 lands",
+        # plugin.yaml (mmt_plugin.pluginyaml, #24).
+        "model.yaml-syntax": "a plugin.yaml file is not in the YAML subset mmt-plugin reads",
+        "model.schema": "a plugin.yaml file does not follow its JSON Schema "
+        "(schemas/model/v1/plugin.json)",
         "model.name-collision": "two names of the generated C are the same identifier, or a "
         "model define would replace a name the generated C uses",
         "model.hook-value": "val(), or len() computed per packet, of an attribute without an "

@@ -475,7 +475,7 @@ class DoctorCommand:
             return None
         if choice is None:
             choice = resolve_profile(None, {}, None, None)
-        generation, _, error = make_generation(model.name, model.data, choice)
+        generation, _, error = make_generation(model.name, model.data, choice, model.format)
         if generation is None:
             message = error.message if error is not None else "it does not generate"
             run.add("project", "warn", f"{message}: not checked for clashes")

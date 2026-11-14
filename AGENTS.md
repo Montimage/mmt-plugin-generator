@@ -113,7 +113,8 @@ protocol model. A Python rewrite is planned in
   (`src/mmt_plugin/sdk/registry.py`: a child Python process loads
   `libmmt_core` with ctypes, without the plugin's own `mmtp_<label>.so`).
   Without an SDK it exits 4 unless `--no-sdk`. `commands/modelio.py` reads
-  `MODEL` for `generate` and `validate`. Tests in `tests/unit/test_validate.py`
+  `MODEL` (PDL v1 or `plugin.yaml`) for every command that takes one.
+  Tests in `tests/unit/test_validate.py`
   and `tests/unit/test_sdk_registry.py` (its real-SDK tests need
   `MMT_GOLDEN_SDK`, like `test_compile.py`).
 - `src/mmt_plugin/commands/build.py` (T2.3): `mmt-plugin build` compiles
@@ -180,7 +181,7 @@ protocol model. A Python rewrite is planned in
   default prefix against a real SDK (needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/init.py` (T2.7): `mmt-plugin init LABEL` creates
   a project in `--dir` (default `./<LABEL>`): `model.pdl` (a PDL v1 model of
-  a 4-byte header; `plugin.yaml` waits for #24), the scaffold
+  a 4-byte header; writing `plugin.yaml` instead is #65), the scaffold
   `src/<label>_impl.c`, the packet test `tests/<label>-basic.yaml` and a
   `.gitignore` with `build/`. `--id` defaults to the lowest id in 950-999
   that the profile and the installed plugins (`sdk/registry.py`) leave free,
@@ -192,6 +193,26 @@ protocol model. A Python rewrite is planned in
   `test` command line for the project. Tests in `tests/unit/init/`:
   `test_command.py` (a stubbed registry, build's fakes) and `test_sdk.py`,
   `init` then `test --json` against a real SDK (needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/pluginyaml/` (T3.1): `plugin.yaml`, the canonical model
+  format, described in `docs/plugin-yaml.md`. Its JSON Schema is
+  `src/mmt_plugin/schemas/model/v1/plugin.json` (draft 2020-12, shipped in
+  the package): everything PDL v1 says, plus `parents` (with an optional
+  generated `classify`), `sdk.profile` and `offsets` (`absolute` by default,
+  or PDL v1's `running`); no machine-specific key. `nodes.py` reads a YAML
+  subset with line and column (no YAML dependency; `model.yaml-syntax`),
+  `schema.py` enforces the schema file itself (`model.schema` at each
+  offending node; `jsonschema` agrees in the tests), `load.py` builds the
+  same typed model as the PDL v1 parser (`pdl/model.py` gained
+  `Model.offsets`, `Model.parents`, `Struct.offset`; expressions go through
+  `pdl.parser.parse_expression`), and `dump.py` writes an analysed model
+  as `plugin.yaml`. Every command reads both formats; `sdk.profile` pins the
+  profile below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE`. A parent with
+  `classify` gets a generated classification function that the init
+  registers before calling `<label>_hook_register_parents`. Tests in
+  `tests/unit/pluginyaml/`: `test_nodes.py`, `test_schema.py`, `test_load.py`,
+  `test_roundtrip.py` (every corpus model round-trips in both offset modes
+  and generates the same C) and `test_sdk.py` (a packet test that passes
+  only through the generated parent classification; needs `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -204,7 +225,8 @@ protocol model. A Python rewrite is planned in
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/init/test_sdk.py` (`init`
-  then `test`), `tests/unit/install/test_sdk.py`
+  then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
+  project classified by its generated parent code), `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
   SDK).
@@ -335,6 +357,21 @@ Generate a model's C sources (no installed SDK needed with a pinned profile):
 
 ```
 uv run mmt-plugin generate tests/corpus/models/pdl_bitfields/model.pdl -o <dir> --sdk-profile 1.10.2
+```
+
+The same for a `plugin.yaml` model (`docs/plugin-yaml.md`); a project's
+`plugin.yaml` is the default `MODEL` of every command:
+
+```
+uv run mmt-plugin validate <project>/plugin.yaml --no-sdk
+uv run mmt-plugin -C <project> generate --sdk-profile 1.10.2
+```
+
+Load a `plugin.yaml` project whose parent is classified by generated code
+against those headers (skips without `MMT_GOLDEN_SDK`):
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/pluginyaml/test_sdk.py
 ```
 
 Build a plugin (`<project>` holds the model and `src/<label>_impl.c`, the

@@ -16,6 +16,7 @@ from mmt_plugin.commands.test import DIAGNOSTIC_CODES as TEST_CODES
 from mmt_plugin.commands.validate import DIAGNOSTIC_CODES as VALIDATE_CODES
 from mmt_plugin.diagnostics import CODES, Severity
 from mmt_plugin.exitcodes import ExitCode, for_class
+from mmt_plugin.pluginyaml import DIAGNOSTIC_CODES as PLUGIN_YAML_CODES
 from mmt_plugin.semantics import HINTS
 
 from .conftest import attr, build, classify, covered, ok, run, u8, whole
@@ -228,15 +229,16 @@ def test_branch_offset_mismatch_after_an_if_without_else() -> None:
 
 
 #: The model codes of generation, of the generate command (#14), of the
-#: validate command (#17) and of the test command (#20), which come after the
-#: semantic block. (Generation also reuses two semantic codes,
-#: model.missing-length and model.out-of-range.)
+#: validate command (#17), of the test command (#20), of init (#23) and of
+#: plugin.yaml (#24), which come after the semantic block. (Generation also
+#: reuses two semantic codes, model.missing-length and model.out-of-range.)
 LATER = {
     *GENERATION_CODES,
     *GENERATE_CODES,
     *VALIDATE_CODES,
     *TEST_CODES,
     *INIT_CODES,
+    *PLUGIN_YAML_CODES,
 } - set(HINTS)
 SEMANTIC = [
     c

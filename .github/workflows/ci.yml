@@ -489,6 +489,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/init/test_sdk.py
+      - name: Classify a plugin.yaml protocol through its generated parent code
+        # tests/unit/pluginyaml/test_sdk.py: a plugin.yaml project (#24)
+        # whose Ethernet parent is classified by generated code; its packet
+        # test passes only when that code classified the packet, also under
+        # ASan and UBSan, and validate finds the parent in the SDK.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/pluginyaml/test_sdk.py
       - name: Install, load and uninstall a plugin in a temporary prefix
         # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
         # default user prefix (a temporary XDG_DATA_HOME; no sudo, never

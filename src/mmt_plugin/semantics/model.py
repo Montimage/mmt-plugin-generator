@@ -1,4 +1,5 @@
-"""The analysed model: what the semantic passes compute from a PDL model.
+"""The analysed model: what the semantic passes compute from a PDL model
+(read from PDL v1 or plugin.yaml).
 
 ``mmt_plugin.semantics.analyse`` builds it; code generation (T1.5) reads it.
 Every node is a frozen dataclass with the ``Span`` of the PDL text it comes
@@ -52,6 +53,7 @@ __all__ = [
     "AnalysedDefault",
     "AnalysedDefine",
     "AnalysedModel",
+    "AnalysedParent",
     "AnalysedStruct",
     "AnalysedSwitch",
     "AttributeKind",
@@ -67,6 +69,7 @@ __all__ = [
     "LengthRef",
     "NextProto",
     "OffsetRef",
+    "ParentMatch",
     "Protocol",
     "SetNextOffset",
     "SetNextProto",
@@ -490,6 +493,40 @@ class AnalysedSwitch:
     span: Span
 
 
+# --- parents (plugin.yaml) ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ParentMatch:
+    """The ``length``-byte unsigned integer at ``offset`` from the start of
+    the parent, in network byte order, equals ``value``."""
+
+    offset: int
+    length: int
+    value: int
+
+
+@dataclass(frozen=True)
+class AnalysedParent:
+    """A parent protocol (plugin.yaml's ``parents``).
+
+    ``name`` is as written; ``macro`` and ``id`` are the SDK profile's when it
+    registers the parent, ``None`` otherwise (an installed plugin's, which
+    ``validate`` checks). ``match`` is ``None`` when user code attaches the
+    protocol; otherwise the generated code classifies it under the parent
+    when every test holds, starting ``offset`` bytes after the parent's
+    start, with classification weight ``weight``.
+    """
+
+    name: str
+    macro: str | None
+    id: int | None
+    weight: int
+    match: tuple[ParentMatch, ...] | None
+    offset: int | None
+    span: Span
+
+
 # --- The whole model ---------------------------------------------------------
 
 
@@ -499,7 +536,8 @@ class AnalysedModel:
 
     ``elements`` keeps the Attributes block's structure; ``attributes`` lists
     every attribute (struct fields included) and ``structs`` every struct,
-    both in declaration order. ``source`` is the parsed model.
+    both in declaration order. ``source`` is the parsed model. ``parents``
+    are plugin.yaml's (none for PDL v1).
     """
 
     protocol: Protocol
@@ -510,6 +548,7 @@ class AnalysedModel:
     conditionals: tuple[AnalysedConditional, ...]
     classify_next: AnalysedSwitch | None
     source: Model
+    parents: tuple[AnalysedParent, ...] = ()
 
     def attribute(self, name: str) -> AnalysedAttribute:
         """An attribute by name, case-insensitively; ``KeyError`` if none."""

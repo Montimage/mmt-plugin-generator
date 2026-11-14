@@ -4,6 +4,12 @@ The parser (``mmt_plugin.pdl.parser``) builds it; nothing here computes
 layouts, folds expressions or checks names (T1.3 does). Every node is a frozen
 dataclass with the ``Span`` of the text it was parsed from.
 
+``plugin.yaml`` (``mmt_plugin.pluginyaml``, #24) is read into the same model,
+its spans pointing into the YAML. It says three things PDL v1 has no syntax
+for: absolute offsets (``Model.offsets``), a struct's offset
+(``Struct.offset``) and the parent protocols (``Model.parents``). Their
+defaults are PDL v1's meaning, which the parser never changes.
+
 The grammar that fixes each construct's meaning is the legacy one,
 ``legacy/pdl_grammar/PluginGrammar.g`` (``G:<line>`` below), with the decided
 rules of ``tests/corpus/README.md``.
@@ -48,6 +54,10 @@ __all__ = [
     "NextEncaps",
     "NextOffset",
     "OffsetOf",
+    "Offsets",
+    "Parent",
+    "ParentClassify",
+    "ParentMatch",
     "Properties",
     "Scope",
     "ScopeValue",
@@ -418,11 +428,16 @@ class Element:
 
 @dataclass(frozen=True)
 class Struct:
-    """``struct N { ... }`` (G:438-500); its fields are packet attributes."""
+    """``struct N { ... }`` (G:438-500); its fields are packet attributes.
+
+    ``offset`` is the struct's absolute byte offset, which only plugin.yaml
+    gives (with ``Offsets.ABSOLUTE``); ``None`` for PDL v1, where the running
+    offset places the struct."""
 
     name: Name
     elements: tuple[Element, ...]
     span: Span
+    offset: IntLiteral | None = None
 
 
 @dataclass(frozen=True)
@@ -509,6 +524,56 @@ class ClassifyNext:
     span: Span
 
 
+# --- plugin.yaml only: offsets and parents -----------------------------------
+
+
+class Offsets(str, Enum):
+    """How declared offsets are read.
+
+    ``RUNNING`` is PDL v1's running offset R (corpus README, Offsets and
+    alignment): a constant attribute's offset is relative to R until the
+    first attribute that is not constant. ``ABSOLUTE``, plugin.yaml's
+    default, reads every offset from the start of the protocol.
+    """
+
+    RUNNING = "running"
+    ABSOLUTE = "absolute"
+
+
+@dataclass(frozen=True)
+class ParentMatch:
+    """One test of a parent classification: the ``length``-byte unsigned
+    integer at ``offset`` from the start of the parent, in network byte
+    order, equals ``value``."""
+
+    offset: IntLiteral
+    length: IntLiteral
+    value: IntLiteral
+    span: Span
+
+
+@dataclass(frozen=True)
+class ParentClassify:
+    """The generated classification of a parent: every ``match`` holds, and
+    the protocol starts ``offset`` bytes after the start of the parent."""
+
+    match: tuple[ParentMatch, ...]
+    offset: IntLiteral
+    span: Span
+
+
+@dataclass(frozen=True)
+class Parent:
+    """A parent protocol, by its registered name. ``classify`` is ``None``
+    when user code attaches the protocol (``<label>_hook_register_parents``);
+    ``weight`` is the classification weight, ``None`` for the default."""
+
+    protocol: Name
+    weight: IntLiteral | None
+    classify: ParentClassify | None
+    span: Span
+
+
 # --- The whole file ----------------------------------------------------------
 
 
@@ -516,7 +581,8 @@ class ClassifyNext:
 class Model:
     """A PDL v1 file: ``Protocol { define* Properties Attributes classifynext? }``.
 
-    The layout of G:33.
+    The layout of G:33. ``offsets`` and ``parents`` are plugin.yaml's (see
+    the module docstring); a PDL v1 file has the defaults.
     """
 
     defines: tuple[Define, ...]
@@ -524,3 +590,5 @@ class Model:
     attributes: Attributes
     classify_next: ClassifyNext | None
     span: Span
+    offsets: Offsets = Offsets.RUNNING
+    parents: tuple[Parent, ...] = ()

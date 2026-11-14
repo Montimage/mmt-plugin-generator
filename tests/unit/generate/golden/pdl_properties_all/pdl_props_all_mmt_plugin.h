@@ -74,7 +74,7 @@ bool pdl_props_all_hook_session_compare(mmt_opaque_t key_1, mmt_opaque_t key_2);
 /* Classifies the next protocol (encapsulation = "true" without a classifynext block): record it with set_classified_proto() and return the verdict. */
 mmt_classify_verdict_t pdl_props_all_hook_classify_next(ipacket_t *ipacket, unsigned previous_index);
 
-/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+/* Attaches the protocol to the parents the generated code does not attach (the model's parents without classify); returns 1, or 0 to fail the load. */
 int pdl_props_all_hook_register_parents(protocol_t *protocol_struct);
 
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */

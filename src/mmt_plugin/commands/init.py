@@ -4,8 +4,8 @@ Creates a plugin project that builds and tests green out of the box, in
 ``--dir`` (default ``./<LABEL>``, relative to the current directory):
 
 - ``model.pdl``: a PDL v1 model of a 4-byte header (``version``, ``kind``,
-  ``length``). The canonical ``plugin.yaml`` waits for #24, and ``build`` and
-  ``test`` read a PDL v1 model today (``--model model.pdl``);
+  ``length``), read with ``--model model.pdl``; writing the canonical
+  ``plugin.yaml`` (#24) instead is #65;
 - ``src/<label>_impl.c``: the user code scaffold
   (``mmt_plugin.codegen.scaffold``), which defines every hook;
 - ``tests/<label>-basic.yaml``: one packet test (corpus schema 1) of that
@@ -95,7 +95,7 @@ DIAGNOSTIC_CODES = (
     "state.not-a-project",
 )
 
-#: The project's model, until ``plugin.yaml`` (#24).
+#: The project's model, until init writes ``plugin.yaml`` (#65).
 MODEL_FILE = "model.pdl"
 GITIGNORE = ".gitignore"
 
@@ -286,7 +286,7 @@ class InitCommand:
             help="create a plugin project that builds and tests green",
             description=(
                 "Create a plugin project in --dir: model.pdl (a PDL v1 model; plugin.yaml\n"
-                "needs #24), the user code scaffold src/<label>_impl.c, the packet test\n"
+                "is #65), the user code scaffold src/<label>_impl.c, the packet test\n"
                 "tests/<label>-basic.yaml and a .gitignore. build and test generate the C\n"
                 "sources. Re-running is a no-op; a file with other content is not replaced\n"
                 "without --force."
@@ -317,7 +317,7 @@ class InitCommand:
         parser.add_argument(
             "--name",
             metavar="NAME",
-            help="the registered protocol name (default and only value until #24: LABEL"
+            help="the registered protocol name (default and only value until #65: LABEL"
             " upper-cased)",
         )
         parser.add_argument(
@@ -364,7 +364,7 @@ class InitCommand:
                 f"--name {args.name!r}: the registered name of a PDL v1 model is its label"
                 f" upper-cased, {label.upper()}",
                 "omit --name, or pass a LABEL whose upper case is the name (a separate"
-                " name needs plugin.yaml, #24)",
+                " name is #65)",
             )
         return None if args.parent is None else parse_selector(args.parent)
 

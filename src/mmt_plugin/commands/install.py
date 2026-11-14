@@ -205,7 +205,7 @@ class InstallCommand:
             "model",
             nargs="?",
             metavar="MODEL",
-            help="a PDL v1 model file (default: <project>/plugin.yaml, which needs #24)",
+            help="a plugin.yaml or PDL v1 model file (default: <project>/plugin.yaml)",
         )
         parser.add_argument(
             "--model-format",
@@ -330,7 +330,7 @@ class InstallCommand:
             run.build = "would-run" if args.dry_run else "ran"
 
         choice = resolve_profile(built.result["profile"], {}, None, None)
-        generation, _, error = make_generation(model.name, model.data, choice)
+        generation, _, error = make_generation(model.name, model.data, choice, model.format)
         if error is not None or generation is None:  # pragma: no cover - build generated it
             return outcome(error)
         label = generation.label.lower()

@@ -28,7 +28,10 @@ from mmt_plugin.commands import build as build_module
 from mmt_plugin.commands.build import CFLAGS, LDFLAGS, BuildCommand, parse_compiler_output
 from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.diagnostics import Severity
+from mmt_plugin.pdl import parse
+from mmt_plugin.pluginyaml import dumps
 from mmt_plugin.sdk.resolve import resolve_profile
+from mmt_plugin.semantics import analyse
 from mmt_plugin.ui.streams import ColorTier, StreamStyle
 
 from .fakes import fake_cc, fake_sdk
@@ -496,10 +499,22 @@ def test_an_empty_cc_or_stdin_model_is_a_usage_error(project: Path, run: Run, sd
     assert "stdin" in doc["error"]["message"]
 
 
-def test_the_default_model_waits_for_plugin_yaml(project: Path, run: Run) -> None:
+def test_the_default_model_is_plugin_yaml(project: Path, run: Run) -> None:
     code, doc = run(model=None)
     assert code == 3
-    assert doc["error"]["code"] == "model.unsupported-format"
+    assert doc["error"]["code"] == "model.unreadable"
+    assert "plugin.yaml" in doc["error"]["message"]
+    # The same model as plugin.yaml builds the same plugin, with its profile
+    # pin.
+    choice = resolve_profile("1.10.2", {}, None, None)
+    analysed = analyse(parse(MODEL, filename="model.pdl"), profile=choice.profile)[0]
+    assert analysed is not None
+    (project / "plugin.yaml").write_text(dumps(analysed, sdk_profile="1.10.2"))
+    code, doc = run(model=None)
+    assert code == 0, doc["error"]
+    assert doc["context"]["sdk"]["profile_source"] == "plugin.yaml"
+    assert _stages(doc)["link"] == "ran"
+    assert (project / SO).is_file()
 
 
 # --- SIGINT -----------------------------------------------------------------

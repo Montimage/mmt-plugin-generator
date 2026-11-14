@@ -76,7 +76,7 @@ struct pdl_kw_hdr {
  * the build of the plugin.
  */
 
-/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+/* Attaches the protocol to the parents the generated code does not attach (the model's parents without classify); returns 1, or 0 to fail the load. */
 int pdl_keywords_hook_register_parents(protocol_t *protocol_struct);
 
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */

@@ -98,12 +98,15 @@
               "span": "13:4-13:21"
             }
           ],
-          "span": "11:3-14:4"
+          "span": "11:3-14:4",
+          "offset": null
         }
       ],
       "span": "10:2-15:3"
     },
     "classify_next": null,
-    "span": "1:1-16:2"
+    "span": "1:1-16:2",
+    "offsets": "running",
+    "parents": []
   }
 }

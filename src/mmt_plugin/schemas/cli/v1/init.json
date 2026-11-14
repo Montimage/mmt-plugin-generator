@@ -19,7 +19,7 @@
     },
     "parent": {"type": ["string", "null"], "description": "The --parent selector, or null."},
     "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the scaffold is written for."},
-    "model": {"type": "string", "minLength": 1, "description": "The project's model, model.pdl (plugin.yaml needs #24)."},
+    "model": {"type": "string", "minLength": 1, "description": "The project's model, model.pdl (plugin.yaml is #65)."},
     "files": {
       "type": "array",
       "items": {

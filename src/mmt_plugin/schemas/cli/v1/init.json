@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin init --json result, schema_version 1",
+  "description": "The result of init (docs/design/cli.md, section 6). Paths are relative to the project (-C) when inside it (POSIX separators), absolute otherwise. files is sorted by path; with --dry-run, or when a file in the way stops the run, nothing is written and the actions are would-*.",
+  "type": "object",
+  "required": ["project", "protocol", "parent", "profile", "model", "files", "next", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "project": {"type": "string", "minLength": 1, "description": "The project directory (--dir)."},
+    "protocol": {
+      "type": "object",
+      "required": ["label", "name", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "name": {"type": "string", "minLength": 1, "description": "The registered name: the label upper-cased."},
+        "id": {"type": "integer", "minimum": 1}
+      }
+    },
+    "parent": {"type": ["string", "null"], "description": "The --parent selector, or null."},
+    "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the scaffold is written for."},
+    "model": {"type": "string", "minLength": 1, "description": "The project's model, model.pdl (plugin.yaml needs #24)."},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "action", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "action": {"enum": ["created", "updated", "unchanged", "would-create", "would-update"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The file's content as init writes it."}
+        }
+      }
+    },
+    "next": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "description": "The command line (argv) that tests the project, paths relative to the current directory."
+    },
+    "dry_run": {"type": "boolean"}
+  }
+}

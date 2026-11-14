@@ -144,12 +144,14 @@ from mmt_plugin.commands.build import BuildCommand  # noqa: E402
 from mmt_plugin.commands.completion import CompletionCommand  # noqa: E402
 from mmt_plugin.commands.doctor import DoctorCommand  # noqa: E402
 from mmt_plugin.commands.generate import GenerateCommand  # noqa: E402
+from mmt_plugin.commands.init import InitCommand  # noqa: E402
 from mmt_plugin.commands.install import InstallCommand, UninstallCommand  # noqa: E402
 from mmt_plugin.commands.test import TestCommand  # noqa: E402
 from mmt_plugin.commands.validate import ValidateCommand  # noqa: E402
 
 #: The registered commands, in ``--help`` order (``docs/design/cli.md``, section 2).
 COMMANDS: tuple[Command, ...] = (
+    InitCommand(),
     ValidateCommand(),
     GenerateCommand(),
     BuildCommand(),

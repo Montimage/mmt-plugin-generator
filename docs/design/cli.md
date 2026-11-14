@@ -67,9 +67,10 @@ All parsers use `allow_abbrev=False` (an abbreviation would break when an option
 | `--name NAME` | str | no | `LABEL` upper-cased | Registered protocol name. |
 | `--parent SELECTOR` | selector | no | none (warning `model.no-parent`: the plugin is never handed packets) | Parent protocol. |
 | `--sdk-profile VERSION` | str | no | newest bundled profile | Pinned into `plugin.yaml` (`sdk.profile`). |
+| `--sdk PREFIX` | path | no | detected | The SDK whose free ids `--id` defaults to (added by #23). |
 | `--dry-run`, `--force` | flags | no | off | Section 8. |
 
-Creates `plugin.yaml`, `src/<label>_impl.c`, `tests/<label>-basic.yaml`, `.gitignore` (`build/`). Generated sources are not created by `init`: `build`/`test` generate them (D5).
+Creates `plugin.yaml`, `src/<label>_impl.c`, `tests/<label>-basic.yaml`, `.gitignore` (`build/`). Generated sources are not created by `init`: `build`/`test` generate them (D5). Until #24, `model.pdl` takes the place of `plugin.yaml` (section 13, #23).
 
 ### `import PDL`
 | Arg/option | Type | Req | Default | Help |
@@ -174,7 +175,7 @@ Per command (besides 0, 1, 2, 130 everywhere):
 
 | | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|
-| init | ✓ | | | | ✓ |
+| init | ✓ | ✓ | | | ✓ |
 | import | ✓ | | | | ✓ |
 | validate | ✓ | ✓ | | | |
 | generate | ✓ | ✓ | | | ✓ |
@@ -233,7 +234,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 
 | Command | `result` |
 |---|---|
-| init | `project`, `files: [{path, action}]` (`created`/`unchanged`/`would-create`) |
+| init | `project`, `files: [{path, action}]` (`created`/`unchanged`/`would-create`) (#23 adds `protocol`, `parent`, `profile`, `model`, `next`, `dry_run`, `files[].sha256`, and `updated`/`would-update` with `--force`) |
 | import | `input`, `output`, `model_hash`, `files: [{path, action}]` |
 | validate | `model`, `format` (`yaml`/`pdl`), `protocol: {label, name, id}`, `checks: [{id, status, detail}]` |
 | generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
@@ -461,6 +462,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | Generated vs user code: the hooks, the scaffold `src/<label>_impl.c`, the missing-hook check (`build.missing-hook`) | `mmt_plugin.codegen` (`scaffold`, `templates/impl.c.j2`), `mmt_plugin.codegen.hooks` | #18 |
 | `build`: stages, flags, compiler diagnostics, the input hash | `mmt_plugin.commands.build` | #19 |
 | `test`: packet tests, the host harness, `--sanitize`'s random packets, the bench baseline | `mmt_plugin.commands.test`, `mmt_plugin.testing` | #20 |
+| `init`: the project files, the default id | `mmt_plugin.commands.init` | #23 |
 | `install`, `uninstall`, the install manifest and prefix; `doctor` | `mmt_plugin.commands.install`, `mmt_plugin.manifest`, `mmt_plugin/schemas/install/v1/manifest.json`; `mmt_plugin.commands.doctor` | #21 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
@@ -529,3 +531,10 @@ Details fixed by #21 where sections 4, 5, 6, 8, 9 and D11 leave a choice:
 - `install` takes `MODEL`, `--model-format`, `--sdk`, `--sdk-profile`, `--cc` and `--build-dir` as `build`, which it runs (`result.build`: `ran`, `up-to-date`, `would-run` with `--dry-run`, `stale` with `--no-deps`, exit 7, or `failed`). The prefix (`context.prefix: {path, source}`) is checked first: `<prefix>/plugins`, or its nearest existing parent, must be a directory this user can write, else `sdk.prefix-not-writable` (exit 4, `--dry-run` too). Then `mmtp_<label>.so` must sort after `libmmt_tcpip.so` (`model.load-order`, exit 3) and its id and name must not be those of another manifest of `<prefix>/plugins` (`model.id-taken`, `model.name-taken`, exit 3, even with `--force`). The plugin is written with mode 0755, then the manifest. A target with the plugin's sha256, or the one its manifest records, is replaced or kept as is; any other is `state.exists` (no manifest lists it) or `state.installed-modified` (exit 7) unless `--force`; a target that is a directory is `state.exists` even with `--force`. An own manifest that cannot be read is `state.invalid-manifest` (exit 7), rewritten with `--force`. A dry run whose plugin is not built yet reports `sha256: null`.
 - The manifest is `manifest_version` 1: `tool {name, version}`, `label`, `protocol {id, name}` and `files [{path, sha256}]`, each `path` a bare file name in `<prefix>/plugins`; a manifest with any other path is `state.invalid-manifest`, so `uninstall` never removes anything outside that directory.
 - `uninstall [LABEL]`: `LABEL` must match `[a-z][a-z0-9_]*` (`usage.invalid-value`); without it, the label is the one of the header `<label>_mmt_plugin.h` that `<project>/plugin.lock` (else `<project>/generated/plugin.lock`) lists, else `usage.missing-argument`. A file whose sha256 is the manifest's is removed (`--force`: any regular file or symbolic link), one already gone is `missing`, any other is `kept` with `state.installed-modified` (exit 7) and stays in the rewritten manifest; with nothing kept, the manifest goes, and `.mmt-plugin/` when it is empty. The prefix's writability is checked only when there is a manifest, so uninstalling what is not installed (`state.not-installed`) is exit 0 anywhere.
+
+Details fixed by #23 where sections 4, 6, 8 and D13 leave a choice:
+
+- `init` writes a PDL v1 model, `model.pdl`, in place of `plugin.yaml`, which waits for #24, because `build` and `test` read a PDL v1 `MODEL` today. The model is a 4-byte header (`version`, `kind`, `length`, network byte order) and `tests/<label>-basic.yaml` one packet of it, so `mmt-plugin -C <dir> test --model <dir>/model.pdl` passes out of the box (`result.next` is that command line, as argv, its paths relative to the current directory). Until #24 nothing pins the profile: `--sdk-profile` picks the profile the scaffold is written for, and `result.next` repeats it. A PDL v1 model has no parent and no name of its own, so `--parent` is checked (its syntax: `usage.invalid-value`; its protocol must be in the profile: `model.unknown-parent`, exit 3) and recorded in a comment of `model.pdl` and in `result.parent` (its keys are checked for syntax only), and `--name` is accepted only as the label upper-cased (`usage.invalid-value` otherwise).
+- `--dir` is resolved against the current directory, like every path argument; paths in `result` are relative to `-C`. The model is generated in memory before anything is written, so a label or id that the profile or the installed plugins take (`model.name-taken`, `model.id-taken`) or any other model error is exit 3 with nothing written.
+- The SDK is looked for only when it is needed: without `--id`, with `--sdk`, or without a pinned profile; an invalid SDK prefix is exit 4. `--id` defaults to the id of an existing `model.pdl` with the same label (so re-running `init` keeps it), else to the lowest id in 950–999 that neither the profile nor the run-time registry (`mmt_plugin.sdk.registry`, the project's own `mmtp_<label>.so` excluded) takes; without an SDK, the lowest the profile leaves free, with the warning `sdk.id-unchecked`; a registry that cannot be read is the warning `sdk.registry-unavailable`. With an SDK, an explicit `--id` and the name are also checked against the registry.
+- Each file is `created`, `unchanged` (same bytes; not rewritten) or, when it has other content or is a symbolic link, `state.file-differs` (exit 7, nothing written) unless `--force` replaces it (`updated`); a directory in the way, or a file or symbolic link where a directory of the project goes (`src/`, `tests/`), is exit 7 even with `--force`, so nothing is written outside `--dir`. A `--dir` below a file, or that is or is below a symbolic link that does not point to a directory, is `state.not-a-project`. A `--dir` that is a file, or a directory with entries other than `.git` and no `model.pdl`, is `state.not-a-project` (exit 7; `--force` writes into such a directory). `--dry-run` and refused runs report `would-create`/`would-update`.

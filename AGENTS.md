@@ -35,8 +35,8 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and eight commands, `validate` (T2.1),
-  `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  envelope and its schema) and nine commands, `init` (T2.7), `validate`
+  (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
   `uninstall` and `doctor` (T2.5) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
@@ -81,7 +81,7 @@ protocol model. A Python rewrite is planned in
   `<label>_hook_register_parents`, which the generated init calls to attach
   the protocol to its parents. `codegen.scaffold(generation, profile)`
   (`codegen/templates/impl.c.j2`) renders `src/<label>_impl.c` in memory,
-  for `init` (#23) to write; nothing writes under `src/`.
+  which `init` writes once; nothing else writes under `src/`.
   `codegen/hooks.py` finds the hooks that compiled user objects do not
   define (`build.missing-hook`, exit 5), which `build` runs before it links.
   Tests in
@@ -178,6 +178,20 @@ protocol model. A Python rewrite is planned in
   `test_manifest.py` with build's fakes, every write in a temporary prefix
   (`--system` is pointed at one), and `test_sdk.py`, the load test at the
   default prefix against a real SDK (needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/init.py` (T2.7): `mmt-plugin init LABEL` creates
+  a project in `--dir` (default `./<LABEL>`): `model.pdl` (a PDL v1 model of
+  a 4-byte header; `plugin.yaml` waits for #24), the scaffold
+  `src/<label>_impl.c`, the packet test `tests/<label>-basic.yaml` and a
+  `.gitignore` with `build/`. `--id` defaults to the lowest id in 950-999
+  that the profile and the installed plugins (`sdk/registry.py`) leave free,
+  950 with the warning `sdk.id-unchecked` without an SDK; no `--parent` is
+  the warning `model.no-parent`. The model must generate (exit 3 otherwise,
+  nothing written). Re-running is a no-op; a file with other content
+  (`state.file-differs`) or a non-empty directory without `model.pdl`
+  (`state.not-a-project`) is exit 7 unless `--force`. `result.next` is the
+  `test` command line for the project. Tests in `tests/unit/init/`:
+  `test_command.py` (a stubbed registry, build's fakes) and `test_sdk.py`,
+  `init` then `test --json` against a real SDK (needs `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -189,7 +203,8 @@ protocol model. A Python rewrite is planned in
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
-  (`test` on every corpus model), `tests/unit/install/test_sdk.py`
+  (`test` on every corpus model), `tests/unit/init/test_sdk.py` (`init`
+  then `test`), `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
   SDK).
@@ -307,6 +322,13 @@ Read the run-time registry and validate against a real SDK (skips without
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt uv run pytest tests/unit/test_sdk_registry.py
+```
+
+Create a plugin project and test it (`<dir>` as above):
+
+```
+MMT_BASE=<dir>/opt/mmt uv run mmt-plugin init demo
+MMT_BASE=<dir>/opt/mmt uv run mmt-plugin -C demo test --model demo/model.pdl
 ```
 
 Generate a model's C sources (no installed SDK needed with a pinned profile):

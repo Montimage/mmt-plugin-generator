@@ -13,10 +13,10 @@ later issue registers is checked without a new test:
   (``contract_problems`` fails otherwise);
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
-A command whose shortest successful run needs input files (``generate``
-and ``validate`` need a model, ``build``, ``test``, ``install`` and
-``doctor`` also an SDK and a compiler, ``uninstall`` and ``install`` a
-prefix) gets them from ``SETUP``. ``result.stats`` holds the only timings
+A command whose shortest successful run needs input files or values
+(``init`` an id, ``generate`` and ``validate`` a model, ``build``, ``test``,
+``install`` and ``doctor`` also an SDK and a compiler, ``uninstall`` and
+``install`` a prefix) gets them from ``SETUP``. ``result.stats`` holds the only timings
 (section 6), so the two runs are compared without it. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
@@ -286,7 +286,14 @@ def _doctor_args(directory: Path) -> list[str]:
     return [*args, "--prefix", str(directory / "prefix")]
 
 
+def _init_args(directory: Path) -> list[str]:
+    # A pinned profile and an explicit id (no SDK is looked for), a parent
+    # (no warning) and --dry-run, so a second run prints the same envelope.
+    return ["demo", "--sdk-profile", "1.10.2", "--id", "990", "--parent", "ethernet", "--dry-run"]
+
+
 SETUP: dict[str, Callable[[Path], list[str]]] = {
+    "init": _init_args,
     "generate": _generate_args,
     "validate": _validate_args,
     "build": _build_args,

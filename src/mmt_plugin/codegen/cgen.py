@@ -365,6 +365,8 @@ class CAttribute:
     # The largest per-packet length (``length_checked``): the bytes of
     # ``store_type``.
     length_max: int
+    # Whether the value can exceed ``INT64_MAX``, which val() refuses.
+    val_overflows: bool
     shift: int
     mask: str | None
     # Bytes, binary and raw values.
@@ -831,6 +833,13 @@ class _Builder:
             elif integer and a.length_value is not None:
                 width = str(a.length_value)
             length_max = _INTEGER_STORAGE[a.data_type][1] if integer else 0
+            # The value's bits: a bitfield's width, else the bytes read.
+            if bf is not None:
+                value_bits = bf.bit_width
+            elif width is not None:
+                value_bits = 8 * int(width)
+            else:
+                value_bits = 8 * length_max
             binary_len = binary_len_type = binary_data = None
             if binary_type is not None:
                 binary_len, binary_len_type = sdk.field(binary_type, "len")
@@ -869,6 +878,7 @@ class _Builder:
                     store_type=_INTEGER_STORAGE[a.data_type][0] if integer else None,
                     width=width,
                     length_max=length_max,
+                    val_overflows=integer and value_bits > 63,
                     shift=shift,
                     mask=mask,
                     capacity=capacity,

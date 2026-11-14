@@ -216,6 +216,14 @@ static uint64_t {{ read }}(const uint8_t *p, unsigned width)
         *ok = 0;
         return 0;
     }
+{% if a.val_overflows %}
+    /* Expressions compute in int64_t: a value above INT64_MAX fails the
+     * evaluation, as an overflow does. */
+    if (value > (uint64_t) INT64_MAX) {
+        *ok = 0;
+        return 0;
+    }
+{% endif %}
     return (int64_t) value;
 }
 {% endif %}

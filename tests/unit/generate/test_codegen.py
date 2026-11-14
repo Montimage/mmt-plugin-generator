@@ -369,6 +369,32 @@ def test_a_per_packet_integer_length_is_bounded_by_its_storage() -> None:
     assert "if (length < 1 || length > 2) {" in function(source, "t_get_x")
 
 
+@pytest.mark.parametrize(
+    ("dtype", "length", "checked"),
+    [
+        ("MMT_U64_DATA", "8", True),
+        ("MMT_U64_DATA", "7", False),
+        ("MMT_U32_DATA", "4", False),
+    ],
+)
+def test_val_of_a_u64_above_int64_max_fails_the_evaluation(
+    dtype: str, length: str, checked: bool
+) -> None:
+    # Review of #14: expressions compute in int64_t, so (int64_t) of a value
+    # of 2^63 or more would be negative; it fails as an overflow does.
+    body = attr("v", "0", dtype=dtype, length=length) + "\n" + attr("x", "val(v)")
+    _, source = files(model(body))
+    val = function(source, "t_val_v")
+    assert ("if (value > (uint64_t) INT64_MAX) {" in val) == checked
+    assert val.endswith("    return (int64_t) value;\n}")
+
+
+def test_val_of_a_64_bit_bitfield_is_checked_too() -> None:
+    body = "    struct s { MMT_U64_DATA a:64; }\n" + attr("x", "val(a)")
+    _, source = files(model(body))
+    assert "if (value > (uint64_t) INT64_MAX) {" in function(source, "t_val_a")
+
+
 def test_a_fixed_size_sdk_type_needs_a_constant_length() -> None:
     body = attr("k", "0") + "\n" + attr("tv", "1", dtype="MMT_DATA_TIMEVAL", length="val(k)")
     assert _generation_error(model(body)) == ["model.variable-length"]

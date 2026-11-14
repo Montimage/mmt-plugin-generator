@@ -164,6 +164,8 @@ class FakeHarness:
         self.fuzz_crash: set[bytes] = set()
         self.bench: list[str] | None = None
         self.error: str | None = None
+        self.exit_early: set[int] = set()
+        self.setup_crash = False
         self.runs: list[tuple[str, int, str]] = []
 
     def __call__(
@@ -185,6 +187,8 @@ class FakeHarness:
         if self.error is not None:
             return harness.HarnessRun(3, [f"error {self.error}"])
         lines.append("protocol 991 FAKEPROTO")
+        if self.setup_crash:
+            return harness.HarnessRun(-6, lines)
         if args[0] == "bench":
             if self.bench is None:
                 return harness.HarnessRun(-11, lines)
@@ -201,6 +205,8 @@ class FakeHarness:
             values = self.check.get(packet[0], (packet[0], int.from_bytes(packet[1:3], "big")))
             if values is None:
                 return harness.HarnessRun(-11, lines)
+            if packet[0] in self.exit_early:
+                return harness.HarnessRun(0, lines)  # user code called exit(0)
             lines += [
                 "proto 2",
                 "next none",
@@ -285,6 +291,60 @@ def test_the_harness_restarts_after_a_crash_so_every_packet_runs(
     ]
     assert [r[:2] for r in fake.runs] == [("check", 3), ("check", 2)]
     assert doc["result"]["summary"]["failed"] == 1
+
+
+def test_two_crashes_in_the_middle_each_restart_the_harness(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    (project / "tests" / "d.yaml").write_text(_packet("d", "04 00 05", 4, 5))
+    fake.check[2] = None
+    fake.check[4] = None
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.crash"
+    assert [p["status"] for p in doc["result"]["packets"]] == ["pass", "crash", "pass", "crash"]
+    assert [r[:2] for r in fake.runs] == [("check", 4), ("check", 2)]
+
+
+def test_a_harness_that_exits_before_the_end_is_a_crash(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    fake.exit_early = {2}
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.crash"
+    statuses = [p["status"] for p in doc["result"]["packets"]]
+    assert statuses == ["pass", "crash", "pass"]
+    reason = doc["result"]["packets"][1]["failures"][0]["actual"]
+    assert reason == "the harness exited before the end (exit status 0)"
+    fake.exit_early = set()
+    fake.fuzz_crash = set()
+    code, doc = run("--sanitize", "--fuzz-count", "3")
+    assert code == 0, doc["error"]
+
+
+def test_a_crash_before_the_first_packet_is_a_load_failure(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    fake.setup_crash = True
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.load-failed"
+    assert [p["status"] for p in doc["result"]["packets"]] == ["skipped"] * 3
+    assert len(fake.runs) == 1
+
+
+def test_fail_fast_on_a_value_mismatch(project: Path, run: Run, fake: FakeHarness) -> None:
+    fake.check[2] = (2, 9)
+    code, doc = run("--fail-fast")
+    assert code == 6 and doc["error"]["code"] == "test.packet-failed"
+    assert [p["status"] for p in doc["result"]["packets"]] == ["pass", "fail", "skipped"]
+
+
+def test_two_packet_tests_with_one_id_are_a_bad_packet_test(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    (project / "tests" / "d.yaml").write_text(_packet("a", "04 00 05", 4, 5))
+    code, doc = run()
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    assert [d["location"]["file"] for d in doc["diagnostics"]] == ["tests/d.yaml"]
 
 
 def test_fail_fast_stops_at_the_first_failing_packet(
@@ -449,6 +509,10 @@ def test_a_bench_that_fails_never_changes_the_exit_code(
     assert doc["result"]["bench"] is None
     assert _stages(doc)["bench"] == "failed"
     assert "test.bench-failed" in _codes(doc)
+    fake.bench = ["sample 1000 x"] * 10  # unparsable output
+    code, doc = run("--bench")
+    assert code == 0, doc["error"]
+    assert _stages(doc)["bench"] == "failed"
 
 
 # --- output ----------------------------------------------------------------------------

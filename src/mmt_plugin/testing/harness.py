@@ -170,9 +170,12 @@ class HarnessRun:
     timed_out: bool = False
 
 
-def crash_reason(run: HarnessRun) -> str | None:
-    """Why the harness crashed, or ``None`` when it ended normally (0, or
-    the setup error ``SETUP_EXIT``)."""
+def crash_reason(run: HarnessRun, count: int | None = None) -> str | None:
+    """Why the harness crashed, or ``None`` when it ended normally: the setup
+    error (``SETUP_EXIT`` with an ``error`` line), or exit status 0 after its
+    last line ``end <count>`` (``count`` is the packets it was given; with
+    ``None``, exit status 0 is enough). Exiting before that line, even with
+    status 0 or 3, is a crash: user code that calls ``exit()`` is one."""
     if run.timed_out:
         return "timed out"
     lines = run.stderr.splitlines()
@@ -183,8 +186,12 @@ def crash_reason(run: HarnessRun) -> str | None:
         with contextlib.suppress(ValueError):
             return f"killed by {signal.Signals(-run.returncode).name}"
         return f"killed by signal {-run.returncode}"
-    if run.returncode not in (0, SETUP_EXIT):
+    if run.returncode == SETUP_EXIT and any(x.startswith("error ") for x in run.lines):
+        return None
+    if run.returncode != 0:
         return f"exit status {run.returncode}"
+    if count is not None and (not run.lines or run.lines[-1] != f"end {count}"):
+        return "the harness exited before the end (exit status 0)"
     return None
 
 
@@ -218,8 +225,16 @@ def run(
         (plugins / plugin.name).symlink_to(os.path.realpath(plugin))
         cwd = root / "run"
         cwd.mkdir()
+        # The dynamic loader searches LD_LIBRARY_PATH before the harness's
+        # run path: drop it (and LD_PRELOAD), so the SDK's libmmt_core loads,
+        # never another install's.
+        inherited = {
+            k: v
+            for k, v in (os.environ if env is None else env).items()
+            if k not in ("LD_LIBRARY_PATH", "LD_PRELOAD")
+        }
         environment = {
-            **(os.environ if env is None else env),
+            **inherited,
             "MMT_DPI_PLUGINS_DIR": str(plugins),
             "LC_ALL": "C",
             "ASAN_OPTIONS": f"detect_leaks=0:halt_on_error=1:exitcode={SANITIZER_EXIT}",

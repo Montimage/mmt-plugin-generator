@@ -412,6 +412,19 @@ class TestCommand:
                 tests.append(load(path, show_path(path, project), types))
             except PacketTestError as exc:
                 errors.append(exc.diagnostic)
+        seen: dict[str, str] = {}
+        for test in tests:
+            if test.id in seen:
+                errors.append(
+                    Diagnostic(
+                        Severity.ERROR,
+                        "model.bad-packet-test",
+                        f"packet test id {test.id!r} is also the id of {seen[test.id]}",
+                        hint="give each packet test its own id",
+                        location=Location(test.file),
+                    )
+                )
+            seen.setdefault(test.id, test.file)
         run.diagnostics += errors
         if errors:
             return tests, CliError(
@@ -515,6 +528,7 @@ class TestCommand:
             str(source_path),
             str(tools.core),
             f"-Wl,-rpath,{tools.runtime_dir()}",
+            "-Wl,--disable-new-dtags",
             "-o",
             str(program),
         ]
@@ -709,7 +723,7 @@ class TestCommand:
                 if result.stderr and ctx.verbose:
                     ctx.stderr.write(result.stderr)
                 parsed = harness_mod.parse_check(result.lines, names)
-                reason = harness_mod.crash_reason(result)
+                reason = harness_mod.crash_reason(result, len(pending))
                 if parsed.error is not None and reason is None:
                     return self._load_failed(parsed.error, result.stderr, run)
                 if parsed.plugin is None:
@@ -724,6 +738,9 @@ class TestCommand:
                     packet.status = "fail" if packet.failures else "pass"
                 if reason is None:
                     break
+                if parsed.unfinished is None and not parsed.observations:
+                    # Before the first packet: the setup, not a packet.
+                    return self._load_failed(reason, result.stderr, run)
                 crashed = (
                     parsed.unfinished
                     if parsed.unfinished is not None
@@ -832,7 +849,7 @@ class TestCommand:
                     on_line=seen,
                     log=ctx.log,
                 )
-                reason = harness_mod.crash_reason(result)
+                reason = harness_mod.crash_reason(result, len(packets) - start)
                 error = next((x for x in result.lines if x.startswith("error ")), None)
                 if reason is None and error is not None:
                     return self._load_failed(error[6:], result.stderr, run)
@@ -894,6 +911,21 @@ class TestCommand:
         run: _Run,
     ) -> None:
         """Advisory: any failure is a warning and ``bench`` stays ``null``."""
+        try:
+            self._bench_run(ctx, tools, generation, program, plugin, tests, run)
+        except (OSError, ValueError, CliError) as exc:
+            self._bench_failed(str(exc), run)
+
+    def _bench_run(
+        self,
+        ctx: Context,
+        tools: _Toolchain,
+        generation: Generation,
+        program: Path,
+        plugin: Path,
+        tests: list[PacketTest],
+        run: _Run,
+    ) -> None:
         label = generation.label.lower()
         baseline_dir = tools.test_dir / "baseline"
         baseline_dir.mkdir(parents=True, exist_ok=True)

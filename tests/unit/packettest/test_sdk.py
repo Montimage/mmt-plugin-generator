@@ -200,9 +200,6 @@ def test_user_code_that_reads_past_the_packet_crashes_under_the_sanitizers(
         "    (void)proto_index;\n    (void)extracted_data;\n"
         "    return packet->data[packet->p_hdr->caplen + 3] == 0x42;\n}\n" + text[end:]
     )
-    # Without the sanitizers, the read lands in the allocator's slack.
-    code, doc = _test(project, monkeypatch, capsys)
-    assert code == 0, doc["error"]
     code, doc = _test(project, monkeypatch, capsys, "--sanitize", "--fuzz-count", "20")
     assert code == 6
     assert doc["error"]["code"] == "test.crash"
@@ -218,6 +215,34 @@ def test_user_code_that_reads_past_the_packet_crashes_under_the_sanitizers(
         ]
         == sanitize
     )
+
+
+def test_user_code_that_exits_is_a_crash_not_a_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = _project("pdl_scopes", tmp_path)
+    impl = project / "src" / "pdl_scopes_impl.c"
+    text = impl.read_text()
+    start = text.index("int pdl_scopes_hook_extract_no_off(")
+    body = text.index("    return 0;\n}\n", start)
+    impl.write_text("#include <stdlib.h>\n" + text[:body] + "    exit(0);\n" + text[body:])
+    code, doc = _test(project, monkeypatch, capsys)
+    assert code == 6 and doc["error"]["code"] == "test.crash", doc["error"]
+    (packet,) = doc["result"]["packets"]
+    assert packet["status"] == "crash"
+
+
+def test_ld_library_path_does_not_change_the_sdk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A decoy libmmt_core first on LD_LIBRARY_PATH: the harness must not load it.
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    (decoy / "libmmt_core.so.1").write_bytes(b"not a library")
+    monkeypatch.setenv("LD_LIBRARY_PATH", str(decoy))
+    project = _project("pdl_bitfields", tmp_path)
+    code, doc = _test(project, monkeypatch, capsys)
+    assert code == 0, doc["error"]
 
 
 def test_a_plugin_that_does_not_load_is_reported(

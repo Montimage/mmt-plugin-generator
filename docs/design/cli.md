@@ -188,7 +188,7 @@ Per command (besides 0, 1, 2, 130 everywhere):
 
 ## 6. The `--json` envelope (shared by every command)
 
-One JSON document on stdout, UTF-8, keys in schema order, ending in one newline. Paths relative to the project when inside it (POSIX separators), absolute otherwise. No timestamps or durations outside `result.stats` (so two runs on the same inputs give the same bytes, timings aside).
+One JSON document on stdout, UTF-8, keys in schema order, ending in one newline. Paths relative to the project when inside it (POSIX separators), absolute otherwise. No timestamps or durations outside `result.stats` (so two runs on the same inputs give the same bytes, timings aside). The one exception is `test --bench`, whose `result.bench` is a measurement (#20).
 
 ```json
 {

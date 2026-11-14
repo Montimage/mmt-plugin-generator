@@ -178,7 +178,8 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
     case MMT_DATA_POINTER:
         /* The value is the pointer itself: report the offset it points at. */
         offset = (long) ((const uint8_t *) value - (ipacket->{{ sdk.ipacket_data }} + {{ sdk.offset_at }}(ipacket, index)));
-        if (offset >= 0 && (uint64_t) offset < ipacket->{{ sdk.ipacket_header }}->{{ sdk.caplen }}) {
+        if (offset >= 0
+            && (uint64_t) {{ sdk.offset_at }}(ipacket, index) + (uint64_t) offset < ipacket->{{ sdk.ipacket_header }}->{{ sdk.caplen }}) {
             sum = bytes[0];
         }
         if (harness_mode == HARNESS_CHECK) {

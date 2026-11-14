@@ -366,7 +366,8 @@ def test_the_check_output_reads_into_observations() -> None:
     ("run", "reason"),
     [
         (harness.HarnessRun(0), None),
-        (harness.HarnessRun(3), None),
+        (harness.HarnessRun(3, ["error setup"]), None),
+        (harness.HarnessRun(3), "exit status 3"),
         (harness.HarnessRun(-11), "killed by SIGSEGV"),
         (harness.HarnessRun(1), "exit status 1"),
         (harness.HarnessRun(0, timed_out=True), "timed out"),
@@ -424,3 +425,27 @@ def test_a_harness_run_sees_only_its_own_plugin_directory(tmp_path: Path) -> Non
     assert (first, second) == (harness.TCPIP, "mmtp_x.so")
     assert Path(directory).parent == Path(cwd).parent  # an empty run directory beside it
     assert run.returncode == 0
+
+
+def test_a_run_that_does_not_print_its_end_line_crashed() -> None:
+    assert harness.crash_reason(harness.HarnessRun(0, ["packet 0", "end 1"]), 1) is None
+    assert harness.crash_reason(harness.HarnessRun(0, ["packet 0"]), 1) == (
+        "the harness exited before the end (exit status 0)"
+    )
+    assert harness.crash_reason(harness.HarnessRun(0, ["end 1"]), 2) is not None
+
+
+def test_a_harness_run_drops_the_loader_variables(tmp_path: Path) -> None:
+    # LD_LIBRARY_PATH comes before the harness's run path: another
+    # libmmt_core (the host's) would load instead of the SDK's.
+    program = tmp_path / "env"
+    program.write_text('#!/bin/sh\necho "[$LD_LIBRARY_PATH][$LD_PRELOAD][$KEEP]"\n')
+    program.chmod(0o755)
+    plugins = tmp_path / "sdk-plugins"
+    plugins.mkdir()
+    (plugins / harness.TCPIP).write_text("")
+    plugin = tmp_path / "mmtp_x.so"
+    plugin.write_text("")
+    env = {"PATH": "/usr/bin:/bin", "LD_LIBRARY_PATH": "/decoy", "LD_PRELOAD": "x.so", "KEEP": "1"}
+    run = harness.run(program, [], plugin, plugins, timeout=10, env=env)
+    assert run.lines == ["[][][1]"]

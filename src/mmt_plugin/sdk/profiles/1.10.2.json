@@ -155,6 +155,26 @@
       "fields": [
         {"name": "data", "type": "void *"}
       ]
+    },
+    {
+      "name": "mmt_binary_data_t",
+      "header": "types_defs.h",
+      "layout": "complete",
+      "doc": "The value of an MMT_BINARY_DATA or MMT_STRING_DATA attribute (data_len BINARY_64DATA_TYPE_LEN): the byte count, then at most 64 bytes.",
+      "fields": [
+        {"name": "len", "type": "uint32_t"},
+        {"name": "data", "type": "uint8_t [BINARY_64DATA_LEN]"}
+      ]
+    },
+    {
+      "name": "mmt_binary_var_data_t",
+      "header": "types_defs.h",
+      "layout": "complete",
+      "doc": "The value of an MMT_BINARY_VAR_DATA attribute (data_len sizeof(mmt_binary_var_data_t)): the byte count, then at most 1024 bytes.",
+      "fields": [
+        {"name": "len", "type": "uint32_t"},
+        {"name": "data", "type": "uint8_t [BINARY_1024DATA_LEN]"}
+      ]
     }
   ],
   "callbacks": [

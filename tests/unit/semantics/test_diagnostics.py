@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from mmt_plugin.codegen import DIAGNOSTIC_CODES as GENERATION_CODES
+from mmt_plugin.commands.generate import DIAGNOSTIC_CODES as GENERATE_CODES
 from mmt_plugin.diagnostics import CODES, Severity
 from mmt_plugin.exitcodes import ExitCode, for_class
 from mmt_plugin.semantics import HINTS
@@ -222,7 +224,16 @@ def test_branch_offset_mismatch_after_an_if_without_else() -> None:
     assert text.splitlines()[related.location.line - 1].strip() == "if (val(k) == 1) {"
 
 
-SEMANTIC = [c for c in CODES if c.startswith("model.") and not c.startswith("model.syntax.")]
+#: The model codes of generation and of the generate command (#14), which
+#: come after the semantic block.
+#: (Generation also reuses two semantic codes, model.missing-length and
+#: model.out-of-range.)
+LATER = {*GENERATION_CODES, *GENERATE_CODES} - set(HINTS)
+SEMANTIC = [
+    c
+    for c in CODES
+    if c.startswith("model.") and not c.startswith("model.syntax.") and c not in LATER
+]
 
 
 def test_every_semantic_code_is_registered_hinted_and_tested() -> None:

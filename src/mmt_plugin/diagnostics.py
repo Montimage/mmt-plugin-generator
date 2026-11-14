@@ -190,6 +190,15 @@ CODES: Mapping[str, str] = MappingProxyType(
         "(C locale or LC_COLLATE), so its parents are not registered when it loads",
         "sdk.plugin-clash": "two installed plugins, or one and the project's model, register "
         "the same protocol id or name (names are case-insensitive)",
+        # `init` (mmt_plugin.commands.init, #23).
+        "model.no-parent": "warning: init without --parent: nothing hands the plugin packets "
+        "until its <label>_hook_register_parents() attaches it to a parent",
+        "sdk.id-unchecked": "warning: init found no SDK, so its default id is free in the SDK "
+        "profile but was not checked against the installed plugins",
+        "state.file-differs": "init: a project file exists with other content, or is not a "
+        "regular file; init does not replace it without --force (a directory, never)",
+        "state.not-a-project": "init: --dir is not a directory, or is not empty and has no "
+        "model.pdl; init writes into such a directory only with --force",
     }
 )
 

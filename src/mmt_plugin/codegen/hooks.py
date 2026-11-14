@@ -46,6 +46,10 @@ class ObjectFormatError(ValueError):
 
 
 def _unpack(fmt: str, data: bytes, offset: int, path: Path) -> tuple[int, ...]:
+    # Checked here, not left to struct: an offset past 2**63 (from a 64-bit
+    # field) makes unpack_from raise OverflowError instead of struct.error.
+    if offset + struct.calcsize(fmt) > len(data):
+        raise ObjectFormatError(f"{path}: truncated ELF file")
     try:
         return struct.unpack_from(fmt, data, offset)
     except struct.error:
@@ -79,9 +83,15 @@ def defined_functions(path: Path) -> frozenset[str]:
         shnum = _unpack(section, data, shoff, path)[5]
     headers = [_unpack(section, data, shoff + i * shentsize, path) for i in range(shnum)]
     names: set[str] = set()
+    seen_symtab = False
     for _, sh_type, _, _, sh_offset, sh_size, sh_link, _, _, sh_entsize in headers:
         if sh_type != _SHT_SYMTAB:
             continue
+        # The gABI allows one symbol table per object; walking many that
+        # share one region would take time quadratic in the file size.
+        if seen_symtab:
+            raise ObjectFormatError(f"{path}: more than one ELF symbol table")
+        seen_symtab = True
         if sh_link >= len(headers) or sh_entsize != struct.calcsize(symbol):
             raise ObjectFormatError(f"{path}: malformed ELF symbol table")
         str_offset, str_size = headers[sh_link][4], headers[sh_link][5]

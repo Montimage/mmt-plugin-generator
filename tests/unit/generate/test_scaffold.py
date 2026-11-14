@@ -268,6 +268,78 @@ def test_a_truncated_elf_file_is_an_error(tmp_path: Path) -> None:
         defined_functions(path)
 
 
+@pytest.mark.parametrize("shoff", [2**63, 2**64 - 1])
+def test_a_section_table_offset_past_any_file_is_an_error(tmp_path: Path, shoff: int) -> None:
+    # struct.unpack_from raises OverflowError, not struct.error, at these.
+    header = bytearray(64)
+    header[:6] = b"\x7fELF\x02\x01"
+    struct.pack_into("<Q", header, 0x28, shoff)
+    struct.pack_into("<HH", header, 0x3A, 64, 3)
+    path = tmp_path / "x.o"
+    path.write_bytes(bytes(header))
+    with pytest.raises(ObjectFormatError, match="truncated"):
+        defined_functions(path)
+
+
+# (name, binding, type, section index): STB_LOCAL 0, GLOBAL 1, WEAK 2;
+# STT_OBJECT 1, FUNC 2; section 0 is undefined, 1 any defined section.
+ELF_SYMBOLS = [
+    ("global_fn", 1, 2, 1),
+    ("weak_fn", 2, 2, 1),
+    ("local_fn", 0, 2, 1),
+    ("undefined_fn", 1, 2, 0),
+    ("data_obj", 1, 1, 1),
+]
+
+
+def _elf(wide: bool, order: str, symtabs: int = 1) -> bytes:
+    """A minimal relocatable ELF object: a null section, ``symtabs``
+    SHT_SYMTAB sections (all over the same symbols) and a .strtab."""
+    strtab = b"\0" + b"".join(n.encode() + b"\0" for n, _, _, _ in ELF_SYMBOLS)
+    symbols = [(0, 0, 0)]  # the null symbol
+    for name, bind, kind, shndx in ELF_SYMBOLS:
+        symbols.append((strtab.index(name.encode() + b"\0"), bind << 4 | kind, shndx))
+    if wide:
+        ehsize, shoff_at, shnum_at = 64, 0x28, 0x3A
+        sym = [struct.pack(order + "IBBHQQ", n, i, 0, x, 0, 0) for n, i, x in symbols]
+        section = order + "IIQQQQIIQQ"
+    else:
+        ehsize, shoff_at, shnum_at = 52, 0x20, 0x2E
+        sym = [struct.pack(order + "IIIBBH", n, 0, 0, i, 0, x) for n, i, x in symbols]
+        section = order + "IIIIIIIIII"
+    symtab = b"".join(sym)
+    sym_at, str_at = ehsize, ehsize + len(symtab)
+    shoff = str_at + len(strtab)
+    strtab_index = 1 + symtabs
+    headers = [struct.pack(section, *[0] * 10)]
+    headers += [
+        struct.pack(section, 0, 2, 0, 0, sym_at, len(symtab), strtab_index, 1, 8, len(sym[0]))
+    ] * symtabs
+    headers.append(struct.pack(section, 0, 3, 0, 0, str_at, len(strtab), 0, 0, 1, 0))
+    header = bytearray(ehsize)
+    header[:6] = b"\x7fELF" + bytes([2 if wide else 1, 1 if order == "<" else 2])
+    struct.pack_into(order + ("Q" if wide else "I"), header, shoff_at, shoff)
+    struct.pack_into(order + "HH", header, shnum_at, len(headers[0]), len(headers))
+    return bytes(header) + symtab + strtab + b"".join(headers)
+
+
+@pytest.mark.parametrize("wide", [False, True], ids=["elf32", "elf64"])
+@pytest.mark.parametrize("order", ["<", ">"], ids=["lsb", "msb"])
+def test_defined_functions_reads_either_class_and_byte_order(
+    tmp_path: Path, wide: bool, order: str
+) -> None:
+    path = tmp_path / "x.o"
+    path.write_bytes(_elf(wide, order))
+    assert defined_functions(path) == {"global_fn", "weak_fn"}
+
+
+def test_more_than_one_symbol_table_is_an_error(tmp_path: Path) -> None:
+    path = tmp_path / "x.o"
+    path.write_bytes(_elf(True, "<", symtabs=2))
+    with pytest.raises(ObjectFormatError, match="more than one ELF symbol table"):
+        defined_functions(path)
+
+
 def _cc() -> str:
     cc = os.environ.get("MMT_GOLDEN_CC") or "cc"
     if shutil.which(cc) is None:

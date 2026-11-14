@@ -3,15 +3,18 @@
 Checks a model without writing anything, and reports each check with a
 stable id and a status (``pass``, ``warn``, ``fail``, ``skip``) and a detail:
 
-- ``schema``: the model parses (PDL v1 syntax);
+- ``schema``: the model parses: plugin.yaml follows its JSON Schema
+  (``model.schema``), a PDL v1 file its syntax;
 - ``semantics``: the semantic passes (``mmt_plugin.semantics``) find no
   error, apart from the SDK conflicts the next two checks report;
 - ``sdk-profile``: the SDK and the profile are found (``--sdk``, ``MMT_BASE``,
-  ``mmt-dpi.pc``, ``/opt/mmt``; ``--sdk-profile``, ``MMT_PLUGIN_SDK_PROFILE``);
+  ``mmt-dpi.pc``, ``/opt/mmt``; ``--sdk-profile``, ``MMT_PLUGIN_SDK_PROFILE``,
+  plugin.yaml's ``sdk.profile``);
 - ``id-free``: no SDK protocol has the id, in the SDK headers (the profile)
   or at run time with the installed plugins (``mmt_plugin.sdk.registry``);
 - ``name-free``: the same for the name, compared case-insensitively;
-- ``parents-exist``: every parent protocol the model names is in the SDK;
+- ``parents-exist``: every parent protocol plugin.yaml names is in the SDK
+  (a PDL v1 model names none: ``skip``);
 - ``load-order``: ``mmtp_<label>.so`` sorts after ``libmmt_tcpip.so`` in the
   C locale and in the current ``LC_COLLATE``, as mmt-dpi's loader
   (``scandir`` with ``alphasort``) needs for the parents to be registered;
@@ -35,10 +38,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mmt_plugin.commands import Context, Outcome, Subparsers
-from mmt_plugin.commands.modelio import FORMATS, absolute, decode_model, read_model
+from mmt_plugin.commands.modelio import FORMATS, absolute, parse_model, read_model
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Related, Severity
 from mmt_plugin.exitcodes import ExitCode
-from mmt_plugin.pdl import Model, PdlSyntaxError, parse
+from mmt_plugin.pdl import Model, PdlSyntaxError
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.profile import Profile
 from mmt_plugin.sdk.registry import Registry, RegistryError, read_registry
@@ -219,7 +222,7 @@ def parents_check(
     profile and the registry; ``skipped`` says why there is no registry
     (``None``: there is one, or it could not be read)."""
     if not parents:
-        return Check("parents-exist", "skip", "the model declares no parent protocol (PDL v1)")
+        return Check("parents-exist", "skip", "the model declares no parent protocol")
     if choice is None:
         return Check("parents-exist", "skip", "no SDK profile")
     found, missing = parents_exist(parents, choice.profile, registry)
@@ -285,8 +288,8 @@ class ValidateCommand:
             nargs="?",
             metavar="MODEL",
             help=(
-                "a PDL v1 model file, or - for stdin (default: <project>/plugin.yaml, which"
-                " needs #24)"
+                "a plugin.yaml or PDL v1 model file, or - for stdin (default:"
+                " <project>/plugin.yaml)"
             ),
         )
         parser.add_argument(
@@ -322,7 +325,7 @@ class ValidateCommand:
     # --- stages ---
 
     def _sdk(
-        self, args: argparse.Namespace, ctx: Context
+        self, args: argparse.Namespace, ctx: Context, pin: str | None
     ) -> tuple[Sdk | None, ProfileChoice | None, CliError | None]:
         """The SDK (``None`` with ``--no-sdk``), the profile, and the SDK or
         profile error. Without a usable SDK the profile is still chosen as if
@@ -342,7 +345,7 @@ class ValidateCommand:
             except CliError as exc:
                 sdk_error = exc
         try:
-            choice = resolve_profile(args.sdk_profile, env, None, sdk)
+            choice = resolve_profile(args.sdk_profile, env, pin, sdk)
         except CliError as exc:
             return sdk, None, sdk_error or exc
         if sdk_error is not None:
@@ -360,8 +363,7 @@ class ValidateCommand:
         project = absolute(ctx.project)
         model_input = read_model(args.model, args.model_format, project)
         name = model_input.name
-        text = decode_model(model_input)
-        sdk, choice, sdk_error = self._sdk(args, ctx)
+        sdk, choice, sdk_error = self._sdk(args, ctx, model_input.profile_pin)
         context = {"sdk": sdk_context(sdk, choice)}
         state = _Run(name)
         if choice is not None:
@@ -369,14 +371,16 @@ class ValidateCommand:
 
         # schema
         model: Model | None = None
+        yaml = model_input.format == "yaml"
         try:
-            model = parse(text, filename=name)
+            model = parse_model(model_input)
         except PdlSyntaxError as exc:
             state.diagnostics += exc.diagnostics
-            state.add("schema", "fail", f"{name}: PDL v1 syntax", _model_error(name, exc))
+            what = "plugin.yaml schema 1" if yaml else "PDL v1 syntax"
+            state.add("schema", "fail", f"{name}: {what}", _model_error(name, exc))
             state.skip_rest("the model does not parse")
         else:
-            state.add("schema", "pass", f"{name}, PDL v1")
+            state.add("schema", "pass", f"{name}, {'schema 1' if yaml else 'PDL v1'}")
 
         if model is not None:
             self._model_checks(args, model, sdk, choice, sdk_error, state)
@@ -556,9 +560,10 @@ class ValidateCommand:
                     " installed plugins not checked",
                 )
 
-        # parents-exist: PDL v1 declares no parent (plugin.yaml does, #24).
+        # parents-exist: plugin.yaml's parents (PDL v1 declares none).
         skipped = None if registry is not None or registry_problem is not None else why_skipped
-        check = parents_check((), choice, registry, skipped)
+        parents = list(dict.fromkeys(p.protocol.text for p in model.parents))
+        check = parents_check(parents, choice, registry, skipped)
         state.add(check.id, check.status, check.detail, check.error)
         if check.error is not None:
             state.diagnostics.append(

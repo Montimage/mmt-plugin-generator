@@ -488,6 +488,8 @@
       "span": "7:2-45:3"
     },
     "classify_next": null,
-    "span": "1:1-46:2"
+    "span": "1:1-46:2",
+    "offsets": "running",
+    "parents": []
   }
 }

@@ -75,7 +75,7 @@ from mmt_plugin.pdl.model import (
     ValueOf,
 )
 
-__all__ = ["STDIN", "PdlSyntaxError", "parse"]
+__all__ = ["STDIN", "PdlSyntaxError", "parse", "parse_element_type", "parse_expression"]
 
 #: The file name of a model read from standard input.
 STDIN = "<stdin>"
@@ -1093,3 +1093,42 @@ def parse(text: str, *, filename: str) -> Model:
     if parser.errors:
         raise PdlSyntaxError(parser.errors)
     return model
+
+
+def _fragment(
+    text: str, filename: str, line: int, column: int, rule: Callable[[_Parser], T], what: str
+) -> T:
+    """Parse ``text``, which starts at ``line``:``column`` of ``filename``
+    (a value of a plugin.yaml file), with one rule, to its end."""
+    padded = "\n" * (line - 1) + " " * (column - 1) + text
+    try:
+        tokens = tokenize(padded, filename)
+    except LexError as error:
+        raise PdlSyntaxError([error.diagnostic]) from None
+    parser = _Parser(tokens)
+    try:
+        if parser.peek().kind is Kind.EOF:
+            parser.unexpected(what, f"write {what}")
+        result = rule(parser)
+        if parser.peek().kind is not Kind.EOF:
+            parser.unexpected(f"the end of the {what}", f"write one {what}")
+    except _Fail as failure:
+        raise PdlSyntaxError([*parser.errors, failure.diagnostic]) from None
+    if parser.errors:
+        raise PdlSyntaxError(parser.errors)
+    return result
+
+
+def parse_expression(text: str, *, filename: str, line: int = 1, column: int = 1) -> Expr:
+    """Parse one PDL v1 expression (plugin.yaml's offsets, lengths, ``if``
+    conditions, ...). Its spans start at ``line``:``column``; raises
+    ``PdlSyntaxError`` as ``parse`` does."""
+    return _fragment(text, filename, line, column, _Parser.expression, "expression")
+
+
+def parse_element_type(text: str, *, filename: str, line: int = 1, column: int = 1) -> ElementType:
+    """Parse one element type (a plugin.yaml struct field's ``type``: ``uint8_t``,
+    ``unsigned int``, ``void*``, ``MMT_U16_DATA``, ``struct X``)."""
+    return _fragment(
+        text, filename, line, column, lambda p: p.element_type("an element type"), "element type"
+    )

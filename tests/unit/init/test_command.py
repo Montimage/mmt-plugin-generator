@@ -198,7 +198,7 @@ def test_name_must_be_the_label_upper_cased(init: Run) -> None:
         code, doc = init("demo", *PROFILE, "--id", "960", "--name", name)
         assert code == 2
         assert doc["error"]["code"] == "usage.invalid-value"
-        assert "#24" in doc["error"]["hint"]
+        assert "#65" in doc["error"]["hint"]
 
 
 # --- --parent ----------------------------------------------------------------

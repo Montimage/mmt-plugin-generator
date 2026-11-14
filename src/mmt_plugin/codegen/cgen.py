@@ -417,6 +417,25 @@ class CClassify:
 
 
 @dataclass(frozen=True)
+class CParent:
+    """A generated classification under a parent (plugin.yaml's
+    ``parents[].classify``): ``tests`` are C conditions on ``p``, the
+    parent's bytes, of which the first ``end`` must be captured."""
+
+    name: str
+    declaration: str
+    packet: str
+    index: str
+    parent: str
+    parent_id: str
+    parent_macro: str
+    weight: int
+    tests: tuple[str, ...]
+    end: int
+    offset: int
+
+
+@dataclass(frozen=True)
 class CCall:
     """A registration call of ``init_<label>_proto_struct``: ``checked`` when
     it returns a status, with ``failure`` logged when that status is false."""
@@ -456,6 +475,7 @@ class Context:
     hooks: tuple[Hook, ...]
     register_parents: str
     classify: CClassify | None
+    parents: tuple[CParent, ...]
     calls: tuple[CCall, ...]
     checked: tuple[str, ...]
     read: str | None
@@ -983,8 +1003,8 @@ class _Builder:
             REGISTER_PARENTS,
             init.returns,
             (Param("protocol_struct", protocol_t),),
-            "Attaches the protocol to its parents once it is registered (PDL names none);"
-            " returns 1, or 0 to fail the load.",
+            "Attaches the protocol to the parents the generated code does not attach (the"
+            " model's parents without classify); returns 1, or 0 to fail the load.",
         )
 
     def classify(self) -> CClassify | None:
@@ -1063,6 +1083,75 @@ class _Builder:
             offset_type=offset_type,
             offset_max=_STDINT_MAX.get(offset_type, "UINT16_MAX"),
         )
+
+    def parents(self) -> tuple[CParent, ...]:
+        """The generated classification functions of the parents with a
+        ``classify`` (plugin.yaml), registered by the init."""
+        out: list[CParent] = []
+        classified = [p for p in self.model.parents if p.match is not None]
+        if not classified:
+            return ()
+        cb = self.c.callback("classification")
+        packet, index = cb.params[0].name, cb.params[1].name
+        offset_type = self.c.field("classified_proto_t", "offset")[1]
+        limit = {"uint8_t": 0xFF, "uint16_t": 0xFFFF, "uint32_t": 0xFFFFFFFF}.get(offset_type)
+        for n, parent in enumerate(classified, 1):
+            assert parent.match is not None and parent.offset is not None
+            if parent.id is None or parent.macro is None:  # pragma: no cover - analysis refuses
+                raise AssertionError(f"parent {parent.name} has no id")
+            if limit is not None and parent.offset > limit:
+                self.error(
+                    "model.out-of-range",
+                    f"parent {parent.name}: offset {parent.offset} does not fit in"
+                    f" classified_proto_t's {offset_type} offset",
+                    f"give an offset of at most {limit}",
+                    parent.span,
+                )
+            tests = []
+            for t in parent.match:
+                parts = [
+                    f"((uint64_t) p[{t.offset + i}] << {8 * (t.length - 1 - i)})"
+                    if t.length - 1 - i
+                    else f"(uint64_t) p[{t.offset + i}]"
+                    for i in range(t.length)
+                ]
+                read = parts[0] if len(parts) == 1 else "(" + " | ".join(parts) + ")"
+                tests.append(f"{read} != {t.value:#x}u")
+            name = f"{self.lc}_classify_after_{c_name(parent.name).lower()}"
+            if len(classified) > 1:
+                name += f"_{n}"
+            out.append(
+                CParent(
+                    name=name,
+                    declaration=_declaration(cb.returns, name, cb.params),
+                    packet=packet,
+                    index=index,
+                    parent=parent.name,
+                    parent_id=str(parent.id),
+                    parent_macro=parent.macro,
+                    weight=parent.weight,
+                    tests=tuple(tests),
+                    end=max(t.offset + t.length for t in parent.match),
+                    offset=parent.offset,
+                )
+            )
+        sdk = self.c
+        self.sdk.update(
+            classified_proto_t=sdk.type("classified_proto_t"),
+            next_proto=sdk.field("classified_proto_t", "proto_id")[0],
+            next_offset=sdk.field("classified_proto_t", "offset")[0],
+            next_status=sdk.field("classified_proto_t", "status")[0],
+            classified=sdk.constant("Classified"),
+            matched=sdk.constant("MMT_CLASSIFY_MATCHED"),
+            skip=sdk.constant("MMT_CLASSIFY_SKIP"),
+            set_classified_proto=sdk.function("set_classified_proto"),
+            with_parent=sdk.function("register_classification_function_with_parent_protocol"),
+            ipacket_data=sdk.field("ipacket_t", "data")[0],
+            ipacket_header=sdk.field("ipacket_t", "p_hdr")[0],
+            caplen=sdk.field("pkthdr_t", "caplen")[0],
+            offset_at=sdk.function("get_packet_offset_at_index"),
+        )
+        return tuple(out)
 
     # --- registration ---
 
@@ -1256,6 +1345,7 @@ class _Builder:
         # The classifynext expressions first: the attributes they read need
         # their val() functions.
         classify = self.classify()
+        parents = self.parents()
         attributes = self.attributes()
         self.byte_order_warning()
         hooks = self.hooks(attributes)
@@ -1318,6 +1408,7 @@ class _Builder:
             hooks=hooks,
             register_parents=next(h.name for h in hooks if h.role == REGISTER_PARENTS),
             classify=classify,
+            parents=parents,
             calls=calls,
             checked=tuple(c for c in _CHECKED.values() if c in self.exprs.checked),
             read=f"{lc}_read" if integers else None,

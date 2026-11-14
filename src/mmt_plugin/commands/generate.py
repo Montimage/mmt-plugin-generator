@@ -1,16 +1,17 @@
 """``mmt-plugin generate [MODEL]`` (``docs/design/cli.md``, sections 4, 5, 6, 8).
 
-Generates the plugin's C header and source from a PDL v1 model into the
+Generates the plugin's C header and source from a model (plugin.yaml or
+PDL v1) into the
 output directory (``<project>/generated/`` by default), and records them in
 ``plugin.lock`` (``mmt_plugin.lock``): at the project root, or in the output
 directory for a model outside a project (no ``plugin.yaml`` in the project).
 
 Stages, each stopping the run with its class's exit code:
 
-1. read the model (``-`` is stdin, named ``<stdin>``); ``plugin.yaml`` waits
-   for #24 and is ``model.unsupported-format`` (exit 3);
-2. choose the SDK profile: ``--sdk-profile``, ``MMT_PLUGIN_SDK_PROFILE``, the
-   detected SDK's version, else the newest bundled profile with a warning.
+1. read the model (``-`` is stdin, named ``<stdin>``);
+2. choose the SDK profile: ``--sdk-profile``, ``MMT_PLUGIN_SDK_PROFILE``,
+   plugin.yaml's ``sdk.profile``, the detected SDK's version, else the
+   newest bundled profile with a warning.
    Generation needs a profile, not an installed SDK: with a pinned profile
    and no ``--sdk``, no SDK is looked for (exit 4 on an SDK or profile error);
 3. parse, analyse (an SDK id or name conflict is an error) and render the
@@ -47,8 +48,8 @@ from mmt_plugin.commands.modelio import (
     PROJECT_FILE,
     ModelInput,
     absolute,
-    decode_model,
     inside,
+    parse_model,
     read_model,
     show_path,
 )
@@ -56,7 +57,7 @@ from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, sha256_file, write_atomic
 from mmt_plugin.lock import LOCK_NAME, Lock, LockedFile, LockError, read_lock
-from mmt_plugin.pdl import PdlSyntaxError, parse
+from mmt_plugin.pdl import PdlSyntaxError
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, find_sdk
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.semantics import analyse
@@ -69,7 +70,6 @@ __all__ = ["DIAGNOSTIC_CODES", "GenerateCommand", "make_generation"]
 #: semantic passes', generation's and the SDK's).
 DIAGNOSTIC_CODES = (
     "model.unreadable",
-    "model.unsupported-format",
     "state.stale",
     "state.modified",
     "state.invalid-lock",
@@ -177,8 +177,8 @@ class GenerateCommand:
             nargs="?",
             metavar="MODEL",
             help=(
-                "a PDL v1 model file, or - for stdin (default: <project>/plugin.yaml, which"
-                " needs #24)"
+                "a plugin.yaml or PDL v1 model file, or - for stdin (default:"
+                " <project>/plugin.yaml)"
             ),
         )
         parser.add_argument(
@@ -226,9 +226,13 @@ class GenerateCommand:
 
     # --- stages ---
 
-    def _profile(self, args: argparse.Namespace, ctx: Context) -> tuple[Sdk | None, ProfileChoice]:
+    def _profile(
+        self, args: argparse.Namespace, ctx: Context, pin: str | None
+    ) -> tuple[Sdk | None, ProfileChoice]:
+        """The SDK (none is looked for with a pinned profile and no --sdk)
+        and the profile; ``pin`` is plugin.yaml's ``sdk.profile``."""
         env = os.environ
-        pinned = args.sdk_profile is not None or bool(env.get(ENV_PROFILE, ""))
+        pinned = args.sdk_profile is not None or bool(env.get(ENV_PROFILE, "")) or pin is not None
         sdk = None
         if args.sdk is not None or not pinned:
             sdk = find_sdk(
@@ -237,7 +241,7 @@ class GenerateCommand:
                 pkg_config_dirs=self.pkg_config_dirs,
                 default_prefix=self.default_prefix,
             )
-        choice = resolve_profile(args.sdk_profile, env, None, sdk)
+        choice = resolve_profile(args.sdk_profile, env, pin, sdk)
         ctx.log(f"SDK profile {choice.profile.version} ({choice.source.value})")
         return sdk, choice
 
@@ -371,10 +375,10 @@ class GenerateCommand:
         paths = self._paths(args, ctx)
         model = read_model(args.model, args.model_format, paths.project)
         name, fmt, data = model.name, model.format, model.data
-        sdk, choice = self._profile(args, ctx)
+        sdk, choice = self._profile(args, ctx, model.profile_pin)
         context = {"sdk": sdk_context(sdk, choice)}
         diagnostics: list[Diagnostic] = list(choice.diagnostics)
-        generation, found, error = make_generation(name, data, choice)
+        generation, found, error = make_generation(name, data, choice, fmt)
         diagnostics += found
         if error is not None or generation is None:
             return Outcome(diagnostics=diagnostics, error=error, context=context)
@@ -475,19 +479,18 @@ class GenerateCommand:
 
 
 def make_generation(
-    name: str, data: bytes, choice: ProfileChoice
+    name: str, data: bytes, choice: ProfileChoice, fmt: str = "pdl"
 ) -> tuple[Generation | None, list[Diagnostic], CliError | None]:
     """Decode, parse, analyse (an SDK id or name conflict is an error) and
-    generate the PDL v1 model ``data`` (named ``name``) for ``choice``'s
-    profile, in memory: the generation (``None`` on an error), every
-    diagnostic, and the error that stops the run (exit 3), if any. ``build``
-    (#19) uses it too, for the label and the hooks."""
+    generate the model ``data`` (named ``name``, of format ``fmt``: ``pdl``
+    or ``yaml``) for ``choice``'s profile, in memory: the generation
+    (``None`` on an error), every diagnostic, and the error that stops the
+    run (exit 3), if any. ``build`` (#19) uses it too, for the label and the
+    hooks."""
     try:
-        text = decode_model(ModelInput(name, "pdl", data))
+        model = parse_model(ModelInput(name, fmt, data))
     except CliError as error:
         return None, [], error
-    try:
-        model = parse(text, filename=name)
     except PdlSyntaxError as exc:
         return None, list(exc.diagnostics), _model_error(name, exc.diagnostics)
     analysed, diagnostics = analyse(model, profile=choice.profile, allow_sdk_conflicts=False)

@@ -35,6 +35,7 @@ from mmt_plugin.semantics.model import (
     AnalysedDefault,
     AnalysedDefine,
     AnalysedModel,
+    AnalysedParent,
     AnalysedStruct,
     AnalysedSwitch,
     AttributeKind,
@@ -50,6 +51,7 @@ from mmt_plugin.semantics.model import (
     LengthRef,
     NextProto,
     OffsetRef,
+    ParentMatch,
     Protocol,
     SetNextOffset,
     SetNextProto,
@@ -67,7 +69,13 @@ from mmt_plugin.semantics.types import (
     c_storage,
 )
 
-__all__ = ["HINTS", "SDK_CONFLICT_CODES", "THIRD_PARTY_IDS", "analyse"]
+__all__ = ["DEFAULT_PARENT_WEIGHT", "HINTS", "SDK_CONFLICT_CODES", "THIRD_PARTY_IDS", "analyse"]
+
+#: The classification weight of a plugin.yaml parent without ``weight``: a
+#: parent runs its classification functions in increasing weight, and with
+#: mmt-dpi 1.10.2 a weight of 5 runs before Ethernet's own classifier (the
+#: scaffold's register_parents example, #18).
+DEFAULT_PARENT_WEIGHT = 5
 
 #: The protocol ids reserved for third-party plugins (plan decision 5; asked
 #: of mmt-dpi in Montimage/mmt-dpi#73). An id outside it is a warning.
@@ -394,10 +402,14 @@ class _Analyser:
     def run(self) -> AnalysedModel:
         protocol = self._properties(self.model.properties)
         defines = tuple(self._define(d) for d in self.model.defines)
-        elements, _ = self._elements(self.model.attributes.elements, (), _State(0, True))
+        # Absolute offsets (plugin.yaml's default) are PDL's with alignment
+        # off from the start: every offset is literal.
+        running = self.model.offsets is pdl.Offsets.RUNNING
+        elements, _ = self._elements(self.model.attributes.elements, (), _State(0, running))
         switch = None
         if self.model.classify_next is not None:
             switch = self._switch(self.model.classify_next.switch)
+        parents = tuple(self._parent(p) for p in self.model.parents)
         return AnalysedModel(
             protocol=protocol,
             defines=defines,
@@ -407,6 +419,57 @@ class _Analyser:
             conditionals=tuple(sorted(self.conditionals, key=lambda c: c.index)),
             classify_next=switch,
             source=self.model,
+            parents=parents,
+        )
+
+    # -- parents (plugin.yaml) --
+
+    def _parent(self, parent: pdl.Parent) -> AnalysedParent:
+        """A parent, resolved against the profile; one the generated code
+        classifies must be the profile's, and its tests must fit."""
+        name = parent.protocol.text
+        macro = self.profile.parents.id_for(name)
+        sdk = next(
+            (
+                p
+                for p in self.profile.parents.protocols()
+                if p.macro == macro or (p.alias is not None and p.alias.lower() == name.lower())
+            ),
+            None,
+        )
+        weight = DEFAULT_PARENT_WEIGHT if parent.weight is None else parent.weight.value
+        match = offset = None
+        if parent.classify is not None:
+            if sdk is None:
+                self.error(
+                    "model.unknown-parent",
+                    f"parent `{name}` is not a protocol of SDK profile {self.profile.version}:"
+                    " the generated classification needs its id",
+                    parent.protocol.span,
+                    "attach the protocol to a parent from an installed plugin in user code"
+                    " (drop classify; src/<label>_impl.c, <label>_hook_register_parents)",
+                )
+            tests = []
+            for m in parent.classify.match:
+                if m.value.value >= 1 << (8 * m.length.value):
+                    self.error(
+                        "model.out-of-range",
+                        f"a {m.length.value}-byte match of parent `{name}` cannot equal"
+                        f" {m.value.text}",
+                        m.value.span,
+                        "fix the value, or give a longer length",
+                    )
+                tests.append(ParentMatch(m.offset.value, m.length.value, m.value.value))
+            match = tuple(tests)
+            offset = parent.classify.offset.value
+        return AnalysedParent(
+            name=name,
+            macro=None if sdk is None else sdk.macro,
+            id=None if sdk is None else sdk.id,
+            weight=weight,
+            match=match,
+            offset=offset,
+            span=parent.span,
         )
 
     # -- Properties (bug 23) --
@@ -934,7 +997,9 @@ class _Analyser:
         del self.defining["struct"]
         laid, c_size, c_align, held = _c_layout(fields)
         aligned = state.aligned
-        base = 0
+        # A struct's own offset is plugin.yaml's, absolute (the loader
+        # refuses one with running offsets).
+        base = 0 if el.offset is None else el.offset.value
         if aligned:
             self._align(state, el.name)
             base = state.offset

@@ -336,7 +336,7 @@ class TestCommand:
         parser.add_argument(
             "--model",
             metavar="MODEL",
-            help="a PDL v1 model file (default: <project>/plugin.yaml, which needs #24)",
+            help="a plugin.yaml or PDL v1 model file (default: <project>/plugin.yaml)",
         )
         parser.add_argument(
             "--model-format",
@@ -577,7 +577,7 @@ class TestCommand:
         sdk = require_sdk(
             args.sdk, env, pkg_config_dirs=self.pkg_config_dirs, default_prefix=self.default_prefix
         )
-        choice = resolve_profile(args.sdk_profile, env, None, sdk)
+        choice = resolve_profile(args.sdk_profile, env, model.profile_pin, sdk)
         core = require_core_library(sdk)
         tcpip = Path(sdk.prefix) / "plugins" / harness_mod.TCPIP
         if not tcpip.is_file():
@@ -592,7 +592,7 @@ class TestCommand:
         tools = _Toolchain(sdk, choice.profile, cc, core, build_dir / TEST_DIR, project)
         context = {"sdk": sdk_context(sdk, choice)}
         run = _Run(diagnostics=list(choice.diagnostics))
-        generation, _, _ = make_generation(model.name, model.data, choice)
+        generation, _, _ = make_generation(model.name, model.data, choice, model.format)
         label = generation.label.lower() if generation is not None else "?"
 
         def outcome(error: CliError | None) -> Outcome:

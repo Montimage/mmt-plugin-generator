@@ -428,7 +428,7 @@ class BuildCommand:
             "model",
             nargs="?",
             metavar="MODEL",
-            help="a PDL v1 model file (default: <project>/plugin.yaml, which needs #24)",
+            help="a plugin.yaml or PDL v1 model file (default: <project>/plugin.yaml)",
         )
         parser.add_argument(
             "--model-format",
@@ -475,13 +475,15 @@ class BuildCommand:
     # --- stages ---
 
     def _setup(
-        self, args: argparse.Namespace, ctx: Context
+        self, args: argparse.Namespace, ctx: Context, pin: str | None
     ) -> tuple[Sdk, ProfileChoice, Path, Compiler]:
+        """The SDK, the profile (``pin`` is plugin.yaml's ``sdk.profile``),
+        the core library and the compiler."""
         env = os.environ
         sdk = require_sdk(
             args.sdk, env, pkg_config_dirs=self.pkg_config_dirs, default_prefix=self.default_prefix
         )
-        choice = resolve_profile(args.sdk_profile, env, None, sdk)
+        choice = resolve_profile(args.sdk_profile, env, pin, sdk)
         ctx.log(f"SDK {sdk.prefix} ({sdk.source.value}), profile {choice.profile.version}")
         core = require_core_library(sdk)
         cc = find_compiler(args.cc, env)
@@ -556,7 +558,7 @@ class BuildCommand:
                 "pass the model file as MODEL",
             )
         model = read_model(args.model, args.model_format, project)
-        sdk, choice, core, cc = self._setup(args, ctx)
+        sdk, choice, core, cc = self._setup(args, ctx, model.profile_pin)
         context = {"sdk": sdk_context(sdk, choice)}
         run = _Run(diagnostics=list(choice.diagnostics))
         cflags = [f"-std={choice.profile.c_std}", *self.cflags]
@@ -565,7 +567,7 @@ class BuildCommand:
             absolute(args.build_dir) if args.build_dir is not None else project / DEFAULT_BUILD_DIR
         )
 
-        generation, found, error = make_generation(model.name, model.data, choice)
+        generation, found, error = make_generation(model.name, model.data, choice, model.format)
         run.diagnostics += found
         label = generation.label.lower() if generation is not None else None
 

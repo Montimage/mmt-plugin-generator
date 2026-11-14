@@ -20,6 +20,10 @@ from mmt_plugin.commands import generate as generate_module
 from mmt_plugin.commands.generate import GenerateCommand
 from mmt_plugin.fsio import sha256_file
 from mmt_plugin.lock import load_schema, parse_lock
+from mmt_plugin.pdl import parse
+from mmt_plugin.pluginyaml import dumps
+from mmt_plugin.sdk import get_bundled
+from mmt_plugin.semantics import analyse
 from mmt_plugin.ui.streams import ColorTier, StreamStyle
 
 from .helpers import GOLDEN, source_text
@@ -379,14 +383,71 @@ def test_a_model_on_stdin_is_named_stdin(
     assert code == 0 and doc["result"]["model"] == "<stdin>"
 
 
-@pytest.mark.parametrize(
-    "args",
-    [[], ["model.yaml"], ["plugin.yml"], ["model.pdl", "--model-format", "yaml"]],
-)
-def test_plugin_yaml_waits_for_24(project: Path, run: Run, args: list[str]) -> None:
+def _plugin_yaml(sdk_profile: str | None = None) -> str:
+    """MODEL as plugin.yaml."""
+    profile = get_bundled("1.10.2")
+    assert profile is not None
+    analysed = analyse(parse(source_text(MODEL), filename="model.pdl"), profile=profile)[0]
+    assert analysed is not None
+    return dumps(analysed, sdk_profile=sdk_profile)
+
+
+@pytest.mark.parametrize("args", [[], ["plugin.yaml"], ["model.yml", "--model-format", "yaml"]])
+def test_a_plugin_yaml_model_generates_the_same_files(
+    project: Path, run: Run, args: list[str]
+) -> None:
+    (project / "plugin.yaml").write_text(_plugin_yaml())
+    (project / "model.yml").write_text(_plugin_yaml())
     code, doc = run(*args, *PROFILE)
-    assert code == 3 and doc["error"]["code"] == "model.unsupported-format"
-    assert doc["result"] is None
+    assert code == 0, doc["error"]
+    assert doc["result"]["format"] == "yaml"
+    for name in (H, C):
+        golden = (GOLDEN / MODEL / name).read_bytes()
+        assert (project / "generated" / name).read_bytes() == golden
+    lock = json.loads((project / "plugin.lock").read_text())
+    assert lock["model"]["format"] == "yaml"
+
+
+def test_the_default_model_is_plugin_yaml(project: Path, run: Run) -> None:
+    code, doc = run(*PROFILE)
+    assert code == 3 and doc["error"]["code"] == "model.unreadable"
+    assert "plugin.yaml" in doc["error"]["message"]
+
+
+def test_plugin_yaml_pins_the_profile(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sdk.profile pins the profile, below --sdk-profile and the environment;
+    # with a pin and no --sdk, no SDK is looked for.
+    (project / "plugin.yaml").write_text(_plugin_yaml("1.10.2"))
+    code, doc = run()
+    assert code == 0, doc["error"]
+    assert doc["context"]["sdk"]["profile_source"] == "plugin.yaml"
+    assert doc["context"]["sdk"]["prefix"] is None
+    assert not [d for d in doc["diagnostics"] if d["code"] == "sdk.profile-default"]
+    (project / "plugin.yaml").write_text(_plugin_yaml("9.9.9"))
+    code, doc = run()
+    assert code == 4 and doc["error"]["code"] == "sdk.profile-not-found"
+    assert "plugin.yaml" in doc["error"]["message"]
+    code, doc = run(*PROFILE)
+    assert code == 0 and doc["context"]["sdk"]["profile_source"] == "--sdk-profile"
+    monkeypatch.setenv("MMT_PLUGIN_SDK_PROFILE", "1.10.2")
+    code, doc = run()
+    assert code == 0 and doc["context"]["sdk"]["profile_source"] == "MMT_PLUGIN_SDK_PROFILE"
+
+
+def test_a_plugin_yaml_error_is_exit_3_at_its_node(project: Path, run: Run) -> None:
+    (project / "plugin.yaml").write_text(_plugin_yaml().replace("type: MMT_U8_DATA", "type: U8"))
+    code, doc = run(*PROFILE)
+    assert code == 3 and doc["error"]["code"] == "model.schema"
+    first = doc["diagnostics"][0]
+    assert first["code"] == "model.schema" and first["location"]["file"] == "plugin.yaml"
+    assert first["location"]["column"] == 11
+    assert not (project / "generated").exists()
+    # A PDL v1 file read as YAML is a YAML error.
+    (project / "model.pdl").write_text(source_text(MODEL))
+    code, doc = run("model.pdl", "--model-format", "yaml", *PROFILE)
+    assert code == 3 and doc["error"]["code"] == "model.yaml-syntax"
 
 
 def test_an_sdk_id_or_name_conflict_is_exit_3_with_no_output(project: Path, run: Run) -> None:

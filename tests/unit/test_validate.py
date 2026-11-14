@@ -249,12 +249,46 @@ def test_a_semantic_error_fails_semantics(run: Run, project: Path, sdk_prefix: P
     assert statuses(doc)["id-free"] == "pass"
 
 
-def test_a_yaml_model_is_not_supported_yet(run: Run, project: Path) -> None:
-    (project / "plugin.yaml").write_text("label: x\n")
+def test_a_plugin_yaml_schema_error_fails_schema(run: Run, project: Path) -> None:
+    (project / "plugin.yaml").write_text("schema: 1\nprotocol:\n  label: x\n  id: '960'\n")
     code, doc = run("--no-sdk")
     assert code == 3
-    assert doc["error"]["code"] == "model.unsupported-format"
-    assert doc["result"] is None
+    assert doc["error"]["code"] == "model.schema"
+    assert statuses(doc)["schema"] == "fail"
+    assert detail(doc, "schema") == "plugin.yaml: plugin.yaml schema 1"
+    assert doc["result"]["format"] == "yaml"
+    (diagnostic,) = [d for d in doc["diagnostics"] if d["severity"] == "error"]
+    assert diagnostic["code"] == "model.schema"
+    assert diagnostic["location"] == {
+        "file": "plugin.yaml",
+        "line": 4,
+        "column": 7,
+        "end_line": 4,
+        "end_column": 12,
+    }
+
+
+def test_a_plugin_yaml_model_validates_with_its_parents(
+    run: Run, project: Path, sdk_prefix: Path
+) -> None:
+    (project / "plugin.yaml").write_text(
+        "schema: 1\nprotocol:\n  label: yamlproto\n  id: 960\n  encoding: network\n"
+        "sdk:\n  profile: '1.10.2'\nparents:\n  - protocol: udp\n  - protocol: Ethernet\n"
+        "attributes:\n  - name: kind\n    type: MMT_U8_DATA\n    offset: 0\n"
+    )
+    code, doc = run("--sdk", str(sdk_prefix))
+    assert code == 0, doc["error"]
+    assert detail(doc, "schema") == "plugin.yaml, schema 1"
+    assert statuses(doc)["parents-exist"] == "pass"
+    assert detail(doc, "parents-exist") == "udp, Ethernet"
+    assert doc["context"]["sdk"]["profile_source"] == "plugin.yaml"
+    (project / "plugin.yaml").write_text(
+        (project / "plugin.yaml").read_text().replace("protocol: udp", "protocol: nope")
+    )
+    code, doc = run("--sdk", str(sdk_prefix))
+    assert code == 3
+    assert doc["error"]["code"] == "model.unknown-parent"
+    assert statuses(doc)["parents-exist"] == "fail"
 
 
 def test_a_missing_model_is_unreadable(run: Run) -> None:
@@ -440,7 +474,7 @@ def test_parents_check_statuses() -> None:
     choice = ProfileChoice(profile, ProfileSource.CLI)
     reg = registry()
     none = parents_check((), choice, reg, None)
-    assert (none.status, none.detail) == ("skip", "the model declares no parent protocol (PDL v1)")
+    assert (none.status, none.detail) == ("skip", "the model declares no parent protocol")
     ok = parents_check(["tcp"], choice, reg, None)
     assert (ok.status, ok.detail, ok.error) == ("pass", "tcp", None)
     bad = parents_check(["tcp", "nosuch"], choice, reg, None)

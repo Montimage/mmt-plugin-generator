@@ -497,7 +497,7 @@ def test_the_template_policy() -> None:
     assert ENVIRONMENT.keep_trailing_newline
     assert sorted(TEMPLATES.values()) == ["plugin.c.j2", "plugin.h.j2"]
     for name in TEMPLATES.values():
-        assert resources.files("mmt_plugin.codegen").joinpath("templates", name).is_file()
+        assert resources.files("mmt_plugin.codegen").joinpath("templates").joinpath(name).is_file()
     with pytest.raises(jinja2.UndefinedError):
         ENVIRONMENT.get_template(TEMPLATES["header"]).render()
 
@@ -514,7 +514,12 @@ def test_no_sdk_name_is_written_in_the_templates() -> None:
         *(h.name for h in p.headers),
     }
     for template in TEMPLATES.values():
-        text = resources.files("mmt_plugin.codegen").joinpath("templates", template).read_text()
+        text = (
+            resources.files("mmt_plugin.codegen")
+            .joinpath("templates")
+            .joinpath(template)
+            .read_text()
+        )
         words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", text))
         assert not names & words, (template, sorted(names & words))
 

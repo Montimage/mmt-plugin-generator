@@ -146,7 +146,9 @@ CASES: dict[str, Case] = {
         build(u8("a", "0"), properties='label = "p"\n\t\tid = "354"'),
         "354",
         "protocol id 354 is already PROTO_TCP's in mmt-dpi 1.10.2",
-        related=(("PROTO_TCP = 354 in the SDK profile 1.10.2", None),),
+        related=(
+            ("PROTO_TCP = 354 in the SDK profile 1.10.2 (tcpip/mmt_tcpip_protocols.h)", None),
+        ),
     ),
     "name-taken": Case(
         build(u8("a", "0"), properties='label = "Udp"\n\t\tid = "960"'),

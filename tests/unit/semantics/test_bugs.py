@@ -191,13 +191,78 @@ def test_bug_23_ids_are_validated() -> None:
     assert outcome("1000") == ["model.id-out-of-range"]
     assert outcome("1") == ["model.id-taken"]  # PROTO_META
     assert outcome("637") == ["model.id-taken"]  # PROTO_TPKT
-    assert outcome("900") == ["model.id-outside-reserved-range"]
+    assert outcome("949") == ["model.id-outside-reserved-range"]
     assert outcome("960", "tcp") == ["model.name-taken"]
     assert outcome("960", "Meta") == ["model.name-taken"]
+    assert outcome("960", "int") == ["model.name-taken"]  # PROTO_INT has no alias
     model, diagnostics = run(build(u8("a", "0"), properties='label = "tpkt"\n\t\tid = "637"'))
     # The SDK conflicts are errors, but the model is still analysed (T1.6).
     assert model is not None and model.protocol.id == 637
     assert {d.severity for d in diagnostics} == {Severity.ERROR}
+
+
+def test_bug_23_covers_every_plugin_the_sdk_installs() -> None:
+    # mmt-dpi 1.10.2 installs libmmt_tdicom, libmmt_tmobile and
+    # libmmt_business_app besides libmmt_tcpip; their ids and names are taken.
+    def outcome(pid: str, label: str = "p") -> list[str]:
+        _, diagnostics = run(
+            build(u8("a", "0"), properties=f'label = "{label}"\n\t\tid = "{pid}"')
+        )
+        return codes(diagnostics)
+
+    for pid in ("701", "801", "900", "901", "902", "903", "904"):
+        assert outcome(pid) == ["model.id-taken"], pid
+    assert outcome("700") == ["model.id-taken"]  # PROTO_HTTP2, libmmt_tcpip's last
+    assert outcome("702") == ["model.id-outside-reserved-range"]
+    for label in ("dicom", "S1AP", "diameter", "gtpv2", "ngap", "nas5g", "ips_data"):
+        assert outcome("960", label) == ["model.name-taken"], label
+    _, diagnostics = run(build(u8("a", "0"), properties='label = "x"\n\t\tid = "701"'))
+    (d,) = diagnostics
+    assert d.message == "protocol id 701 is already PROTO_DICOM's in mmt-dpi 1.10.2"
+    assert d.related[0].message == "PROTO_DICOM = 701 in the SDK profile 1.10.2 (dicom/dicom.h)"
+
+
+def test_bug_23_names_are_the_registered_aliases() -> None:
+    # The SDK registers PROTO_<X>_ALIAS and finds a name case-insensitively;
+    # for these the alias is not the macro's suffix.
+    def message(label: str) -> list[str]:
+        _, diagnostics = run(build(u8("a", "0"), properties=f'label = "{label}"\n\t\tid = "960"'))
+        assert codes(diagnostics) == ["model.name-taken"] * len(diagnostics)
+        return [d.message for d in diagnostics]
+
+    taken = "is already an SDK protocol's:"
+    assert message("icloud") == [
+        f'protocol name "icloud" {taken} PROTO_APPLE_ICLOUD (162) registers "icloud" in '
+        "mmt-dpi 1.10.2"
+    ]
+    assert message("Groovesharks") == [
+        f'protocol name "Groovesharks" {taken} PROTO_GROOVESHARK (138) registers '
+        '"groovesharks" in mmt-dpi 1.10.2'
+    ]
+    assert message("HTTP_ACTIVESYNC") == [
+        f'protocol name "HTTP_ACTIVESYNC" {taken} PROTO_HTTP_APPLICATION_ACTIVESYNC (156) '
+        'registers "http_activesync" in mmt-dpi 1.10.2'
+    ]
+    assert message("jabber") == [
+        f'protocol name "jabber" {taken} PROTO_UNENCRYPED_JABBER (186) registers "jabber" in '
+        "mmt-dpi 1.10.2"
+    ]
+    assert message("lps_data") == [
+        f'protocol name "lps_data" {taken} PROTO_IPS_DATA (801) registers "lps_data" in '
+        "mmt-dpi 1.10.2"
+    ]
+    assert message("nas_5g") == [
+        f'protocol name "nas_5g" {taken} PROTO_NAS5G (904) registers "nas_5g" in mmt-dpi 1.10.2'
+    ]
+    # The macro check stays: the generated C would redefine PROTO_APPLE_ICLOUD.
+    assert message("apple_icloud") == [
+        f"protocol name APPLE_ICLOUD {taken} PROTO_APPLE_ICLOUD = 162 in mmt-dpi 1.10.2"
+    ]
+    assert message("grooveshark") == [
+        f"protocol name GROOVESHARK {taken} PROTO_GROOVESHARK = 138 in mmt-dpi 1.10.2"
+    ]
+    # A name the SDK neither defines nor registers is free.
+    assert message("icloud2") == []
 
 
 def test_struct_field_types_and_scopes() -> None:

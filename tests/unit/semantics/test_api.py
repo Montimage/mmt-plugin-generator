@@ -56,7 +56,7 @@ def test_diagnostics_are_sorted_and_warnings_keep_the_model() -> None:
     text = build(
         '\t\tattribute { alias="b" data_type="MMT_U8_DATA" data_len="1" offset="0" }\n'
         '\t\tattribute { alias="a" data_type="MMT_U8_DATA" data_len="1" offset="1" }\n',
-        properties='label = "p"\n\t\tid = "900"',
+        properties='label = "p"\n\t\tid = "949"',
     )
     analysed, diagnostics = run(text)
     assert analysed is not None

@@ -16,7 +16,12 @@ import pytest
 
 from mmt_plugin.sdk import headercheck
 from mmt_plugin.sdk.detect import Sdk, SdkSource
-from mmt_plugin.sdk.headercheck import check_profile, declared_names, render_unit
+from mmt_plugin.sdk.headercheck import (
+    check_profile,
+    declared_names,
+    render_ids_unit,
+    render_unit,
+)
 from mmt_plugin.sdk.profile import Profile, get_bundled, parse_profile
 
 CC = shutil.which("gcc") or shutil.which("cc")
@@ -52,7 +57,16 @@ void stub_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #define log_d(...) ((void)0)
 #endif
 #define PROTO_TCP 354
+#define PROTO_TCP_ALIAS "tcp"
 #endif
+"""
+
+#: The header of a second stub plugin, with a numeric PROTO_* macro that is
+#: no protocol id.
+PLUG_HEADER = """\
+#define PROTO_PLUG 901
+#define PROTO_PLUG_ALIAS "plug" /* its registered name */
+#define PROTO_PLUG_HDRLEN 6
 """
 
 
@@ -147,7 +161,19 @@ def _stub_data() -> dict[str, Any]:
             "declared_in": "stub.h",
             "id_macro": "PROTO_{LABEL}",
             "examples": ["PROTO_TCP"],
-            "ids": {"PROTO_TCP": 354},
+            "ids": [
+                {
+                    "header": "stub.h",
+                    "doc": "the stub's protocols",
+                    "protocols": {"PROTO_TCP": {"id": 354, "alias": "tcp"}},
+                },
+                {
+                    "header": "plug/plug.h",
+                    "doc": "a second plugin",
+                    "protocols": {"PROTO_PLUG": {"id": 901, "alias": "plug"}},
+                    "not_ids": ["PROTO_PLUG_HDRLEN"],
+                },
+            ],
             "doc": "parents",
         },
     }
@@ -158,6 +184,8 @@ def stub_sdk(tmp_path: Path) -> Sdk:
     include = tmp_path / "dpi" / "include"
     include.mkdir(parents=True)
     (include / "stub.h").write_text(STUB_HEADER)
+    (include / "plug").mkdir()
+    (include / "plug" / "plug.h").write_text(PLUG_HEADER)
     (include / "mmt_log.h").write_text("/* the marker of an SDK prefix */\n")
     (include / "mmt_core.h").write_text('#define VERSION "1.10.2"\n')
     return Sdk(str(tmp_path), SdkSource.CLI, "1.10.2")
@@ -172,9 +200,12 @@ def _failures(profile: Profile, sdk: Sdk) -> list[str]:
 def test_a_matching_profile_passes(stub_sdk: Sdk) -> None:
     results = check_profile(parse_profile(_stub_data()), stub_sdk, CC or "cc")
     assert [r.name for r in results if not r.ok] == []
-    # version, declared names, the unit, the unit again with the debug opt-in
-    assert len(results) == 4
-    assert results[-1].name.endswith("-DSTUB_DEBUG_ON)")
+    # version, declared names (2 headers), complete ids (2 headers), the
+    # unit, the unit again with the debug opt-in, the ids unit, the aliases
+    assert len(results) == 9
+    assert results[6].name.endswith("-DSTUB_DEBUG_ON)")
+    assert results[-2].name.startswith("parents.ids: 2 protocol ids compile")
+    assert results[-1].name.startswith("parents.ids: 2 PROTO_*_ALIAS expand to their names")
 
 
 Mutation = Callable[[dict[str, Any]], object]
@@ -230,12 +261,28 @@ MUTATIONS: dict[str, tuple[Mutation, str]] = {
     ),
     "unknown version": (lambda d: d.update(profile="1.11.0"), "profile 1.11.0 is the SDK version"),
     "parent id value": (
-        lambda d: d["parents"]["ids"].update(PROTO_TCP=355),
+        lambda d: d["parents"]["ids"][0]["protocols"]["PROTO_TCP"].update(id=355),
         "parents.ids.PROTO_TCP is not 355",
     ),
+    "plugin id value": (
+        lambda d: d["parents"]["ids"][1]["protocols"]["PROTO_PLUG"].update(id=902),
+        "parents.ids.PROTO_PLUG is not 902",
+    ),
     "unknown parent id": (
-        lambda d: d["parents"]["ids"].update(PROTO_SCTP=9),
+        lambda d: d["parents"]["ids"][0]["protocols"].update(PROTO_SCTP={"id": 9}),
         "not declared there: PROTO_SCTP",
+    ),
+    "parent alias": (
+        lambda d: d["parents"]["ids"][0]["protocols"]["PROTO_TCP"].update(alias="TCP"),
+        'parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is "tcp", not "TCP"',
+    ),
+    "unlisted alias": (
+        lambda d: d["parents"]["ids"][1]["protocols"]["PROTO_PLUG"].pop("alias"),
+        "not in the profile: PROTO_PLUG_ALIAS",
+    ),
+    "unlisted macro": (
+        lambda d: d["parents"]["ids"][1].pop("not_ids"),
+        "not in the profile: PROTO_PLUG_HDRLEN",
     ),
     "constant value": (
         lambda d: d["constants"][2].update(value=63),
@@ -278,6 +325,22 @@ HEADER_MUTATIONS: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
     "constant value": (
         [("#define K_LEN 64", "#define K_LEN 32")],
         ["constants.K_LEN is not 64"],
+    ),
+    # parents.ids must stay complete (#51 review, N2).
+    "unlisted protocol": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_UDP (376)\n")],
+        ["stub.h: parents.ids lists all its protocols (1)\nnot in the profile: PROTO_UDP"],
+    ),
+    "alias value": (
+        [('#define PROTO_TCP_ALIAS "tcp"', '#define PROTO_TCP_ALIAS "tcp2"')],
+        ['parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is "tcp2", not "tcp"'],
+    ),
+    "no alias": (
+        [('#define PROTO_TCP_ALIAS "tcp"', "")],
+        [
+            "not declared there: PROTO_TCP_ALIAS",
+            'parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is PROTO_TCP_ALIAS, not "tcp"',
+        ],
     ),
 }
 
@@ -333,6 +396,12 @@ def test_render_unit_of_the_bundled_profile() -> None:
     assert "__typeof__(&general_char_extraction), generic_attribute_extraction_function" in lib
     assert "void mmtp_chk_logger(int value)" in render_unit(profile, "mmt_log.h")
     assert "PROTO_TCP" in render_unit(profile, "tcpip/mmt_tcpip.h")
+    ids = render_ids_unit(profile)
+    for header in ("tcpip/mmt_tcpip.h", "dicom/dicom.h", "mobile/mmt_mobile.h"):
+        assert f'#include "{header}"' in ids
+    assert '_Static_assert((PROTO_DICOM) == 701, "parents.ids.PROTO_DICOM is not 701");' in ids
+    assert "mmtp_alias_0: PROTO_163_ALIAS" in ids
+    assert "PROTO_INT_ALIAS" not in ids  # the header defines none
 
 
 def test_declared_names_cover_every_entry() -> None:
@@ -344,7 +413,14 @@ def test_declared_names_cover_every_entry() -> None:
     assert "MMT_LOG_ENABLE_DEBUG" in names["mmt_log.h"]
     protocols = names["tcpip/mmt_tcpip_protocols.h"]
     assert protocols[:4] == ["PROTO_ETHERNET", "PROTO_IP", "PROTO_TCP", "PROTO_UDP"]
-    assert protocols[4:] == [name for name, _ in profile.parents.ids]
+    tcpip = profile.parents.ids[0]
+    assert protocols[4:] == [
+        name
+        for p in tcpip.protocols
+        for name in (p.macro, *((f"{p.macro}_ALIAS",) if p.alias else ()))
+    ]
+    assert names["dicom/dicom.h"] == ["PROTO_DICOM", "PROTO_DICOM_ALIAS", "PROTO_DICOM_HDRLEN"]
+    assert names["business_app/mmt_business_app.h"] == ["PROTO_IPS_DATA", "PROTO_IPS_DATA_ALIAS"]
     assert names["proto_meta.h"] == ["PROTO_UNKNOWN", "PROTO_META"]
     expected = {
         *(t.name for t in profile.types),
@@ -394,7 +470,7 @@ def test_main_prints_one_line_per_check(
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith(f"SDK {stub_sdk.prefix} (--sdk), version 1.10.2; profile 1.10.2")
     assert all(line.startswith("PASS: ") for line in out[1:-1])
-    assert out[-1] == "4 passed, 0 failed"
+    assert out[-1] == "9 passed, 0 failed"
     data = _stub_data()
     data["callbacks"][0]["returns"] = "long"
     good.write_text(json.dumps(data))

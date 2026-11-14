@@ -95,7 +95,41 @@ def test_what_the_generator_needs(profile: Profile) -> None:
     assert profile.parents.id_of("PROTO_TCP") == 354
     assert profile.parents.id_of("PROTO_TPKT") == 637
     assert profile.parents.id_of("PROTO_NOTHING") is None
-    assert len(profile.parents.ids) == 670
+    # Every plugin the 1.10.2 package installs (#51 review, F1), by header.
+    assert [(h.header, len(h.protocols)) for h in profile.parents.ids] == [
+        ("tcpip/mmt_tcpip_protocols.h", 670),
+        ("dicom/dicom.h", 1),
+        ("mobile/mmt_mobile.h", 5),
+        ("business_app/mmt_business_app.h", 1),
+    ]
+    assert profile.parents.ids[1].not_ids == ("PROTO_DICOM_HDRLEN",)
+    assert profile.parents.id_of("PROTO_DICOM") == 701
+    assert [(p.macro, p.id) for p in profile.parents.ids[2].protocols] == [
+        ("PROTO_S1AP", 900),
+        ("PROTO_DIAMETER", 901),
+        ("PROTO_GTPV2", 902),
+        ("PROTO_NGAP", 903),
+        ("PROTO_NAS5G", 904),
+    ]
+    protocols = profile.parents.protocols()
+    assert len(protocols) == 677
+    assert [p.id for p in protocols] == sorted(p.id for p in protocols)
+    # The registered names (F2), where they are not the macro's suffix.
+    renamed = {
+        p.macro: p.alias
+        for p in protocols
+        if p.alias is not None and p.alias != p.macro.removeprefix("PROTO_").lower()
+    }
+    assert renamed == {
+        "PROTO_GROOVESHARK": "groovesharks",
+        "PROTO_HTTP_APPLICATION_ACTIVESYNC": "http_activesync",
+        "PROTO_APPLE_ICLOUD": "icloud",
+        "PROTO_UNENCRYPED_JABBER": "jabber",
+        "PROTO_NAS5G": "nas_5g",
+        "PROTO_IPS_DATA": "lps_data",
+    }
+    # tcpip/mmt_tcpip_protocols.h defines no PROTO_INT*_ALIAS.
+    assert [p.macro for p in protocols if p.alias is None] == ["PROTO_INT", "PROTO_INT_REPORT"]
     assert all(profile.parents.id_of(name) is not None for name in profile.parents.examples)
     for lookup in (profile.callback, profile.function, profile.struct, profile.constant):
         with pytest.raises(KeyError):
@@ -166,6 +200,17 @@ def _const(d: dict[str, Any], name: str) -> dict[str, Any]:
     return found
 
 
+def _ids(d: dict[str, Any], index: int = 0) -> dict[str, Any]:
+    """One header of ``parents.ids`` (0: tcpip/mmt_tcpip_protocols.h)."""
+    found: dict[str, Any] = d["parents"]["ids"][index]
+    return found
+
+
+def _tcp(d: dict[str, Any]) -> dict[str, Any]:
+    found: dict[str, Any] = _ids(d)["protocols"]["PROTO_TCP"]
+    return found
+
+
 #: Invalid profiles that both the schema and the loader reject.
 SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     "schema version": (lambda d: d.update(schema_version=2), "schema_version"),
@@ -199,16 +244,25 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     ),
     "fractional value": (lambda d: _const(d, "Max_Alias_Len").update(value=64.5), "an integer"),
     "boolean value": (lambda d: _const(d, "Max_Alias_Len").update(value=True), "an integer"),
-    "ids not an object": (lambda d: d["parents"].update(ids=[1]), "expected an object"),
-    "id not a name": (lambda d: d["parents"]["ids"].update({"1x": 3}), "not a C identifier"),
-    "negative id": (
-        lambda d: d["parents"]["ids"].update(PROTO_TCP=-1),
-        "expected a non-negative integer",
+    "ids not an array": (lambda d: d["parents"].update(ids={}), "expected an array"),
+    "ids item not an object": (lambda d: d["parents"].update(ids=[1]), "expected an object"),
+    "ids without doc": (lambda d: _ids(d).pop("doc"), "missing key 'doc'"),
+    "ids unknown key": (lambda d: _ids(d).update(library="x"), "unknown key 'library'"),
+    "protocols not an object": (lambda d: _ids(d).update(protocols=[]), "expected an object"),
+    "id not a name": (
+        lambda d: _ids(d)["protocols"].update({"1x": {"id": 3}}),
+        "not a C identifier",
     ),
-    "string id": (
-        lambda d: d["parents"]["ids"].update(PROTO_TCP="354"),
-        "expected a non-negative integer",
+    "bare id": (lambda d: _tcp(d).clear(), "missing key 'id'"),
+    "id not an object": (
+        lambda d: _ids(d)["protocols"].update(PROTO_TCP=354),
+        "expected an object",
     ),
+    "negative id": (lambda d: _tcp(d).update(id=-1), "expected a non-negative integer"),
+    "string id": (lambda d: _tcp(d).update(id="354"), "expected a non-negative integer"),
+    "empty alias": (lambda d: _tcp(d).update(alias=""), "non-empty"),
+    "quoted alias": (lambda d: _tcp(d).update(alias='t"cp'), "quote"),
+    "not_ids not a name": (lambda d: _ids(d, 1).update(not_ids=["1x"]), "C identifier"),
 }
 
 #: Invalid profiles only the loader can see (cross-references).
@@ -231,8 +285,24 @@ LOADER_ERRORS: dict[str, tuple[Mutation, str]] = {
         "class_provider.unknown",
     ),
     "duplicate id": (
-        lambda d: d["parents"]["ids"].update(PROTO_NEW=354),
+        lambda d: _ids(d)["protocols"].update(PROTO_NEW={"id": 354}),
         "PROTO_NEW and PROTO_TCP are both 354",
+    ),
+    "duplicate id across headers": (
+        lambda d: _ids(d, 1)["protocols"].update(PROTO_NEW={"id": 354}),
+        "PROTO_NEW and PROTO_TCP are both 354",
+    ),
+    "duplicate macro across headers": (
+        lambda d: _ids(d, 1)["protocols"].update(PROTO_TCP={"id": 7000}),
+        "macro 'PROTO_TCP' is listed twice",
+    ),
+    "duplicate alias": (
+        lambda d: _ids(d, 1)["protocols"].update(PROTO_NEW={"id": 7000, "alias": "TCP"}),
+        "alias 'tcp' is listed twice",
+    ),
+    "duplicate ids header": (
+        lambda d: d["parents"]["ids"].append(copy.deepcopy(_ids(d, 3))),
+        "header 'business_app/mmt_business_app.h' is listed twice",
     ),
 }
 

@@ -27,7 +27,7 @@ from types import MappingProxyType
 from mmt_plugin.diagnostics import Diagnostic, Related, Severity, sorted_diagnostics
 from mmt_plugin.pdl import model as pdl
 from mmt_plugin.pdl.model import BinaryOperator, DataType, Encoding, Scope, Span
-from mmt_plugin.sdk.profile import Profile
+from mmt_plugin.sdk.profile import Profile, SdkProtocol
 from mmt_plugin.semantics.model import (
     AnalysedAttribute,
     AnalysedCase,
@@ -286,12 +286,27 @@ class _Analyser:
         self.diagnostics: list[Diagnostic] = []
         self.max_alias = self._constant("Max_Alias_Len")
         self.max_id = self._constant("PROTO_MAX_IDENTIFIER")
-        sdk_ids = dict(profile.parents.ids)
-        for constant in profile.constants:
-            if constant.group == "protocol_id" and constant.value is not None:
-                sdk_ids[constant.name] = constant.value
-        self.sdk_ids: dict[str, int] = sdk_ids
-        self.sdk_by_id: dict[int, str] = {v: k for k, v in sorted(sdk_ids.items())}
+        # Every protocol the SDK registers: the plugins' (parents.ids) and
+        # the core's pseudo-protocols (constants of group protocol_id).
+        plugins = profile.parents.protocols()
+        core = [
+            SdkProtocol(c.name, c.value, c.header, None)
+            for c in profile.constants
+            if c.group == "protocol_id" and c.value is not None
+        ]
+        protocols = [*plugins, *core]
+        self.sdk_by_macro: dict[str, SdkProtocol] = {p.macro: p for p in protocols}
+        self.sdk_by_id: dict[int, SdkProtocol] = {p.id: p for p in protocols}
+        self.sdk_by_alias: dict[str, SdkProtocol] = {
+            p.alias.lower(): p for p in protocols if p.alias is not None
+        }
+        # The protocol macros a model may name: those the generated C sees,
+        # from the parents' header (which includes declared_in) and the core.
+        self.sdk_names: dict[str, int] = {
+            p.macro: p.id
+            for p in (*plugins, *core)
+            if p in core or p.header == profile.parents.declared_in
+        }
         # Every name the model declares, first occurrence, to tell a later
         # definition from none at all.
         self.declared_attrs: dict[str, pdl.Name] = {}
@@ -410,9 +425,14 @@ class _Analyser:
         if in_range and taken is not None:
             self.error(
                 "model.id-taken",
-                f"protocol id {pid} is already {taken}'s in mmt-dpi {self.profile.version}",
+                f"protocol id {pid} is already {taken.macro}'s in mmt-dpi {self.profile.version}",
                 p.id.span,
-                related=[Related(f"{taken} = {pid} in the SDK profile {self.profile.version}")],
+                related=[
+                    Related(
+                        f"{taken.macro} = {pid} in the SDK profile {self.profile.version} "
+                        f"({taken.header})"
+                    )
+                ],
             )
         elif in_range and pid not in THIRD_PARTY_IDS:
             self.warning(
@@ -421,12 +441,24 @@ class _Analyser:
                 " the range reserved for third-party plugins",
                 p.id.span,
             )
+        # The generated C defines PROTO_<LABEL>, and the SDK finds a protocol
+        # by its registered name (PROTO_<X>_ALIAS) case-insensitively: a
+        # label that clashes with either is taken.
         macro = self.profile.parents.id_for(label)
-        if macro in self.sdk_ids:
+        by_macro = self.sdk_by_macro.get(macro)
+        by_alias = self.sdk_by_alias.get(label.lower())
+        if by_macro is not None:
             self.error(
                 "model.name-taken",
                 f"protocol name {label.upper()} is already an SDK protocol's: {macro} = "
-                f"{self.sdk_ids[macro]} in mmt-dpi {self.profile.version}",
+                f"{by_macro.id} in mmt-dpi {self.profile.version}",
+                p.label.span,
+            )
+        elif by_alias is not None:
+            self.error(
+                "model.name-taken",
+                f'protocol name "{label}" is already an SDK protocol\'s: {by_alias.macro} '
+                f'({by_alias.id}) registers "{by_alias.alias}" in mmt-dpi {self.profile.version}',
                 p.label.span,
             )
         encoding = None if p.encoding is None else p.encoding.value
@@ -491,8 +523,8 @@ class _Analyser:
         define = self.defines.get(key)
         if define is not None and key != self.defining.get("define"):
             return define.value, define.name
-        if name.text in self.sdk_ids:
-            return self.sdk_ids[name.text], name.text
+        if name.text in self.sdk_names:
+            return self.sdk_names[name.text], name.text
         later = self.declared_defines.get(key)
         if later is not None:
             self._used_too_early("define", name, later, key == self.defining.get("define"))

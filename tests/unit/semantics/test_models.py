@@ -5,11 +5,15 @@ with the codes, and says why for every one that is not clean. The corpus
 copies of the examples are byte-identical to ``plugins/`` (tests/corpus/
 validate.py), so they give the same result.
 
-Most examples collide with mmt-dpi 1.10.2: they re-implement protocols that
-libmmt_tcpip already has (dns, tcp, ip, arp, radius, quic), or were upstreamed
-into it (tpkt 637, cotp 638, s7comm 639), and their ids were picked before the
-third-party range existed (plan decision 5, inventory bug 23). Those errors
-are SDK conflicts: the model is still analysed (``SDK_CONFLICT_CODES``).
+Most examples collide with mmt-dpi 1.10.2, whose package installs
+libmmt_tcpip, libmmt_tdicom, libmmt_tmobile and libmmt_business_app: they
+re-implement protocols that libmmt_tcpip already has (dns, tcp, ip, arp,
+radius, quic), or were upstreamed into it (the SDK has tpkt as 637, cotp as
+638 and s7comm as 639, while the models use 636, 637 and 638, which are
+PROTO_LOOPBACK's, PROTO_TPKT's and PROTO_COTP's), and their ids were picked
+before the third-party range existed (plan decision 5, inventory bug 23).
+Those errors are SDK conflicts: the model is still analysed
+(``SDK_CONFLICT_CODES``).
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ EXPECTED: dict[str, tuple[list[str], str]] = {
     ),
     "cam": ([ID], "bug 23: id 700 is PROTO_HTTP2"),
     "cotp": ([NAME, ID], "bug 23: COTP is PROTO_COTP (638) and 637 is PROTO_TPKT"),
-    "cpm": (["model.id-outside-reserved-range"], "warning: id 701 is free but not in 950-999"),
+    "cpm": ([ID], "bug 23: id 701 is PROTO_DICOM (libmmt_tdicom, dicom/dicom.h)"),
     "dns": ([NAME, ID], "bug 23: DNS is PROTO_DNS (85) and 11 is PROTO_ADDTHIS"),
     "ip": ([NAME, ID], "bug 23: IP is PROTO_IP (178) and 12 is PROTO_ADF"),
     "ndn": ([], "clean: NDN_EXAMPLE, id 980"),

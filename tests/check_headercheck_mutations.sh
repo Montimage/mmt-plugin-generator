@@ -6,7 +6,11 @@
 #   generic_init_proto typedef with empty parentheses, which gnu11 accepts
 #   as compatible with any parameter list;
 # - alias-len: data_defs.h defines Max_Alias_Len as 32, not the 64 the
-#   profile records.
+#   profile records;
+# - plugin-ids: dicom/dicom.h gives PROTO_DICOM another id and alias than the
+#   profile records;
+# - unlisted-id: mobile/mmt_mobile.h defines a protocol id, PROTO_NEW_PLUGIN,
+#   that parents.ids does not list.
 #
 # Usage: bash tests/check_headercheck_mutations.sh PREFIX [CC]
 #
@@ -81,5 +85,16 @@ expect_failure unprototyped \
 
 mutate alias-len data_defs.h 's/#define Max_Alias_Len 64\b/#define Max_Alias_Len 32/'
 expect_failure alias-len 'constants.Max_Alias_Len is not 64'
+
+mutate plugin-ids dicom/dicom.h \
+    's/#define PROTO_DICOM 701\b/#define PROTO_DICOM 702/' \
+    's/#define PROTO_DICOM_ALIAS "dicom"/#define PROTO_DICOM_ALIAS "dicom2"/'
+expect_failure plugin-ids \
+    'parents.ids.PROTO_DICOM is not 701' \
+    'parents.ids.PROTO_DICOM: PROTO_DICOM_ALIAS is "dicom2", not "dicom"'
+
+mutate unlisted-id mobile/mmt_mobile.h \
+    's/#define PROTO_NAS5G_ALIAS "nas_5g"\n\K/#define PROTO_NEW_PLUGIN 905\n/'
+expect_failure unlisted-id 'not in the profile: PROTO_NEW_PLUGIN'
 
 exit "$failed"

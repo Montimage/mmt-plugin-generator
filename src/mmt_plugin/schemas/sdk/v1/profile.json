@@ -166,10 +166,36 @@
         "id_macro": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\{LABEL\\}[A-Za-z0-9_]*$"},
         "examples": {"type": "array", "items": {"$ref": "#/$defs/ident"}},
         "ids": {
-          "type": "object",
-          "description": "The id of every protocol declared_in defines, by its macro name (the header check asserts each value). Model checks use it to find a plugin id or name that libmmt_tcpip already takes. Absent: no id is known.",
-          "propertyNames": {"$ref": "#/$defs/ident"},
-          "additionalProperties": {"type": "integer", "minimum": 0}
+          "type": "array",
+          "description": "The protocols of the plugins the SDK installs, per header that defines them. The header check asserts every id and alias, and that each header defines no other numeric PROTO_* macro (PROTO_CLASS_* excepted) or PROTO_*_ALIAS than listed. Model checks use them to find a plugin id or name the SDK already takes. Absent: no id is known.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["header", "doc", "protocols"],
+            "properties": {
+              "header": {"$ref": "#/$defs/header"},
+              "doc": {"$ref": "#/$defs/text"},
+              "protocols": {
+                "type": "object",
+                "description": "By macro name: its id and, when the header defines PROTO_<X>_ALIAS, the name the SDK registers (compared case-insensitively).",
+                "propertyNames": {"$ref": "#/$defs/ident"},
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id"],
+                  "properties": {
+                    "id": {"type": "integer", "minimum": 0},
+                    "alias": {"type": "string", "pattern": "^[^\"\\\\\\s]+$"}
+                  }
+                }
+              },
+              "not_ids": {
+                "type": "array",
+                "description": "The header's other numeric PROTO_* macros, which are not protocol ids (PROTO_DICOM_HDRLEN).",
+                "items": {"$ref": "#/$defs/ident"}
+              }
+            }
+          }
         },
         "doc": {"$ref": "#/$defs/text"}
       }

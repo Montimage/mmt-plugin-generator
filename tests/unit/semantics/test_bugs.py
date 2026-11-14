@@ -195,10 +195,15 @@ def test_bug_23_ids_are_validated() -> None:
     assert outcome("960", "tcp") == ["model.name-taken"]
     assert outcome("960", "Meta") == ["model.name-taken"]
     assert outcome("960", "int") == ["model.name-taken"]  # PROTO_INT has no alias
-    model, diagnostics = run(build(u8("a", "0"), properties='label = "tpkt"\n\t\tid = "637"'))
-    # The SDK conflicts are errors, but the model is still analysed (T1.6).
-    assert model is not None and model.protocol.id == 637
+    text = build(u8("a", "0"), properties='label = "tpkt"\n\t\tid = "637"')
+    model, diagnostics = run(text)
+    # The SDK conflicts are errors, and withhold the model like any error...
+    assert model is None and codes(diagnostics) == ["model.name-taken", "model.id-taken"]
     assert {d.severity for d in diagnostics} == {Severity.ERROR}
+    # ...unless the caller allows them (T1.6): same errors, and the model.
+    model, again = run(text, allow_sdk_conflicts=True)
+    assert model is not None and model.protocol.id == 637
+    assert again == diagnostics
 
 
 def test_bug_23_covers_every_plugin_the_sdk_installs() -> None:

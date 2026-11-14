@@ -51,8 +51,9 @@ protocol model. A Python rewrite is planned in
   `analyse(model, profile=...)` returns the analysed model
   (`semantics/model.py`: types, offsets, bitfields, folded expressions,
   resolved references, defaults) and `model.*` diagnostics; no file I/O.
-  The model is `None` on any error except an id or name the SDK already
-  takes. Tests in `tests/unit/semantics/`, including the layout of every
+  The model is `None` on any error, including an id or name the SDK already
+  takes; `allow_sdk_conflicts=True` still returns it with those two errors
+  (T1.6). Tests in `tests/unit/semantics/`, including the layout of every
   corpus fixture.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,

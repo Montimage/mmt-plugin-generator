@@ -79,10 +79,14 @@ def whole(text: str) -> str:
     return text if text.startswith("Protocol") else build(text)
 
 
-def run(text: str) -> tuple[AnalysedModel | None, list[Diagnostic]]:
+def run(
+    text: str, *, allow_sdk_conflicts: bool = False
+) -> tuple[AnalysedModel | None, list[Diagnostic]]:
     """Parse and analyse ``text`` (a model, or the attributes of one); every
     diagnostic has a hint and a location."""
-    analysed, diagnostics = analyse(parse_model(whole(text)), profile=profile())
+    analysed, diagnostics = analyse(
+        parse_model(whole(text)), profile=profile(), allow_sdk_conflicts=allow_sdk_conflicts
+    )
     for d in diagnostics:
         assert d.hint, f"{d.code} has no hint"
         assert d.location is not None and d.location.file == FILE

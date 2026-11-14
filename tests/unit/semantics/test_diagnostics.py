@@ -202,11 +202,12 @@ def test_diagnostic(name: str) -> None:
         assert fragment in related.message
         if points_at is not None:
             assert covered(text, related.location) == points_at
-    # Warnings and SDK conflicts leave the model; any other error withholds it.
-    if case.severity is W or name in ("id-taken", "name-taken"):
-        assert analysed is not None
-    else:
-        assert analysed is None
+    # Warnings leave the model; any error withholds it, an SDK conflict too
+    # unless the caller allows SDK conflicts.
+    assert (analysed is not None) == (case.severity is W)
+    allowed, again = run(text, allow_sdk_conflicts=True)
+    assert again == diagnostics
+    assert (allowed is not None) == (case.severity is W or name in ("id-taken", "name-taken"))
 
 
 SEMANTIC = [c for c in CODES if c.startswith("model.") and not c.startswith("model.syntax.")]

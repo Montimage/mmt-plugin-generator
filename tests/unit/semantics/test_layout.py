@@ -74,7 +74,8 @@ def _analysed(name: str) -> AnalysedModel:
     model = parse(path.read_text(encoding="utf-8"), filename=str(path))
     if name == "arp":
         model = _without_second_ar_pro(model)
-    analysed, diagnostics = analyse(model, profile=profile())
+    # Most examples collide with the SDK (test_models.py); lay them out anyway.
+    analysed, diagnostics = analyse(model, profile=profile(), allow_sdk_conflicts=True)
     blocking = [d.code for d in diagnostics if d.severity.value == "error"]
     assert set(blocking) <= SDK_CONFLICT_CODES, blocking
     assert analysed is not None

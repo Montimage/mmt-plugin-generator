@@ -74,9 +74,10 @@ __all__ = ["HINTS", "SDK_CONFLICT_CODES", "THIRD_PARTY_IDS", "analyse"]
 THIRD_PARTY_IDS = range(950, 1000)
 
 #: Errors that depend on the SDK, not on the model alone: the id or the name
-#: is already an SDK protocol's. ``analyse`` still returns the analysed model
-#: with them, so that tools comparing outputs (T1.6) can generate it; every
-#: command fails on them like on any error.
+#: is already an SDK protocol's. Like any error, they withhold the analysed
+#: model, unless the caller passes ``allow_sdk_conflicts=True`` (tools that
+#: compare outputs, T1.6, generate the colliding examples); every command
+#: fails on them like on any error.
 SDK_CONFLICT_CODES = frozenset({"model.id-taken", "model.name-taken"})
 
 #: The largest offset or length the SDK's ``attribute_metadata_t`` (an ``int``)
@@ -126,21 +127,22 @@ _ARITHMETIC = frozenset({BinaryOperator.ADD, BinaryOperator.SUB, BinaryOperator.
 
 
 def analyse(
-    model: pdl.Model, *, profile: Profile
+    model: pdl.Model, *, profile: Profile, allow_sdk_conflicts: bool = False
 ) -> tuple[AnalysedModel | None, list[Diagnostic]]:
     """Analyse a parsed PDL model against an SDK profile.
 
     Returns the analysed model and every diagnostic, sorted. The model is
-    ``None`` when there is an error, except for the SDK conflicts of
-    ``SDK_CONFLICT_CODES``. Warnings never withhold it (``--strict`` is the
-    caller's).
+    ``None`` when there is an error. With ``allow_sdk_conflicts=True`` the
+    SDK conflicts of ``SDK_CONFLICT_CODES`` (an id or a name the SDK already
+    takes) do not withhold it: they are still reported as errors, and only a
+    caller that generates colliding plugins on purpose (T1.6) sets it.
+    Warnings never withhold the model (``--strict`` is the caller's).
     """
     analyser = _Analyser(model, profile)
     result = analyser.run()
     diagnostics = sorted_diagnostics(analyser.diagnostics)
-    blocking = any(
-        d.severity is Severity.ERROR and d.code not in SDK_CONFLICT_CODES for d in diagnostics
-    )
+    allowed = SDK_CONFLICT_CODES if allow_sdk_conflicts else frozenset()
+    blocking = any(d.severity is Severity.ERROR and d.code not in allowed for d in diagnostics)
     return (None if blocking else result), diagnostics
 
 

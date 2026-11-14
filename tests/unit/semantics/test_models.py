@@ -12,8 +12,8 @@ radius, quic), or were upstreamed into it (the SDK has tpkt as 637, cotp as
 638 and s7comm as 639, while the models use 636, 637 and 638, which are
 PROTO_LOOPBACK's, PROTO_TPKT's and PROTO_COTP's), and their ids were picked
 before the third-party range existed (plan decision 5, inventory bug 23).
-Those errors are SDK conflicts: the model is still analysed
-(``SDK_CONFLICT_CODES``).
+Those errors are SDK conflicts (``SDK_CONFLICT_CODES``): like any error they
+withhold the model, which ``allow_sdk_conflicts=True`` still returns.
 """
 
 from __future__ import annotations
@@ -104,15 +104,19 @@ def test_model(name: str, path: Path) -> None:
         with pytest.raises(PdlSyntaxError):
             parse(text, filename=filename)
         return
-    analysed, diagnostics = analyse(parse(text, filename=filename), profile=profile())
+    model = parse(text, filename=filename)
+    analysed, diagnostics = analyse(model, profile=profile())
     expected, why = EXPECTED[name]
     assert [d.code for d in diagnostics] == expected, why
     errors = {d.code for d in diagnostics if d.severity.value == "error"}
+    assert (analysed is None) == bool(errors)
+    allowed, again = analyse(model, profile=profile(), allow_sdk_conflicts=True)
+    assert again == diagnostics
     if errors - SDK_CONFLICT_CODES:
-        assert analysed is None
+        assert allowed is None
     else:
-        assert analysed is not None
-        assert analysed.source.span.file == filename
+        assert allowed is not None
+        assert allowed.source.span.file == filename
 
 
 def test_the_if_else_warning_in_pdl_alignment() -> None:

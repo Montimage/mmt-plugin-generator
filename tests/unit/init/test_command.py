@@ -562,6 +562,18 @@ def test_a_dir_below_a_file_is_exit_7(init: Run, work: Path) -> None:
     assert doc["error"]["code"] == "state.not-a-project"
 
 
+def test_a_dangling_symlink_dir_is_exit_7(init: Run, work: Path) -> None:
+    (work / "dangling").symlink_to(work / "nowhere")
+    for dir_ in ("dangling", "dangling/x"):
+        for dry in ([], ["--dry-run"]):
+            code, doc = init("demo", *PROFILE, "--id", "960", "--dir", dir_, *dry)
+            assert code == 7
+            assert doc["error"]["code"] == "state.not-a-project"
+            assert "symbolic link" in doc["error"]["message"]
+    assert not os.path.lexists(work / "nowhere")
+    assert [p.name for p in work.iterdir()] == ["dangling"]
+
+
 def test_re_running_without_id_keeps_the_project_s_id(init: Run, work: Path) -> None:
     assert init("demo", *PROFILE, "--id", "970")[0] == 0
     code, doc = init("demo", *PROFILE)

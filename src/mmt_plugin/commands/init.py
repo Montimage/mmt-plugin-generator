@@ -561,11 +561,16 @@ class InitCommand:
             )
 
         for d in (target, *target.parents):
-            if d.exists() and not d.is_dir():
+            # lexists: a dangling symbolic link fails here, not in the write.
+            if os.path.lexists(d) and not d.is_dir():
+                what = (
+                    "is a symbolic link that does not point to a directory"
+                    if d.is_symlink()
+                    else "exists and is not a directory"
+                )
                 raise CliError(
                     "state.not-a-project",
-                    f"--dir {show_path(target, project)}: {show_path(d, project)} exists and is"
-                    " not a directory",
+                    f"--dir {show_path(target, project)}: {show_path(d, project)} {what}",
                     "pass another --dir",
                 )
 

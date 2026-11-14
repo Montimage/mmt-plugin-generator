@@ -147,7 +147,7 @@ def test_fixture_layout(name: str, path: Path) -> None:
 def test_every_parsed_corpus_model_has_a_layout_test() -> None:
     tested = {name for name, _ in _packets()}
     assert tested == {m["name"] for m in _INDEX["models"]} - set(UNPARSED)
-    assert len(tested) == 29
+    assert len(tested) == 30
 
 
 # --- the layouts the inventory gets wrong, spelled out ------------------------

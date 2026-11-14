@@ -282,6 +282,7 @@ constructs:
       - "ndn/data"
       - "ndn/interest"
       - "pdl_expressions/all-functions"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
       - "quic/initial-prefix"
       - "radius/access-accept"
@@ -316,6 +317,7 @@ constructs:
       - "cam/header"
       - "ndn/interest"
       - "pdl_scopes/single-packet-session"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "scope.packet"
     inventory: "section 1, Attributes: attribute"
@@ -382,6 +384,7 @@ constructs:
     covered_by:
       - "pdl_classifynext/case-decimal"
       - "pdl_expressions/all-functions"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "expr.literal.hex"
     inventory: "section 1, Expressions"
@@ -506,6 +509,7 @@ constructs:
       - "pdl_encoding_ascii/text"
       - "pdl_encoding_unicode/text"
       - "pdl_expressions/all-functions"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
       - "quic/initial-prefix"
   - id: "expr.sizeof.struct"
@@ -572,6 +576,7 @@ constructs:
       - "pdl_encoding_ascii/text"
       - "pdl_encoding_unicode/text"
       - "pdl_expressions/all-functions"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
       - "topo_ind_sch/empty"
       - "topo_ind_sch/two-channels-one-station"
@@ -668,6 +673,7 @@ constructs:
     covered_by:
       - "cam/header"
       - "cpm/header"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_U16_DATA"
     inventory: "section 1, Data types"
@@ -675,6 +681,7 @@ constructs:
     covered_by:
       - "cam/header"
       - "cpm/header"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_U32_DATA"
     inventory: "section 1, Data types"
@@ -682,6 +689,7 @@ constructs:
     covered_by:
       - "cam/header"
       - "cpm/header"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
       - "quic/initial-prefix"
   - id: "type.MMT_U64_DATA"
@@ -689,11 +697,13 @@ constructs:
     summary: "data_type MMT_U64_DATA"
     covered_by:
       - "pdl_encoding_host/little-endian"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_POINTER"
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_POINTER"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_struct_types/all-types"
       - "pdl_types/all-types"
   - id: "type.MMT_STRING_DATA"
@@ -702,6 +712,7 @@ constructs:
     covered_by:
       - "pdl_encoding_ascii/text"
       - "pdl_encoding_unicode/text"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_IP_NET"
     inventory: "section 1, Data types"
@@ -714,22 +725,26 @@ constructs:
     covered_by:
       - "arp/reply-ethernet-ipv4"
       - "arp/request-ethernet-ipv4"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_IP_ADDR"
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_IP_ADDR"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_struct_types/all-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_PATH"
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_PATH"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_TIMEVAL"
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_TIMEVAL"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_BINARY_DATA"
     inventory: "section 1, Data types"
@@ -737,6 +752,7 @@ constructs:
     covered_by:
       - "arp/request-ieee802"
       - "pdl_properties_minimal/basic"
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
       - "radius/access-accept"
       - "radius/access-request"
@@ -754,6 +770,7 @@ constructs:
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_IP6_ADDR"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_PORT"
     inventory: "section 1, Data types"
@@ -789,6 +806,7 @@ constructs:
     inventory: "section 1, Data types"
     summary: "data_type MMT_DATA_FLOAT"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
   - id: "type.MMT_DATA_LAYERID"
     inventory: "section 1, Data types"
@@ -809,6 +827,7 @@ constructs:
     inventory: "section 1, Data types"
     summary: "data_type MMT_BINARY_VAR_DATA"
     covered_by:
+      - "pdl_sized_types/all-sized-types"
       - "pdl_types/all-types"
 models:
   - name: "abb"
@@ -1098,6 +1117,16 @@ models:
     notes: "The first attribute uses sizeof(char) so that alignment stops at once and every later offset is literal."
     packets:
       - "all-types"
+  - name: "pdl_sized_types"
+    kind: "targeted"
+    model: "models/pdl_sized_types/model.pdl"
+    encoding: "network"
+    valid: true
+    java: "parses"
+    spec: "model-declared (targeted model)"
+    notes: "The 14 types of pdl_types that mmt-dpi 1.10.2 gives a registration size (get_data_size_by_data_type), with the same bytes, so that the C generated for each compiles, links and registers. The first attribute uses sizeof(char), as in pdl_types."
+    packets:
+      - "all-sized-types"
   - name: "pdl_scopes"
     kind: "targeted"
     model: "models/pdl_scopes/model.pdl"

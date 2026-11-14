@@ -1,0 +1,130 @@
+# Corpus packet pdl_sized_types/all-sized-types. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_sized_types/all-sized-types"
+model: "pdl_sized_types"
+summary: "One attribute of each of the 14 MMT_* data types that mmt-dpi 1.10.2 gives a size"
+constructs:
+  - "attribute.full"
+  - "scope.SCOPE_PACKET"
+  - "expr.sizeof.type"
+  - "layout.align.stop"
+  - "expr.literal.decimal"
+  - "type.MMT_U8_DATA"
+  - "type.MMT_U16_DATA"
+  - "type.MMT_U32_DATA"
+  - "type.MMT_U64_DATA"
+  - "type.MMT_DATA_POINTER"
+  - "type.MMT_STRING_DATA"
+  - "type.MMT_DATA_MAC_ADDR"
+  - "type.MMT_DATA_IP_ADDR"
+  - "type.MMT_DATA_PATH"
+  - "type.MMT_DATA_TIMEVAL"
+  - "type.MMT_BINARY_DATA"
+  - "type.MMT_DATA_IP6_ADDR"
+  - "type.MMT_DATA_FLOAT"
+  - "type.MMT_BINARY_VAR_DATA"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "81 82 83 84 85 86 87 88 89 8a 8b 8c 8d 8e 8f de"
+  - "ad be ef 61 62 63 64 00 00 5e 00 53 0d c6 33 64"
+  - "07 00 01 00 02 00 03 00 04 5f 5e 10 00 00 00 00"
+  - "64 b0 b1 b2 b3 b4 b5 20 01 0d b8 00 00 00 00 00"
+  - "00 00 00 00 00 00 01 3f c0 00 00 f4 f5 f6 f7 f8"
+bytes_source: "model-declared: the attributes are laid end to end; the values are those of pdl_types/all-types"
+expect:
+  protocol: "PDL_SIZED_TYPES"
+  proto_id: 975
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "t_u8"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 129
+      source: "corpus rule (README.md, Semantics): MMT_U8_DATA is a 8-bit integer in network order"
+    - name: "t_u16"
+      type: "MMT_U16_DATA"
+      offset: 1
+      length: 2
+      value: 33411
+      source: "corpus rule (README.md, Semantics): MMT_U16_DATA is a 16-bit integer in network order"
+    - name: "t_u32"
+      type: "MMT_U32_DATA"
+      offset: 3
+      length: 4
+      value: 2223343239
+      source: "corpus rule (README.md, Semantics): MMT_U32_DATA is a 32-bit integer in network order"
+    - name: "t_u64"
+      type: "MMT_U64_DATA"
+      offset: 7
+      length: 8
+      value: 9838547192930733711
+      source: "corpus rule (README.md, Semantics): MMT_U64_DATA is a 64-bit integer in network order"
+    - name: "t_pointer"
+      type: "MMT_DATA_POINTER"
+      offset: 15
+      length: 4
+      value: 15
+      source: "corpus rule (README.md, Semantics): a pointer value is the offset of the byte it points at"
+    - name: "t_string"
+      type: "MMT_STRING_DATA"
+      offset: 19
+      length: 4
+      value: "61 62 63 64"
+      text: "abcd"
+      source: "corpus rule (README.md, Semantics): strings are copied byte for byte"
+    - name: "t_mac"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 23
+      length: 6
+      value: "00:00:5e:00:53:0d"
+      source: "corpus rule (README.md, Semantics): 6 bytes, copied, written colon-separated"
+    - name: "t_ip_addr"
+      type: "MMT_DATA_IP_ADDR"
+      offset: 29
+      length: 4
+      value: "198.51.100.7"
+      source: "corpus rule (README.md, Semantics): 4 bytes, copied (no byte swap, inventory bug 25), written dotted-quad"
+    - name: "t_path"
+      type: "MMT_DATA_PATH"
+      offset: 33
+      length: 8
+      value: "00 01 00 02 00 03 00 04"
+      source: "corpus rule (README.md, Semantics): opaque (no wire format), byte-copy: the data_len bytes at the offset"
+    - name: "t_timeval"
+      type: "MMT_DATA_TIMEVAL"
+      offset: 41
+      length: 8
+      value: "5f 5e 10 00 00 00 00 64"
+      source: "corpus rule (README.md, Semantics): opaque (no wire format), byte-copy: the data_len bytes at the offset"
+    - name: "t_binary"
+      type: "MMT_BINARY_DATA"
+      offset: 49
+      length: 6
+      value: "b0 b1 b2 b3 b4 b5"
+      source: "corpus rule (README.md, Semantics): byte-copy: the data_len bytes at the offset"
+    - name: "t_ip6"
+      type: "MMT_DATA_IP6_ADDR"
+      offset: 55
+      length: 16
+      value: "2001:db8::1"
+      source: "corpus rule (README.md, Semantics): 16 bytes, copied, written in RFC 5952 form"
+    - name: "t_float"
+      type: "MMT_DATA_FLOAT"
+      offset: 71
+      length: 4
+      value: "3f c0 00 00"
+      source: "corpus rule (README.md, Semantics): opaque (no wire format), byte-copy: the data_len bytes at the offset"
+    - name: "t_binary_var"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 75
+      length: 5
+      value: "f4 f5 f6 f7 f8"
+      source: "corpus rule (README.md, Semantics): byte-copy: the data_len bytes at the offset"
+note: "t_float holds IEEE 754 binary32 1.5 in network order, t_timeval 100000000 s and 100 us; the corpus only checks their bytes."

@@ -50,7 +50,7 @@ ACCEPTED = [m for m in corpus_models() if m not in REJECTED]
 
 def test_the_corpus_splits_into_generated_and_rejected_models() -> None:
     assert set(REJECTED) <= set(corpus_models())
-    assert len(ACCEPTED) == 15
+    assert len(ACCEPTED) == 16
     for name in corpus_models():
         assert (run_model(name).generation is not None) == (name in ACCEPTED), name
 

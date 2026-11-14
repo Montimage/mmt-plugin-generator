@@ -42,7 +42,7 @@ There are two kinds of model:
 - **targeted**: a small model written for this corpus. Each one covers a
   group of PDL constructs (defines, Properties keys, struct element types,
   bitfields, the 26 `MMT_*` types, scopes, conditionals, expressions,
-  alignment, classifynext, keyword names). Their ids are in 960-974, inside
+  alignment, classifynext, keyword names). Their ids are in 960-975, inside
   the third-party range of plan decision 5.
 
 ## index.yaml
@@ -99,6 +99,7 @@ Model status:
 | `pdl_struct_types` | targeted | yes | parses | 1 |
 | `pdl_bitfields` | targeted | yes | parses | 1 |
 | `pdl_types` | targeted | yes | parses | 1 |
+| `pdl_sized_types` | targeted | yes | parses | 1 |
 | `pdl_scopes` | targeted | yes | parses | 1 |
 | `pdl_conditionals` | targeted | yes | parses | 5 |
 | `pdl_expressions` | targeted | yes | parses | 1 |

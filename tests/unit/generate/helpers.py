@@ -22,9 +22,13 @@ GOLDEN = Path(__file__).with_name("golden")
 UPDATE_ENV = "MMT_UPDATE_GOLDEN"
 
 
-def profile() -> Profile:
-    found = get_bundled("1.10.2")
-    assert found is not None
+#: The profile of the goldens.
+GOLDEN_PROFILE = "1.10.2"
+
+
+def profile(version: str = GOLDEN_PROFILE) -> Profile:
+    found = get_bundled(version)
+    assert found is not None, f"no bundled SDK profile {version}"
     return found
 
 
@@ -51,19 +55,20 @@ def source_text(name: str) -> str:
 
 
 @cache
-def run_model(name: str) -> Outcome:
+def run_model(name: str, version: str = GOLDEN_PROFILE) -> Outcome:
     """Parse, analyse (no SDK conflicts allowed, as ``generate`` does) and
-    generate one corpus model; a ``GenerationError`` adds its diagnostics."""
+    generate one corpus model with the SDK profile ``version``; a
+    ``GenerationError`` adds its diagnostics."""
     filename = f"tests/corpus/models/{name}/model.pdl"
     try:
         model = parse(source_text(name), filename=filename)
     except PdlSyntaxError as exc:
         return Outcome(None, exc.diagnostics)
-    analysed, diagnostics = analyse(model, profile=profile())
+    analysed, diagnostics = analyse(model, profile=profile(version))
     if analysed is None:
         return Outcome(None, tuple(diagnostics))
     try:
-        generation = generate(analysed, profile())
+        generation = generate(analysed, profile(version))
     except GenerationError as exc:
         return Outcome(None, (*diagnostics, *exc.diagnostics))
     return Outcome(generation, tuple(diagnostics))

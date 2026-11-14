@@ -326,16 +326,6 @@ jobs:
           for cc in gcc clang; do
             uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --cc "$cc"
           done
-      - name: Compile the golden generated C against the headers (gcc and clang)
-        # -fsyntax-only -std=gnu11 -Wall -Wextra -Werror of every golden pair
-        # of tests/unit/generate/golden/ and a stub src/<label>_impl.c (#14).
-        env:
-          MMT_REQUIRE_GOLDEN_COMPILE: '1'
-        run: |
-          for cc in gcc clang; do
-            MMT_GOLDEN_SDK="$SDK_PREFIX" MMT_GOLDEN_CC="$cc" \
-              uv run pytest -q -p no:cacheprovider tests/unit/generate/test_compile.py
-          done
       - name: Check that a deliberately wrong signature fails
         # A scratch copy of the profile whose attribute extraction callback
         # takes an int proto_index (the Java generator's mistake).
@@ -365,3 +355,94 @@ jobs:
           for cc in gcc clang; do
             bash tests/check_headercheck_mutations.sh "$SDK_PREFIX" "$cc"
           done
+
+  generated-code:
+    # T1.7 (#16): the generated C of every corpus model that generate accepts
+    # compiles with -Wall -Wextra -Werror, builds into a plugin and loads
+    # through init_extraction(), per compiler and per supported mmt-dpi.
+    name: Generated code (mmt-dpi ${{ matrix.mmt_dpi.tag }}, ${{ matrix.cc }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest and the newest mmt-dpi with a bundled SDK profile
+        # (src/mmt_plugin/sdk/profiles/); both are 1.10.2 until a second
+        # profile lands. tests/unit/generate/test_ci_matrix.py keeps this list
+        # in step with the profiles. sums_sha256 is the sha256 of the tag's
+        # SHA256SUMS, empty for the tag tests/fetch_mmt_dpi_package.sh pins.
+        mmt_dpi:
+          - tag: v1.10.2
+            sums_sha256: ''
+        cc: [gcc, clang]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            uv_target: uv-x86_64-unknown-linux-gnu
+            uv_sha256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            uv_target: uv-aarch64-unknown-linux-gnu
+            uv_sha256: 9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e
+    env:
+      # Pinned uv, as in the sdk-profile job.
+      UV_VERSION: 0.12.10
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download, verify and extract the mmt-dpi package
+        # Extracted, not installed: a private prefix, as in the sdk-profile job.
+        env:
+          MMT_DPI_TAG: ${{ matrix.mmt_dpi.tag }}
+          MMT_DPI_SHA256SUMS_SHA256: ${{ matrix.mmt_dpi.sums_sha256 }}
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          dpkg-deb -x "$pkg" "$RUNNER_TEMP/sdk"
+          prefix="$RUNNER_TEMP/sdk/opt/mmt"
+          [ -f "$prefix/dpi/include/mmt_log.h" ] || { echo "no mmt_log.h in $prefix"; exit 1; }
+          [ -f "$prefix/plugins/libmmt_tcpip.so" ] || { echo "no libmmt_tcpip.so in $prefix"; exit 1; }
+          echo "SDK_PREFIX=$prefix" >> "$GITHUB_ENV"
+      - name: Install the pinned uv
+        env:
+          UV_TARGET: ${{ matrix.uv_target }}
+          UV_SHA256: ${{ matrix.uv_sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$UV_TARGET.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$UV_TARGET.tar.gz"
+          echo "$UV_SHA256  $dir/$UV_TARGET.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$UV_TARGET.tar.gz" -C "$dir" --strip-components=1 "$UV_TARGET/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the tools
+        env:
+          CC_NAME: ${{ matrix.cc }}
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+          command -v "$CC_NAME" > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends "$CC_NAME"; }
+          "$CC_NAME" --version | head -n 1
+          uv sync
+      - name: Compile, build and load the generated C of every corpus model
+        # tests/unit/generate/test_compile.py: -fsyntax-only -Wall -Wextra
+        # -Werror, registration with libmmt_core, and a plugin built -O2
+        # -fPIC -shared -Wall -Wextra -Werror -Wl,-z,defs that
+        # init_extraction() loads next to libmmt_tcpip.so. Verbose, so the
+        # log lists every model, none skipped.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/generate/test_compile.py

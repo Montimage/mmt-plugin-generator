@@ -75,6 +75,14 @@ protocol model. A Python rewrite is planned in
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
+- `tests/unit/generate/test_compile.py` (T1.7): the compile-and-load check.
+  Every corpus model that `generate` accepts (the rejected ones produce no
+  output) is generated with the profile of an extracted SDK's version, and
+  must compile with `-Wall -Wextra -Werror`, register with `libmmt_core`,
+  build into a plugin and load through `init_extraction()` next to the SDK's
+  `libmmt_tcpip.so`, its protocol and every attribute resolving to their own
+  id and name. `tests/unit/generate/test_ci_matrix.py` checks that CI runs
+  it with gcc and clang against the oldest and newest bundled profile.
 - `docs/behaviour-changes.md` (T1.6): every difference from the Java tool,
   each with its inventory bug (or where it was decided) and the test that
   pins it; `tests/unit/test_behaviour_changes.py` checks that every inventory
@@ -90,8 +98,10 @@ protocol model. A Python rewrite is planned in
   (amd64 and arm64), `make test-container` on both arches, the Python
   checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
   fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
-  instead of skipping), and the SDK profile header check (amd64 and arm64),
-  which also compiles the golden generated C with gcc and clang.
+  instead of skipping), the SDK profile header check (amd64 and arm64), and
+  the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
+  newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
+  clang) and per arch (amd64, arm64).
 
 ## Commands
 
@@ -180,12 +190,15 @@ unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
 ```
 
-Compile every golden generated pair (and a stub `src/<label>_impl.c`) against
+Compile every generated pair (and a stub `src/<label>_impl.c`) against
 those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`, then link
 each with the prefix's `libmmt_core` and check that its
-`init_<label>_proto_struct()` returns 1 (every attribute registers), and that
-the profile's data type sizes are what `get_data_size_by_data_type()`
-returns; without `MMT_GOLDEN_SDK` the test skips:
+`init_<label>_proto_struct()` returns 1 (every attribute registers); build
+each into a plugin (`-O2 -fPIC -shared -Wall -Wextra -Werror -Wl,-z,defs`)
+and check that `init_extraction()` loads it from `MMT_DPI_PLUGINS_DIR` next
+to the prefix's `libmmt_tcpip.so`; and check that the profile's data type
+sizes are what `get_data_size_by_data_type()` returns. The prefix's version
+needs a bundled profile; without `MMT_GOLDEN_SDK` the test skips:
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/generate/test_compile.py

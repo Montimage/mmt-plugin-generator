@@ -13,13 +13,20 @@ What is resolved here, so that a generator needs no PDL knowledge:
   width) and the running offset R added where alignment is on;
 - each struct's packed wire layout, each bitfield's position counted from
   the most significant bit of its storage unit, and the natural C layout of
-  the struct a generator would emit (``c_offset``, ``c_size``, ``c_align``);
+  the struct a generator would emit (``c_offset``, ``c_size``, ``c_align``),
+  with each bitfield run emitted as its ``BitfieldRun.helper_name`` struct,
+  never as plain C bitfields (see ``AnalysedStruct``);
 - every expression, typed, with its value when it folds at generation time
   (see ``Expr``) and every ``val()``, ``sizeof``, ``offset()`` and ``len()``
   resolved;
 - the guards (enclosing ``if`` conditions) of each conditional attribute;
 - the classifynext switch, with each case label and ``nextencaps`` value
   resolved to a number.
+
+PDL integers are unbounded; folded results are range-checked where they
+become offsets, lengths or ids. Elsewhere (an ``if`` condition, a define) a
+folded value is not reduced to C's ``int`` or ``unsigned``, so a generator
+emits the folded number, not the expression C would evaluate (see ``Expr``).
 """
 
 from __future__ import annotations
@@ -97,9 +104,10 @@ class ByteOrder(str, Enum):
 # - ``offset(x)`` and ``len(x)`` fold when x's offset or length folds (bug 19:
 #   they are x's, not calls to C functions that do not exist);
 # - ``val(x)`` never folds: it is read from the packet;
-# - ``+ - * /`` fold with C integer semantics (``/`` truncates toward zero),
-#   comparisons to 1 or 0 with their own meaning (bug 6 folded them as
-#   ``!=``), and ``AND``/``OR`` to 1 or 0, any non-zero operand being true.
+# - ``+ - * /`` fold on unbounded integers (``/`` truncates toward zero, as
+#   in C), comparisons to 1 or 0 with their own meaning (bug 6 folded them
+#   as ``!=``), and ``AND``/``OR`` to 1 or 0, any non-zero operand being
+#   true.
 
 
 @dataclass(frozen=True)
@@ -329,7 +337,12 @@ class StructField:
     ``offset`` and ``width`` are its wire place in the struct (packed, no
     padding: bug 4). ``c_type`` is the C type a generator declares it with,
     and ``c_offset`` its offset in that C struct with natural alignment. All
-    fields of one bitfield run share the run's unit.
+    fields of one bitfield run share the run's unit: their ``c_type`` is the
+    unit's and their ``c_offset`` the offset of the run's
+    ``BitfieldRun.helper_name`` struct member. That C layout holds only when
+    each run is emitted as that helper struct, never as plain C bitfields,
+    which a compiler packs differently (and whose bit order is the ABI's, not
+    the MSB-first order of ``Bitfield``).
     """
 
     name: str
@@ -368,8 +381,14 @@ class AnalysedStruct:
       offsets, corpus README).
     - ``c_size``, ``c_align`` and ``c_padding`` describe the struct a C
       compiler lays out from the fields' ``c_type`` with natural alignment
-      (LP64). ``needs_packing`` is true when that layout differs from the wire
-      one, so an emitted struct must be packed to match it (bug 4).
+      (LP64), each plain field one member and each bitfield run one member of
+      its ``BitfieldRun.helper_name`` struct type (one storage unit, aligned
+      as the unit). ``needs_packing`` is true when that layout differs from
+      the wire one, so an emitted struct must be packed to match it (bug 4).
+    - The C layout assumes that a generator emits each run as its helper
+      struct, never as plain C bitfields: for those a compiler shares or
+      shrinks units (``uint32_t x:4, y:4; uint8_t c;`` puts ``c`` at 1, not
+      4), so neither ``c_offset`` nor ``needs_packing`` would hold.
     """
 
     name: str
@@ -387,7 +406,8 @@ class AnalysedStruct:
 
     @property
     def needs_packing(self) -> bool:
-        """Whether the natural C layout differs from the wire layout."""
+        """Whether the natural C layout differs from the wire layout, with
+        each bitfield run emitted as its helper struct (see the class)."""
         return self.c_size != self.size or any(f.c_offset != f.offset for f in self.fields)
 
 

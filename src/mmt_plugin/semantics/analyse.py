@@ -1180,7 +1180,9 @@ def _c_layout(
     fields: Sequence[tuple[pdl.StructField, StructField, CStorage]],
 ) -> tuple[tuple[StructField, ...], int, int, int]:
     """The natural C layout of a struct (LP64): one slot per plain field or
-    bitfield unit, each at the next multiple of its alignment.
+    bitfield unit, each at the next multiple of its alignment. A unit is a
+    slot because each run is emitted as its helper struct, never as plain C
+    bitfields (``AnalysedStruct``).
 
     Returns the fields with their ``c_offset``, the C size and alignment, and
     the bytes the slots hold (the padding is the size minus that).

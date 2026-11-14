@@ -15,8 +15,14 @@ and tpkt its names too (bug 23), so ``generate`` refuses them; here they
 are analysed with ``allow_sdk_conflicts=True``, which keeps the model and
 only those errors.
 
-The parser reads the C each generator writes, not C in general: a form it
-does not know fails the test instead of being skipped.
+The parser reads the C each generator writes, not C in general. Every
+function it follows (the new output's extraction, get, place, bytes and read
+functions of each attribute, and both outputs' ``init_<l>_proto_struct`` and
+``init_proto``) must match, whole and statement for statement, the shape
+that generator writes (``SHAPES``), comments and whitespace aside: an extra,
+missing or altered statement fails the test instead of being skipped. What
+it does not follow (Java's stack classification, the new ``_Static_assert``
+lines) is not compared.
 """
 
 from __future__ import annotations
@@ -190,37 +196,206 @@ def _java_read(function: str, position: int) -> Read:
     return Read(position, width, order)
 
 
+#: The definitions the parser follows, as each generator writes them. A
+#: ``@slot@`` stands for a name (or a number, or one of ``_SLOTS``), the same
+#: text wherever it recurs.
+SHAPES = {
+    "extraction": """
+        static int @name@(const ipacket_t *packet, mmt_proto_index_t proto_index,
+            attribute_t *extracted_data)
+        {
+        uint64_t value;
+        if (!@get@(packet, proto_index, &value)) {
+        return 0;
+        }
+        *(@ctype@ *) extracted_data->data = (@ctype@) value;
+        return 1;
+        }
+    """,
+    "get": """
+        static int @name@(const ipacket_t *packet, mmt_proto_index_t proto_index, uint64_t *value)
+        {
+        int64_t offset, length;
+        const uint8_t *p;
+        if (!@place@(packet, proto_index, &offset, &length)) {
+        return 0;
+        }
+        p = @bytes@(packet, proto_index, offset, length);
+        if (p == NULL) {
+        return 0;
+        }
+        *value = @read@(p, @width@);
+        return 1;
+        }
+    """,
+    "place": """
+        static int @name@(const ipacket_t *packet, mmt_proto_index_t proto_index,
+            int64_t *offset, int64_t *length)
+        {
+        int ok = 1;
+        (void) packet;
+        (void) proto_index;
+        *offset = @offset@;
+        *length = @length@;
+        return ok;
+        }
+    """,
+    "bytes": """
+        static const uint8_t *@name@(const ipacket_t *packet, mmt_proto_index_t proto_index,
+            int64_t offset, int64_t length)
+        {
+        int64_t caplen = (int64_t) packet->p_hdr->caplen;
+        int64_t start = (int64_t) get_packet_offset_at_index(packet, proto_index);
+        if (start < 0 || offset < 0 || length < 0 || offset > caplen || length > caplen) {
+        return NULL;
+        }
+        start += offset;
+        if (start > caplen - length) {
+        return NULL;
+        }
+        return &packet->data[start];
+        }
+    """,
+    "read": """
+        static uint64_t @name@(const uint8_t *p, unsigned width)
+        {
+        uint64_t value = 0;
+        unsigned i;
+        for (i = 0; i < width; i++) {
+        value = (value << 8) | p[@index@];
+        }
+        return value;
+        }
+    """,
+    "new init": """
+        int @name@(void)
+        {
+        protocol_t *protocol_struct;
+        size_t i;
+        if (get_protocol_id_by_name(@proto@_ALIAS) != 0) {
+        mmt_log_error("@name@: protocol name %s is already registered", @proto@_ALIAS);
+        return 0;
+        }
+        protocol_struct = init_protocol_struct_for_registration(@proto@, @proto@_ALIAS);
+        if (protocol_struct == NULL) {
+        mmt_log_error("@name@: protocol id %d is out of range or already registered", @proto@);
+        return 0;
+        }
+        for (i = 0; i < sizeof(@table@) / sizeof(@table@[0]); i++) {
+        if (!register_attribute_with_protocol(protocol_struct, &@table@[i])) {
+        mmt_log_error("@name@: cannot register attribute %s", @table@[i].alias);
+        return 0;
+        }
+        }
+        if (!register_protocol(protocol_struct, @proto@)) {
+        mmt_log_error("@name@: cannot register protocol %d", @proto@);
+        return 0;
+        }
+        return 1;
+        }
+    """,
+    "java init": """
+        int @name@() {
+        protocol_t * protocol_struct =
+            init_protocol_struct_for_registration(@proto@, @proto@_ALIAS);
+        if (protocol_struct != NULL) {
+        int i = 0;
+        for(; i < @size@; i ++) {
+        register_attribute_with_protocol(protocol_struct, &@table@[i]);
+        }
+        register_protocol_stack(@proto@, @proto@_ALIAS, @classify@);
+        return register_protocol(protocol_struct, @proto@);
+        } else {
+        return -1;
+        }
+        }
+    """,
+    "new init_proto": """
+        int @name@(void)
+        {
+        return @init@();
+        }
+    """,
+    "java init_proto": """
+        int @name@() {
+        return @init@();
+        }
+    """,
+}
+
+#: The slots that are not a plain name.
+_SLOTS = {
+    "offset": r"\d+",
+    "length": r"\d+",
+    "width": r"\d+",
+    "index": r"i|width - 1 - i",
+}
+
+
+def _normalise(text: str) -> str:
+    """``text`` without comments, with one space for each run of whitespace
+    (line breaks included: they mean nothing to C outside a string)."""
+    return re.sub(r"\s+", " ", re.sub(r"/\*.*?\*/", " ", text, flags=re.S)).strip()
+
+
+def _definition(source: str, name: str) -> str:
+    """The whole definition of the function ``name`` in ``source``."""
+    pattern = rf"^\S[^\n;]*\b{name}\([^;{{]*\)\s*\{{\n.*?^\}}"
+    return _one(pattern, source, f"the definition of {name}", re.M | re.S).group(0)
+
+
+def _shape(source: str, name: str, shape: str) -> dict[str, str]:
+    """The slots of the definition of ``name``, which must be ``SHAPES[shape]``
+    whole: any other statement fails."""
+    template = _normalise(SHAPES[shape])
+    parts, seen, pos = [], set(), 0
+    for slot in re.finditer(r"@(\w+)@", template):
+        parts.append(re.escape(template[pos : slot.start()]))
+        key = slot.group(1)
+        if key in seen:
+            parts.append(f"(?P={key})")
+        else:
+            seen.add(key)
+            parts.append(f"(?P<{key}>{_SLOTS.get(key, '[A-Za-z_][A-Za-z0-9_]*')})")
+        pos = slot.end()
+    parts.append(re.escape(template[pos:]))
+    text = _normalise(_definition(source, name))
+    m = re.fullmatch("".join(parts), text)
+    assert m, f"{name} is not a {shape} function:\n{text}"
+    assert m.group("name") == name, (name, m.group("name"))
+    return m.groupdict()
+
+
 def _new_read(source: str, function: str) -> Read:
-    """Follow ``<l>_<a>_extraction`` to its get and place functions."""
-    extraction = _function(source, function)
-    get = _one(r"if \(!(\w+)\(packet, proto_index, &value\)\)", extraction, "the get call")
-    store = _one(r"\*\((\w+) \*\) extracted_data->data = \(\1\) value;", extraction, "the store")
-    getter = _function(source, get.group(1))
-    place = _one(r"if \(!(\w+)\(packet, proto_index, &offset, &length\)\)", getter, "the place")
-    read = _one(r"\*value = (\w+)\(p, (\d+)\);", getter, "the read")
-    placed = _function(source, place.group(1))
-    offset = int(_one(r"\*offset = (\d+);", placed, "the offset").group(1))
-    length = int(_one(r"\*length = (\d+);", placed, "the length").group(1))
-    width = int(read.group(2))
-    assert length == width == C_SIZES[store.group(1)], function
-    loop = _one(r"value = \(value << 8\) \| p\[(.*?)\];", _function(source, read.group(1)), "loop")
-    order = {"i": "big", "width - 1 - i": "little"}[loop.group(1)]
+    """Follow ``<l>_<a>_extraction`` to its get, place, bytes and read
+    functions, each of which must have its shape."""
+    extraction = _shape(source, function, "extraction")
+    getter = _shape(source, extraction["get"], "get")
+    placed = _shape(source, getter["place"], "place")
+    _shape(source, getter["bytes"], "bytes")
+    loop = _shape(source, getter["read"], "read")
+    offset, length, width = (int(v) for v in (placed["offset"], placed["length"], getter["width"]))
+    assert length == width == C_SIZES[extraction["ctype"]], function
+    order = {"i": "big", "width - 1 - i": "little"}[loop["index"]]
     return Read(offset, width, None if width == 1 else order)
 
 
 def _registrations(source: str, init: str, table: str, size: str) -> tuple[str, ...]:
-    """The SDK registration calls of ``init``, in order. A call made for
-    each row of the table is written ``<each row>``; the loop must cover
-    the whole table."""
-    body = _function(source, init)
-    bounds = re.findall(r"for ?\([^;]*; i < ([^;]+); i ?\+\+\)", body)
-    assert bounds in ([size], [f"sizeof({table}) / sizeof({table}[0])"]), bounds
-    calls = []
-    for name, args in re.findall(
-        r"\b(init_protocol_struct_for_registration|register_\w+)\(([^;]*?)\)", body
-    ):
-        args = args.replace(f"&{table}[i]", "<each row>")
-        calls.append(f"{name}({args})")
+    """The SDK registration calls of ``init``, in order, which with
+    ``init_proto`` must have the shape of one of the two generators. A call
+    made for each row of the table is written ``<each row>``."""
+    java = _normalise(_definition(source, init)).startswith(f"int {init}() {{ protocol_t * ")
+    kind = "java" if java else "new"
+    found = _shape(source, init, f"{kind} init")
+    assert _shape(source, "init_proto", f"{kind} init_proto")["init"] == init
+    assert found["table"] == table, (found["table"], table)
+    proto = found["proto"]
+    calls = [f"init_protocol_struct_for_registration({proto}, {proto}_ALIAS)"]
+    calls.append("register_attribute_with_protocol(protocol_struct, <each row>)")
+    if java:
+        assert found["size"] == size, (found["size"], size)
+        calls.append(f"{JAVA_ONLY}({proto}, {proto}_ALIAS, {found['classify']})")
+    calls.append(f"register_protocol(protocol_struct, {proto})")
     return tuple(calls)
 
 
@@ -377,20 +552,81 @@ def test_the_new_output_reads_only_captured_bytes(name: str) -> None:
 def test_the_reader_follows_both_byte_orders() -> None:
     # The parser itself: a little-endian read helper is read as such.
     source = (
+        "static const uint8_t *t_bytes(const ipacket_t *packet, mmt_proto_index_t proto_index, "
+        "int64_t offset, int64_t length)\n{\n"
+        "    int64_t caplen = (int64_t) packet->p_hdr->caplen;\n"
+        "    int64_t start = (int64_t) get_packet_offset_at_index(packet, proto_index);\n"
+        "    if (start < 0 || offset < 0 || length < 0 || offset > caplen || length > caplen) {\n"
+        "        return NULL;\n    }\n    start += offset;\n"
+        "    if (start > caplen - length) {\n        return NULL;\n    }\n"
+        "    return &packet->data[start];\n}\n"
         "static uint64_t t_read(const uint8_t *p, unsigned width)\n{\n"
-        "        value = (value << 8) | p[width - 1 - i];\n}\n"
+        "    uint64_t value = 0;\n    unsigned i;\n"
+        "    for (i = 0; i < width; i++) {\n"
+        "        value = (value << 8) | p[width - 1 - i];\n    }\n    return value;\n}\n"
         "static int t_place_a(const ipacket_t *packet, mmt_proto_index_t proto_index, "
-        "int64_t *offset, int64_t *length)\n{\n    *offset = 3;\n    *length = 2;\n}\n"
+        "int64_t *offset, int64_t *length)\n{\n"
+        "    int ok = 1;\n    (void) packet;\n    (void) proto_index;\n"
+        "    *offset = 3;\n    *length = 2;\n    return ok;\n}\n"
         "static int t_get_a(const ipacket_t *packet, mmt_proto_index_t proto_index, "
         "uint64_t *value)\n{\n"
-        "    if (!t_place_a(packet, proto_index, &offset, &length)) {\n"
-        "    *value = t_read(p, 2);\n}\n"
+        "    int64_t offset, length;\n    const uint8_t *p;\n"
+        "    if (!t_place_a(packet, proto_index, &offset, &length)) {\n        return 0;\n    }\n"
+        "    p = t_bytes(packet, proto_index, offset, length);\n"
+        "    if (p == NULL) {\n        return 0;\n    }\n"
+        "    *value = t_read(p, 2);\n    return 1;\n}\n"
         "static int t_a_extraction(const ipacket_t *packet, mmt_proto_index_t proto_index, "
         "attribute_t *extracted_data)\n{\n"
-        "    if (!t_get_a(packet, proto_index, &value)) {\n"
-        "    *(uint16_t *) extracted_data->data = (uint16_t) value;\n}\n"
+        "    uint64_t value;\n"
+        "    if (!t_get_a(packet, proto_index, &value)) {\n        return 0;\n    }\n"
+        "    *(uint16_t *) extracted_data->data = (uint16_t) value;\n    return 1;\n}\n"
     )
     assert _new_read(source, "t_a_extraction") == Read(3, 2, "little")
+
+
+#: Changes to the new tpkt source that alter what it means to mmt-dpi:
+#: (old text, new text), the old text found once.
+MUTATIONS = {
+    "bytes ignores the offset": ("    start += offset;\n", ""),
+    "a getter shifts the offset": (
+        "offset, length);\n    if (p == NULL) {\n        return 0;\n    }\n"
+        "    *value = tpkt_read(p, 2);",
+        "offset + 1, length);\n    if (p == NULL) {\n        return 0;\n    }\n"
+        "    *value = tpkt_read(p, 2);",
+    ),
+    "a getter shifts the value": (
+        "    *value = tpkt_read(p, 2);\n",
+        "    *value = tpkt_read(p, 2);\n    *value >>= 8;\n",
+    ),
+    "a place moves the offset": ("    *length = 2;\n", "    *length = 2;\n    *offset += 1;\n"),
+    "the read loop skips a byte": ("for (i = 0; i < width; i++)", "for (i = 1; i < width; i++)"),
+    "the read loop is little-endian": ("p[i];", "p[width - 1 - i];"),
+    "the registration loop skips a row": (
+        "for (i = 0; i < sizeof(",
+        "for (i = 1; i < sizeof(",
+    ),
+    "init returns before registering": ("    size_t i;\n", "    size_t i;\n\n    return 1;\n"),
+    "init_proto does not init": ("    return init_tpkt_proto_struct();\n", "    return 1;\n"),
+    "a position moves": (".position_in_packet = 2", ".position_in_packet = 3"),
+}
+
+
+@pytest.mark.parametrize("mutation", MUTATIONS)
+def test_the_parser_fails_on_any_other_new_output(mutation: str) -> None:
+    # The parser accounts for every statement it follows: a mutated tpkt
+    # source either does not parse or does not mean what Java's means.
+    old, new = MUTATIONS[mutation]
+    files = {f.name: f.text for f in new_generation("tpkt").files}
+    source = files["tpkt_mmt_plugin.c"]
+    assert source.count(old) == 1, old
+    files["tpkt_mmt_plugin.c"] = source.replace(old, new)
+    java = java_meaning("tpkt")
+    without = tuple(r for r in java.registrations if not r.startswith(f"{JAVA_ONLY}("))
+    try:
+        mutated = meaning(*_pair(files))
+    except AssertionError:
+        return
+    assert mutated != replace(java, registrations=without)
 
 
 def test_the_reference_output_is_the_frozen_one() -> None:

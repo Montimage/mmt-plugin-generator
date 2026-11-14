@@ -22,6 +22,12 @@ mean to mmt-dpi:
 - the header's structs, member by member;
 - the registration calls of `init_<l>_proto_struct()`, in order.
 
+Each function the test follows (the new output's extraction, get, place,
+bytes and read functions, and both outputs' `init_<l>_proto_struct()` and
+`init_proto()`) must match the shape its generator writes, statement for
+statement (comments and whitespace aside), so an extra, missing or altered
+statement fails the test.
+
 The two are equal, apart from row 1 below: Java also calls
 `register_protocol_stack` (bug 22). The 4 models also take ids that mmt-dpi
 1.10.2 already has, and cotp, s7com and tpkt its names too (row 2), so the

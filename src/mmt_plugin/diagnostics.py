@@ -213,16 +213,17 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.legacy-bitfield-offset": "warning: import: a struct field after a bitfield line "
         "(bug 2), or an aligned element after a struct with bitfields (bug 3), which the Java "
         "tool placed further on",
-        "model.legacy-constant-folding": "warning: import: an offset or length that reads the "
-        "packet but ends in a constant, which the Java tool folded to a constant (bug 5)",
-        "model.legacy-comparison": "warning: import: a constant >, <, >= or <= whose value is "
-        "not the one of !=, as the Java tool folded it (bug 6)",
-        "model.legacy-sizeof-char": "warning: import: sizeof(char), which is 1; the Java tool "
-        "wrote 4 (bug 7)",
+        "model.legacy-constant-folding": "warning: import: an offset, data_len or nextoffset "
+        "that the Java tool folded to a constant by its last operand (bug 5) but is not one, "
+        "or is another number",
+        "model.legacy-comparison": "warning: import: a folded offset, data_len or nextoffset "
+        "whose value changes because the Java tool read >, <, >= and <= as != (bug 6)",
+        "model.legacy-sizeof": "warning: import: sizeof of a C or MMT type that the Java tool "
+        "wrote into the C as sizeof(MMT_*), an enum constant's size, 4 (bug 7)",
         "model.legacy-classifynext": "warning: import: classifynext without encapsulation = "
         '"true", which the Java tool dropped (bug 21) and generate emits',
-        "model.legacy-ip-addr": "warning: import: an MMT_DATA_IP_ADDR at an offset that reads "
-        "the packet, which the Java tool byte-swapped (bug 25)",
+        "model.legacy-ip-addr": "warning: import: an MMT_DATA_IP_ADDR whose offset or data_len "
+        "the Java tool did not fold, which it byte-swapped in network byte order (bug 25)",
         "state.output-differs": "import: the output file exists with other content, or is not a "
         "regular file; import does not replace it without --force (a directory, never)",
     }

@@ -137,7 +137,7 @@ SDK drift against 1.10.2:
 4. C padding is ignored, but the emitted structs are not packed.
 5. Whether an expression is simple depends only on its last operand (G:667-698): `val(x)-4` folds to -4.
 6. `>`, `<`, `>=` and `<=` fold as `!=` (G:682-685).
-7. `sizeof(char)` emits `sizeof(MMT_U8_DATA)`, which is 4 (G:733).
+7. `sizeof(char)` emits `sizeof(MMT_U8_DATA)`, which is 4 (G:733). Every C and MMT type does the same where the expression is not folded: `sizeof(short)` is `sizeof(MMT_U16_DATA)`, also 4 (G:638-648; `model.legacy-sizeof` in `mmt-plugin import`).
 8. A nested `struct X` field gets a line number as its length and C type `void` (G:600, P:812).
 9. A missing `scope`, `offset` or `data_len` emits the text `null`.
 10. An unknown encoding references extraction functions that are never generated.

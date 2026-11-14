@@ -84,8 +84,11 @@ def test_a_model_that_relied_on_no_java_bug_has_no_warning() -> None:
         + attr("c", "0")
         + attr("v", "val(c)", length="val(c)", dtype="MMT_BINARY_DATA")
         + attr("ip", "4", dtype="MMT_DATA_IP_ADDR", length="4")
-        + "\t\tif (1 != 2) {\n"
-        + attr("d", "sizeof(uint16_t)")
+        # The Java tool wrote conditions into the C as text, which C evaluates
+        # right, and folded sizeof(uint16_t) + 0 to the right 2.
+        + "\t\tif (3 < 2 OR val(c) == 1) {\n"
+        + attr("d", "sizeof(uint16_t) + 0")
+        + attr("e", "sizeof(uint32_t)")
         + "\t\t}\n"
     )
     conversion = run(text)
@@ -150,17 +153,21 @@ def test_any_other_model_error_stops_the_conversion() -> None:
 
 
 def test_decision_8_and_bug_2_bitfield_order_and_the_offsets_after_a_bitfield_line() -> None:
-    text = build(struct("h", "uint16_t a:4, b:12;", "uint16_t c;", "uint8_t d:2, e:6;"))
+    text = build(
+        struct("h", "uint16_t a:4, b:12;", "uint8_t d:2, e:6;", "uint16_t c;", "uint8_t f;")
+    )
     conversion = run(text)
     assert legacy(conversion) == [
         "model.legacy-bitfield-order",
-        "model.legacy-bitfield-offset",
         "model.legacy-bitfield-order",
+        "model.legacy-bitfield-offset",
     ]
-    order, offset, second = conversion.diagnostics
+    order, second, offset = conversion.diagnostics
     assert covered(text, order) == "a" and "`a`, `b`" in order.message
-    assert covered(text, offset) == "c" and "(bug 2)" in offset.message
+    # A bitfield line after a bitfield line is placed right (no bug 2)...
     assert covered(text, second) == "d"
+    # ...the first plain field after one is not.
+    assert covered(text, offset) == "c" and "(bug 2)" in offset.message
 
 
 def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
@@ -169,10 +176,8 @@ def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
     assert legacy(conversion) == ["model.legacy-bitfield-order", "model.legacy-bitfield-offset"]
     d = only(conversion, "model.legacy-bitfield-offset")
     assert "(bug 3)" in d.message and "`next`" in d.message
-    assert (
-        conversion.text is not None
-        and "  - name: next\n    type: MMT_U8_DATA\n    offset: 1\n" in (conversion.text)
-    )
+    assert conversion.text is not None
+    assert "  - name: next\n    type: MMT_U8_DATA\n    offset: 1\n" in conversion.text
     # Not after an attribute at a literal offset (alignment stopped).
     stopped = run(
         build(
@@ -185,53 +190,108 @@ def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
     assert legacy(stopped) == ["model.legacy-bitfield-order"]
 
 
-def test_bug_5_an_offset_or_length_that_reads_the_packet_but_ends_in_a_constant() -> None:
+CLASSIFY = (
+    "\tclassifynext {{\n\t\tswitch(val(x)) {{\n"
+    "\t\t\tcase 1: nextencaps = 30 nextoffset = {} break\n"
+    "\t\t\tdefault: break\n\t\t}}\n\t}}\n"
+)
+ENCAPSULATED = 'label = "p"\n\t\tid = "960"\n\t\tencapsulation = "true"\n\t\tencoding = "network"'
+
+
+def test_bug_5_an_expression_the_java_tool_folded_by_its_last_operand() -> None:
     text = build(
         attr("x", "0")
         + attr("y", "val(x) - 4")
         + attr("z", "4 - val(x)")
         + attr("w", "(1 + 2) * 3")
-        + attr("b", "8", dtype="MMT_BINARY_DATA", length="val(x) * sizeof(uint16_t)")
+        + attr("c", "val(x) == 4")
+        + attr("b", "8", dtype="MMT_BINARY_DATA", length="val(x) * sizeof(uint32_t)")
+        + attr("k", "8", dtype="MMT_BINARY_DATA", length="val(x) * 2")
+        + attr("o", "offset(w) + 1")
+        + attr("n", "len(b) + 5"),
+        properties=ENCAPSULATED,
+        classify=CLASSIFY.format("val(x) * 4"),
     )
+    conversion = run(text)
+    found = [d for d in conversion.diagnostics if d.code == "model.legacy-constant-folding"]
+    # Not z (last operand val()), w (a constant), c (a comparison) or b
+    # (last operand sizeof): the Java tool folded none of them.
+    assert [covered(text, d) for d in found] == [
+        "val(x) - 4",
+        "val(x) * 2",
+        "offset(w) + 1",
+        "len(b) + 5",
+        "val(x) * 4",
+    ]
+    assert found[0].message == (
+        "the offset of `y`, `val(x) - 4`, is not a constant, but the Java tool took it for one"
+        " because its last operand is, and folded it to -4 (bug 5)"
+    )
+    assert "the data_len of `k`" in found[1].message
+    # offset(w) folds to 9 + 1: the Java tool read offset() as 0.
+    assert found[2].message.endswith(
+        "is 10; the Java tool folded it to 1: it read offset() and len() as 0 (bug 19)"
+    )
+    assert "the nextoffset of classifynext" in found[4].message
+
+
+def test_ntohs_and_ntohl_the_java_tool_did_not_swap() -> None:
+    text = build(attr("s", "ntohs(0x0300)") + attr("t", "ntohl(0x05000000)") + attr("u", "1"))
     conversion = run(text)
     assert legacy(conversion) == ["model.legacy-constant-folding"] * 2
-    first, second = conversion.diagnostics
-    assert covered(text, first) == "val(x) - 4" and "the offset of `y`" in first.message
-    assert "the data_len of `b`" in second.message
+    assert conversion.diagnostics[0].message == (
+        "the offset of `s`, `ntohs(0x0300)`, is 3; the Java tool folded it to 768: it did not"
+        " swap the bytes of ntohs and ntohl"
+    )
 
 
-def test_bug_6_a_constant_comparison_whose_value_is_not_the_one_of_ne() -> None:
+def test_bug_6_a_folded_comparison_whose_value_is_not_the_one_of_ne() -> None:
     text = build(
         attr("x", "0")
+        + attr("a", "(3 < 2) + 1")
+        + attr("b", "(3 > 2) + 1")
+        + attr("c", "(2 >= 2) * 2")
         + "\t\tif (3 < 2) {\n"
-        + attr("c", "1")
-        + "\t\t}\n"
-        + "\t\tif (3 > 2) {\n"
         + attr("d", "1")
         + "\t\t}\n"
-        + "\t\tif (2 >= 2) {\n"
-        + attr("e", "1")
+    )
+    conversion = run(text)
+    found = [d for d in conversion.diagnostics if d.code.startswith("model.legacy-")]
+    # 3 > 2 is 1 either way; the if condition was C text, which C evaluates right.
+    assert [(d.code, covered(text, d)) for d in found] == [
+        ("model.legacy-comparison", "(3 < 2) + 1"),
+        ("model.legacy-comparison", "(2 >= 2) * 2"),
+    ]
+    assert found[0].message == (
+        "the offset of `a`, `(3 < 2) + 1`, is 1; the Java tool folded it to 2: it read every"
+        " comparison but == as != (bug 6)"
+    )
+
+
+def test_bug_7_sizeof_the_java_tool_wrote_into_the_c() -> None:
+    text = build(
+        attr("a", "sizeof(char)")
+        + attr("b", "val(a) + sizeof(short) + sizeof(char*) + sizeof(uint32_t)")
+        + attr("c", "sizeof(char) + 1")
+        + "\t\tif (val(a) == sizeof(MMT_DATA_MAC_ADDR)) {\n"
+        + attr("d", "1")
         + "\t\t}\n"
     )
     conversion = run(text)
-    # 3 > 2 is 1 either way; 3 < 2 and 2 >= 2 are not.
-    assert legacy(conversion) == ["model.legacy-comparison"] * 2
-    first, second = [d for d in conversion.diagnostics if d.code == "model.legacy-comparison"]
-    assert covered(text, first) == "3 < 2"
-    assert first.message == (
-        "`3 < 2` is 0; the Java tool folded it as `3 != 2`, which is 1 (bug 6)"
-    )
-    assert covered(text, second) == "2 >= 2"
-
-
-def test_bug_7_sizeof_char() -> None:
-    text = build(attr("a", "sizeof(char)") + attr("b", "sizeof(unsigned char) + sizeof(char*)"))
-    conversion = run(text)
-    assert legacy(conversion) == ["model.legacy-sizeof-char"] * 2
-    assert [covered(text, d) for d in conversion.diagnostics] == [
+    found = [d for d in conversion.diagnostics if d.code.startswith("model.legacy-")]
+    # Not c, which the Java tool folded with the right length, nor the
+    # 4-byte types.
+    assert {d.code for d in found} == {"model.legacy-sizeof"}
+    assert sorted(covered(text, d) for d in found) == [
+        "sizeof(MMT_DATA_MAC_ADDR)",
         "sizeof(char)",
-        "sizeof(unsigned char)",
+        "sizeof(short)",
     ]
+    mac = next(d for d in found if "MAC" in d.message)
+    assert mac.message == (
+        "`sizeof(MMT_DATA_MAC_ADDR)` is 6; the Java tool wrote it into the C as"
+        " sizeof(MMT_DATA_MAC_ADDR), the size of an enum constant, 4 (bug 7)"
+    )
 
 
 def test_bug_21_classifynext_without_encapsulation() -> None:
@@ -252,15 +312,21 @@ def test_bug_21_classifynext_without_encapsulation() -> None:
     assert legacy(encapsulated) == []
 
 
-def test_bug_25_an_ip_address_at_an_offset_that_reads_the_packet() -> None:
-    text = build(
+def test_bug_25_an_ip_address_the_java_tool_read_on_its_complex_path() -> None:
+    attributes = (
         attr("hlen", "0")
         + attr("fixed", "1", dtype="MMT_DATA_IP_ADDR", length="4")
         + attr("moved", "val(hlen)", dtype="MMT_DATA_IP_ADDR", length="4")
+        + attr("sized", "8", dtype="MMT_DATA_IP_ADDR", length="sizeof(int)")
+        + attr("folded", "val(hlen) + 4", dtype="MMT_DATA_IP_ADDR", length="4")
     )
+    text = build(attributes)
     conversion = run(text)
-    d = only(conversion, "model.legacy-ip-addr")
-    assert covered(text, d) == "moved"
+    found = [d for d in conversion.diagnostics if d.code == "model.legacy-ip-addr"]
+    assert [covered(text, d) for d in found] == ["moved", "sized"]
+    # The Java tool swapped only in network byte order.
+    host = run(build(attributes, properties='label = "p"\n\t\tid = "960"\n\t\tencoding = "host"'))
+    assert "model.legacy-ip-addr" not in legacy(host)
 
 
 def test_the_default_scope_warning_is_dropped_and_others_are_kept() -> None:

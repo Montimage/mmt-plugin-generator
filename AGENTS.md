@@ -75,6 +75,15 @@ protocol model. A Python rewrite is planned in
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
+- `docs/behaviour-changes.md` (T1.6): every difference from the Java tool,
+  each with its inventory bug (or where it was decided) and the test that
+  pins it; `tests/unit/test_behaviour_changes.py` checks that every inventory
+  bug has a row and every named test exists. The parity test,
+  `tests/unit/generate/test_parity.py`, reduces the Java output in
+  `legacy/reference-output/` and the new output of abb, cotp, s7com and tpkt
+  to protocol, attributes, table rows, reads, structs and registrations, and
+  asserts they are equal apart from Java's `register_protocol_stack` (bug 22).
+  Add a row to the page when `generate` changes behaviour the Java tool had.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`

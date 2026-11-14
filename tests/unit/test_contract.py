@@ -14,7 +14,8 @@ later issue registers is checked without a new test:
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
 A command whose shortest successful run needs input files (``generate``
-and ``validate`` need a model) gets them from ``SETUP``. With zero real commands the loop
+and ``validate`` need a model, ``build`` also an SDK and a compiler) gets
+them from ``SETUP``. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
 
@@ -210,9 +211,27 @@ def _validate_args(directory: Path) -> list[str]:
     return ["model.pdl", "--no-sdk", "--sdk-profile", "1.10.2"]
 
 
+def _build_args(directory: Path) -> list[str]:
+    # A fake SDK (headers and libmmt_core, never loaded) and a fake compiler
+    # that only answers --version: --dry-run runs nothing else and writes
+    # nothing, so a second run prints the same envelope.
+    (directory / "model.pdl").write_text(CONTRACT_MODEL)
+    sdk = directory / "sdk"
+    (sdk / "dpi" / "include").mkdir(parents=True, exist_ok=True)
+    (sdk / "dpi" / "include" / "mmt_log.h").write_text("")
+    (sdk / "dpi" / "include" / "mmt_core.h").write_text('#define VERSION "1.10.2"\n')
+    (sdk / "dpi" / "lib").mkdir(exist_ok=True)
+    (sdk / "dpi" / "lib" / "libmmt_core.so.1.10.2").write_text("")
+    cc = directory / "cc"
+    cc.write_text("#!/bin/sh\necho 'fake cc 1.0'\n")
+    cc.chmod(0o755)
+    return ["model.pdl", "--sdk", str(sdk), "--cc", str(cc), "--dry-run"]
+
+
 SETUP: dict[str, Callable[[Path], list[str]]] = {
     "generate": _generate_args,
     "validate": _validate_args,
+    "build": _build_args,
 }
 
 

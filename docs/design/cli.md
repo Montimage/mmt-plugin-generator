@@ -100,16 +100,18 @@ Checks (each reported pass/warn/fail/skip, with a stable `id`): `schema`, `seman
 
 Writes `plugin.lock` at the project root; for a `MODEL` outside a project (no `plugin.yaml` in `--project`), into the output directory. Never writes under `src/`.
 
-### `build`
+### `build [MODEL]`
 | Option | Type | Default | Help |
 |---|---|---|---|
+| `MODEL` | path | `<project>/plugin.yaml` | As for `generate`; not `-` (#19). |
+| `--model-format` | enum | `auto` | |
 | `--sdk`, `--sdk-profile` | | detected | |
 | `--cc CC` | str | `CC` env, else `gcc` | Compiler (gcc or clang). |
 | `--build-dir DIR` | path | `<project>/build/` | Output: `<build-dir>/mmtp_<label>.so`. |
 | `--rebuild` | flag | off | Compile even when the inputs are unchanged. |
 | `--no-deps`, `--dry-run`, `--strict` | flags | off | `--dry-run` prints the compiler command lines and writes nothing. |
 
-Flags: hardened (`-O2 -fPIC -shared -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now`) with `-Wall -Wextra -Werror`; the exact list is fixed in #19 and reported in `result.cflags`.
+Flags: hardened (`-O2 -fPIC -shared -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now`) with `-Wall -Wextra -Werror`; the exact list is fixed in #19 (section 13) and reported in `result.cflags` and `result.ldflags`.
 
 ### `test [PACKETS...]`
 | Arg/option | Type | Default | Help |
@@ -231,7 +233,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 | import | `input`, `output`, `model_hash`, `files: [{path, action}]` |
 | validate | `model`, `format` (`yaml`/`pdl`), `protocol: {label, name, id}`, `checks: [{id, status, detail}]` |
 | generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
-| build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` |
+| build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` (#19 adds `model`, `profile`, `build_dir`, `ldflags`, `commands`, `dry_run`) |
 | test | `stages`, `summary: {total, passed, failed, skipped}`, `packets: [{id, file, status, failures: [{attribute, expected, actual}]}]`, `sanitize: {seed, count, crashes}` or `null`, `bench: {pps, baseline_pps, ratio, samples}` or `null`, `stats: {elapsed_ms}` |
 | install | `prefix`, `manifest`, `files: [{path, action, sha256}]` |
 | uninstall | `prefix`, `removed`, `kept`, `missing` |
@@ -453,6 +455,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style`; the schema registry `mmt_plugin/schemas/cli/v1/` (read by `mmt_plugin.schemas`); the contract tests `tests/unit/test_contract.py`; `mmt_plugin.commands.completion` | #22 |
 | `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
 | Generated vs user code: the hooks, the scaffold `src/<label>_impl.c`, the missing-hook check (`build.missing-hook`) | `mmt_plugin.codegen` (`scaffold`, `templates/impl.c.j2`), `mmt_plugin.codegen.hooks` | #18 |
+| `build`: stages, flags, compiler diagnostics, the input hash | `mmt_plugin.commands.build` | #19 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:
@@ -502,3 +505,13 @@ Details fixed by #18 where sections 4, 5 and D6 leave a choice:
 - `mmt_plugin.codegen.scaffold(generation, profile)` renders `src/<label>_impl.c` in memory: a stub of every hook, which compiles with `-Wall -Wextra -Werror` and loads (an extraction hook extracts nothing; `register_parents` returns 1), and in `register_parents` a commented example that attaches the protocol to Ethernet with `register_classification_function_with_parent_protocol`. `init` (#23) writes it; nothing else does. `generate` never writes under `src/`, so regeneration leaves an edited scaffold as it is, and a model change that adds a hook leaves it without that hook.
 - Load order: mmt-dpi loads the plugins of a directory in file name order, so a plugin whose parent is a `libmmt_tcpip` protocol must sort after `libmmt_tcpip.so` (`mmtp_<label>.so` does, as in `ndn_src/`), or the parent registration fails and the plugin does not load (`validate`'s `load-order` check). Weight: a parent runs its classification functions in increasing weight, and mmt-dpi documents 0 to 9 and 90 to 100; with mmt-dpi 1.10.2, weight 50 lost to the built-in Ethernet classifier (#55) while 1 and 5 worked, so the example uses 5.
 - `mmt_plugin.codegen.hooks.missing_hooks(hooks, objects)` reads the global function symbols of the compiled user objects (ELF, with the standard library) and returns the hooks none defines; `missing_hook_error` makes them `build.missing-hook` (exit 5): one error diagnostic per hook at `src/<label>_impl.c`, whose hint gives the hook's declaration. `build` (#19) runs it after compiling and before linking.
+
+Details fixed by #19 where sections 4, 5, 6, 7 and 8 leave a choice:
+
+- `build` takes `MODEL` and `--model-format` like `generate` (so a PDL v1 model builds before `plugin.yaml`, #24), but not `-`: it compares the generated files with the model. It needs an SDK (`--sdk`, `MMT_BASE`, `mmt-dpi.pc`, `/opt/mmt`; none is `sdk.not-found`, exit 4), its `libmmt_core` (`sdk.invalid-prefix` without one) and the compiler `--cc` > `CC` > `gcc`, one program name or path with no arguments (so not `CC="ccache gcc"`; `sdk.cc-not-found`, exit 4, when it is not found or its `--version` fails; an empty `--cc` is `usage.invalid-value`).
+- The sources are the generated `.c` (`<project>/generated/`) and every `<project>/src/*.c`, compiled one by one into `<build-dir>/obj/{generated,src}/<name>.o` with `-std=<profile c_std> -O2 -fPIC -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -Wall -Wextra -Werror` and `-I` the generated directory, `src/` and the SDK's `dpi/include`, then linked with `-shared -Wl,-z,relro -Wl,-z,now -Wl,-z,defs` and `libmmt_core`, so every symbol resolves at link time: user code can call `libmmt_core` functions, not those only `libmmt_tcpip.so` exports. `-U_FORTIFY_SOURCE` drops a distribution's own level first (redefining it is an error with `-Werror`). `result.cflags` is the compile list, `result.ldflags` the link list.
+- `result.stages` always lists `generate`, `compile`, `hooks` and `link`, each `ran`, `up-to-date`, `would-run` (`--dry-run`), `failed`, `stale` (`generate` with `--no-deps`) or `skipped` (not reached). `generate` runs `generate --check` and, when it reports `state.stale`, `generate` itself, writing the default `generated/` and `plugin.lock`; a hand-edited generated file is `state.modified` (exit 7) as for `generate`. `hooks` is `mmt_plugin.codegen.hooks` on the `src/` objects: `build.missing-hook` (exit 5), whose message says so when there is no `src/*.c` at all.
+- Compiler and linker output is captured (`LC_ALL=C`): each `file:line[:column]: severity: message` line is a `build.cc` diagnostic, its file relative to the project; in a failing run a line with no location that names an error (`undefined reference`) is one without a location, so a failure always has one. A location-less `warning:` line (`ld: warning: ...`) is a warning even when the run succeeds. A failure is `build.compile-failed` or `build.link-failed` (exit 5). `--strict` applies to the warnings known before compiling (the profile's and the model's); with `-Werror` a compiler warning already fails the build. `-v` logs each command line and echoes the raw output.
+- The link writes `<build-dir>/.mmtp_<label>.so.tmp`, renamed over `mmtp_<label>.so` only when it succeeds, and removed on any failure or SIGINT. The compiler runs in its own process group; SIGINT kills the group and exits 130.
+- The input hash covers the tool version, the compiler's path and `--version` line, both flag lists and the command lines, the compiler's environment variables `CPATH`, `C_INCLUDE_PATH`, `GCC_EXEC_PREFIX`, `COMPILER_PATH`, `LIBRARY_PATH` and `SOURCE_DATE_EPOCH`, the profile, the SDK prefix, version, headers and `libmmt_core` (sha256), and the sha256 of every generated file and `src/*.c`/`src/*.h`. Each compile also writes a dependency file (`-MD -MF <obj>.d`, outside `result.cflags`): every file the compiler read, user headers in any directory and system headers included. After a link the hash, the plugin's sha256 and each such file's sha256 are written to `<build-dir>/.mmtp_<label>.build.json`; a build whose hash, plugin and dependencies all match it is a no-op (as with make, a new header that would shadow one the last build found elsewhere is not seen; `--rebuild` covers it) (`up_to_date`, every stage `up-to-date`, `commands` empty) unless `--rebuild`. `--dry-run` writes nothing and reports in `result.commands` (and as `command⇥…` records) the command lines it would run; their object and temporary paths are fixed, so a dry run prints the same bytes twice.
+- `result.artifact` is the plugin this run built or found up to date, else `null`: a failed build keeps the previous `mmtp_<label>.so` but reports `null`. The styled view is the box `build <label>`: the stages, then the artifact, its sha256 and size, the compiler, the flags and, with `--dry-run`, the commands; the footer says `built`, `up to date`, `dry run · N commands` or which stage failed.

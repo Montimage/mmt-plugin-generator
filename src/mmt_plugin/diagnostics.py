@@ -147,6 +147,11 @@ CODES: Mapping[str, str] = MappingProxyType(
         # Generated vs user code (mmt_plugin.codegen.hooks, #18); `build` (#19) reports it.
         "build.missing-hook": "a hook the generated header declares is not defined by the user "
         "code (src/<label>_impl.c)",
+        # `build` (mmt_plugin.commands.build, #19).
+        "build.cc": "a message of the compiler or linker (file:line:col relative to the project)",
+        "build.compile-failed": "the compiler failed on a generated or user source",
+        "build.link-failed": "the linker failed to make mmtp_<label>.so",
+        "sdk.cc-not-found": "the compiler (--cc, CC, else gcc) is not found or does not run",
     }
 )
 

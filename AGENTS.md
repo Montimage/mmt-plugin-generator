@@ -35,8 +35,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and three commands, `validate` (T2.1),
-  `generate` (T1.5) and `completion {bash,zsh,fish}` (T2.6); each other
+  envelope and its schema) and four commands, `validate` (T2.1),
+  `generate` (T1.5), `build` (T2.3) and `completion {bash,zsh,fish}` (T2.6);
+  each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
   declaring its `exit_codes` and shipping its `result` schema as
   `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
@@ -81,7 +82,8 @@ protocol model. A Python rewrite is planned in
   (`codegen/templates/impl.c.j2`) renders `src/<label>_impl.c` in memory,
   for `init` (#23) to write; nothing writes under `src/`.
   `codegen/hooks.py` finds the hooks that compiled user objects do not
-  define (`build.missing-hook`, exit 5), for `build` (#19). Tests in
+  define (`build.missing-hook`, exit 5), which `build` runs before it links.
+  Tests in
   `tests/unit/generate/test_scaffold.py` and `test_compile.py` (which also
   classifies a corpus packet through the scaffold's Ethernet example).
 - `tests/unit/generate/test_compile.py` (T1.7): the compile-and-load check.
@@ -113,6 +115,21 @@ protocol model. A Python rewrite is planned in
   `MODEL` for `generate` and `validate`. Tests in `tests/unit/test_validate.py`
   and `tests/unit/test_sdk_registry.py` (its real-SDK tests need
   `MMT_GOLDEN_SDK`, like `test_compile.py`).
+- `src/mmt_plugin/commands/build.py` (T2.3): `mmt-plugin build` compiles
+  `<build-dir>/mmtp_<label>.so` (`build/` by default) from `generated/` and
+  every `src/*.c`, against an SDK (`--sdk`, `MMT_BASE`, ...) with
+  `--cc` > `CC` > `gcc`. Stages `generate` (runs `generate` when
+  `generate --check` finds it stale; `--no-deps` exits 7 instead),
+  `compile`, `hooks` (`codegen/hooks.py`) and `link` (to a temporary name,
+  then renamed), in `result.stages`. The flags are fixed in code (`CFLAGS`,
+  `LDFLAGS`: hardened, `-Wall -Wextra -Werror`, `-Wl,-z,defs` against
+  `libmmt_core`); compiler messages become `build.cc` diagnostics. An
+  unchanged input hash, with every file the compiler read unchanged (its
+  `-MD` dependency files; `build/.mmtp_<label>.build.json`), is a no-op
+  unless `--rebuild`; `--dry-run` reports the commands. Tests in `tests/unit/build/`:
+  `test_command.py` with a fake SDK and compiler (`fakes.py`), and
+  `test_sdk.py`, which builds and loads every corpus model against a real
+  SDK (needs `MMT_GOLDEN_SDK`, like `test_compile.py`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -122,8 +139,9 @@ protocol model. A Python rewrite is planned in
   instead of skipping), the SDK profile header check (amd64 and arm64), and
   the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
-  clang) and per arch (amd64, arm64), then `test_sdk_registry.py` (the
-  run-time registry and `validate` against that SDK).
+  clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
+  (`build` on every corpus model) and `test_sdk_registry.py` (the run-time
+  registry and `validate` against that SDK).
 
 ## Commands
 
@@ -244,6 +262,21 @@ Generate a model's C sources (no installed SDK needed with a pinned profile):
 
 ```
 uv run mmt-plugin generate tests/corpus/models/pdl_bitfields/model.pdl -o <dir> --sdk-profile 1.10.2
+```
+
+Build a plugin (`<project>` holds the model and `src/<label>_impl.c`, the
+scaffold of `codegen.scaffold`; `<dir>` as above). It writes
+`<project>/generated/` and `<project>/build/mmtp_<label>.so`:
+
+```
+uv run mmt-plugin -C <project> build <project>/model.pdl --sdk <dir>/opt/mmt --cc gcc
+```
+
+Build and load every corpus model against those headers (skips without
+`MMT_GOLDEN_SDK`):
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/build/test_sdk.py
 ```
 
 ## Rules

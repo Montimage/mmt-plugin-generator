@@ -50,3 +50,4 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in job
     assert "MMT_DPI_TAG: ${{ matrix.mmt_dpi.tag }}" in job
     assert "tests/unit/generate/test_compile.py" in job
+    assert "tests/unit/build/test_sdk.py" in job  # build (#19): every corpus model

@@ -79,7 +79,18 @@ from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, 
 from mmt_plugin.ui import style
 from mmt_plugin.ui.streams import StreamStyle
 
-__all__ = ["CFLAGS", "DIAGNOSTIC_CODES", "LDFLAGS", "BuildCommand", "parse_compiler_output"]
+__all__ = [
+    "CFLAGS",
+    "DIAGNOSTIC_CODES",
+    "LDFLAGS",
+    "BuildCommand",
+    "Compiler",
+    "find_compiler",
+    "kill_group",
+    "parse_compiler_output",
+    "require_core_library",
+    "run_compiler",
+]
 
 #: The codes this command reports itself (besides generate's, the hooks'
 #: ``build.missing-hook`` and the SDK's).
@@ -211,7 +222,7 @@ def parse_compiler_output(
 
 
 @dataclass(frozen=True)
-class _Compiler:
+class Compiler:
     """The compiler: as asked for, its absolute path and the first line of
     its ``--version``."""
 
@@ -231,7 +242,7 @@ class _Run:
     up_to_date: bool = False
 
 
-def _compiler(cli: str | None, env: Mapping[str, str]) -> _Compiler:
+def find_compiler(cli: str | None, env: Mapping[str, str]) -> Compiler:
     if cli == "":
         raise CliError("usage.invalid-value", "--cc is empty", "pass gcc or clang, or a path")
     name = cli or env.get("CC", "") or "gcc"
@@ -258,10 +269,10 @@ def _compiler(cli: str | None, env: Mapping[str, str]) -> _Compiler:
     lines = [x.strip() for x in proc.stdout.splitlines() if x.strip()]
     if proc.returncode != 0 or not lines:
         raise CliError("sdk.cc-not-found", f"{name} --version failed: not a compiler", hint)
-    return _Compiler(name, os.path.abspath(path), lines[0])
+    return Compiler(name, os.path.abspath(path), lines[0])
 
 
-def _core_library(sdk: Sdk) -> Path:
+def require_core_library(sdk: Sdk) -> Path:
     """The SDK's ``libmmt_core`` shared object (``mmt_plugin.sdk.registry``),
     linked into the plugin so ``-z defs`` resolves the SDK functions."""
     core = core_library(sdk)
@@ -274,7 +285,7 @@ def _core_library(sdk: Sdk) -> Path:
     return Path(core)
 
 
-def _kill(proc: subprocess.Popen[str]) -> None:
+def kill_group(proc: subprocess.Popen[str]) -> None:
     """Kill the compiler's process group (the driver and what it started)."""
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(proc.pid, signal.SIGKILL)
@@ -282,7 +293,7 @@ def _kill(proc: subprocess.Popen[str]) -> None:
         proc.wait()
 
 
-def _run_compiler(argv: Sequence[str], cwd: Path, ctx: Context) -> tuple[int, str]:
+def run_compiler(argv: Sequence[str], cwd: Path, ctx: Context) -> tuple[int, str]:
     """Run one compiler command in its own process group: its exit code and
     its output (stdout and stderr). Any exception, SIGINT included, kills
     the group before it propagates."""
@@ -301,7 +312,7 @@ def _run_compiler(argv: Sequence[str], cwd: Path, ctx: Context) -> tuple[int, st
     try:
         output, _ = proc.communicate()
     except BaseException:
-        _kill(proc)
+        kill_group(proc)
         raise
     if output and ctx.verbose:
         ctx.stderr.write(output if output.endswith("\n") else output + "\n")
@@ -370,7 +381,10 @@ class BuildCommand:
     """``mmt-plugin build [MODEL]``: compile ``<build-dir>/mmtp_<label>.so``.
 
     ``pkg_config_dirs`` and ``default_prefix`` are passed to SDK detection
-    (tests point them at temporary directories)."""
+    (tests point them at temporary directories). ``cflags`` and ``ldflags``
+    replace ``CFLAGS`` and ``LDFLAGS`` (``test --sanitize`` builds with the
+    sanitizers into another build directory); they are part of the input
+    hash, like the defaults."""
 
     name = "build"
     exit_codes: tuple[ExitCode, ...] = (
@@ -385,9 +399,13 @@ class BuildCommand:
         *,
         pkg_config_dirs: Sequence[str] | None = None,
         default_prefix: str = DEFAULT_PREFIX,
+        cflags: Sequence[str] = CFLAGS,
+        ldflags: Sequence[str] = LDFLAGS,
     ) -> None:
         self.pkg_config_dirs = pkg_config_dirs
         self.default_prefix = default_prefix
+        self.cflags = tuple(cflags)
+        self.ldflags = tuple(ldflags)
 
     def register(self, subparsers: Subparsers) -> argparse.ArgumentParser:
         parser = subparsers.add_parser(
@@ -458,15 +476,15 @@ class BuildCommand:
 
     def _setup(
         self, args: argparse.Namespace, ctx: Context
-    ) -> tuple[Sdk, ProfileChoice, Path, _Compiler]:
+    ) -> tuple[Sdk, ProfileChoice, Path, Compiler]:
         env = os.environ
         sdk = require_sdk(
             args.sdk, env, pkg_config_dirs=self.pkg_config_dirs, default_prefix=self.default_prefix
         )
         choice = resolve_profile(args.sdk_profile, env, None, sdk)
         ctx.log(f"SDK {sdk.prefix} ({sdk.source.value}), profile {choice.profile.version}")
-        core = _core_library(sdk)
-        cc = _compiler(args.cc, env)
+        core = require_core_library(sdk)
+        cc = find_compiler(args.cc, env)
         ctx.log(f"compiler {cc.path}: {cc.version}")
         return sdk, choice, core, cc
 
@@ -541,8 +559,8 @@ class BuildCommand:
         sdk, choice, core, cc = self._setup(args, ctx)
         context = {"sdk": sdk_context(sdk, choice)}
         run = _Run(diagnostics=list(choice.diagnostics))
-        cflags = [f"-std={choice.profile.c_std}", *CFLAGS]
-        ldflags = list(LDFLAGS)
+        cflags = [f"-std={choice.profile.c_std}", *self.cflags]
+        ldflags = list(self.ldflags)
         build_dir = (
             absolute(args.build_dir) if args.build_dir is not None else project / DEFAULT_BUILD_DIR
         )
@@ -632,7 +650,7 @@ class BuildCommand:
         sdk: Sdk,
         profile: str,
         core: Path,
-        cc: _Compiler,
+        cc: Compiler,
         cflags: list[str],
         ldflags: list[str],
         run: _Run,
@@ -770,7 +788,7 @@ class BuildCommand:
             obj.parent.mkdir(parents=True, exist_ok=True)
             obj.unlink(missing_ok=True)
             run.commands.append(command)
-            code, output = _run_compiler(command, project, ctx)
+            code, output = run_compiler(command, project, ctx)
             run.diagnostics += parse_compiler_output(output, project, project, failed=code != 0)
             if code != 0:
                 failed.append(show_path(src, project))
@@ -810,7 +828,7 @@ class BuildCommand:
         temporary.parent.mkdir(parents=True, exist_ok=True)
         temporary.unlink(missing_ok=True)
         run.commands.append(link_command)
-        code, output = _run_compiler(link_command, project, ctx)
+        code, output = run_compiler(link_command, project, ctx)
         run.diagnostics += parse_compiler_output(output, project, project, failed=code != 0)
         if code != 0 or not temporary.is_file():
             run.stages["link"] = "failed"

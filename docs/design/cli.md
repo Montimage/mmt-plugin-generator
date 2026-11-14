@@ -116,13 +116,17 @@ Flags: hardened (`-O2 -fPIC -shared -fstack-protector-strong -D_FORTIFY_SOURCE=2
 ### `test [PACKETS...]`
 | Arg/option | Type | Default | Help |
 |---|---|---|---|
-| `PACKETS` | paths/globs | `<project>/tests/*.yaml` | Packet tests (corpus schema 1). |
+| `PACKETS` | paths/globs | `<project>/tests/*.yaml` | Packet tests (corpus schema 1): files, directories (their `*.yaml`) or globs. |
+| `--model MODEL` | path | `<project>/plugin.yaml` | The model, as `build`'s `MODEL` (an option: the positionals are `PACKETS`; #20). |
+| `--model-format`, `--build-dir` | | | As for `build`. |
 | `--sanitize` | flag | off | Rebuild with ASan/UBSan and also run truncated and random packets; any crash fails. |
 | `--seed N` | int | `0` | Seed for random packets: the same seed gives the same packets. |
 | `--fuzz-count N` | int | `1000` | Random/truncated packets per test with `--sanitize`. |
 | `--bench` | flag | off | Packets per second vs an empty-plugin baseline. Advisory: never changes the exit code. |
 | `--fail-fast` | flag | off | Stop at the first failing packet. |
 | `--sdk`, `--sdk-profile`, `--cc`, `--no-deps`, `--strict` | | | |
+
+The harness (#20) is generated into `<build-dir>/test/` and compiled against the SDK. It loads the plugin with `init_extraction()` from a temporary plugin directory that holds only the SDK's `libmmt_tcpip.so` and the plugin (its own `MMT_DPI_PLUGINS_DIR`), attaches the protocol to Ethernet itself (EtherType 0x88b5), so packets are tested without the user code's parent registration, and checks the classification, the next protocol and each attribute value of every packet; it restarts after a crash, so every packet is reported. `--sanitize` builds `<build-dir>/sanitize/mmtp_<label>.so`; a crash names its test, its index for the seed, and its bytes.
 
 ### `install` / `uninstall [LABEL]`
 | Option | Type | Default | Help |
@@ -184,7 +188,7 @@ Per command (besides 0, 1, 2, 130 everywhere):
 
 ## 6. The `--json` envelope (shared by every command)
 
-One JSON document on stdout, UTF-8, keys in schema order, ending in one newline. Paths relative to the project when inside it (POSIX separators), absolute otherwise. No timestamps or durations outside `result.stats` (so two runs on the same inputs give the same bytes, timings aside).
+One JSON document on stdout, UTF-8, keys in schema order, ending in one newline. Paths relative to the project when inside it (POSIX separators), absolute otherwise. No timestamps or durations outside `result.stats` (so two runs on the same inputs give the same bytes, timings aside). The one exception is `test --bench`, whose `result.bench` is a measurement (#20).
 
 ```json
 {
@@ -234,7 +238,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 | validate | `model`, `format` (`yaml`/`pdl`), `protocol: {label, name, id}`, `checks: [{id, status, detail}]` |
 | generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
 | build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` (#19 adds `model`, `profile`, `build_dir`, `ldflags`, `commands`, `dry_run`) |
-| test | `stages`, `summary: {total, passed, failed, skipped}`, `packets: [{id, file, status, failures: [{attribute, expected, actual}]}]`, `sanitize: {seed, count, crashes}` or `null`, `bench: {pps, baseline_pps, ratio, samples}` or `null`, `stats: {elapsed_ms}` |
+| test | `stages`, `summary: {total, passed, failed, skipped}`, `packets: [{id, file, status, failures: [{attribute, expected, actual}]}]`, `sanitize: {seed, count, crashes}` or `null`, `bench: {pps, baseline_pps, ratio, samples}` or `null`, `stats: {elapsed_ms}` (#20 adds `model`, `profile`, `build_dir`, `packets[].attributes`; `crashes` is a list of `{test, index, length, reason, bytes}`) |
 | install | `prefix`, `manifest`, `files: [{path, action, sha256}]` |
 | uninstall | `prefix`, `removed`, `kept`, `missing` |
 | doctor | `checks: [{id, status, detail}]`, `toolchain`, `plugin_dirs`, `load_order`, `clashes` |
@@ -456,6 +460,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
 | Generated vs user code: the hooks, the scaffold `src/<label>_impl.c`, the missing-hook check (`build.missing-hook`) | `mmt_plugin.codegen` (`scaffold`, `templates/impl.c.j2`), `mmt_plugin.codegen.hooks` | #18 |
 | `build`: stages, flags, compiler diagnostics, the input hash | `mmt_plugin.commands.build` | #19 |
+| `test`: packet tests, the host harness, `--sanitize`'s random packets, the bench baseline | `mmt_plugin.commands.test`, `mmt_plugin.testing` | #20 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:

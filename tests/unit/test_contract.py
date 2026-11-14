@@ -14,14 +14,16 @@ later issue registers is checked without a new test:
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
 A command whose shortest successful run needs input files (``generate``
-and ``validate`` need a model, ``build`` also an SDK and a compiler) gets
-them from ``SETUP``. With zero real commands the loop
+and ``validate`` need a model, ``build`` and ``test`` also an SDK and a
+compiler) gets them from ``SETUP``. ``result.stats`` holds the only timings
+(section 6), so the two runs are compared without it. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -34,8 +36,11 @@ from jsonschema import Draft202012Validator
 
 from mmt_plugin import schemas
 from mmt_plugin.cli import ALWAYS, build_parser, exit_codes_of, main
+from mmt_plugin.codegen import scaffold
 from mmt_plugin.commands import COMMANDS, Command
+from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.exitcodes import ExitCode
+from mmt_plugin.sdk.resolve import resolve_profile
 
 DUMMY_RESULT_SCHEMA = Path(__file__).with_name("dummy_result.json")
 CleanEnv = Callable[..., dict[str, str]]
@@ -228,10 +233,38 @@ def _build_args(directory: Path) -> list[str]:
     return ["model.pdl", "--sdk", str(sdk), "--cc", str(cc), "--dry-run"]
 
 
+def _test_args(directory: Path) -> list[str]:
+    # build's fake compiler (tests/unit/build/fakes.py), which compiles and
+    # links, and a build made here, quietly: test finds the plugin up to date
+    # and, with no packet test (a test.no-packets warning), runs no harness,
+    # so a second run prints the same envelope.
+    spec = importlib.util.spec_from_file_location(
+        "contract_build_fakes", Path(__file__).parent / "build" / "fakes.py"
+    )
+    assert spec is not None and spec.loader is not None
+    fakes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fakes)
+    (directory / "model.pdl").write_text(CONTRACT_MODEL)
+    sdk = fakes.fake_sdk(directory / "sdk")
+    (sdk / "plugins").mkdir()
+    (sdk / "plugins" / "libmmt_tcpip.so").write_text("")
+    cc = fakes.fake_cc(directory / "bin")
+    choice = resolve_profile("1.10.2", {}, None, None)
+    generation, _, _ = make_generation("model.pdl", CONTRACT_MODEL.encode(), choice)
+    assert generation is not None
+    impl = scaffold(generation, choice.profile)
+    (directory / impl.path).parent.mkdir(exist_ok=True)
+    (directory / impl.path).write_text(impl.text)
+    args = ["--model", "model.pdl", "--sdk", str(sdk), "--cc", str(cc)]
+    assert main(["-q", "build", "model.pdl", *args[2:]]) == 0
+    return args
+
+
 SETUP: dict[str, Callable[[Path], list[str]]] = {
     "generate": _generate_args,
     "validate": _validate_args,
     "build": _build_args,
+    "test": _test_args,
 }
 
 
@@ -243,6 +276,18 @@ def _cases(commands: Sequence[Command]) -> Iterator[tuple[str, list[str]]]:
         yield name, [name, *args]
 
 
+def _without_stats(run: tuple[int, str, str]) -> tuple[int, Any, str]:
+    """A run with its envelope's ``result.stats`` (timings) dropped."""
+    code, out, err = run
+    try:
+        doc = json.loads(out)
+    except ValueError:
+        return code, out, err
+    if isinstance(doc.get("result"), dict):
+        doc["result"].pop("stats", None)
+    return code, doc, err
+
+
 def _check_command_envelopes(
     commands: Sequence[Command],
     capsys: pytest.CaptureFixture[str],
@@ -252,7 +297,7 @@ def _check_command_envelopes(
     for name, argv in _cases(commands):
         before = _run(["--json", *argv], commands, capsys)
         after = _run([*argv, "--json"], commands, capsys)
-        assert before == after, name
+        assert _without_stats(before) == _without_stats(after), name
         code, out, err = before
         assert err == "", (name, err)
         doc = _one_envelope(out)

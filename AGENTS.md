@@ -35,9 +35,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and four commands, `validate` (T2.1),
-  `generate` (T1.5), `build` (T2.3) and `completion {bash,zsh,fish}` (T2.6);
-  each other
+  envelope and its schema) and five commands, `validate` (T2.1),
+  `generate` (T1.5), `build` (T2.3), `test` (T2.4) and
+  `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
   declaring its `exit_codes` and shipping its `result` schema as
   `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
@@ -130,6 +130,27 @@ protocol model. A Python rewrite is planned in
   `test_command.py` with a fake SDK and compiler (`fakes.py`), and
   `test_sdk.py`, which builds and loads every corpus model against a real
   SDK (needs `MMT_GOLDEN_SDK`, like `test_compile.py`).
+- `src/mmt_plugin/commands/test.py` (T2.4): `mmt-plugin test [PACKETS...]`
+  runs packet tests (corpus schema 1; default `<project>/tests/*.yaml`)
+  against the plugin of `--model` (as `build`'s `MODEL`). Stages `build`
+  (`build` when stale; `--no-deps` exits 7 instead), `harness`, `packets`,
+  `sanitize` and `bench`. `src/mmt_plugin/testing/`: `harness.py` renders
+  the C host harness (`testing/templates/harness.c.j2`, into
+  `build/test/`), which loads the plugin with `init_extraction()` next to
+  the SDK's `libmmt_tcpip.so` (its own `MMT_DPI_PLUGINS_DIR`, never the
+  host's), attaches it to Ethernet (EtherType 0x88b5, no parent hook
+  needed) and prints the classification, the next protocol and each
+  attribute; `packets.py` reads the fixtures (`yamlsubset.py`: the
+  corpus's YAML subset, no YAML dependency) and compares. A mismatch is
+  `test.packet-failed`, a crash `test.crash` (exit 6), each failure with
+  its attribute, expected and actual value. `--sanitize` builds
+  `build/sanitize/` with ASan/UBSan and runs truncated and random packets
+  (`fuzz.py`, `--seed`, `--fuzz-count`); `--bench` compares packets per
+  second with an empty plugin (`templates/baseline.c.j2`) and never changes
+  the exit code. Tests in `tests/unit/packettest/`: `test_testing.py` and
+  `test_command.py` (fake SDK, compiler and harness run), and `test_sdk.py`
+  (every corpus model under the sanitizers, a broken model, against a real
+  SDK; needs `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -140,7 +161,8 @@ protocol model. A Python rewrite is planned in
   the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
-  (`build` on every corpus model) and `test_sdk_registry.py` (the run-time
+  (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
+  (`test` on every corpus model) and `test_sdk_registry.py` (the run-time
   registry and `validate` against that SDK).
 
 ## Commands
@@ -277,6 +299,21 @@ Build and load every corpus model against those headers (skips without
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/build/test_sdk.py
+```
+
+Test a plugin on packet tests (builds it first when stale; `--sanitize`
+adds ASan/UBSan and random packets, `--bench` packets per second). It exits
+6 when a packet fails, with the attribute, expected and actual value:
+
+```
+uv run mmt-plugin -C <project> test --model <project>/model.pdl --sdk <dir>/opt/mmt --cc gcc tests/corpus/models/pdl_scopes/packets
+```
+
+Run every corpus model's packet tests under the sanitizers against those
+headers (skips without `MMT_GOLDEN_SDK`):
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/packettest/test_sdk.py
 ```
 
 ## Rules

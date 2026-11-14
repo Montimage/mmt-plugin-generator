@@ -26,7 +26,13 @@ from mmt_plugin.sdk.profile import Profile
 if TYPE_CHECKING:
     from mmt_plugin.codegen import Generation
 
-__all__ = ["SCAFFOLD_TEMPLATE", "ScaffoldFile", "impl_name", "scaffold_context"]
+__all__ = [
+    "SCAFFOLD_TEMPLATE",
+    "ScaffoldFile",
+    "classification_names",
+    "impl_name",
+    "scaffold_context",
+]
 
 #: The scaffold's template (``mmt_plugin.codegen.ENVIRONMENT``).
 SCAFFOLD_TEMPLATE = "impl.c.j2"
@@ -83,7 +89,7 @@ def _value(hook: Hook, profile: Profile) -> str | None:
     raise ValueError(f"{hook.name}: no stub value for the return type {hook.returns}")
 
 
-def _sdk(profile: Profile) -> tuple[dict[str, str], tuple[str, ...]]:
+def classification_names(profile: Profile) -> tuple[dict[str, str], tuple[str, ...]]:
     """The SDK names of the register_parents example, from the profile, and
     the headers that declare them (in the profile's order)."""
     if profile.parents.id_of(_EXAMPLE_PARENT) is None:
@@ -134,7 +140,7 @@ def _sdk(profile: Profile) -> tuple[dict[str, str], tuple[str, ...]]:
 def scaffold_context(generation: Generation, profile: Profile) -> dict[str, object]:
     """What ``templates/impl.c.j2`` prints for ``generation``."""
     label = generation.label
-    names, includes = _sdk(profile)
+    names, includes = classification_names(profile)
     stubs = tuple(
         _Stub(
             declaration=h.declaration,

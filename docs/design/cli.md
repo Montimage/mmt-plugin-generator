@@ -450,7 +450,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | Atomic writes, created/updated/unchanged by sha256 (section 8) | `mmt_plugin.fsio` | #43 |
 | Per-stream decisions, plain records, compiler-style diagnostics (section 10) | `mmt_plugin.ui.streams`, `mmt_plugin.ui.render` | #43 |
 | A command's `result` schema | `mmt_plugin/schemas/cli/v1/<command>.json` | the command's own issue (for example `validate.json` in #17, `generate.json` in #14) |
-| btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style` | #22 |
+| btop style, the registry of `result` schemas and the cross-command contract tests, `completion` | `mmt_plugin.ui.style`; the schema registry `mmt_plugin/schemas/cli/v1/` (read by `mmt_plugin.schemas`); the contract tests `tests/unit/test_contract.py`; `mmt_plugin.commands.completion` | #22 |
 | `plugin.lock`, `generate --check` | `mmt_plugin.commands.generate`, `mmt_plugin.lock` | #14 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
@@ -463,3 +463,15 @@ Details fixed by #43 where section 6 or 7 leaves a choice:
 - Diagnostics without a location sort first.
 - A closed stdout keeps the run's exit code (0 for `mmt-plugin --version | head -c0`).
 - The schema is closed (`additionalProperties: false`) except `context` and `result`; a new key is added to the schema in the same change.
+
+Details fixed by #22 where sections 4, 5, 6 or 10 leave a choice:
+
+- Human output (`Outcome`): `records` print when stdout is plain, and by a command with no `view`; `view(style)` renders the styled output with `mmt_plugin.ui.style` and is called only when stdout is styled; `text` prints as is in every mode (the completion script). A view that raises is `internal.unexpected` (exit 1). A new command adds only its view: the CLI makes the stream decisions and picks the mode. A view combines pieces with `style.join` (styled parts kept, text escaped), never `+` or an f-string.
+- The stream decision also carries `width` (`COLUMNS` when a positive number, else the terminal's width, else 80) and `tty`. Boxes take the full width, at least 8 cells.
+- User text is escaped with `ui.render.escape` in styled output too, backslashes included (`\\`), so a value reads the same in both modes.
+- Statuses: `pass`/ok `●` (low), `warn` `▲` (mid), `fail` `✗` (high), and `skip` `○` in the dim role (ASCII `+ ! x -`). Footer items are joined by ` · ` (ASCII `, `). The meter prints its value right after the cells, three digits wide (`■■■■■····· 50%`, `■■■■■■■■■■100%`). A sparkline prints `min N  max N  last N`.
+- Styled stderr: `<location or mmt-plugin>: ✗ error: <message> [<code>]` (the symbol and word high and bold, the code dim), `▲ warning:` (mid), `note:` (dim), and a dim `hint:` line. A plain stderr keeps the compiler-style lines byte for byte. A usage error is styled from `--no-color`, `NO_COLOR` and the stream, decided before parsing.
+- Progress is `Context.progress(label, total=None)`: drawn after 2 s, only on a styled TTY stderr, never with `--json` or `-q`, and erased with spaces (no escape code) before the result.
+- Exit codes: each command declares `exit_codes`, the codes it returns besides 0, 1, 2 and 130; its `--help` ends with an `exit codes:` list of exactly those, in the root `--help` format.
+- `result` schemas are closed (`additionalProperties: false`), like the envelope. A command's is `schemas/cli/v1/<command>.json`; `--version --json` has `version.json`, so no command may be named `version` or `envelope`.
+- `completion SHELL`: static scripts. Loading one only defines its functions and registers them (zsh: as an autoloaded `_mmt-plugin` from `fpath`, or `compdef` when sourced after `compinit`), and completing never runs `mmt-plugin`. Values complete from the parser: `choices`; directories for a `DIR`/`PREFIX` metavar and `--project`; files for `FILE`, `PATH`, `MODEL`, `PDL`, `PCAP`, `PACKETS`, `OUTPUT`; nothing otherwise. Options with `help=SUPPRESS` are left out. bash and zsh also complete a long option's value after `=` (`--project=DIR`). Command names, flags and choices are limited to letters, digits, `_`, `.`, `+` and `-` (the shells expand completion words, so a metacharacter could run code when completed); `completion` fails with `internal.unexpected` on any other. With `--json`: `result.shell` and `result.script`.

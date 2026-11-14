@@ -35,8 +35,14 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) but no command yet: each command registers itself
-  in `src/mmt_plugin/commands/` with its own issue.
+  envelope and its schema) and one command, `completion {bash,zsh,fish}`
+  (T2.6); each other command registers itself in `src/mmt_plugin/commands/`
+  with its own issue, declaring its `exit_codes` and shipping its `result`
+  schema as `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
+  output goes through `src/mmt_plugin/ui/style.py`: a command returns a
+  `view` in its `Outcome`. `tests/unit/test_contract.py` checks every
+  registered command's `--json` envelope, `result` schema and `--help` exit
+  codes; `tests/unit/test_style.py` holds the cli-builder style tests.
 - `src/mmt_plugin/pdl/` (T1.2): the PDL v1 lexer and parser.
   `parse(text, filename=...)` returns a typed model (`pdl/model.py`) or
   raises `PdlSyntaxError` with `model.syntax.*` diagnostics. It checks syntax
@@ -51,8 +57,9 @@ protocol model. A Python rewrite is planned in
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
   (amd64 and arm64), `make test-container` on both arches, the Python
-  checks below (Python 3.10, 3.12 and 3.14), and the SDK profile header
-  check (amd64 and arm64).
+  checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
+  fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
+  instead of skipping), and the SDK profile header check (amd64 and arm64).
 
 ## Commands
 

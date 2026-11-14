@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin completion --json result, schema_version 1",
+  "description": "The result of completion with --json (docs/design/cli.md, section 6): the script that completion prints without --json.",
+  "type": "object",
+  "required": [
+    "shell",
+    "script"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "shell": {
+      "enum": [
+        "bash",
+        "zsh",
+        "fish"
+      ]
+    },
+    "script": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\n$",
+      "description": "The completion script, ending in a newline."
+    }
+  }
+}

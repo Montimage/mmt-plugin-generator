@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin --version --json result, schema_version 1",
+  "description": "The result of --version with --json (docs/design/cli.md, section 3).",
+  "type": "object",
+  "required": [
+    "version",
+    "python",
+    "sdk_profiles"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The mmt-plugin version, as in tool.version."
+    },
+    "python": {
+      "type": "string",
+      "pattern": "^3\\.[0-9]+\\.[0-9]+",
+      "description": "The Python version that runs mmt-plugin."
+    },
+    "sdk_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "The bundled SDK profiles, oldest first."
+    }
+  }
+}

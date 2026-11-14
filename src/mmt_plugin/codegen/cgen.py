@@ -362,6 +362,9 @@ class CAttribute:
     length_fn: str | None
     store_type: str | None
     width: str | None
+    # The largest per-packet length (``length_checked``): the bytes of
+    # ``store_type``.
+    length_max: int
     shift: int
     mask: str | None
     # Bytes, binary and raw values.
@@ -758,13 +761,30 @@ class _Builder:
 
     def check_integer(self, a: AnalysedAttribute) -> None:
         length = a.length_value
-        if a.data_type in INTEGER_TYPES and length is not None and not 1 <= length <= 8:
+        if a.data_type not in INTEGER_TYPES or length is None:
+            return
+        span = a.length.span if a.length is not None else a.span
+        if not 1 <= length <= 8:
             self.error(
                 "model.integer-length",
                 f"attribute {a.name} ({a.data_type.value}) has data_len {length},"
                 " but an integer is read from 1 to 8 bytes",
                 "give a data_len from 1 to 8, or use MMT_BINARY_DATA for a byte string",
-                a.length.span if a.length is not None else a.span,
+                span,
+            )
+            return
+        stored = _INTEGER_STORAGE[a.data_type][1]
+        # A bitfield reads its storage unit and masks its bits, which the
+        # semantics keep within the type; a user hook stores the value
+        # itself, and its data_len only places what follows.
+        if a.bitfield is None and not a.is_hook and length > stored:
+            self.error(
+                "model.integer-length",
+                f"attribute {a.name} ({a.data_type.value}) has data_len {length}, but its"
+                f" value is stored in {_plural(stored, 'byte')}: the high bytes would be lost",
+                f"give a data_len of at most {stored}, or a wider integer type (MMT_U64_DATA"
+                " holds 8 bytes)",
+                span,
             )
 
     def describe(self, a: AnalysedAttribute) -> str:
@@ -810,6 +830,7 @@ class _Builder:
                 mask = "UINT64_MAX" if bf.bit_width == 64 else f"UINT64_C(0x{bf.mask:x})"
             elif integer and a.length_value is not None:
                 width = str(a.length_value)
+            length_max = _INTEGER_STORAGE[a.data_type][1] if integer else 0
             binary_len = binary_len_type = binary_data = None
             if binary_type is not None:
                 binary_len, binary_len_type = sdk.field(binary_type, "len")
@@ -847,6 +868,7 @@ class _Builder:
                     ),
                     store_type=_INTEGER_STORAGE[a.data_type][0] if integer else None,
                     width=width,
+                    length_max=length_max,
                     shift=shift,
                     mask=mask,
                     capacity=capacity,

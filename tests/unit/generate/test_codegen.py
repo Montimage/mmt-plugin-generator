@@ -343,6 +343,32 @@ def test_an_integer_wider_than_8_bytes_is_a_model_error() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("dtype", "stored"), [("MMT_U8_DATA", 1), ("MMT_U16_DATA", 2), ("MMT_U32_DATA", 4)]
+)
+def test_an_integer_wider_than_its_storage_is_a_model_error(dtype: str, stored: int) -> None:
+    # Review of #14: the value is stored in `stored` bytes, so a wider
+    # data_len would silently lose its high bytes.
+    _, source = files(model(attr("x", "0", dtype=dtype, length=str(stored))))
+    assert f".data_type = {dtype}, .data_len = {stored}," in source
+    assert _generation_error(model(attr("x", "0", dtype=dtype, length=str(stored + 1)))) == [
+        "model.integer-length"
+    ]
+
+
+def test_a_narrower_integer_and_a_hook_keep_their_data_len() -> None:
+    _, source = files(model(attr("x", "0", dtype="MMT_U32_DATA", length="3")))
+    assert "*value = t_read(p, 3);" in function(source, "t_get_x")
+    # A user hook stores the value itself: its data_len only places what follows.
+    files(model(attr("h", None, length="3")))
+
+
+def test_a_per_packet_integer_length_is_bounded_by_its_storage() -> None:
+    body = attr("k", "0") + "\n" + attr("x", "1", dtype="MMT_U16_DATA", length="val(k)")
+    _, source = files(model(body))
+    assert "if (length < 1 || length > 2) {" in function(source, "t_get_x")
+
+
 def test_a_fixed_size_sdk_type_needs_a_constant_length() -> None:
     body = attr("k", "0") + "\n" + attr("tv", "1", dtype="MMT_DATA_TIMEVAL", length="val(k)")
     assert _generation_error(model(body)) == ["model.variable-length"]

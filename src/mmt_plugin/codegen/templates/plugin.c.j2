@@ -190,7 +190,7 @@ static uint64_t {{ read }}(const uint8_t *p, unsigned width)
 
 {{ place_or_fail(a) }}
 {% if a.length_checked %}
-    if (length < 1 || length > 8) {
+    if (length < 1 || length > {{ a.length_max }}) {
         return 0;
     }
 {% endif %}

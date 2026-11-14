@@ -127,4 +127,4 @@ expect:
       length: 5
       value: "f4 f5 f6 f7 f8"
       source: "corpus rule (README.md, Semantics): byte-copy: the data_len bytes at the offset"
-note: "t_float holds IEEE 754 binary32 1.5 in network order, t_timeval 100000000 s and 100 us; the corpus only checks their bytes."
+note: "t_float holds IEEE 754 binary32 1.5 in network order, t_timeval 1600000000 s and 100 us; the corpus only checks their bytes."

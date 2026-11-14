@@ -270,7 +270,7 @@ def test_bash_loads_without_running_the_tool_and_completes(
     lines = proc.stdout.splitlines()
     assert lines[0] == "complete -F _mmt_plugin mmt-plugin"
     got = dict(line.split("|", 1) for line in lines[1:])
-    assert got["mmt-plugin "] == "generate completion dummy tricky "
+    assert got["mmt-plugin "] == "validate generate completion dummy tricky "
     assert got["mmt-plugin --js"] == "--json "
     assert got["mmt-plugin completion "] == "bash zsh fish "
     assert got["mmt-plugin --json completion z"] == "zsh "
@@ -391,7 +391,7 @@ def test_zsh_completes_commands_options_and_values(
     setup = tmp_path / "setup.zsh"
     setup.write_text(_ZSH_SETUP)
     expected = {
-        "mmt-plugin ": "completion dummy generate tricky",
+        "mmt-plugin ": "completion dummy generate tricky validate",
         "mmt-plugin --js": "--json",
         "mmt-plugin completion ": "bash fish zsh",
         "mmt-plugin tricky --le": "--level",

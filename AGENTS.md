@@ -53,6 +53,10 @@ protocol model. A Python rewrite is planned in
 - `src/mmt_plugin/sdk/`: the SDK profiles (T1.4), one JSON file per mmt-dpi
   version in `sdk/profiles/` (only 1.10.2 so far; schema in
   `schemas/sdk/v1/profile.json`), SDK prefix detection and profile choice.
+  Each `data_type` constant records its `size`, what mmt-dpi's
+  `get_data_size_by_data_type()` returns: an attribute registers only with a
+  `data_len` up to it, or 0 for a size of 0, so `generate` rejects a type of
+  size 0 and a longer constant `data_len` (`model.type-size`).
   Plain functions for the commands to call; no command of its own.
 - `src/mmt_plugin/semantics/` (T1.3): the semantic passes.
   `analyse(model, profile=...)` returns the analysed model
@@ -68,7 +72,7 @@ protocol model. A Python rewrite is planned in
   SDK name comes from the profile. `mmt-plugin generate`
   (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
   `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
-  golden C for every corpus model the semantics accept in
+  golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
@@ -168,8 +172,11 @@ bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
 ```
 
 Compile every golden generated pair (and a stub `src/<label>_impl.c`) against
-those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`; without
-`MMT_GOLDEN_SDK` the test skips:
+those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`, then link
+each with the prefix's `libmmt_core` and check that its
+`init_<label>_proto_struct()` returns 1 (every attribute registers), and that
+the profile's data type sizes are what `get_data_size_by_data_type()`
+returns; without `MMT_GOLDEN_SDK` the test skips:
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/generate/test_compile.py

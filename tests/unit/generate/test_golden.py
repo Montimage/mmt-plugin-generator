@@ -23,7 +23,9 @@ from .helpers import GOLDEN, UPDATE_ENV, corpus_models, run_model
 #: The error codes of the corpus models that are not generated. Most real
 #: models take an id or a name that mmt-dpi 1.10.2 already has (T1.6
 #: generates them with ``allow_sdk_conflicts``); ethernet and mongodb are
-#: model bugs that the Java tool recovered from silently (T5.1).
+#: model bugs that the Java tool recovered from silently (T5.1); pdl_types
+#: uses every PDL type, and mmt-dpi 1.10.2 gives 13 of them no size, so no
+#: attribute of those types registers with a buffer to extract into.
 REJECTED = {
     "abb": {"model.id-taken"},
     "arp": {"model.duplicate-name", "model.id-taken", "model.name-taken"},
@@ -35,6 +37,7 @@ REJECTED = {
     "ip": {"model.id-taken", "model.name-taken"},
     "mongodb": {"model.syntax.invalid-expression"},
     "quic": {"model.id-taken", "model.name-taken"},
+    "pdl_types": {"model.type-size"},
     "radius": {"model.id-taken", "model.name-taken"},
     "s7com": {"model.id-taken", "model.name-taken"},
     "tcp": {"model.id-taken", "model.name-taken"},
@@ -47,7 +50,7 @@ ACCEPTED = [m for m in corpus_models() if m not in REJECTED]
 
 def test_the_corpus_splits_into_generated_and_rejected_models() -> None:
     assert set(REJECTED) <= set(corpus_models())
-    assert len(ACCEPTED) == 16
+    assert len(ACCEPTED) == 15
     for name in corpus_models():
         assert (run_model(name).generation is not None) == (name in ACCEPTED), name
 

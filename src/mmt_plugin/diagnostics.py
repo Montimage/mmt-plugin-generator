@@ -124,6 +124,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.integer-length": "an integer attribute's constant data_len is not 1 to 8 bytes",
         "model.variable-length": "an attribute of an SDK type with no variable-length form has "
         "a data_len known only per packet",
+        "model.type-size": "an attribute's type has no size in the SDK (mmt-dpi registers it "
+        "only with data_len 0), or its constant data_len is above the type's SDK size",
         "model.default-byte-order": "warning: the model has no byte order (no encoding, ASCII "
         "or UNICODE); multi-byte integers are read in network byte order",
         "model.classifynext-without-encapsulation": "warning: a classifynext block with "

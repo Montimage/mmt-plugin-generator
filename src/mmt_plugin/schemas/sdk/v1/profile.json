@@ -105,11 +105,15 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "header", "group", "doc"],
+        "if": {"properties": {"group": {"const": "data_type"}}},
+        "then": {"required": ["size"]},
+        "else": {"not": {"required": ["size"]}},
         "properties": {
           "name": {"$ref": "#/$defs/ident"},
           "header": {"$ref": "#/$defs/header"},
           "group": {"$ref": "#/$defs/ident"},
           "value": {"type": "integer", "description": "The constant's value, when generated or checked code needs it as a number (the header check asserts it); absent otherwise."},
+          "size": {"type": "integer", "minimum": 0, "description": "A data_type constant only, and required there: what the SDK's get_data_size_by_data_type() returns for the type, the most bytes register_attribute_with_protocol() accepts as its data_len (0: the type has no size, and only data_len 0 registers)."},
           "doc": {"$ref": "#/$defs/text"}
         }
       }

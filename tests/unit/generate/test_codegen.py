@@ -25,6 +25,7 @@ from mmt_plugin.codegen import (
 )
 from mmt_plugin.diagnostics import CODES
 from mmt_plugin.pdl import parse
+from mmt_plugin.pdl.model import DataType
 from mmt_plugin.semantics import analyse
 
 from .helpers import REPO, corpus_models, generate_text, profile, run_model
@@ -347,6 +348,89 @@ def test_a_fixed_size_sdk_type_needs_a_constant_length() -> None:
     assert _generation_error(model(body)) == ["model.variable-length"]
 
 
+#: A data_len for one attribute of each PDL type, as corpus model pdl_types gives it.
+_TYPE_LENGTHS = {
+    "MMT_U8_DATA": 1,
+    "MMT_U16_DATA": 2,
+    "MMT_U32_DATA": 4,
+    "MMT_U64_DATA": 8,
+    "MMT_DATA_POINTER": 4,
+    "MMT_STRING_DATA": 4,
+    "MMT_DATA_IP_NET": 4,
+    "MMT_DATA_MAC_ADDR": 6,
+    "MMT_DATA_IP_ADDR": 4,
+    "MMT_DATA_PATH": 8,
+    "MMT_DATA_TIMEVAL": 8,
+    "MMT_BINARY_DATA": 6,
+    "MMT_DATA_BUFFER": 4,
+    "MMT_DATA_CHAR": 1,
+    "MMT_DATA_IP6_ADDR": 16,
+    "MMT_DATA_PORT": 2,
+    "MMT_DATA_POINT": 4,
+    "MMT_DATA_PORT_RANGE": 4,
+    "MMT_DATA_DATE": 4,
+    "MMT_DATA_TIMEARG": 4,
+    "MMT_DATA_STRING_INDEX": 4,
+    "MMT_DATA_FLOAT": 4,
+    "MMT_DATA_LAYERID": 1,
+    "MMT_DATA_FILTER_STATE": 2,
+    "MMT_DATA_PARENT": 2,
+    "MMT_BINARY_VAR_DATA": 5,
+}
+
+#: The value of each non-literal data_len the generator emits, on LP64 with
+#: the mmt-dpi 1.10.2 headers (test_compile.py checks the sizes it registers).
+_DATA_LEN_VALUES = {
+    "sizeof(mac_addr_t)": 6,
+    "IPv6_ALEN": 16,
+    "BINARY_64DATA_TYPE_LEN": 68,
+    "sizeof(mmt_binary_var_data_t)": 1028,
+    "sizeof(void *)": 8,
+}
+
+
+def test_every_pdl_type_has_an_sdk_size_in_the_profile() -> None:
+    sized = {c.name for c in profile().constants if c.size is not None}
+    assert sized == set(_TYPE_LENGTHS) == {t.value for t in DataType}
+
+
+@pytest.mark.parametrize("dtype", sorted(_TYPE_LENGTHS))
+def test_the_registered_data_len_fits_the_sdk_size_of_its_type(dtype: str) -> None:
+    # Review of #14: mmt-dpi 1.10.2 registers an attribute only if its
+    # data_len is at most get_data_size_by_data_type() of its type, or 0 when
+    # that is 0, and sizes the attribute's buffer from both; a type of size 0
+    # has no buffer to extract into, so it is a model error.
+    size = profile().data_size(dtype)
+    text = model(attr("x", "0", dtype=dtype, length=str(_TYPE_LENGTHS[dtype])))
+    if size == 0:
+        assert _generation_error(text) == ["model.type-size"]
+        return
+    _, source = files(text)
+    match = re.search(r"\.data_type = (\w+), \.data_len = ([^,]+),", source)
+    assert match is not None and match.group(1) == dtype
+    data_len = match.group(2)
+    value = _DATA_LEN_VALUES[data_len] if data_len in _DATA_LEN_VALUES else int(data_len)
+    assert 0 < value <= size, f"{dtype}: data_len {data_len} is not 1 to {size}"
+
+
+def test_a_type_without_an_sdk_size_names_a_sized_alternative() -> None:
+    with pytest.raises(GenerationError) as exc:
+        generate_text(model(attr("p", "0", dtype="MMT_DATA_PORT", length="2")))
+    (diagnostic,) = exc.value.diagnostics
+    assert diagnostic.code == "model.type-size"
+    assert diagnostic.hint == "use MMT_U16_DATA instead"
+    assert diagnostic.location is not None
+
+
+@pytest.mark.parametrize(("dtype", "size"), [("MMT_DATA_FLOAT", 4), ("MMT_DATA_TIMEVAL", 16)])
+def test_a_constant_length_above_the_sdk_size_is_a_model_error(dtype: str, size: int) -> None:
+    _, source = files(model(attr("x", "0", dtype=dtype, length=str(size))))
+    assert f".data_type = {dtype}, .data_len = {size}," in source
+    assert _generation_error(model(attr("x", "0", dtype=dtype, length=str(size + 1)))) == [
+        "model.type-size"
+    ]
+
+
 @pytest.mark.parametrize(
     "use",
     [
@@ -443,7 +527,7 @@ def test_generation_is_byte_identical_on_a_rerun() -> None:
 _DIGEST_SCRIPT = """
 import hashlib, sys
 from pathlib import Path
-from mmt_plugin.codegen import generate
+from mmt_plugin.codegen import GenerationError, generate
 from mmt_plugin.pdl import parse
 from mmt_plugin.sdk import get_bundled
 from mmt_plugin.semantics import analyse
@@ -458,7 +542,11 @@ for d in sorted(Path(sys.argv[1]).iterdir()):
     analysed, _ = analyse(model, profile=profile)
     if analysed is None:
         continue
-    for f in generate(analysed, profile).files:
+    try:
+        generation = generate(analysed, profile)
+    except GenerationError:
+        continue
+    for f in generation.files:
         digest.update(f.name.encode() + b"\\0" + f.data)
 print(digest.hexdigest())
 """

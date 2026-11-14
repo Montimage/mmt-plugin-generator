@@ -58,6 +58,7 @@ DIAGNOSTIC_CODES = (
     "model.integer-length",
     "model.variable-length",
     "model.missing-length",
+    "model.type-size",
     "model.out-of-range",
     "model.default-byte-order",
     "model.classifynext-without-encapsulation",

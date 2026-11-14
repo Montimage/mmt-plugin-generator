@@ -121,6 +121,15 @@ _BYTE_TYPES = frozenset(
     }
 )
 
+#: What to use instead of a type that mmt-dpi gives no size (a ``size`` of 0
+#: in the SDK profile): the sized type of the same value; ``MMT_BINARY_DATA``
+#: for any other.
+_SIZED_ALTERNATIVE = {
+    DataType.MMT_DATA_CHAR: "MMT_U8_DATA",
+    DataType.MMT_DATA_PORT: "MMT_U16_DATA",
+    DataType.MMT_DATA_IP_NET: "MMT_DATA_IP_ADDR",
+}
+
 #: The types stored as a byte count and the bytes (``mmt_binary_data_t``).
 _BINARY_TYPES = frozenset(
     {DataType.MMT_BINARY_DATA, DataType.MMT_STRING_DATA, DataType.MMT_BINARY_VAR_DATA}
@@ -679,8 +688,25 @@ class _Builder:
 
     def storage(self, a: AnalysedAttribute, kind: str) -> tuple[str, str | None, str | None]:
         """The table's ``data_len``, and the capacity or the struct of the
-        stored value."""
+        stored value.
+
+        mmt-dpi registers an attribute only if its ``data_len`` is at most
+        its type's SDK size, or 0 when that size is 0, and sizes the
+        attribute's buffer from both. A type of size 0 would get a 0-byte
+        buffer, which no extraction can write: it is a model error, and so
+        is a constant length above the size."""
         dt, sdk = a.data_type, self.c
+        size = self.profile.data_size(dt.value)
+        if size == 0:
+            self.error(
+                "model.type-size",
+                f"attribute {a.name} ({dt.value}) has a type with no size in mmt-dpi"
+                f" {self.profile.version}: the SDK registers it only with data_len 0, and"
+                " gives it no buffer to extract into",
+                f"use {_SIZED_ALTERNATIVE.get(dt, 'MMT_BINARY_DATA')} instead",
+                a.span,
+            )
+            return "0", "0", None
         if dt in _INTEGER_STORAGE:
             return str(_INTEGER_STORAGE[dt][1]), None, None
         if dt is DataType.MMT_DATA_MAC_ADDR:
@@ -700,6 +726,16 @@ class _Builder:
             return "sizeof(void *)", None, None
         # Any other type: a copy of a constant number of bytes.
         length = a.length_value
+        if length is not None and length > size:
+            self.error(
+                "model.type-size",
+                f"attribute {a.name} ({dt.value}) has data_len {length}, but mmt-dpi"
+                f" {self.profile.version} registers this type with at most"
+                f" {_plural(size, 'byte')}",
+                f"give a data_len of at most {size}, or use MMT_BINARY_DATA",
+                a.length.span if a.length is not None else a.span,
+            )
+            return "0", "0", None
         if length is not None:
             return str(length), str(length), None
         if a.length is None:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from mmt_plugin.codegen import Generation, Hook, generate
+from mmt_plugin.codegen import Generation, GenerationError, Hook, generate
 from mmt_plugin.diagnostics import Diagnostic
 from mmt_plugin.pdl import PdlSyntaxError, parse
 from mmt_plugin.sdk import Profile, get_bundled
@@ -53,7 +53,7 @@ def source_text(name: str) -> str:
 @cache
 def run_model(name: str) -> Outcome:
     """Parse, analyse (no SDK conflicts allowed, as ``generate`` does) and
-    generate one corpus model."""
+    generate one corpus model; a ``GenerationError`` adds its diagnostics."""
     filename = f"tests/corpus/models/{name}/model.pdl"
     try:
         model = parse(source_text(name), filename=filename)
@@ -62,7 +62,11 @@ def run_model(name: str) -> Outcome:
     analysed, diagnostics = analyse(model, profile=profile())
     if analysed is None:
         return Outcome(None, tuple(diagnostics))
-    return Outcome(generate(analysed, profile()), tuple(diagnostics))
+    try:
+        generation = generate(analysed, profile())
+    except GenerationError as exc:
+        return Outcome(None, (*diagnostics, *exc.diagnostics))
+    return Outcome(generation, tuple(diagnostics))
 
 
 def generate_text(text: str, *, filename: str = "t.pdl") -> Generation:

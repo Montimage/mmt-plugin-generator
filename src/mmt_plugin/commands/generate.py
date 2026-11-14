@@ -63,7 +63,7 @@ from mmt_plugin.semantics import analyse
 from mmt_plugin.ui import style
 from mmt_plugin.ui.streams import StreamStyle
 
-__all__ = ["DIAGNOSTIC_CODES", "GenerateCommand"]
+__all__ = ["DIAGNOSTIC_CODES", "GenerateCommand", "make_generation"]
 
 #: The codes this command reports itself (besides the parser's, the
 #: semantic passes', generation's and the SDK's).
@@ -241,27 +241,6 @@ class GenerateCommand:
         ctx.log(f"SDK profile {choice.profile.version} ({choice.source.value})")
         return sdk, choice
 
-    def _generation(
-        self, name: str, data: bytes, choice: ProfileChoice
-    ) -> tuple[Generation | None, list[Diagnostic], CliError | None]:
-        try:
-            text = decode_model(ModelInput(name, "pdl", data))
-        except CliError as error:
-            return None, [], error
-        try:
-            model = parse(text, filename=name)
-        except PdlSyntaxError as exc:
-            return None, list(exc.diagnostics), _model_error(name, exc.diagnostics)
-        analysed, diagnostics = analyse(model, profile=choice.profile, allow_sdk_conflicts=False)
-        if analysed is None:
-            return None, diagnostics, _model_error(name, diagnostics)
-        try:
-            generation = generate(analysed, choice.profile)
-        except GenerationError as exc:
-            diagnostics += exc.diagnostics
-            return None, diagnostics, _model_error(name, exc.diagnostics)
-        return generation, [*diagnostics, *generation.diagnostics], None
-
     def _paths(self, args: argparse.Namespace, ctx: Context) -> _Paths:
         project = absolute(ctx.project)
         output = absolute(args.output) if args.output is not None else project / DEFAULT_OUTPUT
@@ -395,7 +374,7 @@ class GenerateCommand:
         sdk, choice = self._profile(args, ctx)
         context = {"sdk": sdk_context(sdk, choice)}
         diagnostics: list[Diagnostic] = list(choice.diagnostics)
-        generation, found, error = self._generation(name, data, choice)
+        generation, found, error = make_generation(name, data, choice)
         diagnostics += found
         if error is not None or generation is None:
             return Outcome(diagnostics=diagnostics, error=error, context=context)
@@ -493,6 +472,33 @@ class GenerateCommand:
             error=error,
             context=context,
         )
+
+
+def make_generation(
+    name: str, data: bytes, choice: ProfileChoice
+) -> tuple[Generation | None, list[Diagnostic], CliError | None]:
+    """Decode, parse, analyse (an SDK id or name conflict is an error) and
+    generate the PDL v1 model ``data`` (named ``name``) for ``choice``'s
+    profile, in memory: the generation (``None`` on an error), every
+    diagnostic, and the error that stops the run (exit 3), if any. ``build``
+    (#19) uses it too, for the label and the hooks."""
+    try:
+        text = decode_model(ModelInput(name, "pdl", data))
+    except CliError as error:
+        return None, [], error
+    try:
+        model = parse(text, filename=name)
+    except PdlSyntaxError as exc:
+        return None, list(exc.diagnostics), _model_error(name, exc.diagnostics)
+    analysed, diagnostics = analyse(model, profile=choice.profile, allow_sdk_conflicts=False)
+    if analysed is None:
+        return None, diagnostics, _model_error(name, diagnostics)
+    try:
+        generation = generate(analysed, choice.profile)
+    except GenerationError as exc:
+        diagnostics += exc.diagnostics
+        return None, diagnostics, _model_error(name, exc.diagnostics)
+    return generation, [*diagnostics, *generation.diagnostics], None
 
 
 def _model_error(name: str, diagnostics: Sequence[Diagnostic]) -> CliError:

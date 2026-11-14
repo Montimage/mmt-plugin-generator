@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin build --json result, schema_version 1",
+  "description": "The result of build (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the four, in order; a stage the run did not reach is skipped. commands are the compiler command lines run (or, with --dry-run, that would run), in order; empty when the build is up to date.",
+  "type": "object",
+  "required": ["model", "profile", "build_dir", "stages", "artifact", "cc", "cflags", "ldflags", "commands", "up_to_date", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path."},
+    "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the plugin is generated for."},
+    "build_dir": {"type": "string", "minLength": 1, "description": "The directory of mmtp_<label>.so."},
+    "stages": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"enum": ["generate", "compile", "hooks", "link"]},
+          "status": {
+            "enum": ["ran", "up-to-date", "would-run", "stale", "failed", "skipped"],
+            "description": "stale: generate with --no-deps, when the generated files are not up to date."
+          }
+        }
+      }
+    },
+    "artifact": {
+      "description": "The plugin, when it exists after the run (built, or up to date); null on a failure or a dry run that would build.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {"type": "string", "pattern": "(^|/)mmtp_[a-z0-9_]+\\.so$"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        }
+      ]
+    },
+    "cc": {
+      "type": "object",
+      "required": ["path", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "description": "The compiler's absolute path."},
+        "version": {"type": "string", "minLength": 1, "description": "The first line of its --version."}
+      }
+    },
+    "cflags": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "The compile flags, fixed in code (the profile's -std first)."},
+    "ldflags": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "The link flags, fixed in code."},
+    "commands": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "up_to_date": {"type": "boolean", "description": "The inputs hash to the last build's and the plugin is that build's: nothing ran."},
+    "dry_run": {"type": "boolean"}
+  }
+}

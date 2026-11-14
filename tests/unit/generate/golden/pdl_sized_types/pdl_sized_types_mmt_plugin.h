@@ -53,6 +53,14 @@ enum pdl_sized_types_attributes {
 #define PDL_SIZED_TYPES_T_FLOAT_ALIAS "t_float"
 #define PDL_SIZED_TYPES_T_BINARY_VAR_ALIAS "t_binary_var"
 
+/*
+ * Hooks: define each one in src/pdl_sized_types_impl.c. A hook that is missing fails
+ * the build of the plugin.
+ */
+
+/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+int pdl_sized_types_hook_register_parents(protocol_t *protocol_struct);
+
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 int init_pdl_sized_types_proto_struct(void);
 

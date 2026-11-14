@@ -1,14 +1,15 @@
 """Shared helpers of the generate tests: the corpus models, the generated
-set of one model, and the stub ``src/<label>_impl.c`` the compile check
-needs."""
+set of one model, and the ``src/<label>_impl.c`` the compile check needs
+(the scaffold)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from mmt_plugin.codegen import Generation, GenerationError, Hook, generate
+from mmt_plugin.codegen import Generation, GenerationError, generate, scaffold
 from mmt_plugin.diagnostics import Diagnostic
 from mmt_plugin.pdl import PdlSyntaxError, parse
 from mmt_plugin.sdk import Profile, get_bundled
@@ -81,30 +82,15 @@ def generate_text(text: str, *, filename: str = "t.pdl") -> Generation:
     return generate(analysed, profile())
 
 
-_RETURNS = {"int": "0", "bool": "false", "mmt_classify_verdict_t": "MMT_CLASSIFY_SKIP"}
-
-
-def stub(hook: Hook) -> str:
-    """A definition of ``hook`` that compiles with ``-Wall -Wextra -Werror``."""
-    lines = [hook.declaration, "{"]
-    lines += [f"    (void) {p.name};" for p in hook.params]
-    if hook.returns.endswith("*"):
-        lines.append("    return NULL;")
-    elif hook.returns != "void":
-        lines.append(f"    return {_RETURNS[hook.returns]};")
-    lines.append("}")
-    return "\n".join(lines)
-
-
 def impl_stub(generation: Generation) -> str:
-    """A stub ``src/<label>_impl.c`` defining every hook of the header."""
-    header = next(f.name for f in generation.files if f.name.endswith(".h"))
-    parts = [
-        f"/* Test stub: the hooks of {header}. */",
-        "#include <stdbool.h>",
-        "#include <stddef.h>",
-        "",
-        f'#include "{header}"',
-    ]
-    parts += ["", *(stub(h) + "\n" for h in generation.hooks)]
-    return "\n".join(parts).rstrip("\n") + "\n"
+    """The scaffold ``src/<label>_impl.c`` of ``generation``, which defines
+    every hook of the header."""
+    return scaffold(generation, profile(generation_profile(generation))).text
+
+
+def generation_profile(generation: Generation) -> str:
+    """The SDK profile version a generation was made with (its header says)."""
+    header = generation.file(generation.header).text
+    found = re.search(r"\(SDK profile ([0-9.]+)\)", header)
+    assert found is not None, generation.header
+    return found.group(1)

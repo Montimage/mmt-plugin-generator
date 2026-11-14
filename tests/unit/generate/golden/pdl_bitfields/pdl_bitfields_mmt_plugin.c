@@ -759,6 +759,11 @@ int init_pdl_bitfields_proto_struct(void)
         mmt_log_error("init_pdl_bitfields_proto_struct: cannot register protocol %d", PROTO_PDL_BITFIELDS);
         return 0;
     }
+    /* User code (src/pdl_bitfields_impl.c) attaches the protocol to its parents. */
+    if (!pdl_bitfields_hook_register_parents(protocol_struct)) {
+        mmt_log_error("init_pdl_bitfields_proto_struct: pdl_bitfields_hook_register_parents() failed");
+        return 0;
+    }
     return 1;
 }
 

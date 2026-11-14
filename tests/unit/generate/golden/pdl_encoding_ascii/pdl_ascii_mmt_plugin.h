@@ -29,6 +29,14 @@ enum pdl_ascii_attributes {
 #define PDL_ASCII_FIRST_ALIAS "first"
 #define PDL_ASCII_TEXT_ALIAS "text"
 
+/*
+ * Hooks: define each one in src/pdl_ascii_impl.c. A hook that is missing fails
+ * the build of the plugin.
+ */
+
+/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+int pdl_ascii_hook_register_parents(protocol_t *protocol_struct);
+
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 int init_pdl_ascii_proto_struct(void);
 

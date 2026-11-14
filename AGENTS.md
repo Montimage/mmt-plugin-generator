@@ -75,6 +75,15 @@ protocol model. A Python rewrite is planned in
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
+- User code (T2.2): the generated header declares every hook, including
+  `<label>_hook_register_parents`, which the generated init calls to attach
+  the protocol to its parents. `codegen.scaffold(generation, profile)`
+  (`codegen/templates/impl.c.j2`) renders `src/<label>_impl.c` in memory,
+  for `init` (#23) to write; nothing writes under `src/`.
+  `codegen/hooks.py` finds the hooks that compiled user objects do not
+  define (`build.missing-hook`, exit 5), for `build` (#19). Tests in
+  `tests/unit/generate/test_scaffold.py` and `test_compile.py` (which also
+  classifies a corpus packet through the scaffold's Ethernet example).
 - `tests/unit/generate/test_compile.py` (T1.7): the compile-and-load check.
   Every corpus model that `generate` accepts (the rejected ones produce no
   output) is generated with the profile of an extracted SDK's version, and
@@ -90,7 +99,8 @@ protocol model. A Python rewrite is planned in
   `tests/unit/generate/test_parity.py`, reduces the Java output in
   `legacy/reference-output/` and the new output of abb, cotp, s7com and tpkt
   to protocol, attributes, table rows, reads, structs and registrations, and
-  asserts they are equal apart from Java's `register_protocol_stack` (bug 22).
+  asserts they are equal apart from Java's `register_protocol_stack` (bug 22)
+  and the new init's call of `<label>_hook_register_parents` (T2.2).
   Add a row to the page when `generate` changes behaviour the Java tool had.
 - `src/mmt_plugin/commands/validate.py` (T2.1): `mmt-plugin validate` reports
   the checks `schema`, `semantics`, `sdk-profile`, `id-free`, `name-free`,
@@ -202,8 +212,8 @@ unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
 ```
 
-Compile every generated pair (and a stub `src/<label>_impl.c`) against
-those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`, then link
+Compile every generated pair (and its scaffold `src/<label>_impl.c`)
+against those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`, then link
 each with the prefix's `libmmt_core` and check that its
 `init_<label>_proto_struct()` returns 1 (every attribute registers); build
 each into a plugin (`-O2 -fPIC -shared -Wall -Wextra -Werror -Wl,-z,defs`)

@@ -17,6 +17,7 @@ import pytest
 from mmt_plugin.codegen import (
     DIAGNOSTIC_CODES,
     ENVIRONMENT,
+    SCAFFOLD_TEMPLATE,
     TEMPLATES,
     GenerationError,
     c_int,
@@ -653,7 +654,7 @@ def test_no_sdk_name_is_written_in_the_templates() -> None:
         *(m.name for m in p.macros),
         *(h.name for h in p.headers),
     }
-    for template in TEMPLATES.values():
+    for template in (*TEMPLATES.values(), SCAFFOLD_TEMPLATE):
         text = (
             resources.files("mmt_plugin.codegen")
             .joinpath("templates")
@@ -682,5 +683,6 @@ def test_hooks_are_reported_for_the_impl_scaffold() -> None:
         ("pdl_scopes_hook_sessionizer", "sessionizer", None),
         ("pdl_scopes_hook_session_cleanup", "session_context_cleanup", None),
         ("pdl_scopes_hook_session_compare", "session_key_comparison", None),
+        ("pdl_scopes_hook_register_parents", "register_parents", None),
     ]
     json.dumps([h.declaration for h in generation.hooks])

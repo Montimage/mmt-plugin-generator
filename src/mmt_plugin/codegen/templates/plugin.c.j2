@@ -421,6 +421,11 @@ static {{ sdk.metadata_t }} {{ metadata }}[{{ nb }}] = {
         {{ sdk.log_error }}("{{ init }}: cannot register protocol %d", {{ proto_macro }});
         return 0;
     }
+    /* User code (src/{{ lc }}_impl.c) attaches the protocol to its parents. */
+    if (!{{ register_parents }}(protocol_struct)) {
+        {{ sdk.log_error }}("{{ init }}: {{ register_parents }}() failed");
+        return 0;
+    }
     return 1;
 }
 

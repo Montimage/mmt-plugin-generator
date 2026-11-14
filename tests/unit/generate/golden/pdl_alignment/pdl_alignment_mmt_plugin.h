@@ -72,6 +72,14 @@ struct pdl_align_t {
     uint8_t t0; /* 0: MMT_U8_DATA */
 };
 
+/*
+ * Hooks: define each one in src/pdl_alignment_impl.c. A hook that is missing fails
+ * the build of the plugin.
+ */
+
+/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+int pdl_alignment_hook_register_parents(protocol_t *protocol_struct);
+
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 int init_pdl_alignment_proto_struct(void);
 

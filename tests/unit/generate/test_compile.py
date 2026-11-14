@@ -5,9 +5,10 @@ Every corpus model that ``generate`` accepts (``ACCEPTED``; the others
 produce no output) is generated with the bundled profile of the SDK's own
 version, then, with the SDK's headers and ``libmmt_core``:
 
-- each generated source and a stub ``src/<label>_impl.c`` that defines the
-  header's hooks compile ``-fsyntax-only -std=gnu11 -Wall -Wextra -Werror``
-  (``c_std`` of the SDK profile);
+- each generated source and the scaffold ``src/<label>_impl.c``
+  (``mmt_plugin.codegen.scaffold``), which defines the header's hooks,
+  compile ``-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`` (``c_std`` of
+  the SDK profile);
 - the pair, linked into a program, registers every attribute
   (``init_<label>_proto_struct()`` returns 1;
   ``register_attribute_with_protocol()`` refuses a ``data_len`` the type's
@@ -19,6 +20,11 @@ version, then, with the SDK's headers and ``libmmt_core``:
 
 Another program checks the profile's data type sizes against
 ``get_data_size_by_data_type()``.
+
+Generated vs user code (T2.2): a hook that a model change adds is missing
+from the compiled scaffold (``mmt_plugin.codegen.hooks``) and fails the link,
+and the scaffold's commented Ethernet example, filled in, classifies a corpus
+packet into the plugin's protocol.
 
 The SDK is an extracted mmt-dpi package, a private prefix (never
 ``/opt/mmt``)::
@@ -36,20 +42,25 @@ fail instead. ``MMT_GOLDEN_CC`` picks the compiler (default gcc).
 
 from __future__ import annotations
 
+import importlib.util
+import itertools
 import locale
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from mmt_plugin.codegen import GeneratedFile, Generation
+from mmt_plugin.codegen import REGISTER_PARENTS, GeneratedFile, Generation, scaffold
+from mmt_plugin.codegen.hooks import missing_hook_error, missing_hooks
 from mmt_plugin.sdk.detect import read_version
 
-from .helpers import impl_stub, profile, run_model
+from .helpers import CORPUS, generate_text, impl_stub, profile, run_model
 from .test_golden import ACCEPTED
+from .test_scaffold import BASE, NEW_HOOK
 
 SDK_ENV = "MMT_GOLDEN_SDK"
 CC_ENV = "MMT_GOLDEN_CC"
@@ -245,8 +256,9 @@ def test_the_golden_pair_compiles_against_the_sdk_headers(name: str, tmp_path: P
 
 
 def test_a_missing_hook_definition_is_a_declared_symbol(tmp_path: Path) -> None:
-    # Plan decision 3: the header declares every hook, so a stub that lacks
-    # one still compiles here; the build (T2.2, T2.3) fails at link time.
+    # Plan decision 3: the header declares every hook, so user code that
+    # lacks one still compiles; mmt_plugin.codegen.hooks finds it in the
+    # objects, and the link fails (test_a_model_change_that_adds_a_hook_...).
     generation = run_model("pdl_scopes").generation
     assert generation is not None
     header = generation.file("pdl_scopes_mmt_plugin.h").text
@@ -257,8 +269,8 @@ def test_a_missing_hook_definition_is_a_declared_symbol(tmp_path: Path) -> None:
 # The load check (T1.7): each generated pair built as a plugin and loaded by
 # init_extraction(), as mmt-dpi loads an installed plugin.
 
-#: ``-Wl,-z,defs``: every symbol resolves at link time, so a hook the stub
-#: misses, or an SDK function the profile names wrongly, fails the build.
+#: ``-Wl,-z,defs``: every symbol resolves at link time, so a hook the user
+#: code misses, or an SDK function the profile names wrongly, fails the build.
 PLUGIN_FLAGS = ("-O2", "-fPIC", "-shared", "-Wall", "-Wextra", "-Werror", "-Wl,-z,defs")
 LOADER_FLAGS = ("-Wall", "-Wextra", "-Werror")
 
@@ -440,3 +452,229 @@ def test_the_load_check_fails_when_the_plugin_does_not_register(tmp_path: Path) 
     assert run.returncode != 0, run.stdout
     assert run.stdout.splitlines() == ["FAIL: init_extraction()"], run.stdout
     assert "init_proto() failed" in run.stderr, run.stderr
+
+
+# Generated vs user code (T2.2, #18): the scaffold builds, a hook it lacks is
+# found before the link, and its parent example classifies a corpus packet.
+
+
+def _objects(sources: list[Path], work: Path) -> list[Path]:
+    """Compile each source of ``work`` to an object, as a build does."""
+    include, cc = _include_dir(), _compiler()
+    objects = []
+    for source in sources:
+        obj = source.with_suffix(".o")
+        proc = subprocess.run(
+            [
+                cc,
+                f"-std={profile(_sdk_version()).c_std}",
+                *("-fPIC", "-Wall", "-Wextra", "-Werror", "-c"),
+                *("-I", str(work), "-I", str(include)),
+                *(str(source), "-o", str(obj)),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert proc.returncode == 0, f"{cc} {source.name}:\n{proc.stderr}"
+        objects.append(obj)
+    return objects
+
+
+def test_a_model_change_that_adds_a_hook_fails_the_build(tmp_path: Path) -> None:
+    # The scaffold of the old model stays in src/; the new model's header
+    # declares one more hook, which the check finds in the compiled user
+    # code before the link, and which -Wl,-z,defs refuses at the link.
+    old = generate_text(BASE % "")
+    work = tmp_path / "project"
+    (work / "src").mkdir(parents=True)
+    impl = work / scaffold(old, profile(_sdk_version())).path
+    impl.write_text(scaffold(old, profile(_sdk_version())).text)
+    new = generate_text(BASE % NEW_HOOK)
+    for f in new.files:
+        (work / f.name).write_text(f.text)
+    generated = [work / f.name for f in new.files if f.name.endswith(".c")]
+    user = _objects([impl], work)
+    _objects(generated, work)
+    missing = missing_hooks(new.hooks, user)
+    assert [h.name for h in missing] == ["regen_hook_extract_extra"]
+    error, diagnostics = missing_hook_error(missing, "src/regen_impl.c", new.header)
+    assert (error.code, int(error.exit_code)) == ("build.missing-hook", 5)
+    assert "regen_hook_extract_extra" in error.message
+    assert error.hint is not None and "src/regen_impl.c" in error.hint
+    assert [d.location.file for d in diagnostics if d.location] == ["src/regen_impl.c"]
+    # The old model's own hooks are all there.
+    assert missing_hooks(old.hooks, user) == ()
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    include, cc = _include_dir(), _compiler()
+    core, _ = _core_library(tmp_path)
+    proc = subprocess.run(
+        [
+            cc,
+            f"-std={profile(_sdk_version()).c_std}",
+            *PLUGIN_FLAGS,
+            *("-I", str(work), "-I", str(include)),
+            *map(str, [*generated, impl]),
+            *(str(core), "-o", str(plugins / "regen.so")),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert "regen_hook_extract_extra" in proc.stderr, proc.stderr
+
+
+#: The parents example of the scaffold: its parts follow these lines of
+#: its comment.
+_EXAMPLE_PARTS = (
+    "add these includes at the top of this file:",
+    "then this function, before this one:",
+    "and, in this function:",
+    "The parent must already be registered",
+)
+
+
+def _example(text: str, hook: str) -> tuple[str, str, str]:
+    """The commented example of ``hook`` in the scaffold ``text``,
+    uncommented: the includes, the classification function and the
+    registration."""
+    body = text.split(f"\n{hook}\n{{\n", 1)[1]
+    lines = [line.strip().removeprefix("*") for line in body.splitlines()]
+    starts = [next(n for n, line in enumerate(lines) if part in line) for part in _EXAMPLE_PARTS]
+    parts = [
+        "\n".join(line.removeprefix("    ") for line in lines[i + 1 : j]).strip() + "\n"
+        for i, j in itertools.pairwise(starts)
+    ]
+    return parts[0], parts[1], parts[2]
+
+
+def _corpus_packet(model: str, stem: str) -> dict[str, Any]:
+    spec = importlib.util.spec_from_file_location("corpus_validate", CORPUS.parent / "validate.py")
+    assert spec is not None and spec.loader is not None
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    packet: dict[str, Any] = validator.load_yaml(CORPUS / model / "packets" / f"{stem}.yaml")
+    return packet
+
+
+def _classify_source(header: GeneratedFile, frame: bytes, attribute: str) -> str:
+    """A program that loads ``$MMT_DPI_PLUGINS_DIR``, processes the Ethernet
+    ``frame`` and prints the protocol path and ``attribute`` (one byte)."""
+    macro, _ = _loader_checks(header)
+    label = macro.removeprefix("PROTO_")
+    data = ", ".join(f"0x{b:02x}" for b in frame)
+    return f"""#include <stdio.h>
+#include <string.h>
+#include "mmt_core.h"
+#include "{header.name}"
+
+static int on_packet(const ipacket_t *ipacket, mmt_opaque_t user)
+{{
+    const uint8_t *value;
+    int i;
+
+    (void)user;
+    printf("path:");
+    for (i = 0; i < ipacket->proto_hierarchy->len; i++) {{
+        printf(" %d", ipacket->proto_hierarchy->proto_path[i]);
+    }}
+    printf("\\n");
+    if (get_protocol_index_by_id(ipacket, {macro}) == MMT_NO_PROTO_INDEX) {{
+        puts("classified: no");
+        return 0;
+    }}
+    puts("classified: yes");
+    value = get_attribute_extracted_data(ipacket, {macro}, {label}_{attribute.upper()});
+    if (value != NULL) {{
+        printf("{attribute}: %u\\n", (unsigned)*value);
+    }}
+    return 0;
+}}
+
+int main(void)
+{{
+    static const unsigned char frame[] = {{{data}}};
+    char error[MMT_ERRBUF_SIZE];
+    struct pkthdr header;
+    mmt_handler_t *handler;
+
+    if (!init_extraction()) {{
+        puts("init_extraction failed");
+        return 1;
+    }}
+    handler = mmt_init_handler(DLT_EN10MB, 0, error);
+    if (handler == NULL) {{
+        printf("mmt_init_handler: %s\\n", error);
+        return 1;
+    }}
+    if (!register_extraction_attribute(handler, {macro}, {label}_{attribute.upper()})
+        || !register_packet_handler(handler, 1, on_packet, NULL)) {{
+        puts("registration failed");
+        return 1;
+    }}
+    memset(&header, 0, sizeof(header));
+    header.caplen = header.len = sizeof(frame);
+    if (!packet_process(handler, &header, frame)) {{
+        puts("packet_process failed");
+        return 1;
+    }}
+    mmt_close_handler(handler);
+    close_extraction();
+    return 0;
+}}
+"""
+
+
+def test_the_scaffold_parent_example_classifies_a_corpus_packet(tmp_path: Path) -> None:
+    # ndn/interest: an NDN Interest over Ethernet (EtherType 0x8624). The
+    # scaffold's example, with that EtherType, attaches the plugin to
+    # Ethernet; loaded after libmmt_tcpip.so, the frame is classified into
+    # the plugin's protocol and its packet_type is extracted.
+    packet = _corpus_packet("ndn", "interest")
+    assert packet["parent"]["path"] == ["ethernet"]
+    ethertype = int(packet["parent"]["selector"].removeprefix("ethertype "), 16)
+    payload = bytes.fromhex("".join(packet["bytes"]))
+    expected = next(a for a in packet["expect"]["attributes"] if a["name"] == "packet_type")
+    work = tmp_path / "ndn"
+    generation, sources = _write_model("ndn", work)
+    impl = sources[-1]
+    hook = next(h for h in generation.hooks if h.role == REGISTER_PARENTS)
+    text = impl.read_text()
+    includes, classify, register = _example(text, hook.declaration)
+    classify = classify.replace("0x88", f"0x{ethertype >> 8:02x}")
+    classify = classify.replace("0xb5", f"0x{ethertype & 0xFF:02x}")
+    assert "register_classification_function_with_parent_protocol(PROTO_ETHERNET" in register
+    stub = f"\n{hook.declaration}\n{{\n"
+    body = text.split(stub, 1)[1].split("\n}\n", 1)[0]
+    edited = text.replace(
+        stub + body + "\n}\n",
+        f"\n{classify}{stub}    (void)protocol_struct;\n{register}    return 1;\n}}\n",
+    )
+    assert includes.splitlines()[0] == "#include <string.h>"
+    edited = edited.replace("#include <stddef.h>\n", "#include <stddef.h>\n" + includes)
+    impl.write_text(edited)
+    plugins = _plugins_dir(tmp_path)
+    plugin = _build_plugin(generation, sources, plugins)
+    frame = bytes(6) + bytes([2, 0, 0, 0, 0, 1]) + ethertype.to_bytes(2, "big") + payload
+    source = work / "classify.c"
+    source.write_text(_classify_source(_header(generation), frame, "packet_type"))
+    run = _run(_build_program(source, tmp_path, flags=LOADER_FLAGS), tmp_path, plugins)
+    assert run.returncode == 0, f"{run.stdout}\n{run.stderr}"
+    ethernet = profile(_sdk_version()).parents.id_of("PROTO_ETHERNET")
+    proto = packet["expect"]["proto_id"]
+    lines = run.stdout.splitlines()
+    assert lines[0].split()[1:] == ["1", str(ethernet), str(proto)], run.stdout
+    assert lines[1:] == ["classified: yes", f"packet_type: {expected['value']}"], run.stdout
+    # With the scaffold as it comes (no parent), the plugin loads but the
+    # same frame stays Ethernet.
+    impl.write_text(text)
+    plugin.unlink()
+    _build_plugin(generation, sources, plugins)
+    run = _run(_build_program(source, tmp_path, flags=LOADER_FLAGS), tmp_path, plugins)
+    assert run.returncode == 0, f"{run.stdout}\n{run.stderr}"
+    lines = run.stdout.splitlines()
+    assert lines[0].split()[1:3] == ["1", str(ethernet)], run.stdout
+    assert str(proto) not in lines[0].split(), run.stdout
+    assert lines[1:] == ["classified: no"], run.stdout

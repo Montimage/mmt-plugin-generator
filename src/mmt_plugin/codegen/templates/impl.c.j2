@@ -1,0 +1,85 @@
+{#-
+  The user code scaffold, src/<label>_impl.c: mmt_plugin.codegen.scaffold
+  renders it once, for whoever creates the project; it is never regenerated.
+  Same policy as the plugin templates (mmt_plugin.codegen.ENVIRONMENT).
+  Every SDK name comes from the context (the profile), never from here.
+-#}
+/*
+ * src/{{ lc }}_impl.c: your code for the {{ label }} protocol plugin.
+ *
+ * Scaffolded by mmt-plugin from {{ header }}, which declares the hooks
+ * defined below. This file is yours: generate never writes under src/, so a
+ * model change that adds a hook fails the build of the plugin until you
+ * define the new hook here (its declaration is in {{ header }}).
+ */
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "{{ header }}"
+{% for h in hooks %}
+
+/* {{ h.doc }} */
+{{ h.declaration }}
+{
+{% for p in h.params %}
+    (void){{ p }};
+{% endfor %}
+{% if h.parents %}
+    /*
+     * Attach {{ proto_macro }} to its parents here. For example, to classify
+     * the Ethernet frames whose EtherType is 0x88b5 (IEEE 802 local
+     * experimental), add these includes at the top of this file:
+     *
+     *     #include <string.h>
+{% for include in example_includes %}
+     *     #include "{{ include }}"
+{% endfor %}
+     *
+     * then this function, before this one:
+     *
+     *     static {{ sdk.verdict_t }} classify_after_ethernet({{ sdk.ipacket_t }} *ipacket, unsigned previous_index)
+     *     {
+     *         unsigned offset = {{ sdk.offset_at }}(ipacket, previous_index);
+     *         {{ sdk.classified_proto_t }} next;
+     *
+     *         if (ipacket->{{ sdk.ipacket_header }}->{{ sdk.caplen }} < offset + 14
+     *             || ipacket->{{ sdk.ipacket_data }}[offset + 12] != 0x88
+     *             || ipacket->{{ sdk.ipacket_data }}[offset + 13] != 0xb5) {
+     *             return {{ sdk.skip }};
+     *         }
+     *         memset(&next, 0, sizeof(next));
+     *         next.{{ sdk.next_proto }} = {{ proto_macro }};
+     *         next.{{ sdk.next_offset }} = 14;
+     *         next.{{ sdk.next_status }} = {{ sdk.classified }};
+     *         if (!{{ sdk.set_classified_proto }}(ipacket, previous_index + 1, next)) {
+     *             return {{ sdk.skip }};
+     *         }
+     *         return {{ sdk.matched }};
+     *     }
+     *
+     * and, in this function:
+     *
+     *     if (!{{ sdk.with_parent }}({{ sdk.ethernet }}, classify_after_ethernet, 5)) {
+     *         return 0;
+     *     }
+     *
+     * The parent must already be registered: mmt-dpi loads the plugins of a
+     * directory in file name order, so the plugin's file must sort after its
+     * parent's library (mmtp_{{ lc }}.so after libmmt_tcpip.so). Otherwise
+     * the registration fails, and so does the load.
+     *
+     * The weight (5 above): a parent runs its classification functions in
+     * increasing weight, and mmt-dpi documents weights 0 to 9 and 90 to 100.
+     * With mmt-dpi {{ sdk_version }} and a weight of 50, the built-in Ethernet
+     * classifier ran first and the frame stayed "ethernet unknown"; 1 and 5
+     * worked.
+     *
+     * Returning 1 without registering a parent loads the plugin, but nothing
+     * ever classifies {{ proto_macro }}.
+     */
+{% endif %}
+{% if h.value is not none %}
+    return {{ h.value }};
+{% endif %}
+}
+{% endfor %}

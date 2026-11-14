@@ -35,8 +35,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and five commands, `validate` (T2.1),
-  `generate` (T1.5), `build` (T2.3), `test` (T2.4) and
+  envelope and its schema) and eight commands, `validate` (T2.1),
+  `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  `uninstall` and `doctor` (T2.5) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
   declaring its `exit_codes` and shipping its `result` schema as
@@ -151,6 +152,32 @@ protocol model. A Python rewrite is planned in
   `test_command.py` (fake SDK, compiler and harness run), and `test_sdk.py`
   (every corpus model under the sanitizers, a broken model, against a real
   SDK; needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/install.py` (T2.5): `mmt-plugin install [MODEL]`
+  runs `build` when stale (`--no-deps` exits 7 instead), then copies
+  `mmtp_<label>.so` into `<prefix>/plugins/` and writes the manifest
+  `<prefix>/plugins/.mmt-plugin/<label>.json` (`src/mmt_plugin/manifest.py`,
+  schema `schemas/install/v1/manifest.json`: tool version, label, protocol
+  id and name, each file's sha256). Prefix: `--prefix` > `--system`
+  (`/opt/mmt`) > `MMT_PLUGIN_PREFIX` > `${XDG_DATA_HOME:-~/.local/share}/mmt`;
+  never sudo, a prefix it cannot write is `sdk.prefix-not-writable` (exit 4).
+  The same file is a no-op; a file no manifest lists (`state.exists`) or one
+  changed since install (`state.installed-modified`) is exit 7 unless
+  `--force`; another installed plugin's id or name is exit 3.
+  `mmt-plugin uninstall [LABEL]` (default: the label of the header
+  `plugin.lock` lists) removes only the manifest's files whose sha256 still
+  matches. mmt-dpi 1.10.2 scans one plugin directory, `MMT_DPI_PLUGINS_DIR`
+  or the one compiled into `libmmt_core` (`/opt/mmt/plugins` in the package),
+  so a plugin under the default prefix loads through `MMT_DPI_PLUGINS_DIR`
+  (`docs/design/cli.md`, D11). `src/mmt_plugin/commands/doctor.py`:
+  `mmt-plugin doctor` reports the checks `python`, `compiler`, `sdk`,
+  `sdk-profile`, `plugin-dir` (what mmt-dpi scans,
+  `sdk/registry.py:scanned_plugin_dir`), `install-dir` (whether it is the
+  prefix's), `load-order`, `registry`, `project` and `clashes` (among the
+  installed manifests and the project's model); exit 4 when one fails.
+  Tests in `tests/unit/install/`: `test_command.py`, `test_doctor.py` and
+  `test_manifest.py` with build's fakes, every write in a temporary prefix
+  (`--system` is pointed at one), and `test_sdk.py`, the load test at the
+  default prefix against a real SDK (needs `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -162,8 +189,10 @@ protocol model. A Python rewrite is planned in
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
-  (`test` on every corpus model) and `test_sdk_registry.py` (the run-time
-  registry and `validate` against that SDK).
+  (`test` on every corpus model), `tests/unit/install/test_sdk.py`
+  (`install`, `doctor` and `uninstall` in a temporary prefix) and
+  `test_sdk_registry.py` (the run-time registry and `validate` against that
+  SDK).
 
 ## Commands
 
@@ -314,6 +343,23 @@ headers (skips without `MMT_GOLDEN_SDK`):
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/packettest/test_sdk.py
+```
+
+Install a plugin into a private prefix (never `--system` on a host whose
+`/opt/mmt` is real), check where mmt-dpi looks for it, and remove it:
+
+```
+uv run mmt-plugin -C <project> install <project>/model.pdl --sdk <dir>/opt/mmt --prefix <prefix> --dry-run
+uv run mmt-plugin -C <project> install <project>/model.pdl --sdk <dir>/opt/mmt --prefix <prefix>
+MMT_DPI_PLUGINS_DIR=<prefix>/plugins uv run mmt-plugin doctor --sdk <dir>/opt/mmt --prefix <prefix>
+uv run mmt-plugin -C <project> uninstall --prefix <prefix>
+```
+
+Load a plugin installed at the default prefix (a temporary `XDG_DATA_HOME`)
+against those headers (skips without `MMT_GOLDEN_SDK`):
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/install/test_sdk.py
 ```
 
 ## Rules

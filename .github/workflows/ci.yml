@@ -478,6 +478,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/packettest/test_sdk.py
+      - name: Install, load and uninstall a plugin in a temporary prefix
+        # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
+        # default user prefix (a temporary XDG_DATA_HOME; no sudo, never
+        # /opt/mmt), loaded by libmmt_core through MMT_DPI_PLUGINS_DIR,
+        # doctor reporting the directory as scanned, then uninstall.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/install/test_sdk.py
       - name: Read the run-time registry and validate against the SDK
         # tests/unit/test_sdk_registry.py: the protocols init_extraction()
         # registers with the SDK's plugins, one of them excluded, and

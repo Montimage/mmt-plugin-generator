@@ -119,8 +119,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "#24 lands",
         "model.name-collision": "two names of the generated C are the same identifier, or a "
         "model define would replace a name the generated C uses",
-        "model.hook-value": "val() of an attribute without an offset (a user hook), whose "
-        "value the generated code cannot read",
+        "model.hook-value": "val(), or len() computed per packet, of an attribute without an "
+        "offset (a user hook): the generated code cannot compute it",
         "model.integer-length": "an integer attribute's constant data_len is not 1 to 8 bytes",
         "model.variable-length": "an attribute of an SDK type with no variable-length form has "
         "a data_len known only per packet",

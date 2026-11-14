@@ -361,6 +361,36 @@ def test_val_of_a_hook_attribute_is_a_model_error(use: str) -> None:
     assert _generation_error(model(attr("h", None) + "\n" + use)) == ["model.hook-value"]
 
 
+VARIABLE_HOOK = attr("n", "0") + "\n" + attr("h", None, dtype="MMT_BINARY_DATA", length="val(n)")
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        attr("x", "len(h)"),
+        attr("x", "1", length="len(h)", dtype="MMT_BINARY_DATA"),
+        "    if (len(h) > 2) {\n" + attr("x", "1") + "\n    }",
+    ],
+)
+def test_len_of_a_hook_attribute_computed_per_packet_is_a_model_error(use: str) -> None:
+    # Review of #14: len(h) of a hook whose data_len does not fold.
+    assert _generation_error(model(VARIABLE_HOOK + "\n" + use)) == ["model.hook-value"]
+
+
+def test_len_of_a_hook_attribute_with_a_constant_length_folds() -> None:
+    _, source = files(model(attr("h", None, length="3") + "\n" + attr("x", "len(h)")))
+    assert "*offset = 3;" in function(source, "t_place_x")
+
+
+def test_len_of_a_hook_attribute_in_classifynext_is_a_model_error() -> None:
+    text = model(VARIABLE_HOOK, props='encapsulation = "true" encoding = "network"').replace(
+        "  }\n}\n",
+        "  }\n  classifynext { switch(val(n)) { case 1: nextencaps = 991 nextoffset = len(h)"
+        " break default: break } }\n}\n",
+    )
+    assert _generation_error(text) == ["model.hook-value"]
+
+
 def test_val_of_a_hook_attribute_in_classifynext_is_a_model_error() -> None:
     text = model(attr("h", None), props='encapsulation = "true" encoding = "network"').replace(
         "  }\n}\n",

@@ -465,7 +465,8 @@ class _Expressions:
         self.lc = lc
         self.model = model
         self.vals: set[str] = set()
-        self.val_spans: dict[str, Span] = {}
+        #: The first run-time reference to each attribute, by key, and its function.
+        self.refs: dict[str, tuple[str, Span]] = {}
         self.offsets: set[str] = set()
         self.lengths: set[str] = set()
         self.checked: set[str] = set()
@@ -500,7 +501,6 @@ class _Expressions:
                 reads = True
                 if isinstance(e, ValueRef):
                     self.vals.add(key)
-                    self.val_spans.setdefault(key, e.span)
                     what = "val"
                 elif isinstance(e, OffsetRef):
                     self.offsets.add(key)
@@ -508,6 +508,8 @@ class _Expressions:
                 else:
                     self.lengths.add(key)
                     what = "length"
+                pdl_function = {"val": "val", "offset": "offset", "length": "len"}[what]
+                self.refs.setdefault(key, (pdl_function, e.span))
                 return f"{self.lc}_{what}_{key}({packet}, {index}, &ok)"
             assert isinstance(e, Binary)  # Const, SizeOfType and Swap always fold
             left, right = walk(e.left), walk(e.right)
@@ -755,6 +757,7 @@ class _Builder:
         out: list[CAttribute] = []
         for a in model.attributes:
             key, kind = a.key, _kind(a)
+            has_place = kind != "hook"
             self.check_integer(a)
             data_len, capacity, binary_type = self.storage(a, kind)
             place = places[key]
@@ -800,8 +803,12 @@ class _Builder:
                     reads_packet=place.reads,
                     get=f"{lc}_get_{key}" if integer else None,
                     val=f"{lc}_val_{key}" if integer and key in self.exprs.vals else None,
-                    offset_fn=f"{lc}_offset_{key}" if key in self.exprs.offsets else None,
-                    length_fn=f"{lc}_length_{key}" if key in self.exprs.lengths else None,
+                    offset_fn=(
+                        f"{lc}_offset_{key}" if has_place and key in self.exprs.offsets else None
+                    ),
+                    length_fn=(
+                        f"{lc}_length_{key}" if has_place and key in self.exprs.lengths else None
+                    ),
                     store_type=_INTEGER_STORAGE[a.data_type][0] if integer else None,
                     width=width,
                     shift=shift,
@@ -1232,14 +1239,17 @@ class _Builder:
         )
         self.errors += self.exprs.errors
         for a in model.attributes:
-            span = self.exprs.val_spans.get(a.key)
-            if a.is_hook and span is not None:
-                # The value of a hook attribute exists only in user code.
+            ref = self.exprs.refs.get(a.key)
+            if a.is_hook and ref is not None:
+                # Only the user hook knows where a hook attribute is, and its
+                # value: the generated code cannot compute either per packet.
+                function, span = ref
                 self.error(
                     "model.hook-value",
-                    f"val({a.name}) reads an attribute without an offset, which only its user"
-                    " hook extracts: the generated code cannot read its value",
-                    f"give {a.name} an offset, or read the value in user code",
+                    f"{function}({a.name}) refers to an attribute without an offset, which only"
+                    " its user hook extracts: the generated code cannot compute it",
+                    f"give {a.name} an offset (and a constant data_len), or compute it in user"
+                    " code",
                     span,
                 )
         self.collisions(ctx)

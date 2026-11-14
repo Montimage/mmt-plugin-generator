@@ -114,7 +114,17 @@ DEFAULT_BUILD_DIR = "build"
 OBJECT_DIR = "obj"
 STAGES = ("generate", "compile", "hooks", "link")
 #: The stamp format; a stamp of another version is ignored (rebuild).
-STAMP_VERSION = 1
+STAMP_VERSION = 2
+#: The environment variables gcc and clang read that change what they
+#: compile or link; part of the input hash.
+COMPILER_ENV = (
+    "CPATH",
+    "C_INCLUDE_PATH",
+    "GCC_EXEC_PREFIX",
+    "COMPILER_PATH",
+    "LIBRARY_PATH",
+    "SOURCE_DATE_EPOCH",
+)
 #: How long ``cc --version`` may take.
 _VERSION_TIMEOUT = 30
 
@@ -130,6 +140,8 @@ _SEVERITIES = {
     "note": Severity.NOTE,
 }
 #: A message with no location that still says what failed (the linker's).
+#: A warning with no location (the linker's ``ld: warning: ...``).
+_LOOSE_WARNING = re.compile(r"\bwarning: ")
 _LOCATIONLESS = re.compile(r"\berror\b|undefined reference|multiple definition", re.IGNORECASE)
 
 _LEVELS = {
@@ -160,12 +172,15 @@ def parse_compiler_output(
     """
     found: list[Diagnostic] = []
     loose: list[str] = []
+    warnings: list[str] = []
     for raw in output.splitlines():
         line = raw.rstrip()
         match = _CC_LINE.match(line)
         if match is None:
             if failed and line.strip() and _LOCATIONLESS.search(line):
                 loose.append(line.strip())
+            elif _LOOSE_WARNING.search(line):
+                warnings.append(line.strip())
             continue
         path = absolute(cwd / match.group("file"))
         column = match.group("column")
@@ -182,6 +197,7 @@ def parse_compiler_output(
             )
         )
     found += [Diagnostic(Severity.ERROR, "build.cc", m) for m in loose]
+    found += [Diagnostic(Severity.WARNING, "build.cc", m) for m in warnings]
     if failed and not any(d.severity is Severity.ERROR for d in found):
         last = next((x.strip() for x in reversed(output.splitlines()) if x.strip()), "")
         found.append(
@@ -216,7 +232,10 @@ def _compiler(cli: str | None, env: Mapping[str, str]) -> _Compiler:
         raise CliError("usage.invalid-value", "--cc is empty", "pass gcc or clang, or a path")
     name = cli or env.get("CC", "") or "gcc"
     path = shutil.which(name)
-    hint = "install gcc or clang, or name the compiler with --cc or CC"
+    hint = (
+        "install gcc or clang, or name the compiler with --cc or CC (one program name or"
+        " path, no arguments)"
+    )
     if path is None:
         raise CliError("sdk.cc-not-found", f"compiler {name} not found", hint)
     try:
@@ -293,6 +312,44 @@ def _sdk_headers(sdk: Sdk) -> dict[str, str]:
         for p in sorted(include.rglob("*.h"))
         if p.is_file()
     }
+
+
+def _read_depfile(path: Path, cwd: Path) -> list[Path]:
+    """The files a ``-MD -MF`` dependency file lists (absolute), after the
+    target; empty when it cannot be read."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return []
+    text = text.replace("\\\n", " ")
+    _, sep, rest = text.partition(": ")
+    if not sep:
+        return []
+    words = re.split(r"(?<!\\)\s+", rest.strip())
+    found = []
+    for word in words:
+        word = word.replace("\\ ", " ").replace("$$", "$")
+        if word and not word.endswith(":"):
+            found.append(Path(os.path.normpath(os.path.join(cwd, word))))
+    return found
+
+
+def _dependencies_unchanged(
+    stamp: Mapping[str, Any], generation: Generation, generated_dir: Path
+) -> bool:
+    """Whether every file the last build's compiler read (its dependency
+    files: user headers anywhere, the SDK's and the system's) still has the
+    sha256 recorded then. The generated files are compared with what this
+    run generates, since a dry run does not write them."""
+    recorded = stamp.get("dependencies")
+    if not isinstance(recorded, dict) or not recorded:
+        return False
+    generated = {str(generated_dir / f.name): sha256_bytes(f.data) for f in generation.files}
+    for path, sha in recorded.items():
+        current = generated[path] if path in generated else sha256_file(Path(path))
+        if (current or "") != sha:  # "" is a file that did not exist
+            return False
+    return True
 
 
 def _read_stamp(path: Path) -> dict[str, Any] | None:
@@ -596,7 +653,19 @@ class BuildCommand:
         ] + [(path, object_dir / USER_DIR / f"{path.stem}.o") for path in user]
         includes = ["-I", str(generated_dir), "-I", str(user_dir), "-I", sdk.include_dir]
         compile_commands = [
-            [cc.path, *cflags, *includes, "-c", str(src), "-o", str(obj)] for src, obj in sources
+            [
+                cc.path,
+                *cflags,
+                *includes,
+                "-MD",
+                "-MF",
+                str(obj.with_suffix(".d")),
+                "-c",
+                str(src),
+                "-o",
+                str(obj),
+            ]
+            for src, obj in sources
         ]
         link_command = [
             cc.path,
@@ -628,6 +697,7 @@ class BuildCommand:
             },
             "files": files,
             "commands": [*compile_commands, link_command],
+            "env": {k: os.environ.get(k) for k in COMPILER_ENV},
         }
         digest = sha256_bytes(json.dumps(inputs, sort_keys=True).encode("utf-8"))
         current = sha256_file(artifact) if artifact.is_file() else None
@@ -639,6 +709,7 @@ class BuildCommand:
             and stamp.get("inputs") == digest
             and stamp.get("artifact_sha256") == current
             and run.stages["generate"] != "would-run"
+            and _dependencies_unchanged(stamp, generation, generated_dir)
         ):
             for name in ("compile", "hooks", "link"):
                 run.stages[name] = "up-to-date"
@@ -746,7 +817,16 @@ class BuildCommand:
             )
         os.replace(temporary, artifact)
         sha = sha256_file(artifact) or ""
-        stamp = {"stamp_version": STAMP_VERSION, "inputs": digest, "artifact_sha256": sha}
+        dependencies: dict[str, str] = {}
+        for _, obj in sources:
+            for dep in _read_depfile(obj.with_suffix(".d"), project):
+                dependencies[str(dep)] = sha256_file(dep) or ""
+        stamp = {
+            "stamp_version": STAMP_VERSION,
+            "inputs": digest,
+            "artifact_sha256": sha,
+            "dependencies": dependencies,
+        }
         write_atomic(stamp_path, json.dumps(stamp, sort_keys=True, indent=2) + "\n")
         run.stages["link"] = "ran"
         run.artifact = {"path": show_path(artifact, project), "sha256": sha}

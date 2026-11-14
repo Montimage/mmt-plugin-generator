@@ -147,9 +147,14 @@ def test_a_build_generates_compiles_checks_the_hooks_and_links(
     calls = _calls(project)
     assert len(calls) == 3  # the generated source, src/fakeproto_impl.c, the link
     includes = ["-I", f"{project}/generated", "-I", f"{project}/src", "-I", f"{sdk}/dpi/include"]
+    for call in calls[:2]:
+        call[call.index("-MF") + 1] = "DEPFILE"
     assert calls[0] == [
         *result["cflags"],
         *includes,
+        "-MD",
+        "-MF",
+        "DEPFILE",
         "-c",
         f"{project}/generated/fakeproto_mmt_plugin.c",
         "-o",
@@ -158,6 +163,9 @@ def test_a_build_generates_compiles_checks_the_hooks_and_links(
     assert calls[1] == [
         *result["cflags"],
         *includes,
+        "-MD",
+        "-MF",
+        "DEPFILE",
         "-c",
         f"{project}/{IMPL}",
         "-o",
@@ -171,7 +179,8 @@ def test_a_build_generates_compiles_checks_the_hooks_and_links(
         "-o",
         f"{project}/build/.mmtp_fakeproto.so.tmp",
     ]
-    assert result["commands"] == [shlex.join([str(cc), *c]) for c in calls]
+    assert len(result["commands"]) == 3
+    assert result["commands"][2] == shlex.join([str(cc), *calls[2]])
     # Only the plugin, its stamp and the objects are left in build/.
     left = sorted(
         p.relative_to(project / "build").as_posix() for p in (project / "build").rglob("*")
@@ -181,8 +190,10 @@ def test_a_build_generates_compiles_checks_the_hooks_and_links(
         "mmtp_fakeproto.so",
         "obj",
         "obj/generated",
+        "obj/generated/fakeproto_mmt_plugin.d",
         "obj/generated/fakeproto_mmt_plugin.o",
         "obj/src",
+        "obj/src/fakeproto_impl.d",
         "obj/src/fakeproto_impl.o",
     ]
 
@@ -205,7 +216,18 @@ def test_unchanged_inputs_are_a_no_op_and_rebuild_forces_it(project: Path, run: 
     assert len(_calls(project)) == 3
 
 
-@pytest.mark.parametrize("change", ["user source", "user header", "model", "artifact", "flags"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "user source",
+        "user header",
+        "nested header",
+        "outside header",
+        "model",
+        "artifact",
+        "flags",
+    ],
+)
 def test_a_changed_input_rebuilds(
     project: Path, run: Run, change: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -216,6 +238,21 @@ def test_a_changed_input_rebuilds(
         impl.write_text(impl.read_text() + "\n/* edited */\n")
     elif change == "user header":
         (project / "src" / "extra.h").write_text("#define EXTRA 1\n")
+    elif change in ("nested header", "outside header"):
+        # Review of #19: a header below src/ or outside the project is an
+        # input too, found through the compiler's dependency file.
+        header = project / "src" / "inc" / "x.h"
+        if change == "outside header":
+            header = project.parent / "common" / "x.h"
+        rel = os.path.relpath(header, project / "src")
+        header.parent.mkdir(parents=True, exist_ok=True)
+        header.write_text("#define X 1\n")
+        impl = project / IMPL
+        impl.write_text(f'#include "{rel}"\n' + impl.read_text())
+        assert run()[0] == 0
+        _calls(project)
+        assert run()[1]["result"]["up_to_date"] is True
+        header.write_text("#define X 2\n")
     elif change == "model":
         (project / "model.pdl").write_text(MODEL.replace('id = "991"', 'id = "992"'))
     elif change == "artifact":
@@ -578,6 +615,14 @@ def test_the_styled_view() -> None:
 
 
 # --- the compiler's output --------------------------------------------------
+
+
+def test_a_linker_warning_is_kept_when_the_link_succeeds(tmp_path: Path) -> None:
+    out = "/usr/bin/ld: warning: x.o: missing .note.GNU-stack section\nchatter\n"
+    found = parse_compiler_output(out, tmp_path, tmp_path, failed=False)
+    assert [(d.severity, d.message, d.location) for d in found] == [
+        (Severity.WARNING, out.splitlines()[0], None)
+    ]
 
 
 def test_compiler_output_becomes_located_diagnostics(tmp_path: Path) -> None:

@@ -4,7 +4,9 @@ no real mmt-dpi (``test_command.py``).
 The fake compiler is a Python script that answers like gcc where ``build``
 looks: ``--version`` prints one line; ``-c SRC -o OBJ`` writes an ELF
 relocatable object whose symbol table defines every function ``SRC``
-defines at the start of a line (``mmt_plugin.codegen.hooks`` reads it), and
+defines at the start of a line (``mmt_plugin.codegen.hooks`` reads it) and,
+with ``-MF DEP``, a dependency file listing ``SRC`` and its ``#include "..."``
+files (relative to ``SRC``'s directory), and
 turns a ``#error`` line into a gcc-style ``SRC:LINE:2: error:`` message (exit
 1); a link (``-shared ... -o OUT``) writes ``OUT``. Environment variables
 steer it: ``FAKE_CC_LOG`` (append each argv as a JSON line),
@@ -64,7 +66,7 @@ if os.environ.get("FAKE_CC_SLEEP"):
 out = argv[argv.index("-o") + 1]
 if "-c" in argv:
     src = argv[argv.index("-c") + 1]
-    names, failed = [], False
+    names, deps, failed = [], [], False
     with open(src) as f:
         for n, line in enumerate(f, 1):
             if line.startswith("#error"):
@@ -75,8 +77,14 @@ if "-c" in argv:
             m = re.match(r"^[A-Za-z_][^;(=]*?\b([A-Za-z_]\w*)\s*\([^;]*$", line)
             if m and not line.startswith(("static", "typedef", "struct", "enum")):
                 names.append(m.group(1))
+            inc = re.match(r'^#include "([^"]+)"', line)
+            if inc and os.path.exists(os.path.join(os.path.dirname(src), inc.group(1))):
+                deps.append(os.path.join(os.path.dirname(src), inc.group(1)))
     if failed:
         sys.exit(1)
+    if "-MF" in argv:
+        with open(argv[argv.index("-MF") + 1], "w") as f:
+            f.write(out + ": " + " \\\n ".join([src, *deps]) + "\n")
     with open(out, "wb") as f:
         f.write(elf_object(names))
     sys.exit(0)

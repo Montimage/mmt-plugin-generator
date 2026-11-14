@@ -124,8 +124,9 @@ protocol model. A Python rewrite is planned in
   then renamed), in `result.stages`. The flags are fixed in code (`CFLAGS`,
   `LDFLAGS`: hardened, `-Wall -Wextra -Werror`, `-Wl,-z,defs` against
   `libmmt_core`); compiler messages become `build.cc` diagnostics. An
-  unchanged input hash (`build/.mmtp_<label>.build.json`) is a no-op unless
-  `--rebuild`; `--dry-run` reports the commands. Tests in `tests/unit/build/`:
+  unchanged input hash, with every file the compiler read unchanged (its
+  `-MD` dependency files; `build/.mmtp_<label>.build.json`), is a no-op
+  unless `--rebuild`; `--dry-run` reports the commands. Tests in `tests/unit/build/`:
   `test_command.py` with a fake SDK and compiler (`fakes.py`), and
   `test_sdk.py`, which builds and loads every corpus model against a real
   SDK (needs `MMT_GOLDEN_SDK`, like `test_compile.py`).

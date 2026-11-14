@@ -171,6 +171,21 @@ def test_a_second_build_is_a_no_op_and_errors_are_located(
     assert code == 0 and doc["result"]["up_to_date"] is True
 
     impl = project / "src" / "pdl_scopes_impl.c"
+    # Review of #19: a header in a subdirectory of src/ is an input (gcc's
+    # dependency file), so changing it rebuilds instead of a false no-op.
+    header = project / "src" / "inc" / "x.h"
+    header.parent.mkdir()
+    header.write_text("#define X 1\n")
+    impl.write_text(
+        '#include "inc/x.h"\n' + impl.read_text() + "\nint helper_x(void) { return X; }\n"
+    )
+    assert _build(project, monkeypatch, capsys)[0] == 0
+    assert _build(project, monkeypatch, capsys)[1]["result"]["up_to_date"] is True
+    header.write_text("#define X (\n")
+    code, doc = _build(project, monkeypatch, capsys)
+    assert code == 5 and doc["error"]["code"] == "build.compile-failed", doc["result"]
+    header.write_text("#define X 1\n")
+    assert _build(project, monkeypatch, capsys)[0] == 0
     good = impl.read_text()
     impl.write_text(good + "\nint broken(void) { return undeclared_name; }\n")
     line = impl.read_text().count("\n")

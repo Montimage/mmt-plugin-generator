@@ -35,10 +35,11 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and one command, `completion {bash,zsh,fish}`
-  (T2.6); each other command registers itself in `src/mmt_plugin/commands/`
-  with its own issue, declaring its `exit_codes` and shipping its `result`
-  schema as `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
+  envelope and its schema) and two commands, `generate` (T1.5) and
+  `completion {bash,zsh,fish}` (T2.6); each other command registers itself
+  in `src/mmt_plugin/commands/` with its own issue, declaring its
+  `exit_codes` and shipping its `result` schema as
+  `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
   output goes through `src/mmt_plugin/ui/style.py`: a command returns a
   `view` in its `Outcome`. `tests/unit/test_contract.py` checks every
   registered command's `--json` envelope, `result` schema and `--help` exit
@@ -52,6 +53,10 @@ protocol model. A Python rewrite is planned in
 - `src/mmt_plugin/sdk/`: the SDK profiles (T1.4), one JSON file per mmt-dpi
   version in `sdk/profiles/` (only 1.10.2 so far; schema in
   `schemas/sdk/v1/profile.json`), SDK prefix detection and profile choice.
+  Each `data_type` constant records its `size`, what mmt-dpi's
+  `get_data_size_by_data_type()` returns: an attribute registers only with a
+  `data_len` up to it, or 0 for a size of 0, so `generate` rejects a type of
+  size 0 and a longer constant `data_len` (`model.type-size`).
   Plain functions for the commands to call; no command of its own.
 - `src/mmt_plugin/semantics/` (T1.3): the semantic passes.
   `analyse(model, profile=...)` returns the analysed model
@@ -61,13 +66,23 @@ protocol model. A Python rewrite is planned in
   takes; `allow_sdk_conflicts=True` still returns it with those two errors
   (T1.6). Tests in `tests/unit/semantics/`, including the layout of every
   corpus fixture.
+- `src/mmt_plugin/codegen/` (T1.5): `generate(analysed, profile)` renders the
+  Jinja2 templates `codegen/templates/plugin.{h,c}.j2` (the package's only
+  run-time dependency) into the plugin header and source, in memory; every
+  SDK name comes from the profile. `mmt-plugin generate`
+  (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
+  `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
+  golden C for every corpus model that generates in
+  `tests/unit/generate/golden/` (regenerate with
+  `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
   (amd64 and arm64), `make test-container` on both arches, the Python
   checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
   fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
-  instead of skipping), and the SDK profile header check (amd64 and arm64).
+  instead of skipping), and the SDK profile header check (amd64 and arm64),
+  which also compiles the golden generated C with gcc and clang.
 
 ## Commands
 
@@ -154,6 +169,23 @@ unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
 
 ```
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
+```
+
+Compile every golden generated pair (and a stub `src/<label>_impl.c`) against
+those headers, `-fsyntax-only -std=gnu11 -Wall -Wextra -Werror`, then link
+each with the prefix's `libmmt_core` and check that its
+`init_<label>_proto_struct()` returns 1 (every attribute registers), and that
+the profile's data type sizes are what `get_data_size_by_data_type()`
+returns; without `MMT_GOLDEN_SDK` the test skips:
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/generate/test_compile.py
+```
+
+Generate a model's C sources (no installed SDK needed with a pinned profile):
+
+```
+uv run mmt-plugin generate tests/corpus/models/pdl_bitfields/model.pdl -o <dir> --sdk-profile 1.10.2
 ```
 
 ## Rules

@@ -13,7 +13,9 @@ later issue registers is checked without a new test:
   (``contract_problems`` fails otherwise);
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
-With zero real commands the loop still runs: the built-ins and ``dummy``.
+A command whose shortest successful run needs input files (``generate``
+needs a model) gets them from ``SETUP``. With zero real commands the loop
+still runs: the built-ins and ``dummy``.
 """
 
 from __future__ import annotations
@@ -183,10 +185,34 @@ def test_every_result_schema_belongs_to_a_command_or_a_builtin() -> None:
 # --- --json before and after the command -------------------------------------
 
 
+#: A minimal model that generate accepts: no SDK conflict, no warning.
+CONTRACT_MODEL = """Protocol {
+    Properties { label = "contract" id = "990" encoding = "network" }
+    Attributes {
+        attribute { alias="kind" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="packet" }
+    }
+}
+"""
+
+
+def _generate_args(directory: Path) -> list[str]:
+    # A model file, a pinned profile (no SDK is looked for) and --dry-run, so
+    # the run writes nothing and a second run prints the same envelope.
+    (directory / "model.pdl").write_text(CONTRACT_MODEL)
+    return ["model.pdl", "--sdk-profile", "1.10.2", "--dry-run"]
+
+
+#: The commands whose shortest successful run needs input files: what to
+#: write into the run's directory (the cwd), and the arguments to pass.
+SETUP: dict[str, Callable[[Path], list[str]]] = {"generate": _generate_args}
+
+
 def _cases(commands: Sequence[Command]) -> Iterator[tuple[str, list[str]]]:
     parser = build_parser(commands)
     for name, sub in subparsers_of(parser).items():
-        yield name, [name, *minimal_args(sub)]
+        setup = SETUP.get(name)
+        args = minimal_args(sub) if setup is None else setup(Path.cwd())
+        yield name, [name, *args]
 
 
 def _check_command_envelopes(
@@ -342,7 +368,8 @@ def test_each_command_help_lists_exactly_its_exit_codes(
 def test_every_command_can_return_the_universal_codes(commands: list[Command]) -> None:
     for command in commands:
         assert set(ALWAYS) <= set(exit_codes_of(command))
-    assert exit_codes_of(commands[0]) == ALWAYS  # completion adds none
+    completion = next(c for c in commands if c.name == "completion")
+    assert exit_codes_of(completion) == ALWAYS  # completion adds none
     dummy = commands[-1]
     assert exit_codes_of(dummy) == tuple(ExitCode)
 

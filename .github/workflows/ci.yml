@@ -326,6 +326,16 @@ jobs:
           for cc in gcc clang; do
             uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --cc "$cc"
           done
+      - name: Compile the golden generated C against the headers (gcc and clang)
+        # -fsyntax-only -std=gnu11 -Wall -Wextra -Werror of every golden pair
+        # of tests/unit/generate/golden/ and a stub src/<label>_impl.c (#14).
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          for cc in gcc clang; do
+            MMT_GOLDEN_SDK="$SDK_PREFIX" MMT_GOLDEN_CC="$cc" \
+              uv run pytest -q -p no:cacheprovider tests/unit/generate/test_compile.py
+          done
       - name: Check that a deliberately wrong signature fails
         # A scratch copy of the profile whose attribute extraction callback
         # takes an int proto_index (the Java generator's mistake).

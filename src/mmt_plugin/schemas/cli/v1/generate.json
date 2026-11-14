@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin generate --json result, schema_version 1",
+  "description": "The result of generate (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. files is sorted by path; with --check or --dry-run, or when a hand-edited file stops the run, nothing is written and the actions are would-*.",
+  "type": "object",
+  "required": ["model", "format", "profile", "output", "files", "lock", "check", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path, or <stdin>."},
+    "format": {"enum": ["pdl", "yaml"]},
+    "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the files are generated for."},
+    "output": {"type": "string", "minLength": 1, "description": "The output directory."},
+    "files": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/file"}
+    },
+    "lock": {"$ref": "#/$defs/file", "description": "plugin.lock, written after the files."},
+    "check": {"type": "boolean"},
+    "dry_run": {"type": "boolean"}
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "required": ["path", "action", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "action": {
+          "enum": ["created", "updated", "unchanged", "removed", "would-create", "would-update", "would-remove"]
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The file's new content; for a removal, its content as removed."}
+      }
+    }
+  }
+}

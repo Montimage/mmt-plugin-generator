@@ -71,6 +71,7 @@ EXPECTED: dict[str, tuple[list[str], str]] = {
     "pdl_properties_minimal": ([], "clean"),
     "pdl_scopes": (["model.default-scope"], "warning: s_default omits its scope on purpose"),
     "pdl_struct_types": (["model.pointer-field"], "warning: f_ptr is a T* field on purpose"),
+    "pdl_sized_types": ([], "clean"),
     "pdl_types": ([], "clean"),
 }
 
@@ -92,7 +93,7 @@ def _models() -> list[tuple[str, Path]]:
 def test_the_table_covers_every_model() -> None:
     names = {name for name, _ in _models()}
     assert names == set(EXPECTED) | UNPARSED
-    assert len(_models()) == 16 + 31
+    assert len(_models()) == 16 + 32
 
 
 @pytest.mark.parametrize(

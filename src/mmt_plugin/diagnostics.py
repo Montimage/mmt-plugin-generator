@@ -113,6 +113,30 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.pointer-field": "warning: a `T*` struct field (4 bytes, read as MMT_DATA_POINTER)",
         "model.branch-offset-mismatch": "warning: an aligned attribute follows an if/else whose "
         "branches advance the running offset differently",
+        # Code generation and `generate` (mmt_plugin.codegen, mmt_plugin.commands.generate, #14).
+        "model.unreadable": "the model file cannot be read, or is not UTF-8 text",
+        "model.unsupported-format": "the model is plugin.yaml, which generate reads only once "
+        "#24 lands",
+        "model.name-collision": "two names of the generated C are the same identifier, or a "
+        "model define would replace a name the generated C uses",
+        "model.hook-value": "val(), or len() computed per packet, of an attribute without an "
+        "offset (a user hook): the generated code cannot compute it",
+        "model.integer-length": "an integer attribute's constant data_len is not 1 to 8 bytes, "
+        "or is wider than the integer type stores",
+        "model.variable-length": "an attribute of an SDK type with no variable-length form has "
+        "a data_len known only per packet",
+        "model.type-size": "an attribute's type has no size in the SDK (mmt-dpi registers it "
+        "only with data_len 0), or its constant data_len is above the type's SDK size",
+        "model.default-byte-order": "warning: the model has no byte order (no encoding, ASCII "
+        "or UNICODE); multi-byte integers are read in network byte order",
+        "model.classifynext-without-encapsulation": "warning: a classifynext block with "
+        'encapsulation "false"; it is generated',
+        "state.stale": "generate --check: a generated file or plugin.lock is not what generate "
+        "would write",
+        "state.modified": "a generated file was edited since generate wrote it (its sha256 is "
+        "not plugin.lock's); it is not overwritten or removed without --force",
+        "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin knows",
+        "state.kept": "warning: a file generate no longer writes is kept, not removed",
     }
 )
 

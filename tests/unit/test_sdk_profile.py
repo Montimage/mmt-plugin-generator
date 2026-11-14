@@ -244,6 +244,16 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     ),
     "fractional value": (lambda d: _const(d, "Max_Alias_Len").update(value=64.5), "an integer"),
     "boolean value": (lambda d: _const(d, "Max_Alias_Len").update(value=True), "an integer"),
+    "data type without a size": (
+        lambda d: _const(d, "MMT_DATA_PORT").pop("size"),
+        "a data_type constant needs a size",
+    ),
+    "size of another constant": (
+        lambda d: _const(d, "Max_Alias_Len").update(size=4),
+        "only it has one",
+    ),
+    "negative size": (lambda d: _const(d, "MMT_U8_DATA").update(size=-1), "negative"),
+    "string size": (lambda d: _const(d, "MMT_U8_DATA").update(size="1"), "an integer"),
     "ids not an array": (lambda d: d["parents"].update(ids={}), "expected an array"),
     "ids item not an object": (lambda d: d["parents"].update(ids=[1]), "expected an object"),
     "ids without doc": (lambda d: _ids(d).pop("doc"), "missing key 'doc'"),
@@ -346,6 +356,19 @@ def test_a_constant_value_is_optional() -> None:
     _const(data, "Max_Alias_Len")["value"] = -1
     assert schema.is_valid(data)
     assert parse_profile(data).constant("Max_Alias_Len").value == -1
+
+
+def test_data_sizes(profile: Profile) -> None:
+    # get_data_size_by_data_type() of mmt-dpi 1.10.2 on LP64; a size of 0 is
+    # a type the SDK registers only with data_len 0 (review of #14).
+    assert profile.data_size("MMT_U16_DATA") == 2
+    assert profile.data_size("MMT_DATA_TIMEVAL") == 16
+    assert profile.data_size("MMT_BINARY_VAR_DATA") == 1028
+    assert profile.data_size("MMT_DATA_PORT") == 0
+    with pytest.raises(KeyError):
+        profile.data_size("Max_Alias_Len")
+    with pytest.raises(KeyError):
+        profile.data_size("MMT_NO_SUCH_TYPE")
 
 
 def test_the_profile_is_frozen(profile: Profile) -> None:

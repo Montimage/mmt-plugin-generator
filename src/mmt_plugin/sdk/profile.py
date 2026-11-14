@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
+    "DATA_TYPE_GROUP",
     "SCHEMA_RESOURCE",
     "SCHEMA_VERSION",
     "Callback",
@@ -68,6 +69,9 @@ _VERSION = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 _LAYOUTS = ("complete", "partial")
 _ID_MACRO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\{LABEL\}[A-Za-z0-9_]*$")
 _SDK_NAME = "mmt-dpi"
+
+#: The group of the ``MMT_*`` data type constants, the ones with a ``size``.
+DATA_TYPE_GROUP = "data_type"
 #: An alias is copied into a C string literal as is.
 _ALIAS = re.compile(r'^[^"\\\s]+$')
 
@@ -196,13 +200,17 @@ class Function:
 @dataclass(frozen=True)
 class Constant:
     """An integer constant (a macro or an enumerator), with its group, and its
-    value when the profile records it."""
+    value when the profile records it. A ``data_type`` constant also has its
+    ``size``: what the SDK's ``get_data_size_by_data_type()`` returns, the
+    largest ``data_len`` an attribute of that type registers with (0: only
+    ``data_len`` 0 registers)."""
 
     name: str
     header: str
     group: str
     doc: str
     value: int | None = None
+    size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -341,6 +349,14 @@ class Profile:
             if c.name == name:
                 return c
         raise KeyError(name)
+
+    def data_size(self, name: str) -> int:
+        """The SDK size of a data type (``size`` of its ``data_type``
+        constant); ``KeyError`` if the profile has no such type."""
+        c = self.constant(name)
+        if c.group != DATA_TYPE_GROUP or c.size is None:
+            raise KeyError(name)
+        return c.size
 
 
 # --- parsing -----------------------------------------------------------------
@@ -501,14 +517,23 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     helpers = [_function(item, where) for item, where in _items(top, "helpers")]
     constants = []
     for item, where in _items(top, "constants"):
-        k = _Reader(item, where, ("name", "header", "group", "doc"), ("value",))
+        k = _Reader(item, where, ("name", "header", "group", "doc"), ("value", "size"))
+        group = k.text("group", _IDENT)
+        size = k.opt_integer("size")
+        if (size is None) == (group == DATA_TYPE_GROUP):
+            raise ProfileError(
+                f"{where}.size: a {DATA_TYPE_GROUP} constant needs a size, and only it has one"
+            )
+        if size is not None and size < 0:
+            raise ProfileError(f"{where}.size: {size} is negative")
         constants.append(
             Constant(
                 k.text("name", _IDENT),
                 k.text("header", _HEADER),
-                k.text("group", _IDENT),
+                group,
                 k.text("doc"),
                 k.opt_integer("value"),
+                size,
             )
         )
     macros = []

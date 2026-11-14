@@ -724,6 +724,8 @@ class TestCommand:
                     ctx.stderr.write(result.stderr)
                 parsed = harness_mod.parse_check(result.lines, names)
                 reason = harness_mod.crash_reason(result, len(pending))
+                if parsed.malformed is not None:
+                    reason = reason or f"unreadable harness output: {parsed.malformed!r}"
                 if parsed.error is not None and reason is None:
                     return self._load_failed(parsed.error, result.stderr, run)
                 if parsed.plugin is None:
@@ -835,8 +837,9 @@ class TestCommand:
         with ctx.progress("packets under the sanitizers", total=len(packets)) as progress:
 
             def seen(line: str) -> None:
-                if line.startswith("at "):
-                    progress.update(start + int(line[3:]) + 1)
+                at = harness_mod.at_index(line)
+                if at is not None:
+                    progress.update(start + at + 1)
 
             while start < len(packets) and len(crashes) < MAX_CRASHES:
                 harness_mod.write_packets(packets_file, packets[start:])
@@ -853,9 +856,14 @@ class TestCommand:
                 error = next((x for x in result.lines if x.startswith("error ")), None)
                 if reason is None and error is not None:
                     return self._load_failed(error[6:], result.stderr, run)
-                last = next(
-                    (int(x[3:]) for x in reversed(result.lines) if x.startswith("at ")), None
-                )
+                at_lines = [x for x in result.lines if x.startswith("at")]
+                indices = [harness_mod.at_index(x) for x in at_lines]
+                bad = next((x for x in at_lines if harness_mod.at_index(x) is None), None)
+                if reason is None and bad is not None:
+                    reason = f"unreadable harness output: {bad!r}"
+                last = next((i for i in reversed(indices) if i is not None), None)
+                if last is not None and start + last >= len(packets):
+                    last = None
                 if reason is None:
                     ran = len(packets)
                     break
@@ -968,9 +976,9 @@ class TestCommand:
                 )
                 samples = []
                 for line in result.lines:
-                    words = line.split()
-                    if len(words) == 3 and words[0] == "sample" and int(words[2]) > 0:
-                        samples.append(int(words[1]) * 1e9 / int(words[2]))
+                    sample = harness_mod.parse_sample(line)
+                    if sample is not None and sample[1] > 0:
+                        samples.append(sample[0] * 1e9 / sample[1])
                 reason = harness_mod.crash_reason(result)
                 if reason is not None or len(samples) != BENCH_SAMPLES:
                     return self._bench_failed(

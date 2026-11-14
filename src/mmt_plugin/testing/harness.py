@@ -19,7 +19,11 @@ on a timeout or any exception (SIGINT included). With the sanitizers,
 exit).
 
 ``parse_check`` reads the output of ``harness check`` into one
-``mmt_plugin.testing.packets.Observation`` per packet.
+``mmt_plugin.testing.packets.Observation`` per packet; ``at_index`` and
+``parse_sample`` read the ``at N`` and ``sample PACKETS NANOSECONDS`` lines
+of ``fuzz`` and ``bench``. The harness writes these lines on a stream of
+its own (the plugin's stdout goes to stderr), and a line none of them can
+read is never a pass: ``parse_check`` stops there and reports it.
 """
 
 from __future__ import annotations
@@ -49,10 +53,12 @@ __all__ = [
     "TCPIP",
     "HarnessRun",
     "ParsedCheck",
+    "at_index",
     "baseline_source",
     "crash_reason",
     "harness_source",
     "parse_check",
+    "parse_sample",
     "run",
     "write_packets",
 ]
@@ -87,6 +93,7 @@ _ASAN = re.compile(r"ERROR: AddressSanitizer: ([\w-]+)")
 #: UBSan's, ``FILE:LINE:COL: runtime error: MESSAGE``.
 _UBSAN = re.compile(r"([^\s:]+):([0-9]+(?::[0-9]+)?): runtime error: (.*)$")
 _ADDRESS = re.compile(r"0x[0-9a-f]+")
+_NUMBER = re.compile(r"[0-9]+")
 
 
 def _report(line: str) -> str:
@@ -287,12 +294,14 @@ def run(
 class ParsedCheck:
     """``harness check`` output: the protocol the plugin registered (id and
     name), the setup error, each packet's observation (by its index in the
-    file), and the packet being processed when the output ends early."""
+    file), the packet being processed when the output ends early, and the
+    first line it could not read (where reading stopped)."""
 
     plugin: tuple[int, str] | None = None
     error: str | None = None
     observations: dict[int, Observation] = field(default_factory=dict)
     unfinished: int | None = None
+    malformed: str | None = None
 
 
 def _value(words: list[str]) -> ObservedValue:
@@ -319,20 +328,41 @@ def parse_check(lines: Sequence[str], names: Sequence[str]) -> ParsedCheck:
     for line in lines:
         words = line.split(" ")
         head = words[0]
-        if head == "protocol" and len(words) >= 3:
-            parsed.plugin = (int(words[1]), " ".join(words[2:]))
-        elif head == "error":
-            parsed.error = line.partition(" ")[2]
-        elif head == "packet":
-            current, index, next_id, next_offset, values = int(words[1]), None, None, None, {}
-        elif head == "proto" and current is not None:
-            index = None if words[1] == "none" else int(words[1])
-        elif head == "next" and current is not None and words[1] != "none":
-            next_id, next_offset = int(words[1]), int(words[2])
-        elif head == "attr" and current is not None:
-            values[names[int(words[1])]] = _value(words[2:])
-        elif head == "done" and current is not None:
-            parsed.observations[current] = Observation(index, next_id, next_offset, values)
-            current = None
+        try:
+            if head == "protocol" and len(words) >= 3:
+                parsed.plugin = (int(words[1]), " ".join(words[2:]))
+            elif head == "error":
+                parsed.error = line.partition(" ")[2]
+            elif head == "packet":
+                current, index, next_id, next_offset, values = int(words[1]), None, None, None, {}
+            elif head == "proto" and current is not None:
+                index = None if words[1] == "none" else int(words[1])
+            elif head == "next" and current is not None and words[1] != "none":
+                next_id, next_offset = int(words[1]), int(words[2])
+            elif head == "attr" and current is not None:
+                values[names[int(words[1])]] = _value(words[2:])
+            elif head == "done" and current is not None:
+                parsed.observations[current] = Observation(index, next_id, next_offset, values)
+                current = None
+        except (ValueError, IndexError):
+            parsed.malformed = line
+            break
     parsed.unfinished = current
     return parsed
+
+
+def at_index(line: str) -> int | None:
+    """``N`` of a ``fuzz`` line ``at N``, or ``None`` for any other line."""
+    words = line.split(" ")
+    if len(words) == 2 and words[0] == "at" and _NUMBER.fullmatch(words[1]):
+        return int(words[1])
+    return None
+
+
+def parse_sample(line: str) -> tuple[int, int] | None:
+    """``(PACKETS, NANOSECONDS)`` of a ``bench`` line ``sample PACKETS
+    NANOSECONDS``, or ``None`` for any other line."""
+    words = line.split(" ")
+    if len(words) == 3 and words[0] == "sample" and all(map(_NUMBER.fullmatch, words[1:])):
+        return int(words[1]), int(words[2])
+    return None

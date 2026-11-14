@@ -24,6 +24,10 @@
  *   harness bench FILE ROUNDS SAMPLES
  *                        "sample PACKETS NANOSECONDS", SAMPLES times
  *
+ * The lines go to the harness's original stdout, on a stream of its own;
+ * file descriptor 1 then points at stderr, so the plugin's own output
+ * (a printf() in a hook) never mixes with them.
+ *
  * Exit status: 0, or 3 with an "error" line when the setup fails.
  */
 #include <stdint.h>
@@ -31,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 {% for include in includes %}
 #include "{{ include }}"
@@ -71,6 +76,8 @@ static struct harness_attribute harness_attributes[HARNESS_ATTRIBUTES + 1] = {
 };
 
 static enum harness_mode harness_mode;
+/* The output lines: the original stdout, which nothing else writes to. */
+static FILE *harness_out;
 static volatile uint64_t harness_sink;
 
 static const char *harness_type_name(int type)
@@ -110,7 +117,7 @@ static void harness_hex(const uint8_t *p, size_t n)
     size_t i;
 
     for (i = 0; i < n; i++) {
-        printf("%02x", p[i]);
+        fprintf(harness_out, "%02x", p[i]);
     }
 }
 
@@ -153,26 +160,26 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
     case MMT_DATA_CHAR:
         sum = harness_uint(value, 1);
         if (harness_mode == HARNESS_CHECK) {
-            printf(" int %llu", (unsigned long long) sum);
+            fprintf(harness_out, " int %llu", (unsigned long long) sum);
         }
         break;
     case MMT_U16_DATA:
     case MMT_DATA_PORT:
         sum = harness_uint(value, 2);
         if (harness_mode == HARNESS_CHECK) {
-            printf(" int %llu", (unsigned long long) sum);
+            fprintf(harness_out, " int %llu", (unsigned long long) sum);
         }
         break;
     case MMT_U32_DATA:
         sum = harness_uint(value, 4);
         if (harness_mode == HARNESS_CHECK) {
-            printf(" int %llu", (unsigned long long) sum);
+            fprintf(harness_out, " int %llu", (unsigned long long) sum);
         }
         break;
     case MMT_U64_DATA:
         sum = harness_uint(value, 8);
         if (harness_mode == HARNESS_CHECK) {
-            printf(" int %llu", (unsigned long long) sum);
+            fprintf(harness_out, " int %llu", (unsigned long long) sum);
         }
         break;
     case MMT_DATA_POINTER:
@@ -183,7 +190,7 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
             sum = bytes[0];
         }
         if (harness_mode == HARNESS_CHECK) {
-            printf(" ptr %ld", offset);
+            fprintf(harness_out, " ptr %ld", offset);
         }
         break;
     case MMT_BINARY_DATA:
@@ -193,7 +200,7 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
             sum += binary->data[k];
         }
         if (harness_mode == HARNESS_CHECK) {
-            printf(" hex ");
+            fprintf(harness_out, " hex ");
             harness_hex(binary->data, n);
         }
         break;
@@ -203,7 +210,7 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
             sum += var->data[k];
         }
         if (harness_mode == HARNESS_CHECK) {
-            printf(" hex ");
+            fprintf(harness_out, " hex ");
             harness_hex(var->data, n);
         }
         break;
@@ -212,7 +219,7 @@ static void harness_attribute(const ipacket_t *ipacket, unsigned index, size_t i
             sum += bytes[k];
         }
         if (harness_mode == HARNESS_CHECK) {
-            printf(" hex ");
+            fprintf(harness_out, " hex ");
             harness_hex(bytes, a->length);
         }
         break;
@@ -230,40 +237,40 @@ static int harness_packet(const ipacket_t *ipacket, mmt_opaque_t user)
     (void) user;
     if (index == MMT_NO_PROTO_INDEX) {
         if (harness_mode == HARNESS_CHECK) {
-            printf("proto none\n");
+            fprintf(harness_out, "proto none\n");
         }
         return 0;
     }
     if (harness_mode == HARNESS_CHECK) {
-        printf("proto %u\n", index);
+        fprintf(harness_out, "proto %u\n", index);
         next = (int) index + 1;
         if (next < ipacket->proto_hierarchy->len && ipacket->proto_hierarchy->proto_path[next] != PROTO_UNKNOWN) {
-            printf("next %d %d\n", ipacket->proto_hierarchy->proto_path[next],
+            fprintf(harness_out, "next %d %d\n", ipacket->proto_hierarchy->proto_path[next],
                    get_packet_offset_at_index(ipacket, (unsigned) next) - get_packet_offset_at_index(ipacket, index));
         } else {
-            printf("next none\n");
+            fprintf(harness_out, "next none\n");
         }
     }
     for (i = 0; i < HARNESS_ATTRIBUTES; i++) {
         if (harness_attributes[i].id == 0) {
             if (harness_mode == HARNESS_CHECK) {
-                printf("attr %u missing\n", (unsigned) i);
+                fprintf(harness_out, "attr %u missing\n", (unsigned) i);
             }
             continue;
         }
         value = get_attribute_extracted_data(ipacket, HARNESS_PROTO, harness_attributes[i].id);
         if (harness_mode == HARNESS_CHECK) {
-            printf("attr %u %s", (unsigned) i, harness_type_name(harness_attributes[i].type));
+            fprintf(harness_out, "attr %u %s", (unsigned) i, harness_type_name(harness_attributes[i].type));
         }
         if (value == NULL) {
             if (harness_mode == HARNESS_CHECK) {
-                printf(" absent\n");
+                fprintf(harness_out, " absent\n");
             }
             continue;
         }
         harness_attribute(ipacket, index, i, value);
         if (harness_mode == HARNESS_CHECK) {
-            printf("\n");
+            fprintf(harness_out, "\n");
         }
     }
     return 0;
@@ -333,8 +340,8 @@ static uint64_t harness_now(void)
 
 static int harness_fail(const char *message)
 {
-    printf("error %s\n", message);
-    fflush(stdout);
+    fprintf(harness_out, "error %s\n", message);
+    fflush(harness_out);
     return 3;
 }
 
@@ -346,6 +353,16 @@ int main(int argc, char **argv)
     size_t count = 0, i;
     long rounds = 1, samples = 1, r, s;
     uint64_t start;
+    int out;
+
+    /* Move the original stdout to a stream of its own and point stdout (and
+       fd 1) at stderr, line buffered, before any plugin code runs. */
+    out = dup(STDOUT_FILENO);
+    if (out < 0 || (harness_out = fdopen(out, "w")) == NULL || dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
+        fprintf(stderr, "harness: cannot set up its output\n");
+        return 3;
+    }
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 
     if (argc < 3) {
         return harness_fail("usage: harness check|fuzz|bench FILE [ROUNDS SAMPLES]");
@@ -371,7 +388,7 @@ int main(int argc, char **argv)
     if (!is_registered_protocol(HARNESS_PROTO)) {
         return harness_fail("the plugin did not register protocol {{ proto_id }}");
     }
-    printf("protocol %d %s\n", HARNESS_PROTO, get_protocol_name_by_id(HARNESS_PROTO));
+    fprintf(harness_out, "protocol %d %s\n", HARNESS_PROTO, get_protocol_name_by_id(HARNESS_PROTO));
     if (!{{ sdk.with_parent }}({{ sdk.ethernet }}, harness_classify, 1)) {
         return harness_fail("cannot attach the protocol to Ethernet");
     }
@@ -394,7 +411,7 @@ int main(int argc, char **argv)
     if (!register_packet_handler(handler, 1, harness_packet, NULL)) {
         return harness_fail("cannot register the packet handler");
     }
-    fflush(stdout);
+    fflush(harness_out);
     if (harness_mode == HARNESS_BENCH) {
         for (s = 0; s < samples; s++) {
             start = harness_now();
@@ -403,23 +420,23 @@ int main(int argc, char **argv)
                     harness_process(handler, &frames[i], (uint64_t) i);
                 }
             }
-            printf("sample %llu %llu\n", (unsigned long long) ((uint64_t) rounds * count),
-                   (unsigned long long) (harness_now() - start));
+            fprintf(harness_out, "sample %llu %llu\n", (unsigned long long) ((uint64_t) rounds * count),
+                    (unsigned long long) (harness_now() - start));
         }
     } else {
         for (i = 0; i < count; i++) {
-            printf(harness_mode == HARNESS_CHECK ? "packet %llu\n" : "at %llu\n", (unsigned long long) i);
-            fflush(stdout);
+            fprintf(harness_out, harness_mode == HARNESS_CHECK ? "packet %llu\n" : "at %llu\n", (unsigned long long) i);
+            fflush(harness_out);
             if (!harness_process(handler, &frames[i], (uint64_t) i)) {
-                printf("unprocessed\n");
+                fprintf(harness_out, "unprocessed\n");
             }
             if (harness_mode == HARNESS_CHECK) {
-                printf("done\n");
+                fprintf(harness_out, "done\n");
             }
         }
     }
-    printf("end %llu\n", (unsigned long long) count);
-    fflush(stdout);
+    fprintf(harness_out, "end %llu\n", (unsigned long long) count);
+    fflush(harness_out);
     mmt_close_handler(handler);
     close_extraction();
     for (i = 0; i < count; i++) {

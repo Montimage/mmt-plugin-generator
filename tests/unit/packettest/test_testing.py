@@ -363,6 +363,36 @@ def test_the_check_output_reads_into_observations() -> None:
 
 
 @pytest.mark.parametrize(
+    "bad",
+    [
+        "attr len=3",
+        "next hop",
+        "proto x",
+        "packet one",
+        "attr 9 MMT_U8_DATA int 1",
+        "attr 0 MMT_U8_DATA int x",
+        "attr 0 MMT_BINARY_DATA hex zz",
+        "protocol x y",
+    ],
+)
+def test_an_unreadable_check_line_stops_the_reading_and_is_never_a_pass(bad: str) -> None:
+    lines = ["protocol 990 HARNESSED", "packet 0", "proto 2", bad, "done", "end 1"]
+    parsed = harness.parse_check(lines, ["kind"])
+    assert parsed.malformed == bad
+    assert parsed.observations == {}
+    assert parsed.unfinished == 0
+
+
+def test_the_fuzz_and_bench_lines_read_only_when_well_formed() -> None:
+    assert harness.at_index("at 12") == 12
+    for line in ("at offset 4", "at", "at 1 2", "at -1", "at \u00b2", "attr 0 missing"):
+        assert harness.at_index(line) is None
+    assert harness.parse_sample("sample 100 2000") == (100, 2000)
+    for line in ("sample", "sample a 1", "sample 1 2 3", "sample 1 -2", "samples 1 2"):
+        assert harness.parse_sample(line) is None
+
+
+@pytest.mark.parametrize(
     ("run", "reason"),
     [
         (harness.HarnessRun(0), None),

@@ -232,6 +232,36 @@ def test_user_code_that_exits_is_a_crash_not_a_pass(
     assert packet["status"] == "crash"
 
 
+@pytest.mark.parametrize(
+    ("statement", "args"),
+    [
+        (r'printf("attr len=%d\n", 3);', ()),
+        (r'printf("next hop\ndone\npacket 7\nend 1\n");', ()),
+        (r'printf("at offset %d\n", 4);', ("--sanitize", "--fuzz-count", "5")),
+        (r'printf("sample x y\n");', ("--bench",)),
+    ],
+)
+def test_user_code_that_prints_harness_like_lines_still_passes(
+    statement: str,
+    args: tuple[str, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The harness's lines have a stream of their own: the plugin's stdout
+    # goes to stderr and is never read as one of them.
+    project = _project("pdl_scopes", tmp_path)
+    impl = project / "src" / "pdl_scopes_impl.c"
+    text = impl.read_text()
+    start = text.index("int pdl_scopes_hook_extract_no_off(")
+    body = text.index("    return 0;\n}\n", start)
+    impl.write_text(f"#include <stdio.h>\n{text[:body]}    {statement}\n{text[body:]}")
+    code, doc = _test(project, monkeypatch, capsys, *args)
+    assert code == 0, doc["error"]
+    (packet,) = doc["result"]["packets"]
+    assert packet["status"] == "pass"
+
+
 def test_ld_library_path_does_not_change_the_sdk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

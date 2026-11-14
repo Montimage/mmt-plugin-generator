@@ -629,6 +629,8 @@ def test_compiler_output_becomes_located_diagnostics(tmp_path: Path) -> None:
     output = "\n".join(
         [
             "In file included from src/a.c:1:",
+            "   10 |     return error + y;",
+            "      |            ^~~~~",
             f"{tmp_path}/generated/x.h:3:5: error: unknown type name 'foo'",
             "src/a.c:10:1: warning: unused variable 'y' [-Wunused-variable]",
             "src/a.c:12: note: a note without a column",

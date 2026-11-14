@@ -140,6 +140,8 @@ _SEVERITIES = {
     "note": Severity.NOTE,
 }
 #: A message with no location that still says what failed (the linker's).
+#: A line of gcc's source excerpt under a message (`` 73 | int x;``, ``    |   ^``).
+_CARET = re.compile(r"^\s*[0-9]*\s*\|")
 #: A warning with no location (the linker's ``ld: warning: ...``).
 _LOOSE_WARNING = re.compile(r"\bwarning: ")
 _LOCATIONLESS = re.compile(r"\berror\b|undefined reference|multiple definition", re.IGNORECASE)
@@ -177,6 +179,8 @@ def parse_compiler_output(
         line = raw.rstrip()
         match = _CC_LINE.match(line)
         if match is None:
+            if _CARET.match(line):  # gcc's source excerpt: "  73 | code"
+                continue
             if failed and line.strip() and _LOCATIONLESS.search(line):
                 loose.append(line.strip())
             elif _LOOSE_WARNING.search(line):
@@ -328,7 +332,7 @@ def _read_depfile(path: Path, cwd: Path) -> list[Path]:
     words = re.split(r"(?<!\\)\s+", rest.strip())
     found = []
     for word in words:
-        word = word.replace("\\ ", " ").replace("$$", "$")
+        word = word.replace("\\ ", " ").replace("\\#", "#").replace("$$", "$")
         if word and not word.endswith(":"):
             found.append(Path(os.path.normpath(os.path.join(cwd, word))))
     return found
@@ -347,7 +351,7 @@ def _dependencies_unchanged(
     generated = {str(generated_dir / f.name): sha256_bytes(f.data) for f in generation.files}
     for path, sha in recorded.items():
         current = generated[path] if path in generated else sha256_file(Path(path))
-        if (current or "") != sha:  # "" is a file that did not exist
+        if current is None or current != sha:
             return False
     return True
 
@@ -820,7 +824,10 @@ class BuildCommand:
         dependencies: dict[str, str] = {}
         for _, obj in sources:
             for dep in _read_depfile(obj.with_suffix(".d"), project):
-                dependencies[str(dep)] = sha256_file(dep) or ""
+                # A file the compiler read but that cannot be hashed (a path
+                # misparsed) never matches: an extra rebuild, never a false
+                # no-op.
+                dependencies[str(dep)] = sha256_file(dep) or "unreadable"
         stamp = {
             "stamp_version": STAMP_VERSION,
             "inputs": digest,

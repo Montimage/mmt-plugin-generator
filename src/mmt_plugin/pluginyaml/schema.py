@@ -205,7 +205,9 @@ class _Validator:
         if isinstance(value, str):
             if "minLength" in schema and len(value) < schema["minLength"]:
                 self.error(path, "must not be empty", node, hint)
-            elif "pattern" in schema and re.search(schema["pattern"], value) is None:
+            # fullmatch, not search: Python's `$` also matches before a
+            # final newline, which would let "a\n" pass as an identifier.
+            elif "pattern" in schema and re.fullmatch(schema["pattern"], value) is None:
                 self.error(path, f"`{value}` is not valid here", node, hint)
 
     def mapping(self, node: Mapping, schema: dict[str, Any], path: str) -> None:

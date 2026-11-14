@@ -247,3 +247,13 @@ def test_validate_takes_another_schema() -> None:
     assert [e.message for e in errors] == ["the document: missing key `b`"]
     with pytest.raises(ValueError, match="unsupported schema keywords"):
         validate(parse("a: 1\n"), {"oneOf": []})
+
+
+@pytest.mark.parametrize("field", ['label: "p\\n"', 'label: "p\\t"'])
+def test_a_pattern_must_match_the_whole_value(field: str) -> None:
+    # Python's `$` matches before a final newline: the validator matches the
+    # whole value, so no name with a newline reaches the generated C.
+    text = MINIMAL.replace("label: p", field)
+    with pytest.raises(PluginYamlError) as info:
+        load(text, filename="plugin.yaml")
+    assert [d.code for d in info.value.diagnostics] == ["model.schema"]

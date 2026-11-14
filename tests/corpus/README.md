@@ -149,8 +149,11 @@ note: "..."                    # optional
 ```
 
 - `bytes` start at the first byte of this protocol and run to the end of
-  the packet. The harness wraps them in the parent stack (headers, ports,
-  checksums); fixtures do not carry the lower layers.
+  the packet; fixtures do not carry the lower layers. The `mmt-plugin test`
+  harness (T2.4) puts them behind an Ethernet header and attaches the
+  protocol to Ethernet itself (EtherType 0x88b5), so a packet is tested
+  without the user code's parent registration; `parent` documents the real
+  transport.
 - `parent.kind`:
   - `stack`: `path` lists the mmt-dpi protocols below this one, outermost
     first. The models do not declare their parent (inventory section 2:

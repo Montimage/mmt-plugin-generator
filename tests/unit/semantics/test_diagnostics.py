@@ -11,6 +11,7 @@ import pytest
 
 from mmt_plugin.codegen import DIAGNOSTIC_CODES as GENERATION_CODES
 from mmt_plugin.commands.generate import DIAGNOSTIC_CODES as GENERATE_CODES
+from mmt_plugin.commands.test import DIAGNOSTIC_CODES as TEST_CODES
 from mmt_plugin.commands.validate import DIAGNOSTIC_CODES as VALIDATE_CODES
 from mmt_plugin.diagnostics import CODES, Severity
 from mmt_plugin.exitcodes import ExitCode, for_class
@@ -225,11 +226,11 @@ def test_branch_offset_mismatch_after_an_if_without_else() -> None:
     assert text.splitlines()[related.location.line - 1].strip() == "if (val(k) == 1) {"
 
 
-#: The model codes of generation, of the generate command (#14) and of the
-#: validate command (#17), which come after the semantic block.
-#: (Generation also reuses two semantic codes, model.missing-length and
-#: model.out-of-range.)
-LATER = {*GENERATION_CODES, *GENERATE_CODES, *VALIDATE_CODES} - set(HINTS)
+#: The model codes of generation, of the generate command (#14), of the
+#: validate command (#17) and of the test command (#20), which come after the
+#: semantic block. (Generation also reuses two semantic codes,
+#: model.missing-length and model.out-of-range.)
+LATER = {*GENERATION_CODES, *GENERATE_CODES, *VALIDATE_CODES, *TEST_CODES} - set(HINTS)
 SEMANTIC = [
     c
     for c in CODES

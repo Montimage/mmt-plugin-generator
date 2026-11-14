@@ -110,13 +110,16 @@ class Generation:
 
     ``files`` are sorted by name; ``hooks`` are the functions the user
     defines in ``src/<label>_impl.c``; ``diagnostics`` are the generation
-    warnings (errors raise ``GenerationError``).
+    warnings (errors raise ``GenerationError``); ``proto_id`` and ``name``
+    are the protocol's id and registered name (the upper-cased label).
     """
 
     label: str
     files: tuple[GeneratedFile, ...]
     hooks: tuple[Hook, ...]
     diagnostics: tuple[Diagnostic, ...]
+    proto_id: int
+    name: str
 
     def file(self, name: str) -> GeneratedFile:
         """A file by name; ``KeyError`` if it is not generated."""
@@ -164,7 +167,7 @@ def generate(model: AnalysedModel, profile: Profile) -> Generation:
         (GeneratedFile(ctx.header, header), GeneratedFile(ctx.source, source)),
         key=lambda f: f.name,
     )
-    return Generation(ctx.label, tuple(files), ctx.hooks, tuple(warnings))
+    return Generation(ctx.label, tuple(files), ctx.hooks, tuple(warnings), ctx.id, ctx.name)
 
 
 def scaffold(generation: Generation, profile: Profile) -> ScaffoldFile:

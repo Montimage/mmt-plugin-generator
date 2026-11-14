@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin test --json result, schema_version 1",
+  "description": "The result of test (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the five, in order; a stage the run did not reach, or did not ask for, is skipped. packets are in the order the packet tests were read. stats holds the only timing; everything else is the same on a re-run with the same inputs (the bench's numbers aside).",
+  "type": "object",
+  "required": ["model", "profile", "build_dir", "stages", "summary", "packets", "sanitize", "bench", "stats"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path."},
+    "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the plugin is generated for."},
+    "build_dir": {"type": "string", "minLength": 1, "description": "The directory of mmtp_<label>.so; the harness is in its test/ subdirectory, the sanitized plugin in sanitize/."},
+    "stages": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"enum": ["build", "harness", "packets", "sanitize", "bench"]},
+          "status": {
+            "enum": ["ran", "up-to-date", "stale", "failed", "skipped"],
+            "description": "stale: build with --no-deps, when the plugin is not up to date. bench failed: advisory, the exit code is not changed."
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "skipped"],
+      "additionalProperties": false,
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "passed": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0, "description": "Failed or crashed packets."},
+        "skipped": {"type": "integer", "minimum": 0, "description": "Packets not run: an earlier stage failed, or --fail-fast stopped."}
+      }
+    },
+    "packets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "status", "attributes", "failures"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "description": "The packet test's id."},
+          "file": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pass", "fail", "crash", "skipped"]},
+          "attributes": {"type": "integer", "minimum": 0, "description": "The attributes checked (an undefined one is not)."},
+          "failures": {
+            "type": "array",
+            "description": "Each mismatch: the attribute (<protocol> for the classification, <next> for the next protocol, <harness> for a crash), the expected and the actual value, as display strings.",
+            "items": {
+              "type": "object",
+              "required": ["attribute", "expected", "actual"],
+              "additionalProperties": false,
+              "properties": {
+                "attribute": {"type": "string", "minLength": 1},
+                "expected": {"type": "string"},
+                "actual": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "sanitize": {
+      "description": "The --sanitize run; null without it, or when it did not run.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["seed", "count", "crashes"],
+          "additionalProperties": false,
+          "properties": {
+            "seed": {"type": "integer", "minimum": 0},
+            "count": {"type": "integer", "minimum": 0, "description": "The packets run under the sanitizers: each test's packet, then its --fuzz-count truncated and random packets."},
+            "crashes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["test", "index", "length", "reason", "bytes"],
+                "additionalProperties": false,
+                "properties": {
+                  "test": {"type": "string", "description": "The packet test the packet comes from."},
+                  "index": {"type": "integer", "minimum": 0, "description": "0: the test's own packet; N: its Nth truncated or random packet for this seed."},
+                  "length": {"type": "integer", "minimum": 0},
+                  "reason": {"type": "string", "minLength": 1},
+                  "bytes": {"type": "string", "description": "The packet, as hex pairs."}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bench": {
+      "description": "The --bench run; null without it, or when it could not measure (a test.bench-failed warning).",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["pps", "baseline_pps", "ratio", "samples"],
+          "additionalProperties": false,
+          "properties": {
+            "pps": {"type": "integer", "minimum": 0, "description": "Packets per second with the plugin: the median sample."},
+            "baseline_pps": {"type": "integer", "minimum": 0, "description": "The same with an empty plugin of the same id and name."},
+            "ratio": {"type": "number", "minimum": 0, "description": "pps / baseline_pps."},
+            "samples": {"type": "array", "items": {"type": "integer", "minimum": 0}, "description": "Packets per second of each sample, in order."}
+          }
+        }
+      ]
+    },
+    "stats": {
+      "type": "object",
+      "required": ["elapsed_ms"],
+      "additionalProperties": false,
+      "properties": {"elapsed_ms": {"type": "integer", "minimum": 0}}
+    }
+  }
+}

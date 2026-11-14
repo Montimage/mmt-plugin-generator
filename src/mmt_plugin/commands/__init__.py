@@ -143,6 +143,7 @@ class Command(Protocol):
 from mmt_plugin.commands.build import BuildCommand  # noqa: E402
 from mmt_plugin.commands.completion import CompletionCommand  # noqa: E402
 from mmt_plugin.commands.generate import GenerateCommand  # noqa: E402
+from mmt_plugin.commands.test import TestCommand  # noqa: E402
 from mmt_plugin.commands.validate import ValidateCommand  # noqa: E402
 
 #: The registered commands, in ``--help`` order (``docs/design/cli.md``, section 2).
@@ -150,5 +151,6 @@ COMMANDS: tuple[Command, ...] = (
     ValidateCommand(),
     GenerateCommand(),
     BuildCommand(),
+    TestCommand(),
     CompletionCommand(),
 )

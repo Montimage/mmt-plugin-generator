@@ -457,6 +457,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/build/test_sdk.py
+      - name: Test every corpus model with mmt-plugin test
+        # tests/unit/packettest/test_sdk.py: mmt-plugin test (#20) on every
+        # corpus model and its corpus packets, under ASan and UBSan with
+        # truncated and random packets; a broken model, user code that reads
+        # past the packet, a plugin that does not load, and --bench.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/packettest/test_sdk.py
       - name: Read the run-time registry and validate against the SDK
         # tests/unit/test_sdk_registry.py: the protocols init_extraction()
         # registers with the SDK's plugins, one of them excluded, and

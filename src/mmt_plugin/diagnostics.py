@@ -152,6 +152,19 @@ CODES: Mapping[str, str] = MappingProxyType(
         "build.compile-failed": "the compiler failed on a generated or user source",
         "build.link-failed": "the linker failed to make mmtp_<label>.so",
         "sdk.cc-not-found": "the compiler (--cc, CC, else gcc) is not found or does not run",
+        # `test` (mmt_plugin.commands.test, mmt_plugin.testing, #20).
+        "model.bad-packet-test": "a packet test file is not a corpus schema 1 packet test "
+        "(tests/corpus/README.md, Packet files)",
+        "build.harness-failed": "the generated test harness does not compile against the SDK",
+        "test.packet-failed": "a packet test failed: the classification, the next protocol or "
+        "an attribute value is not the one the test expects",
+        "test.crash": "the harness crashed, timed out or a sanitizer (ASan, UBSan) reported an "
+        "error on a packet",
+        "test.load-failed": "the harness cannot run the plugin: init_extraction() fails or the "
+        "protocol is not registered",
+        "test.no-packets": "warning: no packet test was found, so nothing was tested",
+        "test.bench-failed": "warning: --bench could not measure (advisory: the exit code does "
+        "not change)",
     }
 )
 

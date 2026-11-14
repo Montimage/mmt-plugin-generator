@@ -194,10 +194,11 @@ def test_a_label_that_is_not_a_label_is_a_usage_error(init: Run, label: str) -> 
 
 def test_name_must_be_the_label_upper_cased(init: Run) -> None:
     assert init("demo", *PROFILE, "--id", "960", "--name", "DEMO", "--dry-run")[0] == 0
-    code, doc = init("demo", *PROFILE, "--id", "960", "--name", "OTHER")
-    assert code == 2
-    assert doc["error"]["code"] == "usage.invalid-value"
-    assert "#24" in doc["error"]["hint"]
+    for name in ("OTHER", "demo", "Demo"):
+        code, doc = init("demo", *PROFILE, "--id", "960", "--name", name)
+        assert code == 2
+        assert doc["error"]["code"] == "usage.invalid-value"
+        assert "#24" in doc["error"]["hint"]
 
 
 # --- --parent ----------------------------------------------------------------
@@ -520,3 +521,66 @@ def test_an_id_the_sdk_profile_takes_is_exit_3(init: Run, work: Path) -> None:
     assert code == 3
     assert doc["error"]["code"] == "model.id-taken"
     assert list(work.iterdir()) == []
+
+
+@pytest.mark.parametrize("force", [[], ["--force"]])
+@pytest.mark.parametrize("component", ["src", "tests"])
+def test_a_file_where_a_directory_goes_is_exit_7_and_nothing_is_written(
+    init: Run, work: Path, component: str, force: list[str]
+) -> None:
+    (work / "demo").mkdir()
+    (work / "demo" / "model.pdl").write_text("")  # a project, so only the file is in the way
+    (work / "demo" / component).write_text("x\n")
+    code, doc = init("demo", *PROFILE, "--id", "960", *force)
+    assert code == 7
+    assert doc["error"]["code"] == "state.file-differs"
+    assert any("is not a directory" in d["message"] for d in doc["diagnostics"])
+    assert sorted(_tree(work / "demo")) == sorted(["model.pdl", component])
+
+
+def test_a_symbolic_link_where_a_directory_goes_is_never_written_through(
+    init: Run, work: Path, tmp_path: Path
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    init("demo", *PROFILE, "--id", "960")
+    impl = work / "demo" / "src" / "demo_impl.c"
+    impl.unlink()
+    (work / "demo" / "src").rmdir()
+    (work / "demo" / "src").symlink_to(elsewhere)
+    for force in ([], ["--force"]):
+        code, doc = init("demo", *PROFILE, "--id", "960", *force)
+        assert code == 7
+        assert doc["error"]["code"] == "state.file-differs"
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_dir_below_a_file_is_exit_7(init: Run, work: Path) -> None:
+    (work / "f").write_text("")
+    code, doc = init("demo", *PROFILE, "--id", "960", "--dir", "f/x")
+    assert code == 7
+    assert doc["error"]["code"] == "state.not-a-project"
+
+
+def test_re_running_without_id_keeps_the_project_s_id(init: Run, work: Path) -> None:
+    assert init("demo", *PROFILE, "--id", "970")[0] == 0
+    code, doc = init("demo", *PROFILE)
+    assert code == 0, doc["error"]
+    assert doc["result"]["protocol"]["id"] == 970
+    assert set(_actions(doc).values()) == {"unchanged"}
+    assert "sdk.id-unchecked" not in _codes(doc)
+
+
+def test_an_invalid_sdk_is_exit_4(init: Run, work: Path, tmp_path: Path) -> None:
+    code, doc = init("demo", *PROFILE, "--sdk", str(tmp_path / "missing"))
+    assert code == 4
+    assert doc["error"]["code"] == "sdk.invalid-prefix"
+    assert list(work.iterdir()) == []
+
+
+def test_a_model_error_names_the_first_error(init: Run) -> None:
+    code, doc = init("int", *PROFILE, "--id", "960")
+    assert code == 3
+    assert doc["error"]["code"] == "model.name-taken"
+    assert "PROTO_INT" in doc["error"]["message"]
+    assert "an SDK protocol already registers this name" in doc["error"]["hint"]

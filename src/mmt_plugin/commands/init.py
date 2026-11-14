@@ -24,8 +24,9 @@ Stages, each stopping the run with its class's exit code:
    detected SDK's, else the newest bundled one with a warning). The SDK is
    looked for only when it is needed: no ``--id`` (to pick one), ``--sdk``,
    or no pinned profile;
-3. the id: ``--id``, else the lowest id from 950 to 999 that neither the
-   profile nor the installed plugins (``mmt_plugin.sdk.registry``, the
+3. the id: ``--id``, else the id of an existing ``model.pdl`` of the same
+   label (so a re-run keeps it), else the lowest id from 950 to 999 that
+   neither the profile nor the installed plugins (``mmt_plugin.sdk.registry``, the
    project's own ``mmtp_<label>.so`` excluded) take. Without an SDK, only
    the profile is checked (the warning ``sdk.id-unchecked``). The installed
    plugins also check an explicit ``--id`` and the name when an SDK is
@@ -36,7 +37,9 @@ Stages, each stopping the run with its class's exit code:
 5. plan the writes: a file with the same content is ``unchanged``; one with
    other content (or not a regular file) is ``state.file-differs`` (exit 7,
    nothing written) unless ``--force``, which replaces it (never a
-   directory). A ``--dir`` that holds more than ``.git`` but no
+   directory). A file or a symbolic link where a directory of the project
+   goes (``src``, ``tests``) is ``state.file-differs`` even with ``--force``,
+   so nothing is written outside ``--dir``. A ``--dir`` that holds more than ``.git`` but no
    ``model.pdl`` is not a project: ``state.not-a-project`` (exit 7) unless
    ``--force``;
 6. write each file atomically (``mmt_plugin.fsio``). Re-running on the same
@@ -63,6 +66,7 @@ from mmt_plugin.commands.modelio import absolute, show_path
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, write_atomic
+from mmt_plugin.pdl import PdlSyntaxError, parse
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, find_sdk
 from mmt_plugin.sdk.profile import Profile
 from mmt_plugin.sdk.registry import Registry, RegistryError, read_registry
@@ -210,6 +214,19 @@ def _test_text(label: str, pid: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _project_id(target: Path, label: str) -> int | None:
+    """The id of ``<target>/model.pdl`` when it parses and has ``label``, so
+    that re-running ``init`` without ``--id`` keeps the project's id."""
+    try:
+        text = (target / MODEL_FILE).read_text("utf-8")
+        props = parse(text, filename=MODEL_FILE).properties
+    except (OSError, UnicodeDecodeError, PdlSyntaxError):
+        return None
+    if props.label.text.lower() != label.lower() or props.id is None:
+        return None
+    return int(props.id.value)
+
+
 def project_files(
     label: str, pid: int, parent: Selector | None, choice: ProfileChoice
 ) -> tuple[list[tuple[str, bytes]], list[Diagnostic], CliError | None]:
@@ -341,7 +358,7 @@ class InitCommand:
                 f"LABEL {label!r} is not a protocol label ([a-z][a-z0-9_]*)",
                 "use lower-case letters, digits and _, starting with a letter",
             )
-        if args.name is not None and args.name.upper() != label.upper():
+        if args.name is not None and args.name != label.upper():
             raise CliError(
                 "usage.invalid-value",
                 f"--name {args.name!r}: the registered name of a PDL v1 model is its label"
@@ -380,6 +397,7 @@ class InitCommand:
     def _id(
         self,
         args: argparse.Namespace,
+        target: Path,
         profile: Profile,
         sdk: Sdk | None,
         registry: Registry | None,
@@ -395,17 +413,18 @@ class InitCommand:
                     f" plugin of {registry.plugin_dir} (id {hit.id})",
                     "choose another LABEL",
                 )
-        if args.id is not None:
+        pid = args.id if args.id is not None else _project_id(target, label)
+        if pid is not None:
             if registry is not None:
-                hit = registry.by_id(args.id)
+                hit = registry.by_id(pid)
                 if hit is not None:
                     raise CliError(
                         "model.id-taken",
-                        f"protocol id {args.id} is already {hit.name}'s, registered by an"
+                        f"protocol id {pid} is already {hit.name}'s, registered by an"
                         f" installed plugin of {registry.plugin_dir}",
                         "use a free id from 950 to 999",
                     )
-            return int(args.id)
+            return int(pid)
         taken = {p.id for p in profile.parents.protocols()}
         if registry is not None:
             taken |= {p.id for p in registry.protocols}
@@ -440,6 +459,31 @@ class InitCommand:
             new = sha256_bytes(data)
             action = "created"
             problem = None
+            between = [d for d in path.parents if d != target and target in d.parents]
+            blocked = next(
+                (
+                    d
+                    for d in reversed(between)
+                    if d.is_symlink() or (d.exists() and not d.is_dir())
+                ),
+                None,
+            )
+            if blocked is not None:
+                # A file or a symbolic link where a directory goes: never
+                # replaced, so nothing is written through it.
+                planned.append(_Planned(path, shown, "created", new, data))
+                diagnostics.append(
+                    Diagnostic(
+                        Severity.ERROR,
+                        "state.file-differs",
+                        f"{show_path(blocked, project)} is not a directory"
+                        + (" (a symbolic link)" if blocked.is_symlink() else "")
+                        + ": nothing written into it",
+                        hint="move it away",
+                        location=Location(shown),
+                    )
+                )
+                continue
             if path.is_symlink():
                 action, problem = "updated", "is a symbolic link"
             elif path.is_dir():
@@ -516,26 +560,30 @@ class InitCommand:
                 "use a protocol of the SDK, e.g. ethernet, ip, tcp or udp",
             )
 
-        if target.exists() and not target.is_dir():
-            raise CliError(
-                "state.not-a-project",
-                f"--dir {show_path(target, project)} exists and is not a directory",
-                "pass another --dir",
-            )
+        for d in (target, *target.parents):
+            if d.exists() and not d.is_dir():
+                raise CliError(
+                    "state.not-a-project",
+                    f"--dir {show_path(target, project)}: {show_path(d, project)} exists and is"
+                    " not a directory",
+                    "pass another --dir",
+                )
 
         registry = None
         if sdk is not None:
             registry = self._registry(sdk, profile, label, diagnostics)
-        pid = self._id(args, profile, sdk, registry, diagnostics)
+        pid = self._id(args, target, profile, sdk, registry, diagnostics)
         ctx.log(f"protocol {label.upper()}, id {pid}")
 
         files, model_diagnostics, model_error = project_files(label, pid, parent, choice)
         diagnostics += model_diagnostics
         if model_error is not None:
+            first = next((d for d in model_diagnostics if d.severity is Severity.ERROR), None)
+            why = "" if first is None else f" ({first.message})"
             stop = CliError(
                 model_error.code,
-                f"the project of {label} (id {pid}) does not generate: nothing written",
-                "choose another LABEL or --id",
+                f"the project of {label} (id {pid}) does not generate{why}: nothing written",
+                first.hint if first is not None and first.hint else "choose another LABEL or --id",
             )
             return Outcome(diagnostics=diagnostics, error=stop, context=context)
 

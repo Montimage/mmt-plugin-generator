@@ -43,6 +43,14 @@ enum pdl_conditionals_attributes {
 #define PDL_CONDITIONALS_OTHER_ALT_ALIAS "other_alt"
 #define PDL_CONDITIONALS_TAIL_ALIAS "tail"
 
+/*
+ * Hooks: define each one in src/pdl_conditionals_impl.c. A hook that is missing fails
+ * the build of the plugin.
+ */
+
+/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+int pdl_conditionals_hook_register_parents(protocol_t *protocol_struct);
+
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 int init_pdl_conditionals_proto_struct(void);
 

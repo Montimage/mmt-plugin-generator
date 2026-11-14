@@ -56,6 +56,9 @@ int pdl_scopes_hook_session_cleanup(mmt_opaque_t protocol_context, mmt_session_t
 /* Compares two session keys. */
 bool pdl_scopes_hook_session_compare(mmt_opaque_t key_1, mmt_opaque_t key_2);
 
+/* Attaches the protocol to its parents once it is registered (PDL names none); returns 1, or 0 to fail the load. */
+int pdl_scopes_hook_register_parents(protocol_t *protocol_struct);
+
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 int init_pdl_scopes_proto_struct(void);
 

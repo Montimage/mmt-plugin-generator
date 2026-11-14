@@ -134,6 +134,11 @@ int init_ndn_example_proto_struct(void)
         mmt_log_error("init_ndn_example_proto_struct: cannot register protocol %d", PROTO_NDN_EXAMPLE);
         return 0;
     }
+    /* User code (src/ndn_example_impl.c) attaches the protocol to its parents. */
+    if (!ndn_example_hook_register_parents(protocol_struct)) {
+        mmt_log_error("init_ndn_example_proto_struct: ndn_example_hook_register_parents() failed");
+        return 0;
+    }
     return 1;
 }
 

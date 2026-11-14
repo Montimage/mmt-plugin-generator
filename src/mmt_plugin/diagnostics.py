@@ -144,6 +144,9 @@ CODES: Mapping[str, str] = MappingProxyType(
         "locale or LC_COLLATE), so its parents are not registered when it loads",
         "sdk.registry-unavailable": "warning: the protocols the installed plugins register "
         "could not be read; only the SDK profile was checked",
+        # Generated vs user code (mmt_plugin.codegen.hooks, #18); `build` (#19) reports it.
+        "build.missing-hook": "a hook the generated header declares is not defined by the user "
+        "code (src/<label>_impl.c)",
     }
 )
 

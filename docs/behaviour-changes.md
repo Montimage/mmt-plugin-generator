@@ -28,8 +28,9 @@ bytes and read functions, and both outputs' `init_<l>_proto_struct()` and
 statement (comments and whitespace aside), so an extra, missing or altered
 statement fails the test.
 
-The two are equal, apart from row 1 below: Java also calls
-`register_protocol_stack` (bug 22). The 4 models also take ids that mmt-dpi
+The two are equal, apart from rows 1 and 21 below: Java also calls
+`register_protocol_stack` (bug 22), and the new init also calls the user hook
+`<l>_hook_register_parents` (T2.2). The 4 models also take ids that mmt-dpi
 1.10.2 already has, and cotp, s7com and tpkt its names too (row 2), so the
 test analyses them with the SDK conflicts allowed, as `generate` itself does
 not.
@@ -71,43 +72,44 @@ row and that every test named here exists.
 | 18 | `encoding = "host"` is fixed little-endian, not the byte order of the machine that runs the plugin. | – (plan decision 8) | `tests/unit/generate/test_codegen.py::test_host_encoding_reads_little_endian_on_every_machine` |
 | 19 | A field or attribute named like a C keyword gets a trailing underscore in the generated C. | – (corpus README, open rules) | `tests/unit/generate/test_codegen.py::test_c_keywords_get_a_trailing_underscore` |
 | 20 | An integer longer than 8 bytes, or than its type's storage or SDK size, is an error instead of C that reads past its value. | – (T1.5) | `tests/unit/generate/test_codegen.py::test_an_integer_wider_than_8_bytes_is_a_model_error`, `tests/unit/generate/test_codegen.py::test_a_constant_length_above_the_sdk_size_is_a_model_error` |
+| 21 | Every plugin has the user hook `<l>_hook_register_parents(protocol_t *)`, which `init_<l>_proto_struct()` calls once the protocol is registered (0 fails the load), so user code can attach the protocol to its parents (`register_classification_function_with_parent_protocol`). PDL names no parent; Java generated no parent classification either, and registered `register_protocol_stack` instead (row 1). | – (T2.2) | `tests/unit/generate/test_scaffold.py::test_init_calls_the_parents_hook_after_registering_and_fails_on_0`, `tests/unit/generate/test_parity.py::test_the_new_output_means_what_the_java_output_means`, `tests/unit/generate/test_compile.py::test_the_scaffold_parent_example_classifies_a_corpus_packet` |
 
 ### Model semantics
 
 | # | Difference | Java bug | Test |
 |---|---|---|---|
-| 21 | Struct field offsets after a bitfield line are not double-counted (dns `qdcount` at 4, tcp `seq` at 12). | 2 | `tests/unit/semantics/test_bugs.py::test_bug_2_fields_after_a_bitfield_line_are_not_double_counted`, `tests/unit/semantics/test_layout.py::test_dns_header` |
-| 22 | A run of bitfields advances the offset by its storage unit once, not by each member's width. | 3 | `tests/unit/semantics/test_bugs.py::test_bug_3_the_running_offset_counts_a_bitfield_unit_once`, `tests/unit/semantics/test_layout.py::test_tcp_struct` |
-| 23 | Struct layouts are packed wire layouts, checked in the generated C with `_Static_assert`. | 4 | `tests/unit/semantics/test_bugs.py::test_bug_4_struct_layout_is_packed_and_records_the_c_padding` |
-| 24 | Whether an expression is constant depends on every operand, not the last one (`val(x)-4` no longer folds to -4). | 5 | `tests/unit/semantics/test_bugs.py::test_bug_5_simplicity_is_decided_by_every_operand` |
-| 25 | `>`, `<`, `>=` and `<=` fold with their own meaning, not as `!=`. | 6 | `tests/unit/semantics/test_bugs.py::test_bug_6_comparisons_fold_with_their_own_meaning` |
-| 26 | `sizeof(char)` is 1, not `sizeof(MMT_U8_DATA)`. | 7 | `tests/unit/semantics/test_bugs.py::test_bug_7_sizeof_char_is_one` |
-| 27 | A `struct X` field is `MMT_BINARY_DATA` of `sizeof(struct X)` bytes and a `T*` field `MMT_DATA_POINTER` of 4, not a line number as its length and C type `void`. | 8 | `tests/unit/semantics/test_bugs.py::test_struct_field_types_and_scopes` |
-| 28 | An omitted scope is packet and an omitted `data_len` is the type's width; a type without one is an error. Java emitted `null`. | 9 | `tests/unit/semantics/test_bugs.py::test_bug_9_omitted_scope_offset_and_data_len_get_the_plan_defaults` |
-| 29 | Conditional attributes are duplicate-checked and can be used in `val()`. | 12 | `tests/unit/semantics/test_bugs.py::test_bug_12_conditional_attributes_are_duplicate_checked_and_usable_in_val` |
-| 30 | Names are checked case-insensitively, as aliases are lower-cased. | 16 | `tests/unit/semantics/test_bugs.py::test_bug_16_names_are_checked_case_insensitively` |
-| 31 | Bitfield helper struct names are unique. | 17 | `tests/unit/semantics/test_bugs.py::test_bug_17_bitfield_helper_struct_names_are_unique` |
-| 32 | `offset(x)` and `len(x)` are the attribute's offset and length, not calls to C functions that do not exist. | 19 | `tests/unit/semantics/test_bugs.py::test_bug_19_offset_and_len_are_the_attribute_s` |
-| 33 | `ntohs`/`ntohl` of a literal is an unconditional byte swap, folded at generation, not a call whose result depends on the host. | – (plan decision 8) | `tests/unit/semantics/test_expressions.py::test_folding` |
-| 34 | A number with a leading zero copied into the C (`010`) is an error, since C would read it as octal. | – (T1.3) | `tests/unit/semantics/test_leading_zeros.py::test_a_leading_zero_copied_as_text_is_an_error` |
+| 22 | Struct field offsets after a bitfield line are not double-counted (dns `qdcount` at 4, tcp `seq` at 12). | 2 | `tests/unit/semantics/test_bugs.py::test_bug_2_fields_after_a_bitfield_line_are_not_double_counted`, `tests/unit/semantics/test_layout.py::test_dns_header` |
+| 23 | A run of bitfields advances the offset by its storage unit once, not by each member's width. | 3 | `tests/unit/semantics/test_bugs.py::test_bug_3_the_running_offset_counts_a_bitfield_unit_once`, `tests/unit/semantics/test_layout.py::test_tcp_struct` |
+| 24 | Struct layouts are packed wire layouts, checked in the generated C with `_Static_assert`. | 4 | `tests/unit/semantics/test_bugs.py::test_bug_4_struct_layout_is_packed_and_records_the_c_padding` |
+| 25 | Whether an expression is constant depends on every operand, not the last one (`val(x)-4` no longer folds to -4). | 5 | `tests/unit/semantics/test_bugs.py::test_bug_5_simplicity_is_decided_by_every_operand` |
+| 26 | `>`, `<`, `>=` and `<=` fold with their own meaning, not as `!=`. | 6 | `tests/unit/semantics/test_bugs.py::test_bug_6_comparisons_fold_with_their_own_meaning` |
+| 27 | `sizeof(char)` is 1, not `sizeof(MMT_U8_DATA)`. | 7 | `tests/unit/semantics/test_bugs.py::test_bug_7_sizeof_char_is_one` |
+| 28 | A `struct X` field is `MMT_BINARY_DATA` of `sizeof(struct X)` bytes and a `T*` field `MMT_DATA_POINTER` of 4, not a line number as its length and C type `void`. | 8 | `tests/unit/semantics/test_bugs.py::test_struct_field_types_and_scopes` |
+| 29 | An omitted scope is packet and an omitted `data_len` is the type's width; a type without one is an error. Java emitted `null`. | 9 | `tests/unit/semantics/test_bugs.py::test_bug_9_omitted_scope_offset_and_data_len_get_the_plan_defaults` |
+| 30 | Conditional attributes are duplicate-checked and can be used in `val()`. | 12 | `tests/unit/semantics/test_bugs.py::test_bug_12_conditional_attributes_are_duplicate_checked_and_usable_in_val` |
+| 31 | Names are checked case-insensitively, as aliases are lower-cased. | 16 | `tests/unit/semantics/test_bugs.py::test_bug_16_names_are_checked_case_insensitively` |
+| 32 | Bitfield helper struct names are unique. | 17 | `tests/unit/semantics/test_bugs.py::test_bug_17_bitfield_helper_struct_names_are_unique` |
+| 33 | `offset(x)` and `len(x)` are the attribute's offset and length, not calls to C functions that do not exist. | 19 | `tests/unit/semantics/test_bugs.py::test_bug_19_offset_and_len_are_the_attribute_s` |
+| 34 | `ntohs`/`ntohl` of a literal is an unconditional byte swap, folded at generation, not a call whose result depends on the host. | – (plan decision 8) | `tests/unit/semantics/test_expressions.py::test_folding` |
+| 35 | A number with a leading zero copied into the C (`010`) is an error, since C would read it as octal. | – (T1.3) | `tests/unit/semantics/test_leading_zeros.py::test_a_leading_zero_copied_as_text_is_an_error` |
 
 ### PDL syntax
 
 | # | Difference | Java bug | Test |
 |---|---|---|---|
-| 35 | A syntax error stops the run with exit 3 and writes nothing. Java recovered silently and could write `null` (ethernet, mongodb) or nothing (ip). | 24 | `tests/unit/pdl/test_errors.py::test_an_error_outside_a_quoted_value_stops_the_parse`, `tests/unit/generate/test_command.py::test_a_syntax_error_is_exit_3_with_no_output` |
-| 36 | Text after the closing `}` is an error (`model.syntax.trailing-input`); Java ignored it. | – (inventory, section 1) | `tests/unit/pdl/test_errors.py::test_syntax_error` |
-| 37 | Keywords are contextual, so a field or alias may be named `id`, `len`, `offset`, `val`, ... (the `ip` model's `uint16_t id;`). | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_keywords_are_contextual` |
-| 38 | `//` and `/* */` comments are allowed. | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_comments_are_whitespace` |
+| 36 | A syntax error stops the run with exit 3 and writes nothing. Java recovered silently and could write `null` (ethernet, mongodb) or nothing (ip). | 24 | `tests/unit/pdl/test_errors.py::test_an_error_outside_a_quoted_value_stops_the_parse`, `tests/unit/generate/test_command.py::test_a_syntax_error_is_exit_3_with_no_output` |
+| 37 | Text after the closing `}` is an error (`model.syntax.trailing-input`); Java ignored it. | – (inventory, section 1) | `tests/unit/pdl/test_errors.py::test_syntax_error` |
+| 38 | Keywords are contextual, so a field or alias may be named `id`, `len`, `offset`, `val`, ... (the `ip` model's `uint16_t id;`). | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_keywords_are_contextual` |
+| 39 | `//` and `/* */` comments are allowed. | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_comments_are_whitespace` |
 
 ### Command line
 
 | # | Difference | Java bug | Test |
 |---|---|---|---|
-| 39 | The exit code says what happened (`docs/design/cli.md`): 3 for a model error, 7 for a stale or hand-edited output, 0 only on success. Java always exited 0. | 24 | `tests/unit/generate/test_command.py::test_an_sdk_id_or_name_conflict_is_exit_3_with_no_output`, `tests/unit/generate/test_command.py::test_check_exits_0_when_up_to_date_and_7_when_stale` |
-| 40 | The output directory is created when missing, and defaults to `generated/` in a project; Java wrote to `./plugins` and printed `Error in writing to file` (exit 0) when the directory was missing. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_outside_a_project_the_files_and_lock_go_to_the_output_dir`, `tests/unit/generate/test_command.py::test_in_a_project_the_lock_is_at_the_root_and_output_defaults_to_generated` |
-| 41 | A hand-edited generated file is not overwritten without `--force`; `plugin.lock` records what was generated. Java overwrote every file silently. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_a_hand_edited_file_is_not_overwritten_without_force` |
-| 42 | Writes are atomic: an interrupted run leaves the previous files, never partial ones. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_an_interrupted_run_leaves_the_previous_state_recoverable` |
+| 40 | The exit code says what happened (`docs/design/cli.md`): 3 for a model error, 7 for a stale or hand-edited output, 0 only on success. Java always exited 0. | 24 | `tests/unit/generate/test_command.py::test_an_sdk_id_or_name_conflict_is_exit_3_with_no_output`, `tests/unit/generate/test_command.py::test_check_exits_0_when_up_to_date_and_7_when_stale` |
+| 41 | The output directory is created when missing, and defaults to `generated/` in a project; Java wrote to `./plugins` and printed `Error in writing to file` (exit 0) when the directory was missing. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_outside_a_project_the_files_and_lock_go_to_the_output_dir`, `tests/unit/generate/test_command.py::test_in_a_project_the_lock_is_at_the_root_and_output_defaults_to_generated` |
+| 42 | A hand-edited generated file is not overwritten without `--force`; `plugin.lock` records what was generated. Java overwrote every file silently. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_a_hand_edited_file_is_not_overwritten_without_force` |
+| 43 | Writes are atomic: an interrupted run leaves the previous files, never partial ones. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_an_interrupted_run_leaves_the_previous_state_recoverable` |
 
 ## Kept from Java
 

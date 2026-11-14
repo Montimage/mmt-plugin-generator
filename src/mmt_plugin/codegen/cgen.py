@@ -27,8 +27,10 @@ How the generated code reads a packet (the corpus README, Semantics):
   struct (``AnalysedStruct``);
 - an attribute without an offset is a user hook (plan decision 3), declared
   in the header and defined in ``src/<label>_impl.c``; so are the context,
-  session data and sessionizer callbacks, and ``classify_next`` when
-  ``encapsulation`` is true without a ``classifynext`` block.
+  session data and sessionizer callbacks, ``classify_next`` when
+  ``encapsulation`` is true without a ``classifynext`` block, and, in every
+  plugin, ``<label>_hook_register_parents``, which the init calls once the
+  protocol is registered (PDL names no parent).
 
 Java bugs fixed here (``docs/legacy/java-generator-inventory.md``, section 5)
 are cited as "bug N".
@@ -60,6 +62,7 @@ from mmt_plugin.semantics.types import INTEGER_TYPES
 
 __all__ = [
     "C_KEYWORDS",
+    "REGISTER_PARENTS",
     "CAttribute",
     "CCall",
     "CCase",
@@ -92,6 +95,10 @@ C_KEYWORDS = frozenset(
         "_Thread_local",
     }
 )  # fmt: skip
+
+#: The role of ``<label>_hook_register_parents``, the one hook that is not an
+#: SDK callback: every plugin has it.
+REGISTER_PARENTS = "register_parents"
 
 _INT64_MIN = -(1 << 63)
 _INT64_MAX = (1 << 63) - 1
@@ -447,6 +454,7 @@ class Context:
     attributes_by_id: tuple[CAttribute, ...]
     structs: tuple[CStruct, ...]
     hooks: tuple[Hook, ...]
+    register_parents: str
     classify: CClassify | None
     calls: tuple[CCall, ...]
     checked: tuple[str, ...]
@@ -959,7 +967,25 @@ class _Builder:
         for enabled, role, name, doc in roles:
             if enabled:
                 out.append(self.hook(role, f"{lc}_hook_{name}", doc))
+        out.append(self.register_parents_hook())
         return tuple(out)
+
+    def register_parents_hook(self) -> Hook:
+        """``<label>_hook_register_parents``, which every plugin has: PDL
+        names no parent, so user code attaches the protocol to its parents
+        (``register_classification_function_with_parent_protocol``). It
+        returns what ``init_proto`` returns, and takes the protocol struct."""
+        init = self.h.callback("init_proto")
+        protocol_t = f"{self.h.type('protocol_t')} *"
+        self.c.type("protocol_t")
+        return Hook(
+            f"{self.lc}_hook_register_parents",
+            REGISTER_PARENTS,
+            init.returns,
+            (Param("protocol_struct", protocol_t),),
+            "Attaches the protocol to its parents once it is registered (PDL names none);"
+            " returns 1, or 0 to fail the load.",
+        )
 
     def classify(self) -> CClassify | None:
         switch = self.model.classify_next
@@ -1290,6 +1316,7 @@ class _Builder:
             attributes_by_id=tuple(sorted(attributes, key=lambda a: a.id)),
             structs=structs,
             hooks=hooks,
+            register_parents=next(h.name for h in hooks if h.role == REGISTER_PARENTS),
             classify=classify,
             calls=calls,
             checked=tuple(c for c in _CHECKED.values() if c in self.exprs.checked),

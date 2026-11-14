@@ -11,6 +11,11 @@ path, version or hash-order leaks into it, so a re-run gives the same bytes.
 ``mmt_plugin.codegen.cgen`` computes what the templates print; the module
 docstring there says how the generated code reads packets.
 
+``scaffold(generation, profile)`` renders ``templates/impl.c.j2``, the user
+code file ``src/<label>_impl.c`` that defines the header's hooks
+(``mmt_plugin.codegen.scaffold``); ``mmt_plugin.codegen.hooks`` finds the
+hooks that compiled user code does not define (``build.missing-hook``).
+
 Template policy (``ENVIRONMENT``): ``StrictUndefined`` (a name the context
 does not have is an error, never an empty string), no autoescape (C is not
 HTML), ``trim_blocks`` and ``lstrip_blocks`` (a line with only a ``{% tag %}``
@@ -25,6 +30,7 @@ import jinja2
 
 from mmt_plugin.codegen.cgen import (
     C_KEYWORDS,
+    REGISTER_PARENTS,
     Context,
     GenerationError,
     Hook,
@@ -33,6 +39,7 @@ from mmt_plugin.codegen.cgen import (
     c_name,
     check_defines,
 )
+from mmt_plugin.codegen.scaffold import SCAFFOLD_TEMPLATE, ScaffoldFile, scaffold_context
 from mmt_plugin.diagnostics import Diagnostic
 from mmt_plugin.sdk.profile import Profile
 from mmt_plugin.semantics.model import AnalysedModel
@@ -41,14 +48,18 @@ __all__ = [
     "C_KEYWORDS",
     "DIAGNOSTIC_CODES",
     "ENVIRONMENT",
+    "REGISTER_PARENTS",
+    "SCAFFOLD_TEMPLATE",
     "TEMPLATES",
     "GeneratedFile",
     "Generation",
     "GenerationError",
     "Hook",
+    "ScaffoldFile",
     "c_int",
     "c_name",
     "generate",
+    "scaffold",
 ]
 
 #: The codes generation reports (``mmt_plugin.diagnostics.CODES``).
@@ -114,10 +125,19 @@ class Generation:
                 return f
         raise KeyError(name)
 
+    @property
+    def header(self) -> str:
+        """The name of the generated header, which declares the hooks."""
+        return next(f.name for f in self.files if f.name.endswith(".h"))
 
-def _render(name: str, ctx: Context) -> str:
-    template = ENVIRONMENT.get_template(name)
-    text = template.render(ctx=ctx, **{k: getattr(ctx, k) for k in ctx.__dataclass_fields__})
+
+def _render(template: str, ctx: Context) -> str:
+    fields = {k: getattr(ctx, k) for k in ctx.__dataclass_fields__}
+    return _render_text(template, ctx=ctx, **fields)
+
+
+def _render_text(template: str, /, **context: object) -> str:
+    text = ENVIRONMENT.get_template(template).render(**context)
     # Squeeze the blank lines a conditional block may leave in a row.
     lines: list[str] = []
     for line in text.split("\n"):
@@ -145,3 +165,12 @@ def generate(model: AnalysedModel, profile: Profile) -> Generation:
         key=lambda f: f.name,
     )
     return Generation(ctx.label, tuple(files), ctx.hooks, tuple(warnings))
+
+
+def scaffold(generation: Generation, profile: Profile) -> ScaffoldFile:
+    """Render the user code scaffold ``src/<label>_impl.c`` of
+    ``generation`` (made with ``profile``): a stub of every hook the header
+    declares, in memory. Nothing is written: the scaffold is the user's once
+    a project has it, and ``generate`` never writes under ``src/``."""
+    context = scaffold_context(generation, profile)
+    return ScaffoldFile(str(context["path"]), _render_text(SCAFFOLD_TEMPLATE, **context))

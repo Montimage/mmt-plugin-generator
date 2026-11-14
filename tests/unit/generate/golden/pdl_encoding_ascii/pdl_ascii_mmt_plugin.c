@@ -172,6 +172,11 @@ int init_pdl_ascii_proto_struct(void)
         mmt_log_error("init_pdl_ascii_proto_struct: cannot register protocol %d", PROTO_PDL_ASCII);
         return 0;
     }
+    /* User code (src/pdl_ascii_impl.c) attaches the protocol to its parents. */
+    if (!pdl_ascii_hook_register_parents(protocol_struct)) {
+        mmt_log_error("init_pdl_ascii_proto_struct: pdl_ascii_hook_register_parents() failed");
+        return 0;
+    }
     return 1;
 }
 

@@ -66,7 +66,6 @@ struct {{ s.tag }} {
 }{% if s.packed %} __attribute__((packed)){% endif %};
 {% endfor %}
 {% endif %}
-{% if hooks %}
 
 /*
  * Hooks: define each one in src/{{ lc }}_impl.c. A hook that is missing fails
@@ -77,7 +76,6 @@ struct {{ s.tag }} {
 /* {{ h.doc }} */
 {{ h.declaration }};
 {% endfor %}
-{% endif %}
 
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 {{ init_declaration }};

@@ -6,9 +6,10 @@ of them this module reads the Java output pinned in ``legacy/reference-output/``
 and the new output, reduces both to what they mean to mmt-dpi (``Meaning``:
 the protocol id and alias, every attribute's id, alias, type, length,
 position, scope and how its value is read, the header's structs and the
-registration calls) and asserts the two are equal, apart from the one
-difference that ``docs/behaviour-changes.md`` declares for these models:
-Java's ``register_protocol_stack`` (bug 22).
+registration calls) and asserts the two are equal, apart from the two
+differences that ``docs/behaviour-changes.md`` declares for these models:
+Java's ``register_protocol_stack`` (bug 22), and the new init's call of the
+user hook ``<l>_hook_register_parents`` (T2.2).
 
 The 4 models take ids that mmt-dpi 1.10.2 already has, and cotp, s7com
 and tpkt its names too (bug 23), so ``generate`` refuses them; here they
@@ -60,6 +61,10 @@ JAVA_READERS = {
 
 #: The registration that only the Java output makes (bug 22).
 JAVA_ONLY = "register_protocol_stack"
+
+#: The call that only the new init makes, after registering the protocol:
+#: the user hook that attaches it to its parents (T2.2, #18).
+NEW_ONLY = "_hook_register_parents"
 
 
 @dataclass(frozen=True)
@@ -291,6 +296,10 @@ SHAPES = {
         mmt_log_error("@name@: cannot register protocol %d", @proto@);
         return 0;
         }
+        if (!@parents@(protocol_struct)) {
+        mmt_log_error("@name@: @parents@() failed");
+        return 0;
+        }
         return 1;
         }
     """,
@@ -396,7 +405,15 @@ def _registrations(source: str, init: str, table: str, size: str) -> tuple[str, 
         assert found["size"] == size, (found["size"], size)
         calls.append(f"{JAVA_ONLY}({proto}, {proto}_ALIAS, {found['classify']})")
     calls.append(f"register_protocol(protocol_struct, {proto})")
+    if not java:
+        calls.append(f"{found['parents']}(protocol_struct)")
     return tuple(calls)
+
+
+def _without_new_only(meaning: Meaning) -> Meaning:
+    """``meaning`` without the new init's call of the parents hook."""
+    calls = tuple(r for r in meaning.registrations if NEW_ONLY not in r)
+    return replace(meaning, registrations=calls)
 
 
 def meaning(header_name: str, header: str, source_name: str, source: str) -> Meaning:
@@ -502,8 +519,13 @@ def test_the_new_output_means_what_the_java_output_means(name: str) -> None:
     stack = [r for r in java.registrations if r.startswith(f"{JAVA_ONLY}(")]
     assert stack == [f"{JAVA_ONLY}({java.proto}, {java.proto}_ALIAS, {classify})"]
     assert not any(r.startswith(f"{JAVA_ONLY}(") for r in new.registrations)
+    # The other (T2.2): the new init then calls the user hook that attaches
+    # the protocol to its parents, which Java never did.
+    label = java.proto.removeprefix("PROTO_").lower()
+    assert new.registrations[-1] == f"{label}{NEW_ONLY}(protocol_struct)"
+    assert not any(NEW_ONLY in r for r in java.registrations)
     without = tuple(r for r in java.registrations if r not in stack)
-    assert replace(java, registrations=without) == new
+    assert replace(java, registrations=without) == _without_new_only(new)
 
 
 @pytest.mark.parametrize("name", PARITY)
@@ -514,6 +536,7 @@ def test_the_registrations_are_the_protocol_each_row_and_the_protocol_again(name
         f"init_protocol_struct_for_registration({proto}, {proto}_ALIAS)",
         "register_attribute_with_protocol(protocol_struct, <each row>)",
         f"register_protocol(protocol_struct, {proto})",
+        f"{proto.removeprefix('PROTO_').lower()}{NEW_ONLY}(protocol_struct)",
     )
 
 
@@ -527,9 +550,9 @@ def test_the_new_init_checks_every_registration(name: str) -> None:
     source = generation.file(f"{label}_mmt_plugin.c").text
     body = _function(source, f"init_{label}_proto_struct")
     assert "get_protocol_id_by_name(" in body
-    for call in ("register_attribute_with_protocol(", "register_protocol("):
+    for call in ("register_attribute_with_protocol(", "register_protocol(", f"{label}{NEW_ONLY}("):
         assert f"if (!{call}" in body, call
-    assert re.findall(r"return (-?\d+);", body) == ["0", "0", "0", "0", "1"]
+    assert re.findall(r"return (-?\d+);", body) == ["0", "0", "0", "0", "0", "1"]
     java = _function(_pair(java_files(name))[3], f"init_{label}_proto_struct")
     assert "return -1;" in java and "return register_protocol(" in java
 
@@ -607,6 +630,10 @@ MUTATIONS = {
     ),
     "init returns before registering": ("    size_t i;\n", "    size_t i;\n\n    return 1;\n"),
     "init_proto does not init": ("    return init_tpkt_proto_struct();\n", "    return 1;\n"),
+    "init ignores the parents hook": (
+        "    if (!tpkt_hook_register_parents(protocol_struct)) {",
+        "    if (!tpkt_hook_register_parents(protocol_struct) && 0) {",
+    ),
     "a position moves": (".position_in_packet = 2", ".position_in_packet = 3"),
 }
 
@@ -626,7 +653,7 @@ def test_the_parser_fails_on_any_other_new_output(mutation: str) -> None:
         mutated = meaning(*_pair(files))
     except AssertionError:
         return
-    assert mutated != replace(java, registrations=without)
+    assert _without_new_only(mutated) != replace(java, registrations=without)
 
 
 def test_the_reference_output_is_the_frozen_one() -> None:

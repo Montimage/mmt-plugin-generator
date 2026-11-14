@@ -18,6 +18,7 @@ import re
 import shutil
 import struct
 import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -292,13 +293,17 @@ ELF_SYMBOLS = [
 ]
 
 
-def _elf(wide: bool, order: str, symtabs: int = 1) -> bytes:
+def _elf(wide: bool, order: str, symtabs: int = 1, unterminated: int = 0) -> bytes:
     """A minimal relocatable ELF object: a null section, ``symtabs``
-    SHT_SYMTAB sections (all over the same symbols) and a .strtab."""
+    SHT_SYMTAB sections (all over the same symbols) and a .strtab. With
+    ``unterminated``, the .strtab ends in that many bytes with no NUL, and a
+    global defined function's name starts at each 64th of them."""
     strtab = b"\0" + b"".join(n.encode() + b"\0" for n, _, _, _ in ELF_SYMBOLS)
     symbols = [(0, 0, 0)]  # the null symbol
     for name, bind, kind, shndx in ELF_SYMBOLS:
         symbols.append((strtab.index(name.encode() + b"\0"), bind << 4 | kind, shndx))
+    symbols += [(len(strtab) + k, 1 << 4 | 2, 1) for k in range(0, unterminated, 64)]
+    strtab += b"x" * unterminated
     if wide:
         ehsize, shoff_at, shnum_at = 64, 0x28, 0x3A
         sym = [struct.pack(order + "IBBHQQ", n, i, 0, x, 0, 0) for n, i, x in symbols]
@@ -338,6 +343,15 @@ def test_more_than_one_symbol_table_is_an_error(tmp_path: Path) -> None:
     path.write_bytes(_elf(True, "<", symtabs=2))
     with pytest.raises(ObjectFormatError, match="more than one ELF symbol table"):
         defined_functions(path)
+
+
+def test_unterminated_symbol_names_are_skipped_in_linear_time(tmp_path: Path) -> None:
+    # 4 MB with no NUL and 65536 names in it: an unbounded scan is quadratic.
+    path = tmp_path / "x.o"
+    path.write_bytes(_elf(True, "<", unterminated=4 << 20))
+    start = time.monotonic()
+    assert defined_functions(path) == {"global_fn", "weak_fn"}
+    assert time.monotonic() - start < 5
 
 
 def _cc() -> str:

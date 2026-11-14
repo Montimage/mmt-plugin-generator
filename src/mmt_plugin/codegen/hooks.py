@@ -39,6 +39,8 @@ _STT_FUNC = 2
 _STB_GLOBAL = 1
 _STB_WEAK = 2
 _SHN_UNDEF = 0
+#: The longest symbol name read; no hook name comes close.
+_MAX_NAME = 4096
 
 
 class ObjectFormatError(ValueError):
@@ -106,8 +108,12 @@ def defined_functions(path: Path) -> frozenset[str]:
                 continue
             if info >> 4 not in (_STB_GLOBAL, _STB_WEAK):
                 continue
-            end = strings.find(b"\0", name)
-            names.add(strings[name : end if end >= 0 else None].decode("ascii", "replace"))
+            # Bounded, so crafted input with many symbols in one unterminated
+            # run costs linear time; such a name cannot be a hook: skip it.
+            end = strings.find(b"\0", name, name + _MAX_NAME + 1)
+            if end < 0:
+                continue
+            names.add(strings[name:end].decode("ascii", "replace"))
     return frozenset(names)
 
 

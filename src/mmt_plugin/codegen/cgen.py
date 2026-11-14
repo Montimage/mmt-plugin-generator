@@ -465,6 +465,7 @@ class _Expressions:
         self.lc = lc
         self.model = model
         self.vals: set[str] = set()
+        self.val_spans: dict[str, Span] = {}
         self.offsets: set[str] = set()
         self.lengths: set[str] = set()
         self.checked: set[str] = set()
@@ -499,6 +500,7 @@ class _Expressions:
                 reads = True
                 if isinstance(e, ValueRef):
                     self.vals.add(key)
+                    self.val_spans.setdefault(key, e.span)
                     what = "val"
                 elif isinstance(e, OffsetRef):
                     self.offsets.add(key)
@@ -797,7 +799,7 @@ class _Builder:
                     length_checked=integer and width is None,
                     reads_packet=place.reads,
                     get=f"{lc}_get_{key}" if integer else None,
-                    val=f"{lc}_val_{key}" if key in self.exprs.vals else None,
+                    val=f"{lc}_val_{key}" if integer and key in self.exprs.vals else None,
                     offset_fn=f"{lc}_offset_{key}" if key in self.exprs.offsets else None,
                     length_fn=f"{lc}_length_{key}" if key in self.exprs.lengths else None,
                     store_type=_INTEGER_STORAGE[a.data_type][0] if integer else None,
@@ -1229,6 +1231,17 @@ class _Builder:
             sdk=dict(names),
         )
         self.errors += self.exprs.errors
+        for a in model.attributes:
+            span = self.exprs.val_spans.get(a.key)
+            if a.is_hook and span is not None:
+                # The value of a hook attribute exists only in user code.
+                self.error(
+                    "model.hook-value",
+                    f"val({a.name}) reads an attribute without an offset, which only its user"
+                    " hook extracts: the generated code cannot read its value",
+                    f"give {a.name} an offset, or read the value in user code",
+                    span,
+                )
         self.collisions(ctx)
         return ctx
 

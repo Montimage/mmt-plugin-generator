@@ -54,6 +54,7 @@ __all__ = [
 #: The codes generation reports (``mmt_plugin.diagnostics.CODES``).
 DIAGNOSTIC_CODES = (
     "model.name-collision",
+    "model.hook-value",
     "model.integer-length",
     "model.variable-length",
     "model.missing-length",

@@ -347,6 +347,29 @@ def test_a_fixed_size_sdk_type_needs_a_constant_length() -> None:
     assert _generation_error(model(body)) == ["model.variable-length"]
 
 
+@pytest.mark.parametrize(
+    "use",
+    [
+        "    if (val(h) == 1) {\n" + attr("x", "1") + "\n    }",
+        attr("x", "val(h)"),
+        attr("x", "1", length="val(h)", dtype="MMT_BINARY_DATA"),
+    ],
+)
+def test_val_of_a_hook_attribute_is_a_model_error(use: str) -> None:
+    # Review of #14: the generated code would call a get function that
+    # does not exist, since only the user hook extracts h.
+    assert _generation_error(model(attr("h", None) + "\n" + use)) == ["model.hook-value"]
+
+
+def test_val_of_a_hook_attribute_in_classifynext_is_a_model_error() -> None:
+    text = model(attr("h", None), props='encapsulation = "true" encoding = "network"').replace(
+        "  }\n}\n",
+        "  }\n  classifynext { switch(val(h)) { case 1: nextencaps = 991 break default: break } }"
+        "\n}\n",
+    )
+    assert _generation_error(text) == ["model.hook-value"]
+
+
 def test_a_define_named_like_a_name_of_the_generated_c_is_a_model_error() -> None:
     text = model(attr("a", "0")).replace("Protocol {\n", "Protocol {\n  define data = 1\n")
     assert _generation_error(text) == ["model.name-collision"]

@@ -19,10 +19,17 @@ alone and asserts, with ``_Static_assert`` and ``__builtin_types_compatible_p``
   logger macros are also called with a format string, once with the debug
   opt-in defined.
 
-The unit is compiled with ``-std=<c_std> -Wall -Wextra -Werror -fsyntax-only``,
-so a deprecated function also fails. Separately, each entry's name must
-appear in its header with comments stripped, so the header recorded is the
-one that declares it, not one that includes it.
+One more unit includes ``parents.header`` and every header of
+``parents.ids`` and asserts each protocol id; the same unit, preprocessed
+(``-E``), shows that each ``PROTO_<X>_ALIAS`` expands to the recorded name.
+
+The units are compiled with ``-std=<c_std> -Wall -Wextra -Werror
+-fsyntax-only``, so a deprecated function also fails. Separately, each entry's
+name must appear in its header with comments stripped, so the header recorded
+is the one that declares it, not one that includes it, and each header of
+``parents.ids`` must define no numeric ``PROTO_*`` macro (``PROTO_CLASS_*``
+excepted) and no ``PROTO_*_ALIAS`` that the profile does not list, so the
+list is complete.
 
     python -m mmt_plugin.sdk.headercheck --sdk PREFIX [--profile FILE] [--cc CC]
 
@@ -46,9 +53,27 @@ from mmt_plugin.sdk.detect import VERSION_HEADER, Sdk, require_sdk
 from mmt_plugin.sdk.profile import Profile, ProfileError, get_bundled, load_profile
 from mmt_plugin.sdk.resolve import find_bundled
 
-__all__ = ["CheckResult", "check_profile", "declared_names", "main", "render_unit"]
+__all__ = [
+    "CheckResult",
+    "check_profile",
+    "declared_names",
+    "main",
+    "render_ids_unit",
+    "render_unit",
+]
 
 _COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+
+#: A numeric ``PROTO_*`` macro, in a header with comments stripped.
+_NUMERIC_PROTO = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)[ \t]+\(?[ \t]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*"
+    r"[ \t]*\)?[ \t]*$",
+    re.MULTILINE,
+)
+#: A ``PROTO_<X>_ALIAS`` macro, in a header with comments stripped.
+_ALIAS_PROTO = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)_ALIAS\b", re.MULTILINE)
+#: A line of the preprocessed alias unit: ``mmtp_alias_<n>: <expansion>``.
+_ALIAS_LINE = re.compile(r"^mmtp_alias_([0-9]+): (.*?)\s*$", re.MULTILINE)
 
 #: Compiler flags; ``-std`` comes from the profile.
 WARNING_FLAGS = ("-Wall", "-Wextra", "-Werror", "-fsyntax-only")
@@ -209,6 +234,32 @@ def render_unit(profile: Profile, header: str) -> str:
     return "\n".join(lines)
 
 
+def render_ids_unit(profile: Profile) -> str:
+    """The C translation unit that checks ``parents.ids``: one assertion per
+    id, then one ``mmtp_alias_<n>: PROTO_<X>_ALIAS`` line per alias, which
+    only the preprocessor reads (``#ifdef MMTP_ALIASES``)."""
+    pa = profile.parents
+    protocols = pa.protocols()
+    aliases = [p for p in protocols if p.alias is not None]
+    lines = [
+        f"/* mmt_plugin.sdk.headercheck: profile {profile.version}, parents.ids. */",
+        "#include <stddef.h>",
+        f'#include "{pa.header}"',
+        *(f'#include "{h.header}"' for h in pa.ids),
+        "",
+        *(
+            _assert(f"({p.macro}) == {p.id}", f"parents.ids.{p.macro} is not {p.id}")
+            for p in protocols
+        ),
+        "",
+        "#ifdef MMTP_ALIASES",
+        *(f"mmtp_alias_{i}: {p.macro}_ALIAS" for i, p in enumerate(aliases)),
+        "#endif",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def declared_names(profile: Profile) -> dict[str, list[str]]:
     """Per header, the names that must appear in it (comments stripped)."""
     names: dict[str, list[str]] = {h.name: [] for h in profile.headers}
@@ -231,6 +282,13 @@ def declared_names(profile: Profile) -> dict[str, list[str]]:
     add(profile.logger.header, profile.logger.debug_opt_in)
     for name in profile.parents.examples:
         add(profile.parents.declared_in, name)
+    for group in profile.parents.ids:
+        for p in group.protocols:
+            add(group.header, p.macro)
+            if p.alias is not None:
+                add(group.header, f"{p.macro}_ALIAS")
+        for name in group.not_ids:
+            add(group.header, name)
     return names
 
 
@@ -257,6 +315,59 @@ def _check_declared(profile: Profile, include_dir: str) -> Iterator[CheckResult]
         )
 
 
+def _check_complete(profile: Profile, include_dir: str) -> Iterator[CheckResult]:
+    """Each header of ``parents.ids`` defines no protocol id or alias that
+    the profile does not list."""
+    for group in profile.parents.ids:
+        try:
+            text = _read_header(os.path.join(include_dir, group.header))
+        except OSError:
+            continue  # _check_declared reports it
+        listed = {p.macro for p in group.protocols} | set(group.not_ids)
+        aliases = {p.macro for p in group.protocols if p.alias is not None}
+        missing = [
+            *(n for n in _NUMERIC_PROTO.findall(text) if not n.startswith("PROTO_CLASS_")),
+            *(f"{n}_ALIAS" for n in _ALIAS_PROTO.findall(text) if n not in aliases),
+        ]
+        missing = [n for n in dict.fromkeys(missing) if n not in listed]
+        yield CheckResult(
+            f"{group.header}: parents.ids lists all its protocols ({len(group.protocols)})",
+            not missing,
+            "not in the profile: " + ", ".join(missing) if missing else "",
+        )
+
+
+def _check_aliases(cc: str, profile: Profile, include_dir: str, source: str) -> CheckResult:
+    """Each recorded alias is what its ``PROTO_<X>_ALIAS`` expands to."""
+    aliases = [p for p in profile.parents.protocols() if p.alias is not None]
+    name = f"parents.ids: {len(aliases)} PROTO_*_ALIAS expand to their names ({cc} -E)"
+    ok, output = _run(
+        [cc, f"-std={profile.c_std}", "-E", "-P", "-DMMTP_ALIASES", "-I", include_dir, source]
+    )
+    if not ok:
+        return CheckResult(name, False, output)
+    found = {int(i): text for i, text in _ALIAS_LINE.findall(output)}
+    wrong = [
+        f"parents.ids.{p.macro}: {p.macro}_ALIAS is {found.get(i, 'missing')}, not "
+        f"{_c_string(p.alias or '')}"
+        for i, p in enumerate(aliases)
+        if found.get(i) != _c_string(p.alias or "")
+    ]
+    return CheckResult(name, not wrong, "\n".join(wrong))
+
+
+def _run(cmd: Sequence[str]) -> tuple[bool, str]:
+    """Run a compiler: whether it succeeded, and its stdout when it did, its
+    whole output when it did not."""
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
+    except OSError as exc:
+        return False, f"cannot run {cmd[0]}: {exc.strerror or exc}"
+    if proc.returncode == 0:
+        return True, proc.stdout
+    return False, (proc.stdout + proc.stderr).strip()
+
+
 def _compile(
     cc: str, profile: Profile, include_dir: str, source: str, defines: Sequence[str]
 ) -> tuple[bool, str]:
@@ -269,11 +380,8 @@ def _compile(
         *(f"-D{d}" for d in defines),
         source,
     ]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
-    except OSError as exc:
-        return False, f"cannot run {cc}: {exc.strerror or exc}"
-    return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
+    ok, output = _run(cmd)
+    return ok, output.strip()
 
 
 def check_profile(profile: Profile, sdk: Sdk, cc: str = "gcc") -> list[CheckResult]:
@@ -285,6 +393,7 @@ def check_profile(profile: Profile, sdk: Sdk, cc: str = "gcc") -> list[CheckResu
         )
     ]
     results += _check_declared(profile, sdk.include_dir)
+    results += _check_complete(profile, sdk.include_dir)
     flags = " ".join((f"-std={profile.c_std}", *WARNING_FLAGS))
     with tempfile.TemporaryDirectory(prefix="mmtp-headercheck-") as tmp:
         for i, header in enumerate(h.name for h in profile.headers):
@@ -302,6 +411,18 @@ def check_profile(profile: Profile, sdk: Sdk, cc: str = "gcc") -> list[CheckResu
                         f"{header}: entries compile ({cc} {flags}{with_defines})", ok, output
                     )
                 )
+        if profile.parents.ids:
+            source = os.path.join(tmp, "check_ids.c")
+            with open(source, "w", encoding="utf-8") as f:
+                f.write(render_ids_unit(profile))
+            ok, output = _compile(cc, profile, sdk.include_dir, source, ())
+            count = len(profile.parents.protocols())
+            results.append(
+                CheckResult(
+                    f"parents.ids: {count} protocol ids compile ({cc} {flags})", ok, output
+                )
+            )
+            results.append(_check_aliases(cc, profile, sdk.include_dir, source))
     return results
 
 

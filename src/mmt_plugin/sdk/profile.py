@@ -16,6 +16,7 @@ cross-references a schema cannot express.
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -40,6 +41,8 @@ __all__ = [
     "Parents",
     "Profile",
     "ProfileError",
+    "ProtocolHeader",
+    "SdkProtocol",
     "Struct",
     "TypeName",
     "bundled_versions",
@@ -65,6 +68,8 @@ _VERSION = re.compile(r"^[0-9]+(\.[0-9]+)*$")
 _LAYOUTS = ("complete", "partial")
 _ID_MACRO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\{LABEL\}[A-Za-z0-9_]*$")
 _SDK_NAME = "mmt-dpi"
+#: An alias is copied into a C string literal as is.
+_ALIAS = re.compile(r'^[^"\\\s]+$')
 
 
 class ProfileError(ValueError):
@@ -235,18 +240,59 @@ class ClassProvider:
 
 
 @dataclass(frozen=True)
+class SdkProtocol:
+    """A protocol an SDK plugin registers: its id macro, id, the header that
+    defines both, and the name it registers (``PROTO_<X>_ALIAS``), or
+    ``None`` when the header defines no alias."""
+
+    macro: str
+    id: int
+    header: str
+    alias: str | None
+
+
+@dataclass(frozen=True)
+class ProtocolHeader:
+    """The protocols one header of an SDK plugin defines, in header order.
+    ``not_ids`` are its other numeric ``PROTO_*`` macros, which are not
+    protocol ids."""
+
+    header: str
+    doc: str
+    protocols: tuple[SdkProtocol, ...]
+    not_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Parents:
-    """How generated code names a libmmt_tcpip parent protocol's id."""
+    """How generated code names a libmmt_tcpip parent protocol's id.
+
+    ``ids`` lists, per header, every protocol of the plugins the SDK
+    installs; it is empty when the profile records none.
+    """
 
     header: str
     declared_in: str
     id_macro: str
     examples: tuple[str, ...]
     doc: str
+    ids: tuple[ProtocolHeader, ...] = ()
 
     def id_for(self, label: str) -> str:
         """The id macro of a parent label: ``"tcp"`` -> ``"PROTO_TCP"``."""
         return self.id_macro.replace("{LABEL}", label.upper())
+
+    def protocols(self) -> tuple[SdkProtocol, ...]:
+        """Every protocol of ``ids``, sorted by id."""
+        return tuple(sorted((p for h in self.ids for p in h.protocols), key=lambda p: p.id))
+
+    def id_of(self, macro: str) -> int | None:
+        """The id of a protocol macro (``"PROTO_TCP"`` -> 354), or ``None``."""
+        for header in self.ids:
+            for p in header.protocols:
+                if p.macro == macro:
+                    return p.id
+        return None
 
 
 @dataclass(frozen=True)
@@ -499,6 +545,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         top.value["parents"],
         f"{source}.parents",
         ("header", "declared_in", "id_macro", "examples", "doc"),
+        ("ids",),
     )
     examples = []
     for i, ex in enumerate(pa.array("examples")):
@@ -514,6 +561,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         id_macro=id_macro,
         examples=tuple(examples),
         doc=pa.text("doc"),
+        ids=_parent_ids(pa),
     )
     version = top.text("profile", _VERSION)
     profile = Profile(
@@ -534,6 +582,53 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
     )
     _check_references(profile, source)
     return profile
+
+
+def _parent_ids(pa: _Reader) -> tuple[ProtocolHeader, ...]:
+    """``parents.ids``: per header, its protocols; each header, macro, id and
+    alias (case-insensitively) once."""
+    if "ids" not in pa.value:
+        return ()
+    headers = []
+    for item, where in _items(pa, "ids"):
+        h = _Reader(item, where, ("header", "doc", "protocols"), ("not_ids",))
+        header = h.text("header", _HEADER)
+        raw = h.value["protocols"]
+        if not isinstance(raw, dict):
+            raise ProfileError(f"{where}.protocols: expected an object")
+        protocols = []
+        for name, value in raw.items():
+            if not _IDENT.match(name):
+                raise ProfileError(f"{where}.protocols: {name!r} is not a C identifier")
+            entry = _Reader(value, f"{where}.protocols.{name}", ("id",), ("alias",))
+            pid = entry.value["id"]
+            if type(pid) is float and pid.is_integer():
+                pid = int(pid)
+            if type(pid) is not int or pid < 0:
+                raise ProfileError(f"{entry.where}.id: expected a non-negative integer")
+            alias = entry.opt_text("alias")
+            if alias is not None and not _ALIAS.match(alias):
+                raise ProfileError(
+                    f"{entry.where}.alias: {alias!r} holds a quote, a backslash or a space"
+                )
+            protocols.append(SdkProtocol(name, pid, header, alias))
+        not_ids = []
+        for i, name in enumerate(h.array("not_ids") if "not_ids" in h.value else []):
+            if not isinstance(name, str) or not _IDENT.match(name):
+                raise ProfileError(f"{where}.not_ids[{i}]: expected a C identifier")
+            not_ids.append(name)
+        headers.append(ProtocolHeader(header, h.text("doc"), tuple(protocols), tuple(not_ids)))
+    _unique([h.header for h in headers], "parents.ids header", pa.where)
+    every = [p for h in headers for p in h.protocols]
+    _unique(
+        [*(p.macro for p in every), *(n for h in headers for n in h.not_ids)], "macro", pa.where
+    )
+    by_id = sorted(every, key=lambda p: (p.id, p.macro))
+    for a, b in itertools.pairwise(by_id):
+        if a.id == b.id:
+            raise ProfileError(f"{pa.where}.ids: {a.macro} and {b.macro} are both {a.id}")
+    _unique([p.alias.lower() for p in every if p.alias is not None], "alias", pa.where)
+    return tuple(headers)
 
 
 def _sdk_name(top: _Reader) -> str:

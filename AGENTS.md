@@ -53,6 +53,14 @@ protocol model. A Python rewrite is planned in
   version in `sdk/profiles/` (only 1.10.2 so far; schema in
   `schemas/sdk/v1/profile.json`), SDK prefix detection and profile choice.
   Plain functions for the commands to call; no command of its own.
+- `src/mmt_plugin/semantics/` (T1.3): the semantic passes.
+  `analyse(model, profile=...)` returns the analysed model
+  (`semantics/model.py`: types, offsets, bitfields, folded expressions,
+  resolved references, defaults) and `model.*` diagnostics; no file I/O.
+  The model is `None` on any error, including an id or name the SDK already
+  takes; `allow_sdk_conflicts=True` still returns it with those two errors
+  (T1.6). Tests in `tests/unit/semantics/`, including the layout of every
+  corpus fixture.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`

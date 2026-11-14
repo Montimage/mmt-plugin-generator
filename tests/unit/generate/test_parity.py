@@ -10,9 +10,10 @@ registration calls) and asserts the two are equal, apart from the one
 difference that ``docs/behaviour-changes.md`` declares for these models:
 Java's ``register_protocol_stack`` (bug 22).
 
-The 4 models take ids and names that mmt-dpi 1.10.2 already has (bug 23), so
-``generate`` refuses them; here they are analysed with
-``allow_sdk_conflicts=True``, which keeps the model and only those errors.
+The 4 models take ids that mmt-dpi 1.10.2 already has, and cotp, s7com
+and tpkt its names too (bug 23), so ``generate`` refuses them; here they
+are analysed with ``allow_sdk_conflicts=True``, which keeps the model and
+only those errors.
 
 The parser reads the C each generator writes, not C in general: a form it
 does not know fails the test instead of being skipped.

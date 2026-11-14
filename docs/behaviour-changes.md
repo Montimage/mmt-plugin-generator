@@ -23,9 +23,10 @@ mean to mmt-dpi:
 - the registration calls of `init_<l>_proto_struct()`, in order.
 
 The two are equal, apart from row 1 below: Java also calls
-`register_protocol_stack` (bug 22). The 4 models also take ids and names that
-mmt-dpi 1.10.2 already has (row 2), so the test analyses them with the SDK
-conflicts allowed, as `generate` itself does not.
+`register_protocol_stack` (bug 22). The 4 models also take ids that mmt-dpi
+1.10.2 already has, and cotp, s7com and tpkt its names too (row 2), so the
+test analyses them with the SDK conflicts allowed, as `generate` itself does
+not.
 
 Spellings that mean the same to the C compiler are not differences: explicit
 enum values instead of implicit ones, `data_len = 2` instead of

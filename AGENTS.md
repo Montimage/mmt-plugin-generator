@@ -35,8 +35,8 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and nine commands, `init` (T2.7), `validate`
-  (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  envelope and its schema) and ten commands, `init` (T2.7), `import`
+  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
   `uninstall` and `doctor` (T2.5) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
@@ -213,6 +213,20 @@ protocol model. A Python rewrite is planned in
   `test_roundtrip.py` (every corpus model round-trips in both offset modes
   and generates the same C) and `test_sdk.py` (a packet test that passes
   only through the generated parent classification; needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/import_pdl.py` (T3.2): `mmt-plugin import PDL`
+  (`-` is stdin) converts a PDL v1 model to `plugin.yaml`
+  (`pluginyaml/convert.py`): `-o FILE` (default `<project>/plugin.yaml`; `-o -`
+  prints it, a usage error with `--json`), `--dry-run`, `--force`,
+  `--strict`. It analyses against the newest bundled profile and pins none;
+  offsets are absolute, or `running` when the only errors are duplicate
+  names the Java tool accepted. A construct that relied on a Java bug is a
+  `model.legacy-*` warning (the table in `docs/plugin-yaml.md`, "From PDL
+  v1"), an SDK id or name conflict among them; any other model error is exit
+  3, nothing written. The same output is a no-op; other content, or a
+  symbolic link, is `state.output-differs` (exit 7) unless `--force`, a
+  directory always. Tests in `tests/unit/importpdl/`: `test_convert.py` (each
+  warning), `test_command.py` and `test_corpus.py` (every corpus model that
+  parses imports, and `generate` gives the same C from both formats).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -365,6 +379,13 @@ The same for a `plugin.yaml` model (`docs/plugin-yaml.md`); a project's
 ```
 uv run mmt-plugin validate <project>/plugin.yaml --no-sdk
 uv run mmt-plugin -C <project> generate --sdk-profile 1.10.2
+```
+
+Convert a PDL v1 model to `plugin.yaml` (warnings on constructs that relied
+on Java bugs are `model.legacy-*`; `-o -` prints the YAML):
+
+```
+uv run mmt-plugin import plugins/tpkt_plugin -o <project>/plugin.yaml
 ```
 
 Load a `plugin.yaml` project whose parent is classified by generated code

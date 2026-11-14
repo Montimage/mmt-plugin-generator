@@ -171,4 +171,34 @@ format as `plugin.yaml`; every corpus model round-trips through it
 (`tests/unit/pluginyaml/test_roundtrip.py`). With absolute offsets it writes
 the offsets the semantic passes computed for the attributes and structs the
 running offset placed; `offsets=Offsets.RUNNING` keeps the offsets as
-written. The `mmt-plugin import` command is #25.
+written.
+
+`mmt-plugin import PDL` (#25) converts a PDL v1 model to `plugin.yaml`
+(`<project>/plugin.yaml`, or `-o FILE`; `-o -` prints it), and `generate`
+gives the same C from both. It analyses the model against the newest
+bundled SDK profile, pins no `sdk.profile`, and writes absolute offsets.
+Comments and the spelling of a packet scope are not kept: an omitted
+`scope` is packet. A model error stops it (exit 3, nothing written), except
+for the constructs below, which the Java tool accepted. Each is a warning
+whose code starts with `model.legacy-`, and which says what the Java tool
+did; `--strict` makes them fail. "Bug" is the number in section 5 of the
+[inventory](legacy/java-generator-inventory.md), and "Row" the row of
+[`behaviour-changes.md`](behaviour-changes.md) that pins what mmt-plugin
+does instead.
+
+| Code | The construct | Bug | Row |
+|---|---|---|---|
+| `model.legacy-sdk-conflict` | A protocol id or name that the SDK already has. The model is converted; `generate` refuses it. | 23 | 2 |
+| `model.legacy-duplicate-name` | A name used twice, where the second is conditional or differs only in case. The analysis cannot place the attributes, so the model is written with `offsets: running`, as PDL v1 placed them, until one is renamed. | 12, 16 | 30, 31 |
+| `model.legacy-bitfield-order` | A bitfield run: numbered from the most significant bit of its unit, not in the C compiler's order (least significant bit first with gcc on x86). | – (plan decision 8) | 17 |
+| `model.legacy-bitfield-offset` | A struct field after a bitfield line, or an element the running offset places after a struct with bitfields: the Java tool placed both further on. | 2, 3 | 22, 23 |
+| `model.legacy-constant-folding` | An offset or length that reads the packet (`val()`) but ends in a constant, which the Java tool folded (`val(x) - 4` became -4). | 5 | 25 |
+| `model.legacy-comparison` | A constant `>`, `<`, `>=` or `<=` whose value is not the one of `!=`, as the Java tool folded it. | 6 | 26 |
+| `model.legacy-sizeof-char` | `sizeof(char)`: 1, where the Java tool wrote 4. | 7 | 27 |
+| `model.legacy-classifynext` | A `classifynext` block without `encapsulation = "true"`, which the Java tool dropped. | 21 | 15 |
+| `model.legacy-ip-addr` | An `MMT_DATA_IP_ADDR` at an offset that reads the packet, which the Java tool byte-swapped. | 25 | 16 |
+
+The other bugs of the inventory are not in the model (22, 24) or made
+output that did not compile or did not work, so no working model relied on
+them; the analysis reports what is still wrong with its own codes. The analysis warnings are kept, apart from
+`model.default-scope`.

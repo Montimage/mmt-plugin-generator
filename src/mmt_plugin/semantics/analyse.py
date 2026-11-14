@@ -251,6 +251,7 @@ class _Mismatch:
     span: Span
     then_end: int | None
     else_end: int | None
+    has_else: bool
 
 
 @dataclass(frozen=True)
@@ -795,6 +796,9 @@ class _Analyser:
             related=[
                 Related(
                     f"its then branch ends at {_end(m.then_end)}, its else branch at "
+                    f"{_end(m.else_end)}"
+                    if m.has_else
+                    else f"its then branch ends at {_end(m.then_end)}; without the if, R is "
                     f"{_end(m.else_end)}",
                     m.span.location(),
                 )
@@ -1093,7 +1097,10 @@ class _Analyser:
             after = _State(
                 else_state.offset,
                 else_state.aligned,
-                (*else_state.pending, _Mismatch(el.span, then_end, else_end)),
+                (
+                    *else_state.pending,
+                    _Mismatch(el.span, then_end, else_end, el.else_branch is not None),
+                ),
             )
         conditional = AnalysedConditional(index, condition, then_branch, else_branch, el.span)
         self.conditionals.append(conditional)

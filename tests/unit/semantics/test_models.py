@@ -55,7 +55,8 @@ EXPECTED: dict[str, tuple[list[str], str]] = {
     "pdl_alignment": (
         ["model.branch-offset-mismatch"] * 2,
         "warnings, decision 8: cs0 adds the R of the first if/else (branches end at 7 and 8) "
-        "and a2 the R of the second if (8 and 10); the model exercises exactly that rule",
+        "and a2 the R of the second if, which has no else (10, and 8 without the if); the "
+        "model exercises exactly that rule",
     ),
     "pdl_bitfields": ([], "clean"),
     "pdl_classifynext": ([], "clean"),
@@ -139,7 +140,7 @@ def test_the_if_else_warning_in_pdl_alignment() -> None:
         ),
         (
             'alias="a2" data_type="MMT_U8_DATA" data_len="1" offset="2" scope="SCOPE_PACKET"',
-            "its then branch ends at 10, its else branch at 8",
+            "its then branch ends at 10; without the if, R is 8",
             "if (val(a0) == 2) {",
         ),
     ]

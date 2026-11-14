@@ -210,6 +210,18 @@ def test_diagnostic(name: str) -> None:
     assert (allowed is not None) == (case.severity is W or name in ("id-taken", "name-taken"))
 
 
+def test_branch_offset_mismatch_after_an_if_without_else() -> None:
+    # No else branch to name: R is the one from before the if.
+    text = whole(u8("k", "0") + cond("val(k) == 1", u8("c", "0")) + u8("after", "0"))
+    analysed, diagnostics = run(text)
+    assert analysed is not None
+    assert [d.code for d in diagnostics] == ["model.branch-offset-mismatch"]
+    (related,) = diagnostics[0].related
+    assert related.message == "its then branch ends at 2; without the if, R is 1"
+    assert related.location is not None and related.location.line is not None
+    assert text.splitlines()[related.location.line - 1].strip() == "if (val(k) == 1) {"
+
+
 SEMANTIC = [c for c in CODES if c.startswith("model.") and not c.startswith("model.syntax.")]
 
 

@@ -35,10 +35,10 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and two commands, `generate` (T1.5) and
-  `completion {bash,zsh,fish}` (T2.6); each other command registers itself
-  in `src/mmt_plugin/commands/` with its own issue, declaring its
-  `exit_codes` and shipping its `result` schema as
+  envelope and its schema) and three commands, `validate` (T2.1),
+  `generate` (T1.5) and `completion {bash,zsh,fish}` (T2.6); each other
+  command registers itself in `src/mmt_plugin/commands/` with its own issue,
+  declaring its `exit_codes` and shipping its `result` schema as
   `src/mmt_plugin/schemas/cli/v1/<command>.json`. Styled (btop)
   output goes through `src/mmt_plugin/ui/style.py`: a command returns a
   `view` in its `Outcome`. `tests/unit/test_contract.py` checks every
@@ -92,6 +92,17 @@ protocol model. A Python rewrite is planned in
   to protocol, attributes, table rows, reads, structs and registrations, and
   asserts they are equal apart from Java's `register_protocol_stack` (bug 22).
   Add a row to the page when `generate` changes behaviour the Java tool had.
+- `src/mmt_plugin/commands/validate.py` (T2.1): `mmt-plugin validate` reports
+  the checks `schema`, `semantics`, `sdk-profile`, `id-free`, `name-free`,
+  `parents-exist`, `load-order` and `id-range`, each `pass`/`warn`/`fail`/`skip`.
+  The id and the name are checked against the profile (the SDK headers) and
+  against what `init_extraction()` registers with the installed plugins
+  (`src/mmt_plugin/sdk/registry.py`: a child Python process loads
+  `libmmt_core` with ctypes, without the plugin's own `mmtp_<label>.so`).
+  Without an SDK it exits 4 unless `--no-sdk`. `commands/modelio.py` reads
+  `MODEL` for `generate` and `validate`. Tests in `tests/unit/test_validate.py`
+  and `tests/unit/test_sdk_registry.py` (its real-SDK tests need
+  `MMT_GOLDEN_SDK`, like `test_compile.py`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -101,7 +112,8 @@ protocol model. A Python rewrite is planned in
   instead of skipping), the SDK profile header check (amd64 and arm64), and
   the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
-  clang) and per arch (amd64, arm64).
+  clang) and per arch (amd64, arm64), then `test_sdk_registry.py` (the
+  run-time registry and `validate` against that SDK).
 
 ## Commands
 
@@ -202,6 +214,20 @@ needs a bundled profile; without `MMT_GOLDEN_SDK` the test skips:
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/generate/test_compile.py
+```
+
+Validate a model against an SDK prefix (`--no-sdk --sdk-profile 1.10.2` checks
+it without one, skipping the installed-plugin checks):
+
+```
+uv run mmt-plugin validate tests/corpus/models/ndn/model.pdl --sdk <dir>/opt/mmt
+```
+
+Read the run-time registry and validate against a real SDK (skips without
+`MMT_GOLDEN_SDK`):
+
+```
+MMT_GOLDEN_SDK=<dir>/opt/mmt uv run pytest tests/unit/test_sdk_registry.py
 ```
 
 Generate a model's C sources (no installed SDK needed with a pinned profile):

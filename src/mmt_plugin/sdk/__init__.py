@@ -6,7 +6,9 @@
   and its version;
 - ``mmt_plugin.sdk.resolve``: the profile to use (``resolve_profile``) and
   the envelope's ``context.sdk`` (``sdk_context``);
-- ``mmt_plugin.sdk.headercheck``: checks a profile against real headers.
+- ``mmt_plugin.sdk.headercheck``: checks a profile against real headers;
+- ``mmt_plugin.sdk.registry``: the protocols an installed SDK registers at
+  run time with its plugins (``read_registry``).
 
 No command is registered here: ``generate``, ``validate``, ``build`` and
 ``doctor`` call these functions.

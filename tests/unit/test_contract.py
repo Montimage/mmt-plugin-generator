@@ -14,7 +14,7 @@ later issue registers is checked without a new test:
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
 A command whose shortest successful run needs input files (``generate``
-needs a model) gets them from ``SETUP``. With zero real commands the loop
+and ``validate`` need a model) gets them from ``SETUP``. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
 
@@ -204,7 +204,16 @@ def _generate_args(directory: Path) -> list[str]:
 
 #: The commands whose shortest successful run needs input files: what to
 #: write into the run's directory (the cwd), and the arguments to pass.
-SETUP: dict[str, Callable[[Path], list[str]]] = {"generate": _generate_args}
+def _validate_args(directory: Path) -> list[str]:
+    # No SDK is looked for (--no-sdk) and the profile is pinned: no warning.
+    (directory / "model.pdl").write_text(CONTRACT_MODEL)
+    return ["model.pdl", "--no-sdk", "--sdk-profile", "1.10.2"]
+
+
+SETUP: dict[str, Callable[[Path], list[str]]] = {
+    "generate": _generate_args,
+    "validate": _validate_args,
+}
 
 
 def _cases(commands: Sequence[Command]) -> Iterator[tuple[str, list[str]]]:

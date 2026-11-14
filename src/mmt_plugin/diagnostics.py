@@ -115,8 +115,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "branches advance the running offset differently",
         # Code generation and `generate` (mmt_plugin.codegen, mmt_plugin.commands.generate, #14).
         "model.unreadable": "the model file cannot be read, or is not UTF-8 text",
-        "model.unsupported-format": "the model is plugin.yaml, which generate reads only once "
-        "#24 lands",
+        "model.unsupported-format": "the model is plugin.yaml, which generate and validate "
+        "read only once #24 lands",
         "model.name-collision": "two names of the generated C are the same identifier, or a "
         "model define would replace a name the generated C uses",
         "model.hook-value": "val(), or len() computed per packet, of an attribute without an "
@@ -137,6 +137,13 @@ CODES: Mapping[str, str] = MappingProxyType(
         "not plugin.lock's); it is not overwritten or removed without --force",
         "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin knows",
         "state.kept": "warning: a file generate no longer writes is kept, not removed",
+        # `validate` (mmt_plugin.commands.validate, mmt_plugin.sdk.registry, #17).
+        "model.unknown-parent": "a parent protocol of the model is not in the SDK profile and "
+        "not registered by the installed plugins",
+        "model.load-order": "the plugin file name does not sort after libmmt_tcpip.so (C "
+        "locale or LC_COLLATE), so its parents are not registered when it loads",
+        "sdk.registry-unavailable": "warning: the protocols the installed plugins register "
+        "could not be read; only the SDK profile was checked",
     }
 )
 

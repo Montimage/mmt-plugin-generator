@@ -142,6 +142,7 @@ class Command(Protocol):
 # The commands use the types above, so they are imported after them.
 from mmt_plugin.commands.completion import CompletionCommand  # noqa: E402
 from mmt_plugin.commands.generate import GenerateCommand  # noqa: E402
+from mmt_plugin.commands.validate import ValidateCommand  # noqa: E402
 
 #: The registered commands, in ``--help`` order (``docs/design/cli.md``, section 2).
-COMMANDS: tuple[Command, ...] = (GenerateCommand(), CompletionCommand())
+COMMANDS: tuple[Command, ...] = (ValidateCommand(), GenerateCommand(), CompletionCommand())

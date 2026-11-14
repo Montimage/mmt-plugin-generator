@@ -446,3 +446,12 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/generate/test_compile.py
+      - name: Read the run-time registry and validate against the SDK
+        # tests/unit/test_sdk_registry.py: the protocols init_extraction()
+        # registers with the SDK's plugins, one of them excluded, and
+        # mmt-plugin validate against that SDK (#17).
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/test_sdk_registry.py

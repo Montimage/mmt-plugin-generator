@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,11 +42,21 @@ from pathlib import Path
 from mmt_plugin import __version__
 from mmt_plugin.codegen import Generation, GenerationError, generate
 from mmt_plugin.commands import Context, Outcome, Subparsers
+from mmt_plugin.commands.modelio import (
+    FORMATS,
+    PROJECT_FILE,
+    ModelInput,
+    absolute,
+    decode_model,
+    inside,
+    read_model,
+    show_path,
+)
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, sha256_file, write_atomic
 from mmt_plugin.lock import LOCK_NAME, Lock, LockedFile, LockError, read_lock
-from mmt_plugin.pdl import STDIN, PdlSyntaxError, parse
+from mmt_plugin.pdl import PdlSyntaxError, parse
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, find_sdk
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.semantics import analyse
@@ -67,11 +76,8 @@ DIAGNOSTIC_CODES = (
     "state.kept",
 )
 
-PROJECT_FILE = "plugin.yaml"
 DEFAULT_OUTPUT = "generated"
 USER_DIR = "src"
-_YAML_SUFFIXES = (".yaml", ".yml")
-_FORMATS = ("auto", "yaml", "pdl")
 
 #: Each action word, and how the styled view shows it.
 _LEVELS = {
@@ -106,25 +112,11 @@ class _Paths:
 
     def show(self, path: Path) -> str:
         """Relative to the project when inside it (POSIX), absolute otherwise."""
-        return _show(path, self.project)
+        return show_path(path, self.project)
 
     def in_lock(self, path: Path) -> str:
         """Relative to the lock's directory, POSIX: the lock's key of ``path``."""
         return Path(os.path.relpath(path, self.lock_dir)).as_posix()
-
-
-def _abs(path: Path | str) -> Path:
-    return Path(os.path.normpath(os.path.join(os.getcwd(), path)))
-
-
-def _inside(path: Path, directory: Path) -> bool:
-    return path == directory or directory in path.parents
-
-
-def _show(path: Path, project: Path) -> str:
-    if _inside(path, project):
-        return Path(os.path.relpath(path, project)).as_posix()
-    return path.as_posix()
 
 
 @dataclass
@@ -197,7 +189,7 @@ class GenerateCommand:
         )
         parser.add_argument(
             "--model-format",
-            choices=_FORMATS,
+            choices=FORMATS,
             default="auto",
             help="the model format (default: auto: .yaml/.yml is YAML, anything else PDL)",
         )
@@ -234,39 +226,6 @@ class GenerateCommand:
 
     # --- stages ---
 
-    def _read_model(self, args: argparse.Namespace, paths: _Paths) -> tuple[str, str, bytes]:
-        """The model's name (for diagnostics), format and bytes."""
-        given = args.model
-        if given == "-":
-            fmt = "pdl" if args.model_format == "auto" else args.model_format
-            name = STDIN
-            path = None
-        else:
-            path = paths.project / PROJECT_FILE if given is None else _abs(given)
-            name = paths.show(path)
-            fmt = args.model_format
-            if fmt == "auto":
-                fmt = "yaml" if path.suffix.lower() in _YAML_SUFFIXES else "pdl"
-        if fmt == "yaml":
-            raise CliError(
-                "model.unsupported-format",
-                f"{name}: plugin.yaml models are not supported yet (#24)",
-                "pass a PDL v1 model file as MODEL (or - with --model-format pdl)",
-            )
-        try:
-            data = sys.stdin.buffer.read() if path is None else path.read_bytes()
-        except IsADirectoryError:
-            raise CliError(
-                "model.unreadable", f"{name} is a directory, not a model file", "pass a file"
-            ) from None
-        except OSError as exc:
-            raise CliError(
-                "model.unreadable",
-                f"cannot read {name}: {exc.strerror or exc}",
-                "check the MODEL path and its permissions",
-            ) from None
-        return name, fmt, data
-
     def _profile(self, args: argparse.Namespace, ctx: Context) -> tuple[Sdk | None, ProfileChoice]:
         env = os.environ
         pinned = args.sdk_profile is not None or bool(env.get(ENV_PROFILE, ""))
@@ -286,13 +245,8 @@ class GenerateCommand:
         self, name: str, data: bytes, choice: ProfileChoice
     ) -> tuple[Generation | None, list[Diagnostic], CliError | None]:
         try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            error = CliError(
-                "model.unreadable",
-                f"{name} is not UTF-8 text (byte {exc.start})",
-                "save the model as UTF-8",
-            )
+            text = decode_model(ModelInput(name, "pdl", data))
+        except CliError as error:
             return None, [], error
         try:
             model = parse(text, filename=name)
@@ -309,15 +263,15 @@ class GenerateCommand:
         return generation, [*diagnostics, *generation.diagnostics], None
 
     def _paths(self, args: argparse.Namespace, ctx: Context) -> _Paths:
-        project = _abs(ctx.project)
-        output = _abs(args.output) if args.output is not None else project / DEFAULT_OUTPUT
+        project = absolute(ctx.project)
+        output = absolute(args.output) if args.output is not None else project / DEFAULT_OUTPUT
         user_dir = project / USER_DIR
         real_out, real_user = Path(os.path.realpath(output)), Path(os.path.realpath(user_dir))
-        if _inside(output, user_dir) or _inside(real_out, real_user):
+        if inside(output, user_dir) or inside(real_out, real_user):
             raise CliError(
                 "usage.invalid-value",
-                f"--output {_show(output, project)} is under {USER_DIR}/, which holds your code:"
-                " generate never writes there",
+                f"--output {show_path(output, project)} is under {USER_DIR}/, which holds your"
+                " code: generate never writes there",
                 f"pick another output directory (default: {DEFAULT_OUTPUT}/)",
             )
         lock_dir = project if (project / PROJECT_FILE).is_file() else output
@@ -400,8 +354,8 @@ class GenerateCommand:
             if (
                 path.is_symlink()
                 or not path.is_file()
-                or not _inside(real, Path(os.path.realpath(paths.output)))
-                or _inside(real, Path(os.path.realpath(paths.user_dir)))
+                or not inside(real, Path(os.path.realpath(paths.output)))
+                or inside(real, Path(os.path.realpath(paths.user_dir)))
             ):
                 diagnostics.append(
                     Diagnostic(
@@ -436,7 +390,8 @@ class GenerateCommand:
 
     def run(self, args: argparse.Namespace, ctx: Context) -> Outcome:
         paths = self._paths(args, ctx)
-        name, fmt, data = self._read_model(args, paths)
+        model = read_model(args.model, args.model_format, paths.project)
+        name, fmt, data = model.name, model.format, model.data
         sdk, choice = self._profile(args, ctx)
         context = {"sdk": sdk_context(sdk, choice)}
         diagnostics: list[Diagnostic] = list(choice.diagnostics)

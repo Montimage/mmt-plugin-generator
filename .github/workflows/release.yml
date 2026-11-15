@@ -97,8 +97,11 @@ jobs:
         run: uv run pytest -v -rA -p no:cacheprovider tests/unit/release/test_dist.py
       - name: Check the tag
         # tests/check_release_tag.sh: the tag is v<version>, on main for a
-        # final version, on dev or main for a pre-release. A dry run checks
-        # the tag v<version> would have on the branch it would come from.
+        # final version, on dev or main for a pre-release. On a tag push it
+        # checks the tagged commit. A dry run only runs it on the tip of the
+        # branch the release would come from, which proves that branch is
+        # fetched and sets prerelease; tests/unit/release/test_release_tag.py
+        # covers the refusals.
         id: tag
         env:
           EVENT: ${{ github.event_name }}
@@ -111,7 +114,7 @@ jobs:
             if [[ "$VERSION" =~ (a|b|rc|\.dev)[0-9]+ ]]; then from=dev; else from=main; fi
             bash tests/check_release_tag.sh "v$VERSION" "$VERSION" "refs/remotes/origin/$from" \
               >> "$GITHUB_OUTPUT"
-            echo "dry run ($EVENT): a v$VERSION tag on $from would publish these assets"
+            echo "dry run ($EVENT): a release of these assets needs the tag v$VERSION on $from"
           fi
           cat "$GITHUB_OUTPUT"
       - name: Check the action pins

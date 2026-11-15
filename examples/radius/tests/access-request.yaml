@@ -74,3 +74,11 @@ expect:
       length: 4
       value: 3
       source: "RFC 2865 section 7.1: NAS-Port = 3"
+    - name: "Service_Type"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "RFC 2865 section 5: the packet has no attribute of type 6"
+    - name: "NAS_IPv6_Address"
+      type: "MMT_DATA_IP6_ADDR"
+      status: "absent"
+      source: "RFC 2865 section 5: the packet has no attribute of type 95"

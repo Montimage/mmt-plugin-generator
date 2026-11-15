@@ -54,4 +54,12 @@ expect:
       length: 4
       value: 1
       source: "RFC 2865 section 7.1: Service-Type = Login (1)"
+    - name: "User_Name"
+      type: "MMT_BINARY_DATA"
+      status: "absent"
+      source: "RFC 2865 section 5: the packet has no attribute of type 1"
+    - name: "NAS_Port"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "RFC 2865 section 5: the packet has no attribute of type 5"
 note: "Login-Service (type 15) and Login-IP-Host (type 14) are in the packet but not in the model."

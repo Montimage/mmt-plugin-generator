@@ -343,4 +343,4 @@ def test_tagged_frames_and_a_name_that_is_not_utf8(scaffold: Run, work: Path) ->
     assert code == 0, doc["error"]
     text = (work / "plugin.proposed.yaml").read_text()
     assert "classify:" not in text
-    assert "cap\\udcff.pcap" in text
+    assert "cap\\xff.pcap" in text

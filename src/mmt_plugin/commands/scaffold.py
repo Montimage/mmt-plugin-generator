@@ -289,7 +289,8 @@ class ScaffoldCommand:
             for p in planned:
                 if p.action != "unchanged":
                     try:
-                        p.action = write_atomic(p.path, p.data).action.value
+                        # A link was refused above unless --force.
+                        p.action = write_atomic(p.path, p.data, replace_link=True).action.value
                     except OSError as exc:
                         raise CliError(
                             "internal.io",

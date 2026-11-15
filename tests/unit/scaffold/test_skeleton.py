@@ -219,5 +219,5 @@ def test_tagged_ethernet_frames_are_attached_by_user_code() -> None:
 def test_a_file_name_that_is_not_utf8() -> None:
     name = os.fsdecode(b"cap\xff.pcap")
     text = proposed_yaml("demo", 960, _parent("udp"), propose([b"ab"]), name, 1)
-    assert "cap\\udcff.pcap" in text
+    assert "cap\\xff.pcap" in text
     text.encode("utf-8")

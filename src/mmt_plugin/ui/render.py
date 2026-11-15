@@ -3,11 +3,21 @@
 Plain output never carries a raw control character: user text is escaped
 (``\\t``, ``\\n``, ``\\\\``, and ``\\xNN`` for every other C0/C1 control
 character and DEL), so a record always keeps its field count and no ESC byte
-reaches the terminal from user data.
+reaches the terminal from user data. Format characters (category Cf, such as
+U+202E, which reverses the text after it) and the line and paragraph
+separators U+2028 and U+2029 are ``\\uXXXX`` (``\\UXXXXXXXX`` above U+FFFF),
+so nothing can disguise a line either.
+
+A byte that was not valid in its encoding (an argv or file name byte, which
+Python decodes to U+DC80-U+DCFF by ``surrogateescape``) is ``\\xNN`` of that
+byte, so it prints the same whatever the locale, and a byte 0x80-0x9F never
+reaches the terminal as an 8-bit C1 control. Any other lone surrogate is
+``\\uXXXX``.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable
 
 from mmt_plugin.diagnostics import CliError, Diagnostic, Severity
@@ -25,11 +35,16 @@ def _escape_char(ch: str) -> str:
     code = ord(ch)
     if code < 0x20 or 0x7F <= code <= 0x9F:
         return f"\\x{code:02x}"
+    if 0xDC80 <= code <= 0xDCFF:
+        return f"\\x{code - 0xDC00:02x}"
+    if code in (0x2028, 0x2029) or unicodedata.category(ch) in ("Cf", "Cs"):
+        return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
     return ch
 
 
 def escape(text: str) -> str:
-    """Escape backslashes and control characters in ``text``."""
+    """Escape backslashes, control and format characters, and the
+    surrogates of undecodable bytes in ``text``."""
     if text.isprintable() and "\\" not in text:
         return text
     return "".join(_escape_char(ch) for ch in text)

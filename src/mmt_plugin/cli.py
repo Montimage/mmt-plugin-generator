@@ -17,6 +17,12 @@ an exit code (``mmt_plugin.exitcodes``):
 
 ``--help`` and, without ``--json``, ``--version`` print and exit with
 ``SystemExit(0)``, as argparse does. Every other outcome returns its code.
+
+The command line parses the same on every supported Python (3.10 to 3.14),
+whose argparse versions differ in two corners that ``_prescan`` decides
+first: a ``--`` before the command, and a cluster of short flags with an
+unknown letter (``-vx``). Any usage error, an unknown option included, wins
+over ``--version``; ``--help`` prints as soon as argparse reaches it.
 """
 
 from __future__ import annotations
@@ -143,7 +149,15 @@ class _VersionRequested(Exception):
     """``--version`` was given; ``main`` prints it as text or as an envelope."""
 
 
+#: Where ``_VersionAction`` marks the namespace.
+_VERSION = "_version_requested"
+
+
 class _VersionAction(argparse.Action):
+    """Marks the namespace: ``parse_args`` raises ``_VersionRequested`` only
+    once the whole command line has parsed, so ``--bogus --version`` is a
+    usage error."""
+
     def __init__(self, option_strings: Sequence[str], dest: str, help: str | None = None) -> None:
         super().__init__(
             option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, nargs=0, help=help
@@ -156,7 +170,7 @@ class _VersionAction(argparse.Action):
         values: object,
         option_string: str | None = None,
     ) -> None:
-        raise _VersionRequested
+        setattr(namespace, _VERSION, True)
 
 
 def _add_global_options(parser: argparse.ArgumentParser, *, after_command: bool) -> None:
@@ -269,6 +283,90 @@ def _command_parser(
     return parser
 
 
+#: What argparse reads as a negative number, a value rather than an option
+#: (no parser here has an option that looks like one).
+_NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
+
+
+def _is_option(arg: str) -> bool:
+    """Whether argparse reads ``arg`` as an option string, not as a value."""
+    return (
+        arg.startswith("-") and arg != "-" and not _NEGATIVE_NUMBER.match(arg) and " " not in arg
+    )
+
+
+def _takes_next(action: argparse.Action, following: str | None) -> int:
+    """1 when ``action``, given without an attached value, takes ``following``."""
+    return int(action.nargs is None and following is not None and not _is_option(following))
+
+
+def _check_option(parser: argparse.ArgumentParser, arg: str, following: str | None) -> int:
+    """Check one option string against ``parser``'s options; return how many
+    of the following arguments it takes as its value (0 or 1).
+
+    Only a cluster of short flags is checked here: in ``-vx``, ``-v`` is a
+    flag and ``-x`` is not an option, which Python 3.10 reports as a value
+    given to ``-v`` and 3.12+ as an unknown option ``-x``. It is always the
+    former, as for ``--json=1``. Everything else is left to argparse.
+    """
+    table = parser._option_string_actions
+    if arg in table or arg.startswith("--"):
+        name, attached, _ = arg.partition("=")
+        action = table.get(name)
+        if action is None or attached or action.nargs == 0:
+            return 0
+        return _takes_next(action, following)
+    flag: argparse.Action | None = None
+    for pos in range(1, len(arg)):
+        action = None if arg[pos] == "=" else table.get("-" + arg[pos])
+        if action is None:
+            if flag is None:
+                return 0  # an unknown option: argparse reports it
+            value = arg[pos + 1 :] if arg[pos] == "=" else arg[pos:]
+            parser.error(str(argparse.ArgumentError(flag, f"ignored explicit argument {value!r}")))
+        if action.nargs != 0:
+            # The rest of the cluster is the value, or else the next argument.
+            return 0 if pos + 1 < len(arg) else _takes_next(action, following)
+        flag = action
+    return 0
+
+
+def _prescan(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
+    """Raise the usage errors that argparse reports differently by Python
+    version, before argparse sees ``argv``.
+
+    - ``--`` before the command: 3.10 to 3.12 read it as the command name,
+      3.13+ skip it and run the command after it. It is always
+      ``usage.unknown-command``: the command comes before any ``--``.
+    - A cluster of short flags with a letter that is not a flag
+      (``_check_option``), before the command or after it.
+    """
+    commands: dict[str, argparse.ArgumentParser] = {}
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            commands = dict(action.choices)
+    current: argparse.ArgumentParser | None = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            if current is None:
+                parser.error(
+                    f"argument {COMMAND_METAVAR}: invalid choice: '--'"
+                    " (the command comes before any '--')"
+                )
+            return
+        if _is_option(arg):
+            following = argv[i + 1] if i + 1 < len(argv) else None
+            i += 1 + _check_option(current or parser, arg, following)
+            continue
+        if current is None:
+            current = commands.get(arg)
+            if current is None:
+                return  # not a command: argparse reports it
+        i += 1
+
+
 def parse_args(
     argv: Sequence[str],
     commands: Sequence[Command] | None = None,
@@ -277,16 +375,20 @@ def parse_args(
 ) -> argparse.Namespace:
     """Parse ``argv``; raise ``UsageError`` on a bad command line or no command.
 
+    ``--version`` raises ``_VersionRequested``, once the rest has parsed.
     The result has the global options (wherever they were given), ``command``
     (the name) and ``_command`` (the ``Command``), plus the command's own.
     ``parser`` is ``build_parser(commands)`` when not given.
     """
     if parser is None:
         parser = build_parser(commands)
+    _prescan(parser, argv)
     ns, extras = parser.parse_known_args(list(argv))
     if extras:
         # Report them against the command's parser (its usage, its --help).
         _command_parser(parser, ns).error(f"unrecognized arguments: {' '.join(extras)}")
+    if getattr(ns, _VERSION, False):
+        raise _VersionRequested
     _merge_globals(ns)
     if getattr(ns, "_command", None) is None:
         raise UsageError(
@@ -298,19 +400,21 @@ def parse_args(
     return ns
 
 
-def _has_flag(argv: Sequence[str], flag: str) -> bool:
+def _has_flag(argv: Sequence[str], flag: str, *, with_value: bool = False) -> bool:
+    """Whether ``flag`` (or, ``with_value``, ``flag=...``) is before any ``--``."""
     for arg in argv:
         if arg == "--":
             return False
-        if arg == flag:
+        if arg == flag or (with_value and arg.startswith(flag + "=")):
             return True
     return False
 
 
 def _wants_json(argv: Sequence[str]) -> bool:
     """Whether ``--json`` appears before ``--``: decided before parsing, so that
-    a usage error is still an envelope."""
-    return _has_flag(argv, "--json")
+    a usage error is still an envelope. ``--json=1`` (a usage error: the flag
+    takes no value) counts, so that its error is an envelope too."""
+    return _has_flag(argv, "--json", with_value=True)
 
 
 def _project_path(project: str) -> str:

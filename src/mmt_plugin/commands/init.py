@@ -723,7 +723,8 @@ class InitCommand:
         if error is None and not args.dry_run:
             for p in planned:
                 if p.action != "unchanged":
-                    p.action = write_atomic(p.path, p.data).action.value
+                    # A link was refused above unless --force.
+                    p.action = write_atomic(p.path, p.data, replace_link=True).action.value
         else:
             for p in planned:
                 p.action = _WOULD.get(p.action, p.action)

@@ -191,9 +191,10 @@ def _quote(text: str) -> str:
 
 
 def _comment(text: str) -> str:
-    """``text`` safe in a ``#`` comment: control characters escaped, and
-    what UTF-8 cannot encode (the surrogates of a file name that is not
-    UTF-8) as backslash escapes."""
+    """``text`` safe in a ``#`` comment, escaped as plain output is
+    (``ui.render.escape``): control and format characters, and each byte of
+    a file name that is not UTF-8 as ``\\xNN``; anything else UTF-8 cannot
+    encode as a backslash escape."""
     return escape(text).encode("utf-8", "backslashreplace").decode("utf-8")
 
 

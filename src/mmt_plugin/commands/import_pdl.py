@@ -211,7 +211,8 @@ class ImportCommand:
                 )
         if error is None and not args.dry_run and action != "unchanged":
             try:
-                action = write_atomic(path, data).action.value
+                # A link was refused above unless --force.
+                action = write_atomic(path, data, replace_link=True).action.value
             except OSError as exc:
                 raise CliError(
                     "internal.io",

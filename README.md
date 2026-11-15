@@ -1,18 +1,141 @@
-# MMT Protocol Description #
+# MMT plugin generator
 
-## Python rewrite (in progress)
+`mmt-plugin` generates, builds, tests and installs protocol plugins for
+[mmt-dpi](https://github.com/Montimage/mmt-dpi), Montimage's deep packet
+inspection library. You describe a protocol in `plugin.yaml` (its fields,
+how to find the next protocol, what it runs on), write C only for what the
+model cannot say, and check the plugin on packets whose expected values come
+from the protocol's specification.
 
-A Python replacement for the Java generator is being built in `src/`
-(`mmt-plugin` command), following
-[docs/design/workflow-redesign.md](docs/design/workflow-redesign.md).
-It has no commands yet; this README still describes the Java tool.
+It replaces the 2015 Java generator (`MMTPluginGenerator.jar`), which is
+kept, frozen, in [`legacy/`](legacy/README.md) until it is retired (#31).
+Coming from the Java tool? Read the [migration guide](docs/migration.md).
+
+**Status:** the Python tool is not published yet: there is no PyPI package
+and no release. Install it from a checkout of this repository (below).
+Packaging is plan task T5.3 (#30) and the first release T5.5 (#32), in
+[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md).
+
+## Documentation
+
+- [User guide](docs/user-guide.md): installing, a project from `init` to
+  `install`, every command, the `--json` output and exit codes.
+- [`plugin.yaml`](docs/plugin-yaml.md): the model format, with an example,
+  and the [model reference](docs/model-reference.md), generated from its
+  JSON Schema.
+- [Migration guide](docs/migration.md): from the Java tool and PDL v1, and
+  [what behaves differently](docs/behaviour-changes.md).
+- [Examples](examples/README.md): 16 complete plugin projects.
+- [CLI design](docs/design/cli.md): the command contract in full.
+- [mmt-plugin-author](skills/mmt-plugin-author/SKILL.md): the agent skill
+  that writes a plugin from a spec, a capture or a PDL v1 model.
+- [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the
+  repository's layout and checks.
 
 ## Requirements
 
-- mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**.
-  1.10.2 is the first version whose installed headers
-  ship the public logger `mmt_log.h` (Montimage/mmt-dpi#68).
-- gcc (or clang) and, to generate code from a model, a Java runtime.
+- Linux (amd64 or arm64) and Python 3.10 or later.
+- mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**,
+  to build, test and install plugins (generating code needs no SDK).
+  1.10.2 is the first version whose installed headers ship the public logger
+  `mmt_log.h` (Montimage/mmt-dpi#68).
+- gcc or clang.
+
+## Install
+
+With [uv](https://docs.astral.sh/uv/), from the root of a checkout
+(`pipx install .` works too):
+
+<!-- doc:run install -->
+```sh
+uv tool install .
+mmt-plugin --version
+```
+
+The [user guide](docs/user-guide.md#install-mmt-plugin) shows how to install
+a built wheel instead.
+
+## Quick start
+
+Create a project, convert its model to `plugin.yaml`, then check it and
+generate its C sources (no SDK needed for these):
+
+<!-- doc:run no-sdk -->
+```sh
+mmt-plugin init quick --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2
+mmt-plugin -C quick import quick/model.pdl
+mmt-plugin -C quick validate --no-sdk --sdk-profile 1.10.2
+mmt-plugin -C quick generate --sdk-profile 1.10.2
+```
+
+With mmt-dpi in a private prefix (below) and `MMT_BASE` set to it, build
+the plugin and run its packet test, then install it into a prefix of your
+own:
+
+<!-- doc:run sdk -->
+```sh
+mmt-plugin -C quick test
+mmt-plugin -C quick install --prefix "$PWD/quick-prefix"
+```
+
+The [user guide](docs/user-guide.md) goes on from here: writing the model,
+the hooks in `src/`, packet tests, installing where mmt-dpi loads plugins,
+and drafting a model from a capture.
+
+## Install mmt-dpi
+
+mmt-dpi (the "mmt-sdk") must be installed to compile and load a plugin. From
+an mmt-dpi checkout, install it into a private prefix, without root:
+
+<!-- doc:skip needs an mmt-dpi checkout -->
+```sh
+make -C sdk MMT_BASE=$HOME/mmt -j$(nproc)
+make -C sdk MMT_BASE=$HOME/mmt install
+export LD_LIBRARY_PATH=$HOME/mmt/dpi/lib
+```
+
+or system-wide, into `/opt/mmt` (`mmt-plugin` itself never needs root):
+
+<!-- doc:skip needs root and an mmt-dpi checkout -->
+```sh
+make -C sdk -j$(nproc)
+sudo make -C sdk install
+```
+
+The same `MMT_BASE` must be given to both commands: it is compiled into the
+library as the default plugin directory (`$MMT_BASE/plugins`). Below,
+`<prefix>` is `/opt/mmt` or your private prefix, always as an absolute
+path (mmt-dpi refuses a relative `MMT_BASE`); `mmt-plugin` finds it through
+`--sdk`, `MMT_BASE`, `mmt-dpi.pc` or `/opt/mmt`, in that order.
+
+Prebuilt `.deb` and `.rpm` packages for several distributions are attached
+to each mmt-dpi Release (see `manifest.json` and `SHA256SUMS` there). They
+install into `/opt/mmt`. CI extracts the ubuntu-24.04 one into a private
+prefix after `tests/fetch_mmt_dpi_package.sh` has verified it; the
+[user guide](docs/user-guide.md#get-mmt-dpi) and `AGENTS.md` show how.
+
+## Build and test container
+
+`Dockerfile` builds an Ubuntu 24.04 image, pinned by digest, with gcc, clang,
+Python 3.12 and mmt-dpi v1.10.2 installed in `/opt/mmt` from the Release
+`.deb` that `tests/fetch_mmt_dpi_package.sh` verified. To build it and run
+`tests/check_ndn_plugin.sh` inside it (no root on the host, nothing written
+to the checkout):
+
+<!-- doc:skip needs docker or podman, and the network -->
+```sh
+make test-container
+make test-container CONTAINER=podman
+```
+
+The repo is mounted read-only and the check runs as your uid with no
+network; on an SELinux host add `MOUNT_OPTS=ro,z`. apt packages are not
+pinned to exact versions (see the policy at the top of `Dockerfile`): the
+build fails if the gcc, clang or Python major version changes, and the image
+lists every installed version in `/usr/share/doc/mmt-test-image/packages.txt`.
+CI runs the same target on amd64 and arm64.
+
+## Writing plugin code for mmt-dpi 1.10
 
 mmt-dpi 1.10.0 made the old unprefixed `debug()`, `log_err()`, `likely()` and
 `unlikely()` macros private: a plugin that still uses them fails with
@@ -25,90 +148,14 @@ mmt-dpi 1.10.0 made the old unprefixed `debug()`, `log_err()`, `likely()` and
   `MMT_DPI_LOG_LEVEL=error|warn|info|debug`;
 - `MMT_LIKELY(x)` / `MMT_UNLIKELY(x)` from `mmt_utils.h` for branch hints.
 
-## Install mmt-dpi
+## Plugin load order, ids and names
 
-mmt-dpi (the "mmt-sdk") must be installed to compile and load a plugin. From
-an mmt-dpi checkout, either install it system-wide into `/opt/mmt`:
-
-```
-make -C sdk -j$(nproc)
-sudo make -C sdk install
-```
-
-or into a private prefix, without root:
-
-```
-make -C sdk MMT_BASE=$HOME/mmt -j$(nproc)
-make -C sdk MMT_BASE=$HOME/mmt install
-export LD_LIBRARY_PATH=$HOME/mmt/dpi/lib
-```
-
-The same `MMT_BASE` must be given to both commands: it is compiled into the
-library as the default plugin directory (`$MMT_BASE/plugins`). Below,
-`<prefix>` is `/opt/mmt` or your private prefix, always as an absolute
-path (mmt-dpi refuses a relative `MMT_BASE`).
-
-Prebuilt `.deb` and `.rpm` packages for several distributions are attached
-to each mmt-dpi Release (see `manifest.json` and `SHA256SUMS` there). They
-install into `/opt/mmt`. CI installs the ubuntu-24.04 one after
-`tests/fetch_mmt_dpi_package.sh` has verified it; see `AGENTS.md` to extract
-it into a private prefix instead.
-
-## Build and test container
-
-`Dockerfile` builds an Ubuntu 24.04 image, pinned by digest, with gcc, clang,
-Python 3.12 and mmt-dpi v1.10.2 installed in `/opt/mmt` from the Release
-`.deb` that `tests/fetch_mmt_dpi_package.sh` verified. To build it and run
-`tests/check_ndn_plugin.sh` inside it (no root on the host, nothing written
-to the checkout):
-
-```
-make test-container
-make test-container CONTAINER=podman
-```
-
-The repo is mounted read-only and the check runs as your uid with no
-network; on an SELinux host add `MOUNT_OPTS=ro,z`. apt packages are not
-pinned to exact versions (see the policy at the top of `Dockerfile`): the
-build fails if the gcc, clang or Python major version changes, and the image
-lists every installed version in `/usr/share/doc/mmt-test-image/packages.txt`.
-CI runs the same target on amd64 and arm64.
-
-## Generate plugin code
-
-```
-#!bash
-
-java -jar PATH_TO_JAR <plugin_model> <output folder>
-```
-
-## Compile plugin
-
-```
-gcc -Wall -fPIC -shared -o <plugin-name>.so -I <prefix>/dpi/include <path_to_plugin_c_file>
-```
-
-Add `-g` to have debug information, and `-DMMT_LOG_ENABLE_DEBUG` to compile
-in the plugin's `mmt_log_debug()` calls.
-
-## Use plugin
-
-Copy the plugin to the plugin folder:
-
-```
-cp <plugin-name>.so <prefix>/plugins
-```
-
-or put it in a directory of your own and point `MMT_DPI_PLUGINS_DIR` at it
-(an absolute path). That directory replaces `<prefix>/plugins`, so it must
-also hold the built-in plugins the new one depends on, e.g. a copy or symlink
-of `<prefix>/plugins/libmmt_tcpip.so`.
-
-### Plugin load order, ids and names
-
-mmt-dpi's loader has two behaviours that fail **silently**, so plugins in
-this repo must handle them. Line numbers are from mmt-dpi v1.10.2
-(commit a84a6050), under `src/mmt_core/src/`.
+mmt-dpi's loader has two behaviours that fail **silently**. `mmt-plugin`
+handles both for you (the plugin file is `mmtp_<label>.so`, `validate` and
+`doctor` check the order and the ids and names, and the generated init
+returns 0 when a registration fails); this section explains them for
+hand-written plugins. Line numbers are from mmt-dpi v1.10.2 (commit
+a84a6050), under `src/mmt_core/src/`.
 
 **(a) Load order: name the plugin file so it sorts after `libmmt_tcpip.so`.**
 
@@ -134,9 +181,14 @@ What to do:
 - Give the file a name that sorts after `libmmt_tcpip.so` in the C locale
   and in the host's locale: start it with a lowercase letter after `l`
   (upper case sorts before `l` in the C locale), e.g. `ndn_example.so`, or
-  with `lm`, e.g. `lmmt_quic.so`. Check it with
-  `printf '%s\n' <plugin>.so libmmt_tcpip.so | LC_ALL=C sort`: the plugin must
-  come second.
+  with `lm`, e.g. `lmmt_quic.so`. Check it with `sort`: the plugin must come
+  second.
+
+  <!-- doc:run no-sdk -->
+  ```sh
+  printf '%s\n' mmtp_demo.so libmmt_tcpip.so | LC_ALL=C sort
+  ```
+
 - In `init_proto()`, check the return value of every
   `register_classification_function_with_parent_protocol()` call and return
   0 when it fails. `init_extraction()` then fails with
@@ -163,180 +215,72 @@ What to do:
 - Before registering, refuse a name that is already taken:
   `if (get_protocol_id_by_name(MY_ALIAS) != 0) return 0;`. This catches the
   built-in protocols and plugins that loaded earlier. The NDN example does
-  this too.
-- List the ids and names the SDK headers already define, and choose free
-  ones:
+  this too, and so does the code `mmt-plugin` generates.
+- Choose an id from 950 to 999, the range for third-party plugins, and a
+  name the SDK does not have. `mmt-plugin validate` checks both against the
+  SDK headers and the installed plugins. By hand, list the ids and names the
+  SDK headers define (some ids are defined with tabs, e.g. `PROTO_HTTP2` =
+  700, hence the `[[:space:]]` pattern):
 
-  ```
-  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' <prefix>/dpi/include | grep -v MAX_IDENTIFIER
-  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+_ALIAS[[:space:]]+"' <prefix>/dpi/include
+  <!-- doc:run sdk -->
+  ```sh
+  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+[[:space:]]+[0-9]+' "$MMT_BASE"/dpi/include | grep -v MAX_IDENTIFIER
+  grep -rhE '#define[[:space:]]+PROTO_[A-Z0-9_]+_ALIAS[[:space:]]+"' "$MMT_BASE"/dpi/include
   ```
 
-  Some ids are defined with tabs (e.g. `PROTO_HTTP2` = 700), hence the
-  `[[:space:]]` pattern. mmt-dpi 1.10.x registers many more protocols than
-  older releases, so the ids used in the QUIC walkthrough below (630) and
-  in several `plugins/` models now collide with built-in protocols.
+  mmt-dpi 1.10.x registers many more protocols than older releases, so
+  several `plugins/` models now collide with built-in protocols.
 - The headers list only the SDK's own protocols: any other `.so` in the
   plugin directory can take ids and names too. The reliable check is at run
   time, with every plugin you deploy in the plugin directory: after
   `init_extraction()` succeeds, `is_registered_protocol(id)` must be true
   and `get_protocol_id_by_name(name)` must return **your** id
-  (`tests/ndn_load_check.c` does both). The installed
+  (`tests/ndn_load_check.c` does both; `mmt-plugin doctor` reports the
+  clashes among installed plugins). The installed
   `<prefix>/examples/proto_attributes_iterator.c` lists every registered
   protocol.
 
-`tests/check_ndn_plugin.sh` guards the cheap parts for the NDN example: it
-fails if the plugin file name (`PLUGIN_NAME`, default `ndn_example.so`)
-sorts before `libmmt_tcpip.so`, or if its id or name is defined by the SDK
-headers. It then runs the run-time checks above.
+To use a plugin directory of your own, point `MMT_DPI_PLUGINS_DIR` at it (an
+absolute path). That directory replaces `<prefix>/plugins`, so it must also
+hold the built-in plugins the new one depends on, e.g. a copy or symlink of
+`<prefix>/plugins/libmmt_tcpip.so`.
 
 ## NDN example and the built-in NDN dissector
 
 `ndn_src/` holds a hand-written NDN (Named Data Networking) plugin, and
-`plugins/ndn_plugin` its model. mmt-dpi now ships its own NDN dissector in
-`libmmt_tcpip` (`PROTO_NDN` = 625, name `ndn`, `NDN_*` attributes), so this
-example is kept only as a plugin-writing sample. To coexist with the built-in
-dissector it registers as a separate protocol, `ndn_example`, id 980, and
-uses `NDN_EXAMPLE_*` / `PROTO_NDN_EXAMPLE*` identifiers that do not clash with
-the installed headers. (The generator upper-cases the model's label, so code
-regenerated from `plugins/ndn_plugin` registers the name `NDN_EXAMPLE`, which
-is the same name for mmt-dpi's case-insensitive lookups.)
+`plugins/ndn_plugin` its model (ported to [`examples/ndn/`](examples/ndn/)).
+mmt-dpi now ships its own NDN dissector in `libmmt_tcpip` (`PROTO_NDN` =
+625, name `ndn`, `NDN_*` attributes), so this example is kept only as a
+plugin-writing sample. To coexist with the built-in dissector it registers
+as a separate protocol, `ndn_example`, id 980, and uses `NDN_EXAMPLE_*` /
+`PROTO_NDN_EXAMPLE*` identifiers that do not clash with the installed
+headers.
 
-Build, install and check it:
+Build it:
 
-```
-gcc -Wall -Werror -fPIC -shared -o ndn_example.so -I <prefix>/dpi/include ndn_src/ndn_mmt_plugin.c
-cp ndn_example.so <prefix>/plugins/
-MMT_BASE=<prefix> bash tests/check_ndn_plugin.sh
+<!-- doc:run sdk -->
+```sh
+gcc -Wall -Werror -fPIC -shared -o ndn_example.so -I "$MMT_BASE"/dpi/include ndn_src/ndn_mmt_plugin.c
 ```
 
-`tests/check_ndn_plugin.sh` compiles the example with `-Wall -Werror`, with
-and without `-DMMT_LOG_ENABLE_DEBUG`, checks that no C source uses the
-removed macros, then loads it next to `libmmt_tcpip.so` (through a temporary
-`MMT_DPI_PLUGINS_DIR`) and checks that `ndn_example` (980) and the built-in
-`ndn` (625) both resolve and that its classifiers are attached. It prints one
+and check it, with `MMT_BASE` set to the prefix:
+
+<!-- doc:skip CI runs it in its NDN job, against the installed package -->
+```sh
+bash tests/check_ndn_plugin.sh
+```
+
+`tests/check_ndn_plugin.sh` compiles the
+example with `-Wall -Werror`, with and without `-DMMT_LOG_ENABLE_DEBUG`,
+checks that no C source uses the removed macros, then loads it next to
+`libmmt_tcpip.so` (through a temporary `MMT_DPI_PLUGINS_DIR`) and checks
+that `ndn_example` (980) and the built-in `ndn` (625) both resolve and that
+its classifiers are attached. It also fails if the plugin file name
+(`PLUGIN_NAME`, default `ndn_example.so`) sorts before `libmmt_tcpip.so`, or
+if its id or name is defined by the SDK headers. It prints one
 `PASS:`/`FAIL:` line per check and exits non-zero on failure.
 
-Verified with gcc 13.3 on Linux aarch64 against mmt-dpi v1.10.2 (sources
-identical to commit 9ea989d7) installed into a private prefix. The other plugin
-sources under `plugins/` are not covered by this check (only comments in
-three of them were updated for the new logger names); several of them do not
-build against mmt-dpi 1.10.x, mostly because they redeclare protocols that
-mmt-dpi now ships.
-
-## Example
-
-Generate `lmmt_quic.so` for using in the example of MMT-sdk project (mmt-sdk/src/example)
-
-* Create plugin description file `quic_plugin`:
-
-> **Note:** id 630 is `PROTO_VMWARE` in mmt-dpi 1.10.x, and a `QUIC` protocol
-> is built in. Use a free id and a distinct label (see "Use plugin" above),
-> otherwise `init_extraction()` fails.
-
-```
-Protocol {
-	Properties {
-		label = "QUIC"
-		id = "630"
-		context = "false"
-		session = "false"
-		encapsulation = "false"
-		encoding = "network"
-	}
-	Attributes {
-		attribute {
-            alias="connection_id" data_type="MMT_U32_DATA" data_len="sizeof(int)" 
-            offset="0" scope="SCOPE_PACKET"
-        }
-        attribute {
-            alias="sequence" data_type="MMT_U32_DATA" data_len="sizeof(int)" 
-            offset="0" scope="SCOPE_PACKET"
-        }
-	}
-}
-
-```
-
-* Generate source code for QUIC plugin:
-
-```
-cd plugin_generator/plugins/
-mkdir quic_src
-java -jar ../legacy/dist/MMTPluginGenerator.jar quic_plugin quic_src
-```
-
-After executing the abow commands, we should have 2 source files in `quic_src/`
-
-```
-ls quic_src/
-quic_mmt_plugin.c  quic_mmt_plugin.h
-```
-
-* Update plugin source code
-
-We need to update the source code of plugin for classification and extraction.
-
-Update `init_quic_proto_struct`:
-
-```
-int init_quic_proto_struct() {
-		protocol_t * protocol_struct = init_protocol_struct_for_registration(PROTO_QUIC, PROTO_QUIC_ALIAS);
-
-		if (protocol_struct != NULL) {
-
-			int i = 0;
-			for(; i < QUIC_ATTRIBUTES_NB; i ++) {
-				register_attribute_with_protocol(protocol_struct, &quic_attributes_metadata[i]);
-			}
-			// Register the QUIC detection function : QUIC/UDP
-			register_classification_function_with_parent_protocol(PROTO_UDP, mmt_check_quic, 50);
-			register_protocol_stack(PROTO_QUIC, PROTO_QUIC_ALIAS, quic_stack_classification);
-			return register_protocol(protocol_struct, PROTO_QUIC);
-		} else {
-			return -1;
-		}
-	}
-```
-
-Look in `plugin_generator/plugins/quic/` to have more detail how to **detect** QUIC protocol and how to **extract** QUIC protocol attritbutes
-
-* Compile plugin
-
-```
-cd quic_src/
-gcc -Wall -fPIC -shared -o lmmt_quic.so -I <prefix>/dpi/include quic_mmt_plugin.c
-```
-
-* Install plugin
-
-Simple by copying new plugin into `<prefix>/plugins/`
-
-```
-mv lmmt_quic.so <prefix>/plugins
-```
-
-* Check the new plugin by executing the example 'mmt-sdk/src/examples/proto_attributes_iterator.c' (installed as `<prefix>/examples/proto_attributes_iterator.c`). We should see the information of new plugin in the output
-
-```
-Protocol id 630 --- Name QUIC
-	Attribute id 1 --- Name connection_id 
-	Attribute id 2 --- Name sequence 
-	Attribute id 4096 --- Name p_hdr 
-	Attribute id 4097 --- Name p_data 
-	Attribute id 4098 --- Name p_payload 
-	Attribute id 4099 --- Name packet_count 
-	Attribute id 4100 --- Name data_count 
-	Attribute id 4101 --- Name payload_count 
-	Attribute id 4102 --- Name ip_frag_packets_count 
-	Attribute id 4103 --- Name ip_frag_data_volume 
-	Attribute id 4104 --- Name ip_df_packets_count 
-	Attribute id 4105 --- Name ip_df_data_volume 
-	Attribute id 4106 --- Name session_count 
-	Attribute id 4107 --- Name a_session_count 
-	Attribute id 4108 --- Name t_session_count 
-	Attribute id 4109 --- Name first_packet_time 
-	Attribute id 4110 --- Name last_packet_time 
-	Attribute id 4111 --- Name stats 
-
-```
+The other plugin sources under `plugins/` are not covered by this check;
+several of them do not build against mmt-dpi 1.10.x, mostly because they
+redeclare protocols that mmt-dpi now ships. Their models are ported, and
+build, in [`examples/`](examples/README.md).

@@ -13,6 +13,11 @@ dependencies = [
     "jinja2>=3.1.6,<4",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Montimage/mmt-plugin-generator"
+Documentation = "https://github.com/Montimage/mmt-plugin-generator/blob/main/docs/user-guide.md"
+Issues = "https://github.com/Montimage/mmt-plugin-generator/issues"
+
 [project.scripts]
 mmt-plugin = "mmt_plugin.cli:main"
 

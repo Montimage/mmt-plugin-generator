@@ -13,7 +13,8 @@ Coming from the Java tool? Read the [migration guide](docs/migration.md).
 
 **Status:** the Python tool is not published yet: there is no PyPI package
 and no release. Install it from a checkout of this repository (below).
-Packaging is plan task T5.3 (#30) and the first release T5.5 (#32), in
+The release workflow is ready ([`docs/releasing.md`](docs/releasing.md));
+the first release is plan task T5.5 (#32), in
 [`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md).
 
 ## Documentation
@@ -27,6 +28,8 @@ Packaging is plan task T5.3 (#30) and the first release T5.5 (#32), in
   [what behaves differently](docs/behaviour-changes.md).
 - [Examples](examples/README.md): 16 complete plugin projects.
 - [CLI design](docs/design/cli.md): the command contract in full.
+- [Releasing](docs/releasing.md): the release assets, the dry run and
+  how a release is published.
 - [mmt-plugin-author](skills/mmt-plugin-author/SKILL.md): the agent skill
   that writes a plugin from a spec, a capture or a PDL v1 model.
 - [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the
@@ -54,6 +57,16 @@ mmt-plugin --version
 
 The [user guide](docs/user-guide.md#install-mmt-plugin) shows how to install
 a built wheel instead.
+
+Once a release is published, install it from PyPI, or from the wheel
+attached to its [GitHub release](docs/user-guide.md#from-a-release), or run
+its container image (mmt-plugin with gcc, clang and mmt-dpi):
+
+<!-- doc:skip needs a published release -->
+```sh
+uv tool install mmt-plugin
+docker run --rm ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin --version
+```
 
 ## Quick start
 
@@ -133,7 +146,9 @@ network; on an SELinux host add `MOUNT_OPTS=ro,z`. apt packages are not
 pinned to exact versions (see the policy at the top of `Dockerfile`): the
 build fails if the gcc, clang or Python major version changes, and the image
 lists every installed version in `/usr/share/doc/mmt-test-image/packages.txt`.
-CI runs the same target on amd64 and arm64.
+CI runs the same target on amd64 and arm64. The release image is the
+`release` target of the same `Dockerfile`, this image plus mmt-plugin
+(`make release-image`, [`docs/releasing.md`](docs/releasing.md)).
 
 ## Writing plugin code for mmt-dpi 1.10
 

@@ -1,0 +1,407 @@
+name: Release
+
+# Plan task T5.3 (#30); docs/releasing.md describes the process.
+#
+# Every run builds and checks a release: the wheel, the sdist and the JSON
+# Schemas tarball (tests/build_release_assets.sh, then
+# tests/unit/release/test_dist.py), a `uv tool install` of the wheel and of
+# the sdist on Python 3.10 and 3.14, the release container image
+# (Dockerfile, target `release`) on amd64 and arm64, smoke-tested from
+# `init` to `test`, and its push, with its multi-arch index, to a registry
+# that lives only in the run. It also checks the tag a release would need
+# (tests/check_release_tag.sh) and every action pin
+# (tests/check_action_pins.sh). That is the dry run: on every pull request
+# to dev or main, every push to dev and every manual run, nothing leaves
+# the run.
+#
+# Only a pushed v* tag publishes. The publish-* jobs, and only they, hold
+# write permissions, and each one runs only when
+# `github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')`
+# (tests/unit/release/test_workflow.py checks both). On that tag they:
+# - attest the assets' provenance (actions/attest: SLSA build provenance,
+#   signed with Sigstore, stored by GitHub) and create the GitHub release;
+# - push the image to ghcr.io/montimage/mmt-plugin and attest its digest;
+# - upload the wheel and the sdist to PyPI with trusted publishing (PEP 740
+#   attestations), once the repository variable PYPI_PUBLISH is 'true'.
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+    tags: ['v*']
+  # A manual run is always a dry run: the publish-* jobs need a tag push.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned uv, as in ci.yml; the sha256 is copied from the release's
+  # upstream uv-x86_64-unknown-linux-gnu.tar.gz.sha256 file.
+  UV_VERSION: 0.12.10
+  UV_SHA256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+  # The mmt-dpi of the image; tests/fetch_mmt_dpi_package.sh pins its
+  # SHA256SUMS hash.
+  MMT_DPI_TAG: v1.10.2
+  IMAGE: ghcr.io/montimage/mmt-plugin
+
+jobs:
+  build:
+    name: Build the release assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Fail instead of re-locking when uv.lock is out of date.
+      UV_LOCKED: '1'
+    outputs:
+      version: ${{ steps.assets.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history: a release tag must be on main (below).
+          fetch-depth: 0
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/uv" --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Build the wheel, the sdist and the schemas tarball
+        id: assets
+        run: |
+          version="$(bash tests/build_release_assets.sh "$RUNNER_TEMP/release")"
+          ls -l "$RUNNER_TEMP/release"
+          cat "$RUNNER_TEMP/release/SHA256SUMS"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Check the release assets
+        # Every schema of src/mmt_plugin/schemas/ (cli/v1/ included) in the
+        # wheel, the sdist and the schemas tarball, the metadata, the
+        # version and SHA256SUMS. Verbose, so the log lists every check.
+        env:
+          MMT_RELEASE_DIST: ${{ runner.temp }}/release
+          MMT_REQUIRE_RELEASE_DIST: '1'
+        run: uv run pytest -v -rA -p no:cacheprovider tests/unit/release/test_dist.py
+      - name: Check the tag
+        # tests/check_release_tag.sh: the tag is v<version>, on main for a
+        # final version, on dev or main for a pre-release. A dry run checks
+        # the tag v<version> would have on the branch it would come from.
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          VERSION: ${{ steps.assets.outputs.version }}
+        run: |
+          if [ "$EVENT" = push ] && [[ "$REF" == refs/tags/v* ]]; then
+            bash tests/check_release_tag.sh "${REF#refs/tags/}" "$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "$VERSION" =~ (a|b|rc|\.dev)[0-9]+ ]]; then from=dev; else from=main; fi
+            bash tests/check_release_tag.sh "v$VERSION" "$VERSION" "refs/remotes/origin/$from" \
+              >> "$GITHUB_OUTPUT"
+            echo "dry run ($EVENT): a v$VERSION tag on $from would publish these assets"
+          fi
+          cat "$GITHUB_OUTPUT"
+      - name: Check the action pins
+        # tests/check_action_pins.sh: every pinned SHA is the commit of its
+        # commented tag, the publish-* jobs' actions included, which no dry
+        # run resolves.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tests/check_action_pins.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: uv tool install (Python ${{ matrix.python }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # requires-python's floor and the newest Python, as in ci.yml.
+        python: ['3.10', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/uv" --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release
+      - name: Install the wheel and the sdist with uv tool install
+        # Each one into its own tool directory, outside the checkout, then
+        # run: its version, and generate --check on every example, which
+        # fails when an examples/*/plugin.lock records another version.
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          PYTHON: ${{ matrix.python }}
+        run: |
+          check() {
+            bin="$1"
+            [ "$("$bin" --version)" = "mmt-plugin $VERSION" ] \
+              || { echo "$bin --version is $("$bin" --version)"; exit 1; }
+            "$bin" --version --json | python3 -c '
+          import json, sys
+          r = json.load(sys.stdin)["result"]
+          assert r["version"] == sys.argv[1], r
+          assert r["python"].startswith(sys.argv[2] + "."), r
+          print("version", r["version"], "on Python", r["python"])
+          ' "$VERSION" "$PYTHON"
+            for d in examples/*/; do "$bin" -q -C "$d" generate --check; done
+            echo "generate --check: every example is up to date"
+          }
+          cd "$RUNNER_TEMP/release"
+          sha256sum -c SHA256SUMS
+          for dist in "mmt_plugin-$VERSION-py3-none-any.whl" "mmt_plugin-$VERSION.tar.gz"; do
+            echo "::group::uv tool install $dist"
+            export UV_TOOL_DIR="$RUNNER_TEMP/tools-$dist" UV_TOOL_BIN_DIR="$RUNNER_TEMP/bin-$dist"
+            uv tool install --python "$PYTHON" "$PWD/$dist"
+            (cd "$GITHUB_WORKSPACE" && check "$UV_TOOL_BIN_DIR/mmt-plugin")
+            echo "::endgroup::"
+          done
+
+  container:
+    name: Release image (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          # The build context's dist/ (.dockerignore lets only the wheel in).
+          path: dist
+      - name: Build the release image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          REVISION: ${{ github.sha }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          docker version --format 'docker {{.Server.Version}} {{.Server.Arch}}'
+          docker build --target release --build-arg MMT_DPI_TAG="$MMT_DPI_TAG" \
+            --build-arg WHEEL="mmt_plugin-$VERSION-py3-none-any.whl" \
+            --build-arg VERSION="$VERSION" --build-arg REVISION="$REVISION" \
+            -t "mmt-plugin:release-$ARCH" .
+      - name: Check the image
+        # Its arch, version and label, then a project from init to test
+        # inside it, as the runner's uid and with no network.
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          img="mmt-plugin:release-$ARCH"
+          run() { docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp "$img" "$@"; }
+          arch="$(run dpkg --print-architecture)"
+          [ "$arch" = "$ARCH" ] || { echo "image arch is $arch, expected $ARCH"; exit 1; }
+          v="$(run mmt-plugin --version)"
+          [ "$v" = "mmt-plugin $VERSION" ] || { echo "the image's mmt-plugin is $v"; exit 1; }
+          label="$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$img")"
+          [ "$label" = "$VERSION" ] || { echo "the image's version label is $label"; exit 1; }
+          run sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test --model demo/model.pdl'
+      - name: Save the image
+        # For image-dry-run and, on a release tag, publish-image: the image
+        # they push is the one tested here.
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker save "mmt-plugin:release-$ARCH" | gzip > "$RUNNER_TEMP/image-$ARCH.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  image-dry-run:
+    # publish-image's push, against a registry service that lives only in
+    # this job: the two images, the multi-arch index and its digest.
+    name: Push the image to a local registry
+    needs: [build, container]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      registry:
+        # registry:3, pinned by its multi-arch index digest.
+        image: registry@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Push the images and their index to localhost:5000
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          bash tests/push_release_image.sh "$RUNNER_TEMP/images" localhost:5000/mmt-plugin \
+            "$VERSION" "$PRERELEASE"
+          docker buildx imagetools inspect "localhost:5000/mmt-plugin:$VERSION"
+
+  publish-github:
+    name: Publish the GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build, verify, container, image-dry-run]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release
+      - name: Check the assets
+        run: cd "$RUNNER_TEMP/release" && sha256sum -c SHA256SUMS
+      - name: Attest the assets' build provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: ${{ runner.temp }}/release/SHA256SUMS
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cd "$RUNNER_TEMP/release"
+          cp "$BUNDLE" "mmt-plugin-$VERSION.sigstore.json"
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "mmt-plugin $VERSION" --generate-notes "${flags[@]}" \
+            "mmt_plugin-$VERSION-py3-none-any.whl" "mmt_plugin-$VERSION.tar.gz" \
+            "mmt-plugin-schemas-$VERSION.tar.gz" SHA256SUMS "mmt-plugin-$VERSION.sigstore.json"
+
+  publish-image:
+    name: Publish the container image
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build, verify, container, image-dry-run]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      # contents: read for the checkout (tests/push_release_image.sh).
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Push the images and their multi-arch index
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          bash tests/push_release_image.sh "$RUNNER_TEMP/images" "$IMAGE" "$VERSION" "$PRERELEASE" \
+            >> "$GITHUB_OUTPUT"
+      - name: Attest the image's build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+  publish-pypi:
+    name: Publish to PyPI
+    # Also opt-in: the repository variable PYPI_PUBLISH must be 'true', once
+    # the trusted publisher is registered on PyPI (docs/releasing.md). Last,
+    # because a version uploaded to PyPI can never be uploaded again.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PYPI_PUBLISH == 'true'
+    needs: [build, publish-github, publish-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mmt-plugin/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release
+      - name: Keep the wheel and the sdist
+        # The action uploads every file of packages-dir, which must be under
+        # the workspace (it runs in a container).
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          (cd "$RUNNER_TEMP/release" && sha256sum -c SHA256SUMS)
+          mkdir -p dist
+          cp "$RUNNER_TEMP/release/mmt_plugin-$VERSION-py3-none-any.whl" \
+            "$RUNNER_TEMP/release/mmt_plugin-$VERSION.tar.gz" dist/
+          ls -l dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/

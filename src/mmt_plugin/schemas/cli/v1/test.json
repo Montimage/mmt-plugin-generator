@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "mmt-plugin test --json result, schema_version 1",
-  "description": "The result of test (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the five, in order; a stage the run did not reach, or did not ask for, is skipped. packets are in the order the packet tests were read. stats holds the only timing; everything else is the same on a re-run with the same inputs (the bench's numbers aside).",
+  "description": "The result of test (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the five, in order; a stage the run did not reach, or did not ask for, is skipped. packets are in the order the packet tests were read, a test with through followed by its run through its parent. stats holds the only timing; everything else is the same on a re-run with the same inputs (the bench's numbers aside).",
   "type": "object",
   "required": ["model", "profile", "build_dir", "stages", "summary", "packets", "sanitize", "bench", "stats"],
   "additionalProperties": false,
@@ -46,11 +46,12 @@
         "properties": {
           "id": {"type": "string", "description": "The packet test's id."},
           "file": {"type": "string", "minLength": 1},
+          "through": {"type": "string", "minLength": 1, "description": "The run through the plugin's real parent: the test's through selector. Absent on the run the harness attaches to Ethernet."},
           "status": {"enum": ["pass", "fail", "crash", "skipped"]},
           "attributes": {"type": "integer", "minimum": 0, "description": "The attributes checked (an undefined one is not)."},
           "failures": {
             "type": "array",
-            "description": "Each mismatch: the attribute (<protocol> for the classification, <next> for the next protocol, <harness> for a crash), the expected and the actual value, as display strings.",
+            "description": "Each mismatch: the attribute (<protocol> for the classification, <next> for the next protocol, <parent> for the protocol below the plugin's and its offset in a run through the parent, <harness> for a crash), the expected and the actual value, as display strings.",
             "items": {
               "type": "object",
               "required": ["attribute", "expected", "actual"],
@@ -75,7 +76,7 @@
           "additionalProperties": false,
           "properties": {
             "seed": {"type": "integer", "minimum": 0},
-            "count": {"type": "integer", "minimum": 0, "description": "The packets run under the sanitizers: each test's packet, then its --fuzz-count truncated and random packets."},
+            "count": {"type": "integer", "minimum": 0, "description": "The packets run under the sanitizers: each test's packet, then its --fuzz-count truncated and random packets; a test with through, those again behind its lower layers."},
             "crashes": {
               "type": "array",
               "items": {
@@ -87,7 +88,8 @@
                   "index": {"type": "integer", "minimum": 0, "description": "0: the test's own packet; N: its Nth truncated or random packet for this seed."},
                   "length": {"type": "integer", "minimum": 0},
                   "reason": {"type": "string", "minLength": 1},
-                  "bytes": {"type": "string", "description": "The packet, as hex pairs."}
+                  "bytes": {"type": "string", "description": "The packet, as hex pairs (without the lower layers of a run through the parent)."},
+                  "through": {"type": "string", "minLength": 1, "description": "The test's through selector, when the packet ran behind its lower layers."}
                 }
               }
             }

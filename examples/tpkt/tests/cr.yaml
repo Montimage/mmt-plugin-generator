@@ -12,6 +12,7 @@ parent:
     - "tcp"
   selector: "TCP port 102"
   source: "RFC 1006 section 5 (TCP port 102)"
+through: "tcp:dport=102"
 bytes:
   - "03 00 00 16 11 e0 00 00 00 01 00 c1 02 01 00 c2"
   - "02 01 02 c0 01 0a"

@@ -26,6 +26,7 @@ from mmt_plugin.commands.test import TestCommand, packet_paths
 from mmt_plugin.diagnostics import CliError
 from mmt_plugin.sdk.resolve import resolve_profile
 from mmt_plugin.testing import harness
+from mmt_plugin.testing.frames import build_frame, parse_through
 from mmt_plugin.testing.fuzz import fuzz_packets
 from mmt_plugin.ui.streams import ColorTier, StreamStyle
 
@@ -157,7 +158,10 @@ Script = dict[int, tuple[int, int] | None]
 
 class FakeHarness:
     """Replaces ``harness.run``: answers check, fuzz and bench runs from the
-    packet file, and records each run's mode and packet count."""
+    packet file, and records each run's mode and packet count. A whole frame
+    (a run through the parent) is classified when ``frame_match`` (an offset
+    in the frame, and the bytes there) holds, as protocol ``frame_parent``'s
+    child at ``frame_offset``, where its payload starts."""
 
     def __init__(self) -> None:
         self.check: Script = {}
@@ -167,6 +171,10 @@ class FakeHarness:
         self.exit_early: set[int] = set()
         self.setup_crash = False
         self.runs: list[tuple[str, int, str]] = []
+        self.frames: list[bytes] = []
+        self.frame_match: tuple[int, bytes] | None = None
+        self.frame_offset = 42
+        self.frame_parent = 376
 
     def __call__(
         self,
@@ -181,7 +189,9 @@ class FakeHarness:
         env: Any = None,
     ) -> harness.HarnessRun:
         assert program.is_file() and timeout > 0
-        packets = _read(Path(args[1]))
+        records = _read(Path(args[1]))
+        self.frames = [data for frame, data in records if frame]
+        packets = [self._payload(frame, data) for frame, data in records]
         self.runs.append((args[0], len(packets), plugin.parent.name))
         lines: list[str] = []
         if self.error is not None:
@@ -202,13 +212,17 @@ class FakeHarness:
                     )
                 continue
             lines.append(f"packet {n}")
+            if packet is None:
+                lines += ["proto none", "next none", "done"]
+                continue
             values = self.check.get(packet[0], (packet[0], int.from_bytes(packet[1:3], "big")))
             if values is None:
                 return harness.HarnessRun(-11, lines)
             if packet[0] in self.exit_early:
                 return harness.HarnessRun(0, lines)  # user code called exit(0)
+            frame = records[n][0]
             lines += [
-                "proto 2",
+                f"proto 4 {self.frame_offset} {self.frame_parent}" if frame else "proto 2 14 99",
                 "next none",
                 f"attr 0 MMT_U8_DATA int {values[0]}",
                 f"attr 1 MMT_U16_DATA int {values[1]}",
@@ -216,14 +230,27 @@ class FakeHarness:
             ]
         return harness.HarnessRun(0, [*lines, f"end {len(packets)}"])
 
+    def _payload(self, frame: bool, data: bytes) -> bytes | None:
+        """A packet's bytes, a frame's payload, or ``None``: not classified."""
+        if not frame:
+            return data
+        if self.frame_match is None:
+            return None
+        at, match = self.frame_match
+        if data[at : at + len(match)] != match:
+            return None
+        return data[self.frame_offset :]
 
-def _read(path: Path) -> list[bytes]:
+
+def _read(path: Path) -> list[tuple[bool, bytes]]:
+    """The records of a packet file: (whole frame, bytes)."""
     data = path.read_bytes()
     out = []
     while data:
-        n = int.from_bytes(data[:4], "little")
-        out.append(data[4 : 4 + n])
-        data = data[4 + n :]
+        assert data[0] in (harness.RECORD_PACKET, harness.RECORD_FRAME)
+        n = int.from_bytes(data[1:5], "little")
+        out.append((data[0] == harness.RECORD_FRAME, data[5 : 5 + n]))
+        data = data[5 + n :]
     return out
 
 
@@ -485,6 +512,125 @@ def test_sanitize_builds_a_sanitized_plugin_and_reports_crashes_by_seed(
     )
 
 
+# --- through: the plugin's real parent --------------------------------------------------
+
+#: b's selector, and what the fake's UDP classifies: destination port 4433.
+THROUGH = "udp:dport=4433"
+DPORT_4433 = (36, (4433).to_bytes(2, "big"))
+
+
+def _through(project: Path, name: str = "b", through: str = THROUGH) -> None:
+    path = project / "tests" / f"{name}.yaml"
+    path.write_text(path.read_text().replace("bytes:", f'through: "{through}"\nbytes:', 1))
+
+
+def test_a_test_with_through_also_runs_through_its_parent(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _through(project)
+    fake.frame_match = DPORT_4433
+    code, doc = run()
+    assert code == 0, doc["error"]
+    packets = doc["result"]["packets"]
+    assert [(p["id"], p.get("through"), p["status"], p["attributes"]) for p in packets] == [
+        ("fakeproto/a", None, "pass", 2),
+        ("fakeproto/b", None, "pass", 2),
+        ("fakeproto/b", THROUGH, "pass", 2),
+        ("fakeproto/c", None, "pass", 2),
+    ]
+    assert packets[2]["file"] == "tests/b.yaml"
+    assert doc["result"]["summary"]["total"] == 4
+    # The run through the parent is a whole frame: Ethernet, IPv4, UDP.
+    records = _read(project / "build" / "test" / "packets.bin")
+    assert [frame for frame, _ in records] == [False, False, True, False]
+    assert records[1][1] == bytes.fromhex("020003")
+    assert records[2][1] == build_frame(parse_through(THROUGH), bytes.fromhex("020003"), 2)
+    assert fake.frames == [records[2][1]]
+
+
+def test_a_parent_that_does_not_classify_fails_only_the_run_through_it(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _through(project)
+    fake.frame_match = (36, (4434).to_bytes(2, "big"))  # the plugin's parent is wrong
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.packet-failed"
+    assert doc["error"]["message"] == "1 of 4 packets failed"
+    statuses = [(p.get("through"), p["status"]) for p in doc["result"]["packets"]]
+    assert statuses == [(None, "pass"), (None, "pass"), (THROUGH, "fail"), (None, "pass")]
+    assert doc["result"]["packets"][2]["failures"] == [
+        {"attribute": "<protocol>", "expected": "FAKEPROTO (991)", "actual": "not classified"}
+    ]
+    failed = [d for d in doc["diagnostics"] if d["code"] == "test.packet-failed"]
+    assert [d["location"]["file"] for d in failed] == ["tests/b.yaml"]
+    assert failed[0]["message"] == (
+        f"fakeproto/b through {THROUGH}: <protocol>: expected FAKEPROTO (991), got not classified"
+    )
+
+
+def test_a_plugin_under_another_parent_or_offset_fails_on_parent(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _through(project)
+    fake.frame_match = DPORT_4433
+    fake.frame_parent = 354
+    code, doc = run()
+    assert code == 6
+    assert doc["result"]["packets"][2]["failures"] == [
+        {"attribute": "<parent>", "expected": "udp at offset 42", "actual": "tcp at offset 42"}
+    ]
+    fake.frame_parent, fake.frame_offset = 376, 34
+    code, doc = run()
+    failures = doc["result"]["packets"][2]["failures"]
+    assert failures[0] == {
+        "attribute": "<parent>",
+        "expected": "udp at offset 42",
+        "actual": "udp at offset 34",
+    }
+
+
+def test_a_bad_through_is_exit_3_before_anything_is_built(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _through(project, through="udp:dport=99999")
+    code, doc = run()
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    bad = [d for d in doc["diagnostics"] if d["code"] == "model.bad-packet-test"]
+    assert bad[0]["location"]["file"] == "tests/b.yaml"
+    assert "through: 'udp:dport=99999': dport=99999 is not a number" in bad[0]["message"]
+    assert fake.runs == []
+
+
+def test_sanitize_runs_a_through_test_again_behind_its_lower_layers(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _through(project)
+    fake.frame_match = DPORT_4433
+    code, doc = run("--sanitize", "--fuzz-count", "20", "--seed", "5")
+    assert code == 0, doc["error"]
+    assert doc["result"]["sanitize"]["count"] == 84  # 3 * 21, and b's 21 again
+    fuzz = _read(project / "build" / "test" / "fuzz.bin")
+    assert [frame for frame, _ in fuzz] == [False] * 42 + [True] * 21 + [False] * 21
+    data = bytes.fromhex("020003")
+    crashing = fuzz_packets(5, "fakeproto/b", data, 20)
+    assert fuzz[42][1] == build_frame(parse_through(THROUGH), data, 42)
+    assert fuzz[48][1] == build_frame(parse_through(THROUGH), crashing[5], 48)
+    # b's sixth random packet crashes the plugin where the harness attaches
+    # it and through its parent: two crashes, the second through it.
+    fake.fuzz_crash = {crashing[5]}
+    code, doc = run("--sanitize", "--fuzz-count", "20", "--seed", "5")
+    assert code == 6 and doc["error"]["code"] == "test.crash"
+    crashes = doc["result"]["sanitize"]["crashes"]
+    assert [(c["test"], c["index"], c.get("through")) for c in crashes] == [
+        ("fakeproto/b", 6, None),
+        ("fakeproto/b", 6, THROUGH),
+    ]
+    assert crashes[1]["bytes"] == crashing[5].hex(" ")
+    assert crashes[1]["length"] == len(crashing[5])
+    messages = [d["message"] for d in doc["diagnostics"] if d["code"] == "test.crash"]
+    assert messages[1].startswith(f"fakeproto/b: random packet 6 through {THROUGH} (")
+
+
 def test_bench_reports_packets_per_second_against_the_empty_plugin(
     project: Path, run: Run, fake: FakeHarness
 ) -> None:
@@ -556,3 +702,9 @@ def test_plain_records_are_packet_status_detail(
         "fakeproto/b\tfail\tsize: expected 3, got 9",
         "fakeproto/c\tpass\t2 attributes",
     ]
+    _through(project, "c")
+    fake.frame_match = DPORT_4433
+    assert main(argv, commands=[command]) == 6
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        f"fakeproto/c through {THROUGH}\tpass\t2 attributes"
+    )

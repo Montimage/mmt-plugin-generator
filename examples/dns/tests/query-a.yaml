@@ -12,6 +12,7 @@ parent:
     - "udp"
   selector: "UDP port 53"
   source: "RFC 1035 section 4.2.1"
+through: "udp:dport=53"
 bytes:
   - "1a 2b 01 00 00 01 00 00 00 00 00 00 07 65 78 61"
   - "6d 70 6c 65 03 63 6f 6d 00 00 01 00 01"

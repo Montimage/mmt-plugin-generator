@@ -9,7 +9,10 @@ the harness checks is required: ``schema: 1``, ``id``, ``bytes`` and
 the informational keys (``summary``, ``source``, ``constructs``,
 ``parent``, ...) are not, and are not read. ``parent`` in particular: the
 harness attaches the protocol to Ethernet itself, so a packet is tested
-without the user code's parent registration.
+without the user code's parent registration. The optional ``through`` (a
+selector, ``mmt_plugin.testing.frames``) runs the packet a second time,
+behind the lower layers it names, through mmt-dpi's stack and the plugin's
+own parent classification.
 
 ``check(test, observed, plugin)`` compares one ``Observation`` with the test
 and returns its failures, each an attribute, the expected and the actual
@@ -18,6 +21,11 @@ integers, ``aa:bb:..`` MAC addresses, dotted quads, RFC 5952 IPv6 text, the
 offset a pointer points at, and hex pairs for every other type. A
 ``<protocol>`` failure is a packet the plugin did not classify, or a
 protocol id or name other than the test's; ``<next>`` is the next protocol.
+With an ``ExpectedParent`` (the run through the parent), ``<parent>`` is the
+protocol below the plugin's and the offset the plugin starts at, and
+``<next>`` is not checked: mmt-dpi 1.10.2 does not process a layer that a
+plugin classified under its TCP or UDP, so that layer's next protocol is
+never classified there (``examples/README.md``).
 """
 
 from __future__ import annotations
@@ -30,13 +38,16 @@ from pathlib import Path
 from typing import Any
 
 from mmt_plugin.diagnostics import Diagnostic, Location, Severity
+from mmt_plugin.testing.frames import Through, parse_through
 from mmt_plugin.testing.yamlsubset import LoadError, loads
 
 __all__ = [
     "NEXT",
+    "PARENT",
     "PROTOCOL",
     "ExpectedAttribute",
     "ExpectedNext",
+    "ExpectedParent",
     "Failure",
     "Observation",
     "ObservedValue",
@@ -51,6 +62,7 @@ __all__ = [
 #: The pseudo attributes of a failure on the classification.
 PROTOCOL = "<protocol>"
 NEXT = "<next>"
+PARENT = "<parent>"
 
 #: The integer types and their widths in bytes.
 INT_WIDTH = {
@@ -110,7 +122,8 @@ class ExpectedNext:
 @dataclass(frozen=True)
 class PacketTest:
     """One packet test: its ``id``, the ``file`` it came from (as shown),
-    the packet ``data`` (from the protocol's first byte) and what it expects."""
+    the packet ``data`` (from the protocol's first byte), what it expects,
+    and the parent it also runs ``through`` (``None``: none)."""
 
     id: str
     file: str
@@ -119,6 +132,18 @@ class PacketTest:
     proto_id: int
     next: ExpectedNext
     attributes: tuple[ExpectedAttribute, ...]
+    through: Through | None = None
+
+
+@dataclass(frozen=True)
+class ExpectedParent:
+    """Where the run through the parent expects the plugin: directly above
+    the protocol ``proto_id`` (``None``: any; ``name`` shows it), starting
+    at ``offset`` in the frame."""
+
+    name: str
+    proto_id: int | None
+    offset: int
 
 
 @dataclass(frozen=True)
@@ -137,12 +162,15 @@ class ObservedValue:
 class Observation:
     """What the harness saw for one packet: ``index`` of the protocol in the
     path (``None``: not classified), the next protocol (``None``: none) and
-    its offset, and each attribute by name."""
+    its offset, each attribute by name, and the protocol's ``offset`` in the
+    frame and the ``parent_id`` below it (``None``: not reported)."""
 
     index: int | None
     next_id: int | None
     next_offset: int | None
     values: Mapping[str, ObservedValue]
+    offset: int | None = None
+    parent_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -296,7 +324,14 @@ def load(path: Path, shown: str, data_types: Collection[str]) -> PacketTest:
     duplicate = next((n for n in names if names.count(n) > 1), None)
     if duplicate is not None:
         raise _error(shown, f"expect.attributes: {duplicate!r} is listed twice")
-    return PacketTest(test_id, shown, data, protocol, proto_id, nxt, attributes)
+    through = None
+    if "through" in doc:
+        text = _need(shown, "the test", doc, "through", str)
+        try:
+            through = parse_through(text)
+        except ValueError as exc:
+            raise _error(shown, f"through: {exc}") from None
+    return PacketTest(test_id, shown, data, protocol, proto_id, nxt, attributes, through)
 
 
 def _actual(expected: ExpectedAttribute, seen: ObservedValue) -> str:
@@ -311,11 +346,16 @@ def _actual(expected: ExpectedAttribute, seen: ObservedValue) -> str:
 
 
 def check(
-    test: PacketTest, observed: Observation, plugin: tuple[int, str]
+    test: PacketTest,
+    observed: Observation,
+    plugin: tuple[int, str],
+    parent: ExpectedParent | None = None,
+    names: Mapping[int, str] | None = None,
 ) -> tuple[list[Failure], int]:
     """The failures of ``test`` given what the harness ``observed``, and the
     number of attributes checked. ``plugin`` is the protocol id and name the
-    plugin registered."""
+    plugin registered; ``parent`` is given for the run through the parent,
+    and ``names`` shows the protocol ids it reports."""
     failures: list[Failure] = []
     pid, name = plugin
     wanted = f"{test.protocol} ({test.proto_id})"
@@ -323,7 +363,16 @@ def check(
         return [Failure(PROTOCOL, wanted, f"{name} ({pid})")], 0
     if observed.index is None:
         return [Failure(PROTOCOL, wanted, "not classified")], 0
-    if test.next.kind == "proto":
+    if parent is not None:
+        want = f"{parent.name} at offset {parent.offset}"
+        below = observed.parent_id
+        shown = "unknown" if below is None else (names or {}).get(below, str(below))
+        got = f"{shown} at offset {observed.offset}"
+        if observed.offset != parent.offset or (
+            parent.proto_id is not None and below != parent.proto_id
+        ):
+            failures.append(Failure(PARENT, want, got))
+    elif test.next.kind == "proto":
         want = f"{test.next.proto_id} at offset {test.next.offset}"
         got = (
             "none"

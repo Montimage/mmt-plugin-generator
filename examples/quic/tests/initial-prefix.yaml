@@ -12,6 +12,7 @@ parent:
     - "udp"
   selector: "UDP port 443"
   source: "plugins/quic_src/quic_mmt_plugin.c (ports 80 and 443)"
+through: "udp:dport=443"
 bytes:
   - "c3 00 00 00 01 08 83 94 c8 f0 3e 51 57 08 00 00"
   - "14 00 00 00 02 10 11 12 13 14 15 16 17 18 19 1a"

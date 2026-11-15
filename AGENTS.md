@@ -33,9 +33,10 @@ protocol model. A Python rewrite is planned in
   hooks. After a generator change (or a version bump: `plugin.lock`
   records it), regenerate them all, as the README says. Tests in
   `tests/unit/examples/`: `test_examples.py` (the models, `generate
-  --check`, the packet tests against the corpus) and `test_sdk.py`
-  (`validate`, `build` and `test --sanitize` on each one; needs
-  `MMT_GOLDEN_SDK`).
+  --check`, the packet tests against the corpus, one `through` test per
+  example with a parent) and `test_sdk.py` (`validate`, `build` and `test
+  --sanitize` on each one, then each parent's classification broken, which
+  fails only the run through it; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
 - `tests/corpus/`: the test corpus (T0.4): every `plugins/` model plus
@@ -187,14 +188,22 @@ protocol model. A Python rewrite is planned in
   host's), attaches it to Ethernet (EtherType 0x88b5, no parent hook
   needed) and prints the classification, the next protocol and each
   attribute; `packets.py` reads the fixtures (`yamlsubset.py`: the
-  corpus's YAML subset, no YAML dependency) and compares. A mismatch is
+  corpus's YAML subset, no YAML dependency) and compares. A packet test
+  with `through` (an `init --parent` selector, #74) also runs as a whole
+  frame whose lower layers `frames.py` builds, through mmt-dpi's stack and
+  the plugin's own parent classification: its own `result.packets` entry
+  (with `through`), a `<parent>` failure when the plugin is not directly
+  above that protocol where the layers end, `next` not checked (mmt-dpi
+  1.10.2's TCP and UDP stop at a plugin's layer); the harness's records
+  are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A mismatch is
   `test.packet-failed`, a crash `test.crash` (exit 6), each failure with
   its attribute, expected and actual value. `--sanitize` builds
   `build/sanitize/` with ASan/UBSan and runs truncated and random packets
   (`fuzz.py`, `--seed`, `--fuzz-count`); `--bench` compares packets per
   second with an empty plugin (`templates/baseline.c.j2`) and never changes
-  the exit code. Tests in `tests/unit/packettest/`: `test_testing.py` and
-  `test_command.py` (fake SDK, compiler and harness run), and `test_sdk.py`
+  the exit code. Tests in `tests/unit/packettest/`: `test_testing.py`,
+  `test_frames.py` and `test_command.py` (fake SDK, compiler and harness
+  run), and `test_sdk.py`
   (every corpus model under the sanitizers, a broken model, against a real
   SDK; needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/install.py` (T2.5): `mmt-plugin install [MODEL]`

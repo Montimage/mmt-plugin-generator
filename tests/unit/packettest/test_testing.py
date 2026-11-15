@@ -21,7 +21,9 @@ from mmt_plugin.testing import harness
 from mmt_plugin.testing.fuzz import fuzz_packets
 from mmt_plugin.testing.packets import (
     NEXT,
+    PARENT,
     PROTOCOL,
+    ExpectedParent,
     Failure,
     Observation,
     ObservedValue,
@@ -205,6 +207,86 @@ def test_an_unclassified_packet_or_another_protocol_fails_on_the_protocol(
     assert check(test, _seen(), (990, "t"))[0] == []
 
 
+def test_a_test_without_through_runs_only_where_the_harness_attaches_it(tmp_path: Path) -> None:
+    assert _test(tmp_path).through is None
+
+
+def test_through_reads_a_parent_selector(tmp_path: Path) -> None:
+    test = _test(tmp_path, PACKET.replace("bytes:", 'through: "udp:dport=0x35"\nbytes:'))
+    assert test.through is not None
+    assert (test.through.text, test.through.proto, test.through.keys) == (
+        "udp:dport=0x35",
+        "udp",
+        (("dport", 53),),
+    )
+    assert test.through.offset == 42
+
+
+@pytest.mark.parametrize(
+    ("through", "message"),
+    [
+        ("3", "the test: 'through' must be a string"),
+        ('"udp:"', "through: 'udp:' is not a selector"),
+        ('"sctp:port=1"', "the parent is one of ethernet, ip, ipv6, udp, tcp, not sctp"),
+        ('"udp:proto=17"', "udp has no key 'proto'"),
+        ('"udp:dport=70000"', "dport=70000 is not a number from 0 to 0xffff"),
+        ('"udp:dport=1,dport=2"', "dport is given twice"),
+        ('"udp:port=1,dport=2"', "give port or dport, not both"),
+        ('"ethernet"', "ethernet needs ethertype="),
+        ('"ip"', "ip needs proto="),
+    ],
+)
+def test_a_bad_through_is_a_bad_packet_test(tmp_path: Path, through: str, message: str) -> None:
+    with pytest.raises(PacketTestError) as exc:
+        _test(tmp_path, PACKET.replace("bytes:", f"through: {through}\nbytes:"))
+    d = exc.value.diagnostic
+    assert d.code == "model.bad-packet-test"
+    assert message in d.message, d.message
+    assert d.location is not None and d.location.file == "tests/t.yaml"
+
+
+UDP = ExpectedParent("udp", 376, 42)
+
+
+def _through(**kw: Any) -> Observation:
+    seen = _seen(next_id=None, offset=None)
+    return Observation(seen.index, None, None, seen.values, kw.get("at", 42), kw.get("below", 376))
+
+
+def test_the_run_through_the_parent_checks_where_the_plugin_is(tmp_path: Path) -> None:
+    test = _test(tmp_path)
+    names = {376: "udp", 178: "ip"}
+    # The next protocol is not checked there: mmt-dpi 1.10.2 does not
+    # process a plugin's layer above its UDP or TCP.
+    assert check(test, _through(), (990, "T"), UDP, names) == ([], 3)
+    assert check(test, _through(at=34, below=178), (990, "T"), UDP, names)[0] == [
+        Failure(PARENT, "udp at offset 42", "ip at offset 34")
+    ]
+    assert check(test, _through(at=50), (990, "T"), UDP, names)[0] == [
+        Failure(PARENT, "udp at offset 42", "udp at offset 50")
+    ]
+    assert check(test, _through(below=7), (990, "T"), UDP)[0] == [
+        Failure(PARENT, "udp at offset 42", "7 at offset 42")
+    ]
+    # A profile without the parent's id checks the offset only.
+    assert check(test, _through(below=7), (990, "T"), ExpectedParent("udp", None, 42))[0] == []
+    unclassified = Observation(None, None, None, {})
+    assert check(test, unclassified, (990, "T"), UDP) == (
+        [Failure(PROTOCOL, "T (990)", "not classified")],
+        0,
+    )
+    wrong = _through()
+    wrong = Observation(
+        wrong.index,
+        None,
+        None,
+        {**wrong.values, "a": ObservedValue("int", "MMT_U16_DATA", number=8)},
+        42,
+        376,
+    )
+    assert check(test, wrong, (990, "T"), UDP)[0] == [Failure("a", "258", "8")]
+
+
 def test_a_next_protocol_where_none_is_expected_fails(tmp_path: Path) -> None:
     test = _test(tmp_path, PACKET.replace('kind: "proto"', 'kind: "none"'))
     assert check(test, _seen(), (990, "T"))[0] == [Failure(NEXT, "none", "956 at offset 4")]
@@ -308,6 +390,9 @@ def test_the_harness_source_names_the_protocol_and_the_attributes() -> None:
     assert '{"kind", 1, 0, 0},' in text and '{"extra", 6, 0, 0},' in text
     assert "#define HARNESS_ATTRIBUTES 2" in text
     assert "!= 0x88" in text and "!= 0xb5" in text
+    assert "#define HARNESS_RECORD_FRAME 1" in text
+    # Its own attachment never classifies a whole frame (a run through the parent).
+    assert "if (harness_whole_frame\n" in text
     assert '{MMT_U8_DATA, "MMT_U8_DATA"},' in text
     assert "register_classification_function_with_parent_protocol(PROTO_ETHERNET" in text
     for header in ("plugin_defs.h", "types_defs.h", "tcpip/mmt_tcpip.h", "mmt_core.h"):
@@ -323,10 +408,16 @@ def test_the_baseline_plugin_registers_the_protocol_without_attributes() -> None
     assert "attribute" not in text.split("*/", 1)[1].replace("no attribute", "")
 
 
-def test_the_packet_file_is_length_prefixed(tmp_path: Path) -> None:
+def test_the_packet_file_is_kind_and_length_prefixed(tmp_path: Path) -> None:
     path = tmp_path / "p.bin"
-    harness.write_packets(path, [b"\x01\x02", b"", b"\xff"])
-    assert path.read_bytes() == b"\x02\0\0\0\x01\x02" + b"\0\0\0\0" + b"\x01\0\0\0\xff"
+    frame = harness.Record(b"\xaa\xbb\xcc", frame=True)
+    harness.write_packets(path, [b"\x01\x02", b"", frame, harness.Record(b"\xff")])
+    assert path.read_bytes() == (
+        b"\0\x02\0\0\0\x01\x02"
+        + b"\0\0\0\0\0"
+        + b"\x01\x03\0\0\0\xaa\xbb\xcc"
+        + b"\0\x01\0\0\0\xff"
+    )
 
 
 def test_the_check_output_reads_into_observations() -> None:
@@ -343,6 +434,10 @@ def test_the_check_output_reads_into_observations() -> None:
         "proto none",
         "done",
         "packet 2",
+        "proto 4 42 376",
+        "next none",
+        "done",
+        "packet 3",
         "proto 2",
     ]
     parsed = harness.parse_check(lines, ["kind", "mac", "nope"])
@@ -356,7 +451,8 @@ def test_the_check_output_reads_into_observations() -> None:
         "nope": ObservedValue("missing"),
     }
     assert parsed.observations[1] == Observation(None, None, None, {})
-    assert parsed.unfinished == 2
+    assert parsed.observations[2] == Observation(4, None, None, {}, 42, 376)
+    assert parsed.unfinished == 3
     assert harness.parse_check(["error init_extraction() failed"], []).error == (
         "init_extraction() failed"
     )
@@ -368,6 +464,7 @@ def test_the_check_output_reads_into_observations() -> None:
         "attr len=3",
         "next hop",
         "proto x",
+        "proto 2 x 99",
         "packet one",
         "attr 9 MMT_U8_DATA int 1",
         "attr 0 MMT_U8_DATA int x",

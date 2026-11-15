@@ -45,7 +45,10 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   fix is usually in `plugin.yaml`, at the attribute that
   `result.packets[].failures[].attribute` names (an offset, a type, a bit
   order). Change the test only when the spec contradicts its expected
-  value, never to match what the plugin outputs.
+  value, never to match what the plugin outputs. A failing entry with
+  `through` ran through the plugin's parent: `<protocol>` there (not
+  classified) or `<parent>` is fixed in `parents:` (its `classify`) or in
+  `<label>_hook_register_parents`.
 - `build.missing-hook` is located at `src/<label>_impl.c`, without a line:
   add the function there, with the declaration of the hint.
 - A `build.cc` error at an absolute path is in a file outside the project,

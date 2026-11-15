@@ -10,6 +10,7 @@ parent:
     - "ethernet"
   selector: "ethertype 0x0800"
   source: "RFC 894"
+through: "ethernet:ethertype=0x0800"
 bytes:
   - "45 00 00 1c 1c 46 40 00 40 11 99 c2 c0 00 02 01"
   - "c0 00 02 c7 c0 00 00 35 00 08 00 00"

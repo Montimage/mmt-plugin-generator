@@ -105,6 +105,17 @@ UDP header (the test harness attaches the protocol to Ethernet itself).
 The expected values come from the spec. A test that passes because its
 values were copied from the plugin's output tests nothing.
 
+To check `parents:` too, add `through` to one packet test: the parent as
+an `init --parent` selector, e.g. `through: "udp:dport=4433"` (also
+`ethernet:ethertype=N`, `ip:proto=N`, `ipv6:proto=N`, `tcp:dport=N`; `udp`
+alone for a `classify` that matches the payload). `test` then also runs the
+bytes behind the headers it names, through mmt-dpi's stack: a second
+`result.packets` entry with `through`, which fails `<protocol>` (not
+classified) when the parent's classification does not match the packet and
+`<parent>` when the plugin starts at another protocol or offset. Fix
+`parents:` (or the hook), not the selector, unless the selector contradicts
+the spec. That run does not check `next`.
+
 ## From a capture
 
 `scaffold --from-pcap` writes `<project>/plugin.proposed.yaml` and one

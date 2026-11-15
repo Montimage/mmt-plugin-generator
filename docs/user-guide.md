@@ -337,6 +337,26 @@ packets need no parent headers and the parent classification does not run;
 it is registered when the plugin loads, so a registration that fails fails
 the test.
 
+To test the parent classification too, give a packet test `through`, a
+selector with `init --parent`'s syntax: `ethernet:ethertype=N`,
+`ip:proto=N`, `ipv6:proto=N`, or `udp`/`tcp` with `dport` (or `port`) and
+`sport`. The test then also runs as a whole frame: `test` puts the
+Ethernet, IPv4 (or IPv6) and UDP or TCP headers it names in front of the
+bytes and hands the frame to mmt-dpi's own stack, so your plugin must
+classify it, directly above that protocol, at the offset those headers end
+at (the `<parent>` failure), with the same attribute values:
+
+```yaml
+through: "udp:dport=4433"   # Ethernet, IPv4, UDP to port 4433, then bytes
+bytes:
+  - "01 02 00 04"
+```
+
+That run is a second entry in `result.packets`, with `through`. It does
+not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
+attached under its TCP or UDP. With `--sanitize`, its random packets run
+behind the same headers.
+
 ## Install the plugin
 
 `install` copies `mmtp_demo.so` into `<prefix>/plugins/` and records it in

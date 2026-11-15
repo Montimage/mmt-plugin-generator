@@ -1,9 +1,9 @@
-"""Every ``plugins/*_plugin`` and corpus model the parser accepts, analysed.
+"""Every corpus model the parser accepts, analysed.
 
 Each model is clean, gives warnings, or gives errors; the table records which,
-with the codes, and says why for every one that is not clean. The corpus
-copies of the examples are byte-identical to ``plugins/`` (tests/corpus/
-validate.py), so they give the same result.
+with the codes, and says why for every one that is not clean. The 16
+example models are the Java tool's ``plugins/<name>_plugin`` (removed by
+#78), byte for byte (``tests/corpus/validate.py`` checks their sha256).
 
 Most examples collide with mmt-dpi 1.10.2, whose package installs
 libmmt_tcpip, libmmt_tdicom, libmmt_tmobile and libmmt_business_app: they
@@ -80,20 +80,17 @@ UNPARSED = {"ethernet", "mongodb"}
 
 
 def _models() -> list[tuple[str, Path]]:
-    found = [
-        (p.name.removesuffix("_plugin"), p) for p in sorted((ROOT / "plugins").glob("*_plugin"))
-    ]
-    found += [
+    return [
         (p.parent.name, p)
         for p in sorted((ROOT / "tests" / "corpus" / "models").glob("*/model.pdl"))
     ]
-    return found
 
 
 def test_the_table_covers_every_model() -> None:
     names = {name for name, _ in _models()}
     assert names == set(EXPECTED) | UNPARSED
-    assert len(_models()) == 16 + 32
+    # The 16 examples and the 16 targeted models of tests/corpus/index.yaml.
+    assert len(_models()) == 16 + 16
 
 
 @pytest.mark.parametrize(

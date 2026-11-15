@@ -1,5 +1,5 @@
 {
-  "file": "plugins/cotp_plugin",
+  "file": "tests/corpus/models/cotp/model.pdl",
   "model": {
     "node": "Model",
     "defines": [],

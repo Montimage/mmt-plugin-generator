@@ -14,7 +14,7 @@ root of a checkout of this repository.
 
 | With the Java tool | With mmt-plugin |
 |---|---|
-| A PDL v1 model file (`plugins/tpkt_plugin`) | `plugin.yaml` in a project ([format](plugin-yaml.md), [reference](model-reference.md)); `mmt-plugin import` converts a PDL v1 model, and every command still reads PDL v1 |
+| A PDL v1 model file (`tpkt_plugin`) | `plugin.yaml` in a project ([format](plugin-yaml.md), [reference](model-reference.md)); `mmt-plugin import` converts a PDL v1 model, and every command still reads PDL v1 |
 | `java -jar MMTPluginGenerator.jar MODEL OUT` | `mmt-plugin generate` (into `generated/`, with `plugin.lock`) |
 | Editing the generated C (classification, extraction, `init_<l>_proto_struct`) | The hooks in `src/<label>_impl.c`, which `generate` never writes; `parents:` in the model for a parent with a fixed header |
 | `gcc -fPIC -shared -o x.so -I .../dpi/include x.c` | `mmt-plugin build`, with fixed flags and `-Wall -Wextra -Werror` |
@@ -25,12 +25,13 @@ root of a checkout of this repository.
 ## Move a model
 
 Create a project for it, with the label and id it will have, then convert
-the model into it. The tpkt model of `plugins/` is the example:
+the model into it. The Java tool's tpkt model, kept in the test corpus as
+`tests/corpus/models/tpkt/model.pdl`, is the example:
 
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init tpkt_port --id 970 --sdk-profile 1.10.2
-mmt-plugin -C tpkt_port import plugins/tpkt_plugin -o tpkt_port/plugin.imported.yaml
+mmt-plugin -C tpkt_port import tests/corpus/models/tpkt/model.pdl -o tpkt_port/plugin.imported.yaml
 ```
 
 `init` wrote a sample model, `tpkt_port/plugin.yaml`; `import` writes the
@@ -62,7 +63,7 @@ mmt-plugin -C tpkt_port generate
 
 What else usually changes:
 
-- **The label and the id.** Most `plugins/` models reuse a name or an id
+- **The label and the id.** Most of the Java tool's models reuse a name or an id
   that mmt-dpi 1.10.x has, which `generate` refuses (`model.id-taken`,
   `model.name-taken`). Third-party plugins use ids 950 to 999.
 - **The parents.** PDL v1 had no way to say what a protocol runs on, so the
@@ -78,7 +79,7 @@ What else usually changes:
   specification gives (the [user guide](user-guide.md#packet-tests) has the
   format). `scaffold --from-pcap` drafts them from a capture.
 
-The 16 models of `plugins/` are all ported this way in
+The Java tool's 16 example models are all ported this way in
 [`examples/`](../examples/README.md), which lists what each port changed;
 `examples/tpkt/` is the finished version of the project above, with its
 parent hook and packet tests:
@@ -97,7 +98,7 @@ profile is given:
 
 <!-- doc:run no-sdk -->
 ```sh
-mmt-plugin generate plugins/ndn_plugin -o ndn-out --sdk-profile 1.10.2
+mmt-plugin generate tests/corpus/models/ndn/model.pdl -o ndn-out --sdk-profile 1.10.2
 ```
 
 The output is not meant to be edited: a model whose code needs hooks is
@@ -111,7 +112,7 @@ with the Java bug it fixes (numbered in the
 the test that pins it. The ones you are most likely to notice:
 
 - The generated C compiles against mmt-dpi 1.10.2 for every model (the Java
-  output did for 4 of the 16 `plugins/` models), and each attribute is read
+  output did for 4 of its 16 example models), and each attribute is read
   only from bytes inside the captured packet.
 - An id or a name that the SDK already has is an error, not a plugin that
   fails to load.
@@ -136,11 +137,15 @@ the test that pins it. The ones you are most likely to notice:
 The jar and its sources were removed in #31 (plan task T5.4), once
 `mmt-plugin` was shown to match it; they are in `legacy/` at commit
 4076899 if you need them. What the tests still compare with is frozen in
-`tests/java-output/`: the record of the jar's last run on every `plugins/`
+`tests/java-output/`: the record of the jar's last run on every example
 model, and its C output for the 4 models whose output compiled, which the
 parity test (`tests/unit/generate/test_parity.py`) compares with
 `mmt-plugin`'s.
 
-The ported projects in `examples/` replace the models of `plugins/`, which
-stays for now: the test corpus and the examples above still read it
-(#78).
+The example models and their hand-written C, in `plugins/`, were removed
+in #78: the ported projects in `examples/` replace them, and the test
+corpus keeps the 16 models, byte for byte, as
+`tests/corpus/models/<name>/model.pdl`. They are in `plugins/` at commit
+f081d43;
+[`examples/README.md`](../examples/README.md#the-java-tools-c-sources)
+says which C each port replaces and why the rest has no port.

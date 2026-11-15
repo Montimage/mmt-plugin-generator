@@ -7,7 +7,8 @@ differ, so that a difference is a decision and not an accident.
 
 ## Parity
 
-Only 4 of the 16 `plugins/` models give Java output that compiles against
+Only 4 of the Java tool's 16 example models (`plugins/`, now
+`tests/corpus/models/`) give Java output that compiles against
 mmt-dpi 1.10.2: abb, cotp, s7com and tpkt (inventory, section 4). For each of
 them, `tests/unit/generate/test_parity.py` reads the Java output frozen in
 `tests/java-output/` (the jar's last run, checked against its `MANIFEST`)

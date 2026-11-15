@@ -17,7 +17,7 @@
 
 ## Current Java generator: behaviour inventory (the parity baseline)
 
-Evidence gathered by Dex's research agent on 2026-11-10. It ran the shipped `dist/MMTPluginGenerator.jar` (built 2015-04-20, parser from ANTLR 3.4) on all 16 models in `plugins/`, then compiled each output against a private mmt-dpi 1.10.2 install (main `9ea989d7`) with `gcc -Wall -fPIC -shared`. Java 8 runs the jar, but there is no `javac`, so it could not be rebuilt; the text strings inside the jar's classes match the current sources.
+Evidence gathered by Dex's research agent on 2026-11-10. It ran the shipped `dist/MMTPluginGenerator.jar` (built 2015-04-20, parser from ANTLR 3.4) on all 16 models in `plugins/` (removed by #78; the same files are `tests/corpus/models/<name>/model.pdl`), then compiled each output against a private mmt-dpi 1.10.2 install (main `9ea989d7`) with `gcc -Wall -fPIC -shared`. Java 8 runs the jar, but there is no `javac`, so it could not be rebuilt; the text strings inside the jar's classes match the current sources.
 
 Short names: G = `pdl_grammar/PluginGrammar.g`, P = `MMT_Plugin.java`, A = `MMT_Proto_Attribute.java`, C = `ConditionalAttributeProperties.java`, S = `StructElementAttribute.java`.
 

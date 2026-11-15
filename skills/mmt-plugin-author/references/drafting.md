@@ -149,5 +149,6 @@ pinned profile. Then:
 3. Put back the `parents:` and the `sdk.profile` pin of `init`'s
    `plugin.yaml` (PDL v1 has no parent, and `import` pins no profile).
 4. Write packet tests from the protocol's spec. The corpus,
-   `tests/corpus/models/<name>/packets/`, has some for the models of
-   `plugins/`; change their `protocol` and `proto_id` to yours.
+   `tests/corpus/models/<name>/packets/`, has some for the Java tool's
+   example models (`kind: example` in `tests/corpus/index.yaml`); change
+   their `protocol` and `proto_id` to yours.

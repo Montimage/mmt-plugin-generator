@@ -36,9 +36,13 @@ file instead of skipping it.
 
 There are two kinds of model:
 
-- **example**: a byte-identical copy of `plugins/<name>_plugin`. The 16
-  models in `plugins/` all have one. The validator fails if a copy drifts
-  from its origin or if a `plugins/*_plugin` model has no entry.
+- **example**: one of the 16 models the Java tool shipped as
+  `plugins/<name>_plugin`, byte for byte (`plugins/` was removed by #78; it
+  is in the tree at commit f081d43). The validator fails if a model's
+  sha256 is not its entry's, or if the example names, each with `_plugin`
+  appended, are not the models of `tests/java-output/MANIFEST`, the record
+  of the Java tool's last run, which the tests compare with. A `plugins/`
+  path in a `spec`, `notes` or `source` names a file at that commit.
 - **targeted**: a small model written for this corpus. Each one covers a
   group of PDL constructs (defines, Properties keys, struct element types,
   bitfields, the 26 `MMT_*` types, scopes, conditionals, expressions,
@@ -53,8 +57,8 @@ There are two kinds of model:
   that exercise it. `covered_by` is derived from the packets' own
   `constructs` lists; the validator checks that the two agree.
 - `models`: one entry per model.
-  - `kind`: `example` or `targeted`. `origin`: the `plugins/` file (examples
-    only).
+  - `kind`: `example` or `targeted`. `sha256`: the sha256 of the model file
+    the Java tool ran on (examples only).
   - `encoding`: the model's encoding (`network`, `host`, `ascii`, `unicode`,
     or `default` when the key is omitted). The validator checks it against
     the model file.
@@ -172,7 +176,7 @@ note: "..."                    # optional
     first. The models do not declare their parent (inventory section 2:
     the parent registration is hand-written), so the stack comes from the
     specification's transport or from the hand-written source in
-    `plugins/`, as `source` says.
+    `plugins/` (at commit f081d43), as `source` says.
   - `link`: the bytes are the whole frame (`ethernet`).
   - `none`: no parent is known (targeted models, `topo_ind_sch`). The harness
     hands the bytes to the plugin directly.
@@ -362,9 +366,9 @@ data.
 
 ## Adding a fixture
 
-1. Put the model in `models/<name>/model.pdl` (for an example, copy
-   `plugins/<name>_plugin` byte for byte) and add its entry to
-   `index.yaml`.
+1. Put the model in `models/<name>/model.pdl` and add its entry to
+   `index.yaml`. A new model is `targeted`: the 16 examples are the
+   models of the Java tool's last run, all in the corpus.
 2. Build the bytes from the specification and write
    `models/<name>/packets/<stem>.yaml`, with a `source` on every value.
 3. List the constructs the packet exercises, and add the packet id to each

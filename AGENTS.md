@@ -16,13 +16,16 @@ protocol model. A Python rewrite is planned in
   (ethernet, ip, mongodb: the syntax errors `tests/unit/pdl/test_corpus.py`
   compares with). The tests check every kept file against `MANIFEST`, and
   `MANIFEST` against its sha256 at that commit; never edit them.
-- `plugins/`: the 16 example models (`plugins/*_plugin`) and generated or
-  hand-written C sources (`*_src/`, `cotp/`, `tpkt/`, ...). Only 4 of the
-  16 models (abb, cotp, s7com, tpkt) produced code that compiles against
-  mmt-dpi 1.10.2 with the Java tool. Kept by T5.4 because the corpus
-  (`origin:`), its tests and the doc examples read it; whether it goes is
-  #78. The ported projects are in `examples/`.
-- `examples/` (T5.1): the 16 `plugins/*_plugin` models ported to
+- `plugins/` (the Java tool's 16 example models, `plugins/*_plugin`, and
+  their generated or hand-written C) was removed by #78; it is in the tree
+  at commit f081d43. The models are `tests/corpus/models/<name>/model.pdl`
+  byte for byte (`kind: example`, with their `sha256`, in
+  `tests/corpus/index.yaml`; `MANIFEST` names them `<name>_plugin`), ported
+  in `examples/`; `examples/README.md` ("The Java tool's C sources") lists
+  the C and what replaced it. Only 4 of the 16 models (abb, cotp, s7com,
+  tpkt) produced code that compiles against mmt-dpi 1.10.2 with the Java
+  tool.
+- `examples/` (T5.1): the 16 example models of the Java tool ported to
   mmt-plugin projects, `examples/<name>/` (`plugin.yaml` from `import`,
   then edited; the committed `plugin.lock` and `generated/`;
   `src/<label>_impl.c`; `tests/*.yaml`, the corpus packets of the model
@@ -39,7 +42,8 @@ protocol model. A Python rewrite is planned in
   fails only the run through it; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
-- `tests/corpus/`: the test corpus (T0.4): every `plugins/` model plus
+- `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example
+  models plus
   targeted per-construct models, each with packet fixtures whose expected
   values come from the protocol specs. `tests/corpus/README.md` defines the
   format and the extraction rules; `tests/corpus/validate.py` checks it.
@@ -407,8 +411,9 @@ make test-container
 ```
 
 Check the test corpus (Python 3.8+, no dependencies). Run it after any change
-under `tests/corpus/` or to a `plugins/*_plugin` model, since the corpus holds
-byte-identical copies of those models:
+under `tests/corpus/`; it also checks that the 16 example models still have
+the bytes the Java tool ran on, and are the models of
+`tests/java-output/MANIFEST`:
 
 ```
 python3 tests/corpus/validate.py
@@ -498,7 +503,7 @@ Convert a PDL v1 model to `plugin.yaml` (warnings on constructs that relied
 on Java bugs are `model.legacy-*`; `-o -` prints the YAML):
 
 ```
-uv run mmt-plugin import plugins/tpkt_plugin -o <project>/plugin.yaml
+uv run mmt-plugin import tests/corpus/models/tpkt/model.pdl -o <project>/plugin.yaml
 ```
 
 Load a `plugin.yaml` project whose parent is classified by generated code

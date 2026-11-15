@@ -168,7 +168,8 @@ class GenerateCommand:
             ),
             epilog=(
                 "examples:\n"
-                "  mmt-plugin generate plugins/tpkt_plugin -o /tmp/tpkt-out --sdk-profile 1.10.2\n"
+                "  mmt-plugin generate tests/corpus/models/tpkt/model.pdl -o /tmp/tpkt-out"
+                " --sdk-profile 1.10.2\n"
                 "  mmt-plugin generate model.pdl --check   # exit 7 if generated/ is stale"
             ),
         )

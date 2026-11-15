@@ -25,7 +25,7 @@ machine-readable output.
 - [The example projects](#the-example-projects)
 
 The commands below run from the root of a checkout of this repository: some
-use its files (`examples/`, `plugins/`, a sample capture). CI runs every one
+use its files (`examples/`, `tests/corpus/`, a sample capture). CI runs every one
 of them (`tests/unit/docs/test_commands.py`) except the blocks marked
 `doc:skip`: they need the network to clone the repository or download
 mmt-dpi (CI's own SDK jobs fetch and verify the package with the same
@@ -510,7 +510,7 @@ has the details.
 ## The example projects
 
 [`examples/`](../examples/README.md) holds 16 complete projects, the models
-of the Java tool's `plugins/` ported to `plugin.yaml`, each with its hooks
+of the Java tool's examples ported to `plugin.yaml`, each with its hooks
 and packet tests. Their generated files are committed:
 
 <!-- doc:run no-sdk -->

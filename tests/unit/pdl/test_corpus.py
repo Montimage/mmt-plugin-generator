@@ -1,10 +1,13 @@
-"""Parse every model of ``plugins/`` and ``tests/corpus/models/``.
+"""Parse every model of ``tests/corpus/models/``.
 
-What the Java tool did with each ``plugins/*_plugin`` model comes from the
-record of its last run, frozen in ``tests/java-output/`` when it was removed
-(T5.4, #31): the ``MANIFEST`` status and the stderr lines ``line L:C ...``,
-with 0-based columns. ``MANIFEST`` holds the sha256 of every model's stderr;
-the non-empty ones are kept next to it.
+The 16 example models (``kind: example`` in ``tests/corpus/index.yaml``) are
+the models the Java tool shipped as ``plugins/<name>_plugin`` (removed by
+#78), byte for byte: the corpus validator checks each one's sha256. What the
+Java tool did with each comes from the record of its last run, frozen in
+``tests/java-output/`` when it was removed (T5.4, #31): the ``MANIFEST``
+status of ``<name>_plugin`` and the stderr lines ``line L:C ...``, with
+0-based columns. ``MANIFEST`` holds the sha256 of every model's stderr; the
+non-empty ones are kept next to it.
 
 - a model it parsed without a syntax error parses here;
 - ``ip_plugin``, which it rejected only because ``id`` was a reserved word,
@@ -12,7 +15,8 @@ the non-empty ones are kept next to it.
 - for every other model it rejected, we report a diagnostic at each place it
   did, with the same line and the column one higher (ours are 1-based).
 
-The corpus models are checked against ``tests/corpus/index.yaml``.
+The corpus models are checked against ``tests/corpus/index.yaml``, and the
+validator's example checks against mutated copies of the corpus.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import re
+import shutil
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -30,7 +35,6 @@ from mmt_plugin.pdl import PdlSyntaxError, parse
 from mmt_plugin.pdl.model import Encoding
 
 ROOT = Path(__file__).parents[3]
-PLUGINS = sorted(p.name for p in (ROOT / "plugins").glob("*_plugin"))
 REFERENCE = ROOT / "tests" / "java-output"
 CORPUS = ROOT / "tests" / "corpus"
 
@@ -87,16 +91,25 @@ def _corpus_models() -> list[dict[str, Any]]:
     return models
 
 
-def test_the_reference_covers_every_plugin_model() -> None:
-    assert len(PLUGINS) == 16
-    statuses = {name: _java_status(name) for name in PLUGINS}
+#: The example models, by the name the Java tool's MANIFEST gives them.
+EXAMPLES = sorted(f"{e['name']}_plugin" for e in _corpus_models() if e["kind"] == "example")
+
+
+def _example_path(model: str) -> Path:
+    return CORPUS / "models" / model.removesuffix("_plugin") / "model.pdl"
+
+
+def test_the_reference_covers_every_example_model() -> None:
+    assert len(EXAMPLES) == 16
+    statuses = {name: _java_status(name) for name in EXAMPLES}
     assert {s for s in statuses.values()} <= {"ok", "parse-errors", "no-output"}
 
 
-@pytest.mark.parametrize("name", PLUGINS)
-def test_plugin_model(name: str) -> None:
-    text = (ROOT / "plugins" / name).read_text(encoding="utf-8")
-    filename = f"plugins/{name}"
+@pytest.mark.parametrize("name", EXAMPLES)
+def test_example_model(name: str) -> None:
+    path = _example_path(name)
+    text = path.read_text(encoding="utf-8")
+    filename = str(path.relative_to(ROOT))
     status, java_errors = _java_status(name), _java_errors(name)
     if status == "ok" or name in KEYWORD_LIMITED:
         if name in KEYWORD_LIMITED:
@@ -118,9 +131,7 @@ def test_corpus_model(entry: dict[str, Any]) -> None:
     path = CORPUS / entry["model"]
     text = path.read_text(encoding="utf-8")
     if entry["kind"] == "example":
-        origin = ROOT / entry["origin"]
-        assert origin.read_text(encoding="utf-8") == text
-        name = origin.name
+        name = f"{entry['name']}_plugin"
         rejected = _java_status(name) != "ok" and name not in KEYWORD_LIMITED
     else:
         # Targeted models: the Java tool parsed them, except the keyword one.
@@ -137,3 +148,69 @@ def test_corpus_model(entry: dict[str, Any]) -> None:
     assert spelled == entry["encoding"]
     if encoding is not None and encoding.value is Encoding.HOST:
         assert encoding.spelling in ("host", "little")
+
+
+def _corpus_copy(tmp_path: Path) -> Path:
+    """A copy of the corpus at ``tmp_path/tests/corpus``, next to a copy of
+    the Java tool's ``MANIFEST`` (the validator reads it from there)."""
+    corpus = tmp_path / "tests" / "corpus"
+    shutil.copytree(CORPUS, corpus, ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "tests" / "java-output").mkdir()
+    shutil.copy2(REFERENCE / "MANIFEST", tmp_path / "tests" / "java-output" / "MANIFEST")
+    return corpus
+
+
+def _errors(corpus: Path) -> list[str]:
+    result = _load_validator().validate(corpus)
+    report = result if not isinstance(result, tuple) else result[0]
+    errors: list[str] = report.errors
+    return errors
+
+
+def test_the_validator_accepts_an_unchanged_copy(tmp_path: Path) -> None:
+    assert _errors(_corpus_copy(tmp_path)) == []
+
+
+def test_the_validator_rejects_an_example_model_that_changed(tmp_path: Path) -> None:
+    corpus = _corpus_copy(tmp_path)
+    model = corpus / "models" / "tpkt" / "model.pdl"
+    model.write_bytes(model.read_bytes() + b"\n")
+    errors = _errors(corpus)
+    assert len(errors) == 1, errors
+    assert "model tpkt" in errors[0] and "the model the Java tool ran on" in errors[0]
+
+
+def test_the_validator_rejects_a_targeted_model_with_a_sha256(tmp_path: Path) -> None:
+    corpus = _corpus_copy(tmp_path)
+    index = corpus / "index.yaml"
+    text = index.read_text(encoding="utf-8")
+    entry = '    kind: "targeted"\n'
+    assert entry in text
+    index.write_text(text.replace(entry, entry + f'    sha256: "{"0" * 64}"\n', 1))
+    assert any("a targeted model has no sha256" in e for e in _errors(corpus))
+
+
+@pytest.mark.parametrize(
+    ("edit", "expected"),
+    [
+        (
+            lambda lines: [line for line in lines if not line.startswith("tpkt_plugin ")],
+            "example tpkt is not a model of tests/java-output/MANIFEST (tpkt_plugin)",
+        ),
+        (
+            lambda lines: [*lines, "http2_plugin ok http2_plugin.exit=0"],
+            "the Java tool's model http2_plugin has no example entry",
+        ),
+    ],
+    ids=["missing", "extra"],
+)
+def test_the_validator_checks_the_examples_against_the_manifest(
+    tmp_path: Path, edit: Any, expected: str
+) -> None:
+    corpus = _corpus_copy(tmp_path)
+    manifest = tmp_path / "tests" / "java-output" / "MANIFEST"
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    manifest.write_text("\n".join(edit(lines)) + "\n", encoding="utf-8")
+    errors = _errors(corpus)
+    assert len(errors) == 1, errors
+    assert errors[0].endswith(expected), errors

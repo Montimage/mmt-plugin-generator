@@ -832,7 +832,7 @@ constructs:
 models:
   - name: "abb"
     kind: "example"
-    origin: "plugins/abb_plugin"
+    sha256: "1983ac00db4ee3782383b884764d8d35b2ee4c4ed0fa5123d407c5c167c719ac"
     model: "models/abb/model.pdl"
     encoding: "network"
     valid: true
@@ -842,7 +842,7 @@ models:
       - "frame"
   - name: "arp"
     kind: "example"
-    origin: "plugins/arp_plugin"
+    sha256: "d7008a829fc5000afa80938195138d2b546ed5a10fb3b02cb8332165b407fa70"
     model: "models/arp/model.pdl"
     encoding: "network"
     valid: false
@@ -856,7 +856,7 @@ models:
       - "request-ieee802"
   - name: "cam"
     kind: "example"
-    origin: "plugins/cam_plugin"
+    sha256: "67cb1b1158acd735ff37f1920c366003540281a87a43c9d8adc6068d95e312ab"
     model: "models/cam/model.pdl"
     encoding: "network"
     valid: true
@@ -867,7 +867,7 @@ models:
       - "header"
   - name: "cotp"
     kind: "example"
-    origin: "plugins/cotp_plugin"
+    sha256: "983ea0da6ccde0de57ff32ddcb6be67ddcf2e4e5b19c1a71b7e87c13301d541d"
     model: "models/cotp/model.pdl"
     encoding: "network"
     valid: true
@@ -878,7 +878,7 @@ models:
       - "cr"
   - name: "cpm"
     kind: "example"
-    origin: "plugins/cpm_plugin"
+    sha256: "10372f85af9c4d3a919436023804b426c967419d1e409e8206526af51effb654"
     model: "models/cpm/model.pdl"
     encoding: "network"
     valid: true
@@ -889,7 +889,7 @@ models:
       - "header"
   - name: "dns"
     kind: "example"
-    origin: "plugins/dns_plugin"
+    sha256: "279404791967ef041eedff6ce4313889380f3cb1918889e594c0b839754ea6f0"
     model: "models/dns/model.pdl"
     encoding: "network"
     valid: true
@@ -902,7 +902,7 @@ models:
       - "nxdomain-ad-cd"
   - name: "ethernet"
     kind: "example"
-    origin: "plugins/ethernet_plugin"
+    sha256: "c6c739977ef90c8792f1acd7931537148ba369b883c983564bf668bda746bf6d"
     model: "models/ethernet/model.pdl"
     encoding: "network"
     valid: false
@@ -918,7 +918,7 @@ models:
       - "lldp"
   - name: "ip"
     kind: "example"
-    origin: "plugins/ip_plugin"
+    sha256: "56670928d7f54e7510bce61ada826cbc34e386c907724ac67dd9f94a757d8594"
     model: "models/ip/model.pdl"
     encoding: "network"
     valid: true
@@ -930,7 +930,7 @@ models:
       - "fragment-mf"
   - name: "mongodb"
     kind: "example"
-    origin: "plugins/mongodb_plugin"
+    sha256: "4f91f96f65b464a26152ea3666cd447735b2c99ac7abde31f107143bd26dee8d"
     model: "models/mongodb/model.pdl"
     encoding: "network"
     valid: false
@@ -942,7 +942,7 @@ models:
       - "op-msg-ping"
   - name: "ndn"
     kind: "example"
-    origin: "plugins/ndn_plugin"
+    sha256: "4a121c3e952044289cc55016642ea597e15c4b7f72a911764c65804aec00f41c"
     model: "models/ndn/model.pdl"
     encoding: "network"
     valid: true
@@ -953,7 +953,7 @@ models:
       - "data"
   - name: "quic"
     kind: "example"
-    origin: "plugins/quic_plugin"
+    sha256: "e28423dce096f1fd65b801bb7a8c623570f5f765c94908aabda72979a329aff6"
     model: "models/quic/model.pdl"
     encoding: "network"
     valid: true
@@ -964,7 +964,7 @@ models:
       - "initial-prefix"
   - name: "radius"
     kind: "example"
-    origin: "plugins/radius_plugin"
+    sha256: "35bebd67c1d6a9af1d6e9aee05e7c69a86a7260d16088706d240ed8ac9678ceb"
     model: "models/radius/model.pdl"
     encoding: "network"
     valid: true
@@ -976,7 +976,7 @@ models:
       - "access-accept"
   - name: "s7com"
     kind: "example"
-    origin: "plugins/s7com_plugin"
+    sha256: "251dac0bc6bd0d45730a9743609a60d1eb7234a2aa54718348f7c12a454241d4"
     model: "models/s7com/model.pdl"
     encoding: "network"
     valid: true
@@ -987,7 +987,7 @@ models:
       - "setup-communication-ack"
   - name: "tcp"
     kind: "example"
-    origin: "plugins/tcp_plugin"
+    sha256: "5489c65901d69d1849ef6460d4cfbf254f51314fcbd43b3b8b6b81a042c5a891"
     model: "models/tcp/model.pdl"
     encoding: "network"
     valid: true
@@ -998,7 +998,7 @@ models:
       - "syn-ack-options"
   - name: "topo_ind_sch"
     kind: "example"
-    origin: "plugins/topo_ind_sch_plugin"
+    sha256: "6be94306e354aed52e33fc29d893b8f354d5d50a4218ced63b7ccccafa7df49c"
     model: "models/topo_ind_sch/model.pdl"
     encoding: "network"
     valid: true
@@ -1010,7 +1010,7 @@ models:
       - "empty"
   - name: "tpkt"
     kind: "example"
-    origin: "plugins/tpkt_plugin"
+    sha256: "8e02b9ad6cb1a5c2ab618c634db097a5782d4651ec3ece0076ff419e4876fe9b"
     model: "models/tpkt/model.pdl"
     encoding: "network"
     valid: true

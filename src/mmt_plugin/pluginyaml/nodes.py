@@ -7,7 +7,8 @@ and keeps where each node is:
 
 - block mappings and block sequences, indented with spaces;
 - flow sequences (``[a, b]``) and flow mappings (``{a: 1, b: 2}``) of
-  scalars, on one line;
+  scalars, on one line, with a space (or ``,``, ``}``) after each key's
+  ``:``;
 - plain, single-quoted and double-quoted scalars, and ``#`` comments;
 - an optional ``---`` before the document and ``...`` after it.
 
@@ -344,6 +345,11 @@ def _flow(text: str, line: int, column: int) -> Node:
                 i = skip(m.end())
                 if i >= len(text) or text[i] != ":":
                     raise YamlError("expected `:` after a key of a flow mapping", line, column + i)
+                if i + 1 < len(text) and text[i + 1] not in " \t,}":
+                    # YAML 1.2 reads `{a:1}` as the key `a:1` with no value.
+                    raise YamlError(
+                        "a space must follow `:` after a key of a flow mapping", line, column + i
+                    )
                 if any(k.text == key.text for k, _ in pairs):
                     raise YamlError(f"duplicate key `{key.text}`", line, key.column)
                 i = skip(i + 1)

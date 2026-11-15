@@ -194,6 +194,14 @@ INVALID = [
         "model.schema",
         "above 8",
     ),
+    (
+        MINIMAL + "parents:\n  - protocol: ethernet\n    classify:\n      offset: 14\n"
+        "      match:\n        - {offset:12, length: 2, value: 0x88b5}\n",
+        10,
+        18,
+        "model.yaml-syntax",
+        "a space must follow `:`",
+    ),
     (MINIMAL + "classify_next:\n  cases: []\n", 6, 3, "model.schema", "missing key `switch`"),
     (
         MINIMAL + "classify_next:\n  switch: 1\n  cases:\n    - next: 3\n",

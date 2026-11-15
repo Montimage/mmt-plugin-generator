@@ -181,10 +181,13 @@ Follow [`references/drafting.md`](references/drafting.md):
   `sdk: {profile: "<profile>"}`, as `init` wrote it. Declare the parent
   with `classify` when one match of the parent's header identifies the
   protocol.
-- From a capture, start from `plugin.proposed.yaml`: rename its fields
-  after the spec, delete those that are payload, copy it over
-  `plugin.yaml`, pin the profile again (the proposal pins none), and make
-  the same changes in the packet tests `scaffold` wrote.
+- From a capture, in a project `init` created in this session, start
+  from `plugin.proposed.yaml`: rename its fields after the spec, delete
+  those that are payload, copy it over `plugin.yaml`, pin the profile
+  again (the proposal pins none), and make the same changes in the packet
+  tests `scaffold` wrote. An update never copies a proposal over
+  `plugin.yaml`: it folds the new fields in by hand
+  ([drafting.md](references/drafting.md#updating-an-existing-project)).
 - Write a packet test for each example of the spec, with the values the
   spec gives, never the values the plugin outputs. Delete
   `tests/<label>-basic.yaml` once it no longer describes the protocol, if

@@ -131,7 +131,7 @@ values are what the proposal extracts. It never edits `plugin.yaml`.
 3. Copy the result over `plugin.yaml`, pin `sdk.profile`, and make the same
    renames and deletions in the `tests/<label>-pcap-<n>.yaml` files.
 4. Delete `tests/<label>-basic.yaml`, which `init` wrote for its sample
-   header.
+   header, if `init` wrote it in this session.
 
 The tests `scaffold` wrote check only that the plugin extracts the
 captured bytes; they cannot tell a wrong field boundary. Add a test from

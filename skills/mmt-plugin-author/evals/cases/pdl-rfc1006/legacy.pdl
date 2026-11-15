@@ -1,0 +1,17 @@
+Protocol {
+	Properties {
+		label = "TPKT"
+		id = "636"
+		context = "false"
+		session = "false"
+		encapsulation = "false"
+		encoding = "network"
+	}
+	Attributes {
+		struct tpkthdr {
+			uint8_t version;
+			uint8_t reserved;
+			uint16_t length;
+		}
+	}
+}

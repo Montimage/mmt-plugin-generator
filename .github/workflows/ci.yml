@@ -511,6 +511,18 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
+      - name: Run the mmt-plugin-author skill's evals
+        # tests/unit/skill/test_sdk.py: every case of
+        # skills/mmt-plugin-author/evals/ (#27), from a spec, a capture and
+        # a legacy PDL model, runs the skill's validate, generate, build and
+        # test loop with --json until green; each command has no stdin data
+        # and no terminal, and every envelope keeps the skill's contract.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/skill/test_sdk.py
       - name: Install, load and uninstall a plugin in a temporary prefix
         # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
         # default user prefix (a temporary XDG_DATA_HOME; no sudo, never

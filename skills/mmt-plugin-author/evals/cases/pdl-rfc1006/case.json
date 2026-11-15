@@ -1,0 +1,100 @@
+{
+  "id": "pdl-rfc1006",
+  "summary": "From a legacy PDL v1 model (legacy.pdl, the TPKT model of plugins/): import keeps the SDK's id and name, which validate refuses, and a struct name the SDK also has, which the build refuses once the hook that attaches the protocol to TCP port 102 includes the SDK's TCP header; init's sample test fails until it is removed.",
+  "entry": "pdl",
+  "input": "legacy.pdl",
+  "params": {
+    "label": "rfc1006",
+    "id": "962",
+    "selector": "tcp:port=102",
+    "pdl": "{case}/legacy.pdl"
+  },
+  "runs": [
+    {
+      "note": "Drop init's sample model, pin the profile, and add packet tests from RFC 1006 (the corpus's, for this project's name and id).",
+      "edits": [
+        {
+          "remove": "model.pdl"
+        },
+        {
+          "replace": "plugin.yaml",
+          "old": "  encoding: network\n",
+          "new": "  encoding: network\nsdk:\n  profile: \"1.10.2\"\n"
+        },
+        {
+          "write": "tests/rfc1006-cr.yaml",
+          "from": "rfc1006-cr.yaml"
+        },
+        {
+          "write": "tests/rfc1006-dt-s7.yaml",
+          "from": "rfc1006-dt-s7.yaml"
+        }
+      ],
+      "expect": {
+        "stop": "validate",
+        "exit_code": 3,
+        "error_code": "model.id-taken"
+      }
+    },
+    {
+      "note": "model.name-taken and model.id-taken: use init's label and id, which src/rfc1006_impl.c is written for. Add the parent (PDL v1 has none): TCP's header has no fixed length, so no classify; attach it to port 102 in rfc1006_hook_register_parents.",
+      "edits": [
+        {
+          "replace": "plugin.yaml",
+          "old": "  label: TPKT\n",
+          "new": "  label: rfc1006\n"
+        },
+        {
+          "replace": "plugin.yaml",
+          "old": "  id: 636\n",
+          "new": "  id: 962\n"
+        },
+        {
+          "replace": "plugin.yaml",
+          "old": "  profile: \"1.10.2\"\n",
+          "new": "  profile: \"1.10.2\"\nparents:\n  - protocol: tcp    # port 102: attached in rfc1006_hook_register_parents\n"
+        },
+        {
+          "write": "src/rfc1006_impl.c",
+          "from": "rfc1006_impl.c"
+        }
+      ],
+      "expect": {
+        "stop": "build",
+        "exit_code": 5,
+        "error_code": "build.compile-failed"
+      }
+    },
+    {
+      "note": "build.cc in generated/rfc1006_mmt_plugin.h: the struct tpkthdr of the old model is also an SDK struct (tcpip/mmt_tcpip_attributes.h, which the hook's PROTO_TCP brings in). The generated code comes from the model: rename the struct there.",
+      "edits": [
+        {
+          "replace": "plugin.yaml",
+          "old": "  - struct: tpkthdr\n",
+          "new": "  - struct: rfc1006_hdr\n"
+        }
+      ],
+      "expect": {
+        "stop": "test",
+        "exit_code": 6,
+        "error_code": "test.packet-failed",
+        "failures": {
+          "rfc1006/basic": [
+            "kind"
+          ]
+        }
+      }
+    },
+    {
+      "note": "rfc1006/basic is init's sample of its own header (version, kind, length), not of RFC 1006: delete it.",
+      "edits": [
+        {
+          "remove": "tests/rfc1006-basic.yaml"
+        }
+      ],
+      "expect": {
+        "stop": null
+      }
+    }
+  ]
+}

@@ -467,6 +467,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | `plugin.yaml`: the YAML subset, the JSON Schema and its validator, reading it into the typed model, writing a model as `plugin.yaml` | `mmt_plugin.pluginyaml`, `mmt_plugin/schemas/model/v1/plugin.json`; the format in [`docs/plugin-yaml.md`](../plugin-yaml.md) | #24 |
 | `import`: converting PDL v1 to `plugin.yaml`, the `model.legacy-*` warnings | `mmt_plugin.commands.import_pdl`, `mmt_plugin.pluginyaml.convert` | #25 |
 | `scaffold --from-pcap`: reading pcap and pcapng, slicing payloads under a parent, the field skeleton | `mmt_plugin.commands.scaffold`, `mmt_plugin.pcap` (`reader`, `layers`, `skeleton`) | #26 |
+| The agent skill that runs the loop of section 6 (validate → generate → build → test, `--json`), its contract tables and its evals | `skills/mmt-plugin-author/` (`SKILL.md`, `references/contract.md`, `evals/run_evals.py`); the tests `tests/unit/skill/` | #27 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:

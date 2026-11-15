@@ -246,6 +246,27 @@ protocol model. A Python rewrite is planned in
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).
+- `skills/mmt-plugin-author/` (T4.2): the agent skill that writes a plugin
+  from a protocol spec, a capture or a legacy PDL v1 model. `SKILL.md` gives
+  the entry commands (`init`, then `import` or `scaffold --from-pcap`) and the
+  loop (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
+  blocks marked `<!-- eval:entry ... -->` and `<!-- eval:loop ... -->`;
+  `references/contract.md` the envelope keys it reads and an action for every
+  exit class and every code of `diagnostics.CODES` (exact or a `*` family);
+  `references/drafting.md` how to write `plugin.yaml` and packet tests.
+  `evals/run_evals.py` (stdlib only) runs those blocks, as written, on each
+  case of `evals/cases/<id>/` (`case.json`: the entry's parameters, then one
+  set of scripted edits and an expected stop per loop run, the last one
+  green), each command with an open stdin pipe that gets no data, no
+  terminal and a time limit, and checks every envelope against
+  `contract.md`, that each fix touches the reported location, that no packet
+  test the case or `scaffold` wrote is deleted or rewritten, and that the
+  green model pins `sdk.profile` and attaches its parents. Without an SDK it
+  stops after `generate`. Tests in `tests/unit/skill/`: `test_evals.py`
+  (every case without an SDK, the envelopes against the JSON Schemas, the
+  tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
+  fail) and `test_sdk.py` (every case green with a real SDK; needs
+  `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -261,6 +282,7 @@ protocol model. A Python rewrite is planned in
   then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
   project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
+  `tests/unit/skill/test_sdk.py` (the mmt-plugin-author evals, green),
   `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
@@ -456,6 +478,16 @@ uv run mmt-plugin -C <project> scaffold --from-pcap capture.pcap --parent udp:po
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/scaffold/test_sdk.py
 ```
 
+Run the mmt-plugin-author skill's evals: without `--sdk`, each case's loop
+stops after `generate`; with it, every case must go green (`<dir>` as above).
+It prints one `PASS:`/`FAIL:` line per case and exits 1 on failure:
+
+```
+uv run python skills/mmt-plugin-author/evals/run_evals.py
+uv run python skills/mmt-plugin-author/evals/run_evals.py --sdk <dir>/opt/mmt --cc gcc
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/skill/test_sdk.py
+```
+
 Install a plugin into a private prefix (never `--system` on a host whose
 `/opt/mmt` is real), check where mmt-dpi looks for it, and remove it:
 
@@ -472,6 +504,28 @@ against those headers (skips without `MMT_GOLDEN_SDK`):
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/install/test_sdk.py
 ```
+
+## Writing a plugin as an agent
+
+Follow `skills/mmt-plugin-author/SKILL.md`. In short:
+
+- Pass `--json` to every `mmt-plugin` command and decide from the envelope
+  (`schema_version` 1): `exit_code` and its class first, then `error.code`,
+  then each error of `diagnostics` at its `location`. Never parse the
+  messages. `skills/mmt-plugin-author/references/contract.md` has the action
+  for every exit class and every code.
+- Never pass `-` (stdin); no command prompts. Never `--system`, `sudo` or
+  `/opt/mmt`; use a private SDK prefix with `--sdk`.
+- Run `validate`, `generate`, `build` and `test` in that order, stop at the
+  first non-zero exit, fix it, and start again from `validate`. Green is all
+  four at 0, with at least one packet test and every one passing.
+- `init --parent` is only a comment: write `parents:` into `plugin.yaml`, and
+  pin `sdk.profile`. Keep `init`'s label and id.
+- Never delete a packet test written from the spec or by `scaffold`, or
+  change its expected values to what the plugin outputs.
+- When a command, a flag or a diagnostic code changes, update the skill:
+  `tests/unit/skill/test_evals.py` fails until `contract.md` has a row for
+  every code and the skill's blocks still run.
 
 ## Rules
 

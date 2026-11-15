@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -25,12 +26,15 @@ from mmt_plugin.commands.build import BuildCommand
 from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.commands.init import InitCommand, parse_selector
 from mmt_plugin.diagnostics import CliError
+from mmt_plugin.pcap.layers import parent_of
+from mmt_plugin.pcap.skeleton import parent_yaml
+from mmt_plugin.pluginyaml import load as load_yaml
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP
 from mmt_plugin.sdk.registry import RegisteredProtocol, Registry, RegistryError
 from mmt_plugin.sdk.resolve import resolve_profile
 from mmt_plugin.testing.packets import load
 
-FILES = [".gitignore", "model.pdl", "src/demo_impl.c", "tests/demo-basic.yaml"]
+FILES = [".gitignore", "plugin.yaml", "src/demo_impl.c", "tests/demo-basic.yaml"]
 PROFILE = ["--sdk-profile", "1.10.2"]
 
 Run = Callable[..., tuple[int, dict[str, Any]]]
@@ -137,13 +141,11 @@ def test_init_creates_the_project(init: Run, work: Path) -> None:
     assert result["protocol"] == {"label": "demo", "name": "DEMO", "id": 960}
     assert result["parent"] == "ethernet:ethertype=0x88b5"
     assert result["profile"] == "1.10.2"
-    assert result["model"] == "demo/model.pdl"
+    assert result["model"] == "demo/plugin.yaml"
     assert _actions(doc) == {f"demo/{f}": "created" for f in FILES}
     assert result["dry_run"] is False
-    assert result["next"] == [
-        *("mmt-plugin", "-C", "demo", "test", "--model", "demo/model.pdl"),
-        *PROFILE,
-    ]
+    # plugin.yaml is test's default MODEL and pins the profile.
+    assert result["next"] == ["mmt-plugin", "-C", "demo", "test"]
     assert _codes(doc) == []
 
 
@@ -151,10 +153,14 @@ def test_the_files_are_a_model_its_scaffold_and_a_packet_test_of_it(init: Run, w
     assert init("demo", *PROFILE, "--id", "960")[0] == 0
     project = work / "demo"
     assert (project / ".gitignore").read_text() == "build/\n"
-    model = (project / "model.pdl").read_bytes()
-    assert b'label = "demo"' in model and b'id = "960"' in model
+    model = (project / "plugin.yaml").read_bytes()
+    loaded = load_yaml(model.decode(), filename="plugin.yaml")
+    assert loaded.sdk_profile == "1.10.2"
+    assert loaded.model.properties.label.text == "demo"
+    assert int(loaded.model.properties.id.value) == 960
+    assert loaded.model.parents == ()
     choice = resolve_profile("1.10.2", {}, None, None)
-    generation, diagnostics, error = make_generation("model.pdl", model, choice)
+    generation, diagnostics, error = make_generation("plugin.yaml", model, choice, "yaml")
     assert generation is not None, error
     assert diagnostics == []
     impl = scaffold(generation, choice.profile)
@@ -162,6 +168,7 @@ def test_the_files_are_a_model_its_scaffold_and_a_packet_test_of_it(init: Run, w
     types = {c.name for c in choice.profile.constants if c.group == DATA_TYPE_GROUP}
     test = load(project / "tests" / "demo-basic.yaml", "tests/demo-basic.yaml", types)
     assert test.id == "demo/basic"
+    assert test.through is None
     assert test.data == bytes([1, 2, 0, 4])
     assert (test.protocol, test.proto_id) == (generation.name, generation.proto_id)
     assert [(a.name, a.type, a.value, a.length) for a in test.attributes] == [
@@ -198,7 +205,8 @@ def test_name_must_be_the_label_upper_cased(init: Run) -> None:
         code, doc = init("demo", *PROFILE, "--id", "960", "--name", name)
         assert code == 2
         assert doc["error"]["code"] == "usage.invalid-value"
-        assert "#65" in doc["error"]["hint"]
+        # The hint says why: plugin.yaml has no key for another name.
+        assert "plugin.yaml has no key for another name" in doc["error"]["hint"]
 
 
 # --- --parent ----------------------------------------------------------------
@@ -209,12 +217,94 @@ def test_no_parent_is_a_warning(init: Run, work: Path) -> None:
     assert code == 0
     assert _codes(doc) == ["model.no-parent"]
     assert doc["result"]["parent"] is None
-    assert "no parent yet" in (work / "demo" / "model.pdl").read_text()
+    text = (work / "demo" / "plugin.yaml").read_text()
+    assert "# No parent yet" in text and "\nparents:" not in text
 
 
-def test_the_parent_is_recorded_in_the_model(init: Run, work: Path) -> None:
-    init("demo", *PROFILE, "--id", "960", "--parent", "udp:port=4433")
-    assert "// parent udp:port=4433: attach it in" in (work / "demo" / "model.pdl").read_text()
+def _parents(work: Path) -> tuple[Any, ...]:
+    text = (work / "demo" / "plugin.yaml").read_text()
+    return load_yaml(text, filename="plugin.yaml").model.parents
+
+
+def _through(work: Path) -> str | None:
+    project = work / "demo"
+    types = {
+        c.name
+        for c in resolve_profile("1.10.2", {}, None, None).profile.constants
+        if c.group == DATA_TYPE_GROUP
+    }
+    test = load(project / "tests" / "demo-basic.yaml", "tests/demo-basic.yaml", types)
+    return None if test.through is None else test.through.text
+
+
+@pytest.mark.parametrize(
+    ("selector", "match", "offset"),
+    [
+        ("ethernet:ethertype=0x88b5", [(12, 2, 0x88B5)], 14),
+        ("udp:dport=4433", [(2, 2, 4433)], 8),
+        ("udp:sport=53", [(0, 2, 53)], 8),
+        ("udp:sport=1,dport=0x1151", [(0, 2, 1), (2, 2, 4433)], 8),
+    ],
+)
+def test_a_parent_the_generated_code_can_attach_gets_classify_and_a_through_test(
+    init: Run, work: Path, selector: str, match: list[tuple[int, int, int]], offset: int
+) -> None:
+    code, doc = init("demo", *PROFILE, "--id", "960", "--parent", selector)
+    assert code == 0, doc["error"]
+    assert _codes(doc) == []
+    (parent,) = _parents(work)
+    assert parent.protocol.text == selector.partition(":")[0]
+    assert parent.classify is not None
+    got = [(m.offset.value, m.length.value, m.value.value) for m in parent.classify.match]
+    assert got == match
+    assert parent.classify.offset.value == offset
+    # The packet test also runs through the parent: the generated code must
+    # classify it (#74).
+    assert _through(work) == selector
+
+
+@pytest.mark.parametrize(
+    "selector", ["udp:port=4433", "tcp:port=102", "ip:proto=17", "ipv6", "ethernet", "sctp"]
+)
+def test_any_other_parent_is_left_to_the_hook(init: Run, work: Path, selector: str) -> None:
+    code, doc = init("demo", *PROFILE, "--id", "960", "--parent", selector)
+    assert code == 0, doc["error"]
+    (parent,) = _parents(work)
+    assert parent.protocol.text == selector.partition(":")[0]
+    assert parent.classify is None
+    text = (work / "demo" / "plugin.yaml").read_text()
+    assert f"# {selector}: attach it in demo_hook_register_parents (src/demo_impl.c)" in text
+    assert _through(work) is None
+
+
+def test_init_and_scaffold_write_the_same_parent(init: Run, work: Path) -> None:
+    for selector in ("udp:dport=4433", "tcp:port=102", "ethernet:ethertype=0x88b5"):
+        init("demo", *PROFILE, "--id", "960", "--parent", selector, "--force")
+        lines = (work / "demo" / "plugin.yaml").read_text().splitlines()
+        start = lines.index("parents:") + 1
+        end = lines.index("attributes:")
+        selector_ = parse_selector(selector)
+        parent = parent_of(selector_.text, selector_.proto, selector_.keys)
+        assert lines[start:end] == parent_yaml("demo", parent)
+
+
+@pytest.mark.parametrize(
+    ("selector", "why"),
+    [
+        ("udp:dport=70000", "is not a number from 0 to 0xffff"),
+        ("ethernet:ethertype=ipv4", "is not a number"),
+        ("udp:flag=on", "udp has no key 'flag'"),
+        ("ip:proto=256", "is not a number from 0 to 0xff"),
+    ],
+)
+def test_a_bad_key_of_a_decoded_parent_is_a_usage_error(
+    init: Run, work: Path, selector: str, why: str
+) -> None:
+    code, doc = init("demo", *PROFILE, "--id", "960", "--parent", selector)
+    assert code == 2
+    assert doc["error"]["code"] == "usage.invalid-value"
+    assert why in doc["error"]["message"]
+    assert list(work.iterdir()) == []
 
 
 def test_an_unknown_parent_is_exit_3(init: Run, work: Path) -> None:
@@ -225,7 +315,18 @@ def test_an_unknown_parent_is_exit_3(init: Run, work: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "text", ["", "Udp", "udp:", "udp:port", "udp:port=", "udp:=1", "udp:port=1,", "udp:p=a b"]
+    "text",
+    [
+        "",
+        "Udp",
+        "udp:",
+        "udp:port",
+        "udp:port=",
+        "udp:=1",
+        "udp:port=1,",
+        "udp:p=a b",
+        "udp:dport=1,dport=2",
+    ],
 )
 def test_a_malformed_selector_is_a_usage_error(init: Run, text: str) -> None:
     with pytest.raises(CliError) as caught:
@@ -270,13 +371,13 @@ def test_a_file_with_other_content_is_exit_7_and_nothing_is_written(init: Run, w
     assert doc["error"]["code"] == "state.file-differs"
     assert impl.read_text() == "/* mine */\n"
     assert not (work / "demo" / ".gitignore").exists()
-    assert 'id = "960"' in (work / "demo" / "model.pdl").read_text()
+    assert "  id: 960\n" in (work / "demo" / "plugin.yaml").read_text()
     actions = _actions(doc)
     assert actions["demo/.gitignore"] == "would-create"
     assert actions["demo/src/demo_impl.c"] == "would-update"
-    assert actions["demo/model.pdl"] == "would-update"
+    assert actions["demo/plugin.yaml"] == "would-update"
     located = {d["location"]["file"] for d in doc["diagnostics"] if d["location"]}
-    assert located == {"demo/src/demo_impl.c", "demo/model.pdl", "demo/tests/demo-basic.yaml"}
+    assert located == {"demo/src/demo_impl.c", "demo/plugin.yaml", "demo/tests/demo-basic.yaml"}
 
 
 def test_force_replaces_a_file_with_other_content(init: Run, work: Path) -> None:
@@ -301,7 +402,7 @@ def test_force_replaces_a_symbolic_link_with_the_file(init: Run, work: Path) -> 
 
 
 def test_a_directory_in_the_way_is_exit_7_even_with_force(init: Run, work: Path) -> None:
-    (work / "demo" / "model.pdl").mkdir(parents=True)
+    (work / "demo" / "plugin.yaml").mkdir(parents=True)
     for force in ([], ["--force"]):
         code, doc = init("demo", *PROFILE, "--id", "960", *force)
         assert code == 7
@@ -326,8 +427,8 @@ def test_dir_dot_in_an_empty_directory_or_a_new_repository(init: Run, work: Path
     code, doc = init("demo", *PROFILE, "--id", "960", "--dir", ".")
     assert code == 0, doc["error"]
     assert doc["result"]["project"] == "."
-    assert doc["result"]["next"][:6] == ["mmt-plugin", "-C", ".", "test", "--model", "model.pdl"]
-    assert (work / "model.pdl").is_file()
+    assert doc["result"]["next"] == ["mmt-plugin", "-C", ".", "test"]
+    assert (work / "plugin.yaml").is_file()
 
 
 def test_a_dir_that_is_a_file_is_exit_7(init: Run, work: Path) -> None:
@@ -351,11 +452,9 @@ def test_paths_are_relative_to_the_project_option(init: Run, work: Path) -> None
     code, doc = init("-C", "top", "demo", *PROFILE, "--id", "960", "--dir", "top/demo")
     assert code == 0
     assert doc["result"]["project"] == "demo"
-    assert doc["result"]["model"] == "demo/model.pdl"
+    assert doc["result"]["model"] == "demo/plugin.yaml"
     # The next command line is for the current directory.
-    assert doc["result"]["next"][:6] == [
-        *("mmt-plugin", "-C", "top/demo", "test", "--model", "top/demo/model.pdl")
-    ]
+    assert doc["result"]["next"] == ["mmt-plugin", "-C", "top/demo", "test"]
 
 
 # --- the id ------------------------------------------------------------------
@@ -493,7 +592,8 @@ def test_plain_records_and_the_styled_box(
     assert main(["init", "demo", *PROFILE, "--id", "960"], commands=[command]) == 0
     styled = capsys.readouterr().out
     assert "init demo" in styled
-    assert "next: mmt-plugin -C demo test --model demo/model.pdl --sdk-profile 1.10.2" in styled
+    (line,) = [line for line in styled.splitlines() if "next:" in line]
+    assert re.search(r"next: mmt-plugin -C demo test\s+\S*$", line), line
     assert "id 960" in styled and "4 unchanged" in styled
 
 
@@ -508,7 +608,8 @@ def test_the_project_builds_with_the_fake_sdk(
     command = InitCommand(pkg_config_dirs=[], default_prefix=str(tmp_path / "no"))
     assert main(["-q", "init", "demo", *PROFILE, "--id", "960"], commands=[command]) == 0
     build = BuildCommand(pkg_config_dirs=[], default_prefix=str(tmp_path / "no"))
-    argv = ["--json", "-C", "demo", "build", "demo/model.pdl", "--sdk", str(sdk), "--cc", str(cc)]
+    # build's default MODEL is the project's plugin.yaml.
+    argv = ["--json", "-C", "demo", "build", "--sdk", str(sdk), "--cc", str(cc)]
     code = main(argv, commands=[build])
     doc = json.loads(capsys.readouterr().out)
     assert code == 0, doc["error"]
@@ -529,13 +630,13 @@ def test_a_file_where_a_directory_goes_is_exit_7_and_nothing_is_written(
     init: Run, work: Path, component: str, force: list[str]
 ) -> None:
     (work / "demo").mkdir()
-    (work / "demo" / "model.pdl").write_text("")  # a project, so only the file is in the way
+    (work / "demo" / "plugin.yaml").write_text("")  # a project, so only the file is in the way
     (work / "demo" / component).write_text("x\n")
     code, doc = init("demo", *PROFILE, "--id", "960", *force)
     assert code == 7
     assert doc["error"]["code"] == "state.file-differs"
     assert any("is not a directory" in d["message"] for d in doc["diagnostics"])
-    assert sorted(_tree(work / "demo")) == sorted(["model.pdl", component])
+    assert sorted(_tree(work / "demo")) == sorted(["plugin.yaml", component])
 
 
 def test_a_symbolic_link_where_a_directory_goes_is_never_written_through(
@@ -596,3 +697,57 @@ def test_a_model_error_names_the_first_error(init: Run) -> None:
     assert doc["error"]["code"] == "model.name-taken"
     assert "PROTO_INT" in doc["error"]["message"]
     assert "an SDK protocol already registers this name" in doc["error"]["hint"]
+
+
+# --- a project of an init before #65 (model.pdl) -----------------------------
+
+OLD_MODEL = """Protocol {
+\tProperties {
+\t\tlabel = "demo"
+\t\tid = "970"
+\t\tencoding = "network"
+\t}
+\tAttributes {
+\t\tstruct demo_hdr {
+\t\t\tuint8_t version;
+\t\t}
+\t}
+}
+"""
+
+
+@pytest.mark.parametrize("force", [[], ["--force"]])
+def test_an_old_model_pdl_project_is_exit_7_even_with_force(
+    init: Run, work: Path, force: list[str]
+) -> None:
+    project = work / "demo"
+    (project / "src").mkdir(parents=True)
+    (project / "model.pdl").write_text(OLD_MODEL)
+    (project / "src" / "demo_impl.c").write_text("/* mine */\n")
+    before = _tree(project)
+    code, doc = init("demo", *PROFILE, *force)
+    assert code == 7
+    assert doc["error"]["code"] == "state.file-differs"
+    assert "mmt-plugin -C demo import demo/model.pdl" in doc["error"]["hint"]
+    (note,) = [
+        d for d in doc["diagnostics"] if (d["location"] or {}).get("file") == "demo/model.pdl"
+    ]
+    assert note["severity"] == "error"
+    assert set(_actions(doc).values()) <= {"would-create", "would-update"}
+    # Nothing is written: the user's code stays, and no starter plugin.yaml
+    # shadows their model.
+    assert _tree(project) == before
+
+
+def test_an_old_project_converted_by_import_is_a_project_again(init: Run, work: Path) -> None:
+    project = work / "demo"
+    project.mkdir()
+    (project / "model.pdl").write_text(OLD_MODEL)
+    assert main(["-q", "-C", "demo", "import", "demo/model.pdl"]) == 0
+    code, doc = init("demo", *PROFILE)
+    # Its plugin.yaml is the user's: the usual rule, exit 7 unless --force.
+    assert code == 7
+    assert doc["error"]["code"] == "state.file-differs"
+    assert _actions(doc)["demo/plugin.yaml"] == "would-update"
+    # The id comes from the converted plugin.yaml.
+    assert doc["result"]["protocol"]["id"] == 970

@@ -3,7 +3,8 @@
 A ``yaml`` block of a user doc whose first line is ``schema: 1`` is a packet
 test: ``mmt-plugin test`` must read it (``testing/packets.py``, through the
 corpus YAML subset of ``testing/yamlsubset.py``), and the guide's must be
-the one ``init demo --id 960`` writes, which it says passes as it is.
+the one ``init demo --id 960 --parent udp:dport=4433`` writes, which it says
+passes as it is. The guide's ``plugin.yaml`` is that ``init``'s too (#65).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mmt_plugin.commands.init import _test_text
+from mmt_plugin.commands.init import _model_text, _test_text, parent_of_selector, parse_selector
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, get_bundled
 from mmt_plugin.testing.packets import PacketTestError, load
 
@@ -57,10 +58,19 @@ def test_the_guide_shows_a_packet_test() -> None:
 
 def test_the_guides_packet_test_is_the_one_init_writes() -> None:
     (block,) = packet_blocks((ROOT / GUIDE).read_text(encoding="utf-8"))
-    written = "".join(
-        line for line in _test_text("demo", 960).splitlines(keepends=True) if line[:1] != "#"
-    )
+    text = _test_text("demo", 960, "udp:dport=4433")
+    written = "".join(line for line in text.splitlines(keepends=True) if line[:1] != "#")
     assert block.text == written
+
+
+def test_the_guides_model_is_the_one_init_writes() -> None:
+    # The guide's `init demo --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2`.
+    text = (ROOT / GUIDE).read_text(encoding="utf-8")
+    assert "mmt-plugin init demo --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2" in text
+    parent = parent_of_selector(parse_selector("udp:dport=4433"))
+    written = _model_text("demo", 960, "1.10.2", parent)
+    models = [b for b in blocks(text) if b.info == "yaml" and "\nprotocol:\n" in b.text]
+    assert [b.text for b in models] == [written]
 
 
 def test_a_flow_mapping_attribute_does_not_load(tmp_path: Path) -> None:

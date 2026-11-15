@@ -105,7 +105,7 @@ class ImportCommand:
             epilog=(
                 "examples:\n"
                 "  mmt-plugin import plugins/tpkt_plugin -o tpkt/plugin.yaml\n"
-                "  mmt-plugin -C demo import demo/model.pdl   # writes demo/plugin.yaml\n"
+                "  mmt-plugin -C demo import old.pdl   # writes demo/plugin.yaml\n"
                 "  mmt-plugin import model.pdl -o -          # prints the YAML"
             ),
         )

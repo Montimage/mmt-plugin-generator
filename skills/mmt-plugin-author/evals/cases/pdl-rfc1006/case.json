@@ -11,15 +11,19 @@
   },
   "runs": [
     {
-      "note": "Drop init's sample model, pin the profile, and add packet tests from RFC 1006 (the corpus's, for this project's name and id).",
+      "note": "Take the imported model in place of init's sample model, put back init's profile pin and parent (TCP's header has no fixed length, so no classify: attached in rfc1006_hook_register_parents), and add packet tests from RFC 1006 (the corpus's, for this project's name and id).",
       "edits": [
         {
-          "remove": "model.pdl"
+          "copy": "plugin.yaml",
+          "source": "plugin.imported.yaml"
+        },
+        {
+          "remove": "plugin.imported.yaml"
         },
         {
           "replace": "plugin.yaml",
           "old": "  encoding: network\n",
-          "new": "  encoding: network\nsdk:\n  profile: \"1.10.2\"\n"
+          "new": "  encoding: network\nsdk:\n  profile: \"1.10.2\"\nparents:\n  - protocol: tcp    # tcp:port=102: attach it in rfc1006_hook_register_parents (src/rfc1006_impl.c)\n"
         },
         {
           "write": "tests/rfc1006-cr.yaml",
@@ -37,7 +41,7 @@
       }
     },
     {
-      "note": "model.name-taken and model.id-taken: use init's label and id, which src/rfc1006_impl.c is written for. Add the parent (PDL v1 has none): TCP's header has no fixed length, so no classify; attach it to port 102 in rfc1006_hook_register_parents.",
+      "note": "model.name-taken and model.id-taken: use init's label and id, which src/rfc1006_impl.c is written for, and attach the protocol to TCP port 102 in rfc1006_hook_register_parents.",
       "edits": [
         {
           "replace": "plugin.yaml",
@@ -48,11 +52,6 @@
           "replace": "plugin.yaml",
           "old": "  id: 636\n",
           "new": "  id: 962\n"
-        },
-        {
-          "replace": "plugin.yaml",
-          "old": "  profile: \"1.10.2\"\n",
-          "new": "  profile: \"1.10.2\"\nparents:\n  - protocol: tcp    # port 102: attached in rfc1006_hook_register_parents\n"
         },
         {
           "write": "src/rfc1006_impl.c",

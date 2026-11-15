@@ -92,7 +92,7 @@ project directory as your uid:
 <!-- doc:skip needs a published release and docker -->
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
-    ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin -C demo test --model demo/model.pdl
+    ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin -C demo test
 ```
 
 ## Get mmt-dpi
@@ -131,54 +131,50 @@ file for your C code and one packet test.
 mmt-plugin init demo --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2
 ```
 
-- `demo/model.pdl`: a model of a 4-byte header (`version`, `kind`,
-  `length`), in PDL v1, the Java tool's format (writing `plugin.yaml`
-  directly is #65);
+- `demo/plugin.yaml`: the model, every command's default, of a 4-byte
+  header (`version`, `kind`, `length`);
 - `demo/src/demo_impl.c`: your code, one function per hook;
 - `demo/tests/demo-basic.yaml`: a packet test of that header;
 - `demo/.gitignore`: `build/`.
 
 The label (`demo`) names the plugin, `mmtp_demo.so`, and the registered
-protocol name, `DEMO`. Third-party plugins use ids 950 to 999; with an SDK,
-`init` picks the lowest free one when you leave out `--id`. `--parent` is
-written into the model as a comment: declare the parent in `plugin.yaml`.
-Re-running `init` changes nothing; it never replaces a file with other
-content unless you pass `--force`.
+protocol name, `DEMO` (always the label upper-cased: `--name` accepts no
+other). Third-party plugins use ids 950 to 999; with an SDK, `init` picks
+the lowest free one when you leave out `--id`. Re-running `init` changes
+nothing; it never replaces a file with other content unless you pass
+`--force`. A project that an older `init` created, with a PDL v1
+`model.pdl` and no `plugin.yaml`, is never written into, even with
+`--force`: convert it with `mmt-plugin -C <dir> import <dir>/model.pdl`.
 
 ## Write the model
 
-Convert the model to `plugin.yaml`, the format every command reads by
-default:
+`init` wrote `demo/plugin.yaml`. It pins the SDK profile the scaffold is
+written for, and declares the parent: `--parent udp:dport=4433` became a
+`classify` that attaches the protocol to UDP destination port 4433 in
+generated code. A parent that one match of its header identifies (an
+EtherType, a UDP source or destination port) gets one; any other
+(`tcp:port=102`, or `udp:port=4433`, which matches either port) is listed
+without `classify`, for your code to attach:
 
-<!-- doc:run no-sdk -->
-```sh
-mmt-plugin -C demo import demo/model.pdl
-```
-
-`-C demo` makes `demo` the project directory (`import` writes
-`demo/plugin.yaml`); paths given as arguments stay relative to where you
-run the command. Then edit `demo/plugin.yaml`. This one pins the SDK
-profile and attaches the protocol to UDP destination port 4433, in
-generated code:
-
-<!-- doc:run no-sdk -->
-```sh
-cat > demo/plugin.yaml <<'EOF'
+```yaml
+# The DEMO protocol plugin's model, created by mmt-plugin init. Every
+# mmt-plugin command of the project reads it (docs/plugin-yaml.md): describe
+# the protocol here, and keep the label and the id, which src/ is written for.
 schema: 1
 protocol:
-  label: demo
+  label: "demo"
   id: 960
-  encoding: network      # big-endian integers
+  encoding: network    # big-endian integers
 sdk:
   profile: "1.10.2"
 parents:
-  - protocol: udp
+  - protocol: udp    # udp:dport=4433
     classify:
       match:
-        - {offset: 2, length: 2, value: 4433}   # the UDP destination port
-      offset: 8                                  # after the UDP header
+        - {offset: 2, length: 2, value: 4433}
+      offset: 8
 attributes:
-  - struct: demo_hdr
+  - struct: demo_hdr    # at offset 0
     fields:
       - name: version
         type: uint8_t
@@ -186,8 +182,11 @@ attributes:
         type: uint8_t
       - name: length
         type: uint16_t
-EOF
 ```
+
+Edit it to describe your protocol. `-C demo` makes `demo` the project
+directory, whose `plugin.yaml` every command reads; paths given as
+arguments stay relative to where you run the command.
 
 What goes in a model:
 
@@ -286,6 +285,7 @@ protocol, the next protocol and each attribute's value:
 schema: 1
 id: "demo/basic"
 summary: "One DEMO header: version 1, kind 2, length 4"
+through: "udp:dport=4433"
 bytes:
   - "01 02 00 04"
 expect:
@@ -315,7 +315,8 @@ Take the expected values from the protocol's specification, not from what
 the plugin prints. The format is the test corpus's,
 [`tests/corpus/README.md`](../tests/corpus/README.md#packet-files). `init`
 wrote `demo/tests/demo-basic.yaml` for the model above with the id given to
-`init`, so it passes as it is.
+`init`, so it passes as it is; it has `through` (below) because the
+parent has a `classify`.
 
 `test` builds the plugin when it is stale, loads it into a generated host
 program next to the SDK's `libmmt_tcpip.so`, feeds it each packet and
@@ -332,8 +333,9 @@ mmt-plugin -C demo test --sanitize --seed 42 --fuzz-count 200
 mmt-plugin -C demo test --bench
 ```
 
-`test` attaches the plugin to Ethernet itself (EtherType 0x88b5), so the
-packets need no parent headers and the parent classification does not run;
+For each packet test, `test` attaches the plugin to Ethernet itself
+(EtherType 0x88b5), so the packets need no parent headers and the parent
+classification does not run;
 it is registered when the plugin loads, so a registration that fails fails
 the test.
 
@@ -352,7 +354,9 @@ bytes:
   - "01 02 00 04"
 ```
 
-That run is a second entry in `result.packets`, with `through`. It does
+`init` writes it into its packet test when its parent has a `classify`,
+so `test` checks the generated classification from the start. That run is
+a second entry in `result.packets`, with `through`. It does
 not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
 attached under its TCP or UDP. With `--sanitize`, its random packets run
 behind the same headers.
@@ -401,19 +405,19 @@ that every payload has, named `field_<offset>` (a length field is named
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init capture --id 961 --parent udp:dport=4433 --sdk-profile 1.10.2
-mmt-plugin -C capture scaffold --from-pcap tests/unit/scaffold/data/demo-tcpdump.pcap --parent udp:dport=4433 --model capture/model.pdl
+mmt-plugin -C capture scaffold --from-pcap tests/unit/scaffold/data/demo-tcpdump.pcap --parent udp:dport=4433
 ```
 
 The packet tests expect what the proposal extracts, so they pass against it.
 Rename the fields after the protocol's specification (in the model and in
 the tests), and copy what you keep into `plugin.yaml`. Here the proposal is
-taken as it is, and `init`'s sample model and test, which describe another
-header, are removed:
+taken as it is, in place of `init`'s sample model, and `init`'s test, which
+describes another header, is removed:
 
 <!-- doc:run no-sdk -->
 ```sh
 cp capture/plugin.proposed.yaml capture/plugin.yaml
-rm capture/model.pdl capture/tests/capture-basic.yaml
+rm capture/tests/capture-basic.yaml
 mmt-plugin -C capture validate --no-sdk --sdk-profile 1.10.2
 ```
 

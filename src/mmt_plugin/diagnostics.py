@@ -198,9 +198,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "sdk.id-unchecked": "warning: init found no SDK, so its default id is free in the SDK "
         "profile but was not checked against the installed plugins",
         "state.file-differs": "init: a project file exists with other content, or is not a "
-        "regular file; init does not replace it without --force (a directory, never)",
+        "regular file; init does not replace it without --force (a directory, never); a "
+        "project of an older init (model.pdl, no plugin.yaml) is never written into",
         "state.not-a-project": "init: --dir is not a directory, or is not empty and has no "
-        "model.pdl; init writes into such a directory only with --force",
+        "plugin.yaml; init writes into such a directory only with --force",
         # `import` (mmt_plugin.commands.import_pdl, mmt_plugin.pluginyaml.convert, #25):
         # constructs whose meaning relied on a Java bug (docs/plugin-yaml.md, From PDL v1).
         "model.legacy-sdk-conflict": "warning: import: the protocol id or name is the SDK's, "

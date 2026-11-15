@@ -146,7 +146,8 @@ pinned profile. Then:
 2. Old models often have an id or a label the SDK already has
    (`model.legacy-sdk-conflict`): `validate` fails with `model.id-taken`
    or `model.name-taken`. Use the label and id you gave `init`.
-3. Add the parents (PDL v1 has none) and pin `sdk.profile`.
+3. Put back the `parents:` and the `sdk.profile` pin of `init`'s
+   `plugin.yaml` (PDL v1 has no parent, and `import` pins no profile).
 4. Write packet tests from the protocol's spec. The corpus,
    `tests/corpus/models/<name>/packets/`, has some for the models of
    `plugins/`; change their `protocol` and `proto_id` to yours.

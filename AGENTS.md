@@ -233,17 +233,24 @@ protocol model. A Python rewrite is planned in
   (`--system` is pointed at one), and `test_sdk.py`, the load test at the
   default prefix against a real SDK (needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/init.py` (T2.7): `mmt-plugin init LABEL` creates
-  a project in `--dir` (default `./<LABEL>`): `model.pdl` (a PDL v1 model of
-  a 4-byte header; writing `plugin.yaml` instead is #65), the scaffold
-  `src/<label>_impl.c`, the packet test `tests/<label>-basic.yaml` and a
-  `.gitignore` with `build/`. `--id` defaults to the lowest id in 950-999
+  a project in `--dir` (default `./<LABEL>`): `plugin.yaml` (a 4-byte
+  header, the profile pinned in `sdk.profile`, `--parent` as its `parents`
+  entry, #65), the scaffold `src/<label>_impl.c`, the packet test
+  `tests/<label>-basic.yaml` and a `.gitignore` with `build/`. A parent the
+  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`)
+  gets a `classify`, the one `scaffold` proposes
+  (`pcap/skeleton.py:parent_yaml`), and the packet test also runs
+  `through` it; any other is left to `<label>_hook_register_parents`.
+  `--name` is only the label upper-cased (`plugin.yaml` has no other). `--id` defaults to the lowest id in 950-999
   that the profile and the installed plugins (`sdk/registry.py`) leave free,
   950 with the warning `sdk.id-unchecked` without an SDK; no `--parent` is
   the warning `model.no-parent`. The model must generate (exit 3 otherwise,
   nothing written). Re-running is a no-op; a file with other content
-  (`state.file-differs`) or a non-empty directory without `model.pdl`
-  (`state.not-a-project`) is exit 7 unless `--force`. `result.next` is the
-  `test` command line for the project. Tests in `tests/unit/init/`:
+  (`state.file-differs`) or a non-empty directory without `plugin.yaml`
+  (`state.not-a-project`) is exit 7 unless `--force`; a project of an older
+  `init` (`model.pdl`, no `plugin.yaml`) is `state.file-differs` even with
+  `--force`, its hint the `import` that converts it. `result.next` is the
+  `test` command line for the project, `mmt-plugin -C <dir> test`. Tests in `tests/unit/init/`:
   `test_command.py` (a stubbed registry, build's fakes) and `test_sdk.py`,
   `init` then `test --json` against a real SDK (needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/pluginyaml/` (T3.1): `plugin.yaml`, the canonical model
@@ -470,7 +477,7 @@ Create a plugin project and test it (`<dir>` as above):
 
 ```
 MMT_BASE=<dir>/opt/mmt uv run mmt-plugin init demo
-MMT_BASE=<dir>/opt/mmt uv run mmt-plugin -C demo test --model demo/model.pdl
+MMT_BASE=<dir>/opt/mmt uv run mmt-plugin -C demo test
 ```
 
 Generate a model's C sources (no installed SDK needed with a pinned profile):
@@ -545,7 +552,7 @@ never `plugin.yaml`), then check that the proposal passes them against those
 headers (skips without `MMT_GOLDEN_SDK`):
 
 ```
-uv run mmt-plugin -C <project> scaffold --from-pcap capture.pcap --parent udp:port=4433 --model <project>/model.pdl --dry-run
+uv run mmt-plugin -C <project> scaffold --from-pcap capture.pcap --parent udp:port=4433 --dry-run
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/scaffold/test_sdk.py
 ```
 
@@ -612,8 +619,10 @@ Follow `skills/mmt-plugin-author/SKILL.md`. In short:
 - Run `validate`, `generate`, `build` and `test` in that order, stop at the
   first non-zero exit, fix it, and start again from `validate`. Green is all
   four at 0, with at least one packet test and every one passing.
-- `init --parent` is only a comment: write `parents:` into `plugin.yaml`, and
-  pin `sdk.profile`. Keep `init`'s label and id.
+- `init` writes `plugin.yaml` with `sdk.profile` pinned and `--parent` under
+  `parents:`; keep them (and `init`'s label and id) when you replace its
+  sample model, and import a PDL v1 model next to it
+  (`-o <project>/plugin.imported.yaml`), never over it with `--force`.
 - Never delete a packet test written from the spec or by `scaffold`, or
   change its expected values to what the plugin outputs.
 - When a command, a flag or a diagnostic code changes, update the skill:

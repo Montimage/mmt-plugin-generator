@@ -8,7 +8,6 @@
     {
       "note": "Draft plugin.yaml and one packet test per example of the spec; drop init's sample model and test. The draft says big-endian where the schema wants network.",
       "edits": [
-        {"remove": "model.pdl"},
         {"remove": "tests/telem-basic.yaml"},
         {"write": "plugin.yaml", "from": "plugin-1.yaml"},
         {"write": "tests/telem-reading.yaml", "from": "telem-reading.yaml"},

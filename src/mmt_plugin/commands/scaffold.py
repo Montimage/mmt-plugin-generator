@@ -140,7 +140,7 @@ class ScaffoldCommand:
                 "examples:\n"
                 "  mmt-plugin scaffold --from-pcap capture.pcap --parent udp:port=4433\n"
                 "  mmt-plugin -C demo scaffold --from-pcap demo.pcapng"
-                " --parent ethernet:ethertype=0x88b5 --model demo/model.pdl\n"
+                " --parent ethernet:ethertype=0x88b5\n"
                 "  mmt-plugin scaffold --from-pcap capture.pcap --parent tcp:dport=102"
                 " --max-packets 5 --dry-run"
             ),

@@ -110,7 +110,6 @@ def test_the_proposal_passes_the_tests_scaffold_wrote(
     project = work / "demo"
     code, doc = _json(
         capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent,
-        "--model", "demo/model.pdl",
     )  # fmt: skip
     assert code == 0, doc["error"]
     assert doc["result"]["packets"]["payloads"] == payloads
@@ -135,7 +134,6 @@ def test_the_proposal_passes_the_tests_scaffold_wrote(
     # A second scaffold is a no-op, and plugin.yaml was never touched by it.
     code, doc = _json(
         capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent,
-        "--model", "demo/model.pdl",
     )  # fmt: skip
     assert code == 0, doc["error"]
     assert {f["action"] for f in doc["result"]["files"]} == {"unchanged"}

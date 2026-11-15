@@ -77,13 +77,16 @@ Pick a label (`[a-z][a-z0-9_]*`, a name no SDK protocol has) and an id from
 `<selector>` the parent, for example `udp:dport=4433`, `tcp:port=102` or
 `ethernet:ethertype=0x88b5`.
 
-From a protocol specification, create the project and turn its sample model
-into `plugin.yaml`:
+Run the entry commands in order and stop at the first that does not exit
+0: read its `error.code` (`references/contract.md`) and never go on to the
+next one.
+
+From a protocol specification, create the project. Its `plugin.yaml` is a
+sample model that you replace with the protocol's:
 
 <!-- eval:entry spec -->
 ```sh
 mmt-plugin --json init <label> --dir <project> --id <id> --parent <selector> --sdk-profile <profile>
-mmt-plugin -C <project> --json import <project>/model.pdl -o <project>/plugin.yaml
 ```
 
 From a capture, create the project, then let `scaffold` slice the payloads
@@ -93,32 +96,33 @@ under the parent into packet tests and propose a field skeleton,
 <!-- eval:entry pcap -->
 ```sh
 mmt-plugin --json init <label> --dir <project> --id <id> --parent <selector> --sdk-profile <profile>
-mmt-plugin -C <project> --json scaffold --from-pcap <pcap> --parent <selector> --model <project>/model.pdl
+mmt-plugin -C <project> --json scaffold --from-pcap <pcap> --parent <selector>
 ```
 
-From a legacy PDL v1 model, create the project, then convert the model:
+From a legacy PDL v1 model, create the project, then convert the model
+next to `init`'s, into `<project>/plugin.imported.yaml`:
 
 <!-- eval:entry pdl -->
 ```sh
 mmt-plugin --json init <label> --dir <project> --id <id> --parent <selector> --sdk-profile <profile>
-mmt-plugin -C <project> --json import <pdl> -o <project>/plugin.yaml
+mmt-plugin -C <project> --json import <pdl> -o <project>/plugin.imported.yaml
 ```
 
-`init` writes `model.pdl` (a sample 4-byte header), `src/<label>_impl.c`
-(your code: one function per hook), `tests/<label>-basic.yaml` (a packet
-test of the sample header) and `.gitignore`. Once `plugin.yaml` exists,
-delete `model.pdl`, so that the project has one model. `import` warns with
-`model.legacy-*` codes about constructs that relied on bugs of the old Java
-tool. Read each warning: it says what changed.
+`init` writes `plugin.yaml` (a sample 4-byte header, with the profile pinned
+in `sdk.profile` and the parent declared under `parents:`),
+`src/<label>_impl.c` (your code: one function per hook),
+`tests/<label>-basic.yaml` (a packet test of the sample header) and
+`.gitignore`. A parent that one match of its header identifies (an
+EtherType, a UDP source or destination port) gets a `classify`, and the
+packet test also runs `through` it; any other parent (`tcp:port=102`,
+`udp:port=4433`) is left to `<label>_hook_register_parents`.
 
-Two things `init` does not carry over:
-
-- `--parent` is only a comment in `model.pdl`, and `import` drops it. Write
-  the parent into `plugin.yaml` yourself (`parents:`), or `validate`
-  reports `parents-exist` as `skip` and the plugin is never handed a
-  packet.
-- Nothing pins the profile. Add `sdk: {profile: "<profile>"}` to
-  `plugin.yaml` after `import` or after copying the proposal.
+`import` warns with `model.legacy-*` codes about constructs that relied on
+bugs of the old Java tool. Read each warning: it says what changed. Then
+copy `plugin.imported.yaml` over `plugin.yaml` (you wrote it with `init` in
+this session), and delete `plugin.imported.yaml`, so that the project has
+one model. The imported model has no parent and pins no profile: put back
+the `sdk:` and `parents:` that `init` wrote.
 
 Keep the label and the id you gave `init` in `plugin.yaml`:
 `src/<label>_impl.c` includes `<label>_mmt_plugin.h`, which `generate`
@@ -129,13 +133,14 @@ names after the label.
 Follow [`references/drafting.md`](references/drafting.md):
 
 - Write each field of the spec as an attribute or a struct field, at the
-  offset and with the type the spec gives. Pin the profile with
-  `sdk: {profile: "<profile>"}`. Declare the parent with `classify` when
-  one match of the parent's header identifies the protocol.
+  offset and with the type the spec gives. Keep the profile pinned,
+  `sdk: {profile: "<profile>"}`, as `init` wrote it. Declare the parent
+  with `classify` when one match of the parent's header identifies the
+  protocol.
 - From a capture, start from `plugin.proposed.yaml`: rename its fields
   after the spec, delete those that are payload, copy it over
-  `plugin.yaml`, and make the same changes in the packet tests `scaffold`
-  wrote.
+  `plugin.yaml`, pin the profile again (the proposal pins none), and make
+  the same changes in the packet tests `scaffold` wrote.
 - Write a packet test for each example of the spec, with the values the
   spec gives, never the values the plugin outputs. Delete
   `tests/<label>-basic.yaml` once it no longer describes the protocol.

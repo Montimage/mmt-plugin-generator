@@ -250,7 +250,7 @@ jobs:
           [ "$v" = "mmt-plugin $VERSION" ] || { echo "the image's mmt-plugin is $v"; exit 1; }
           label="$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$img")"
           [ "$label" = "$VERSION" ] || { echo "the image's version label is $label"; exit 1; }
-          run sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test --model demo/model.pdl'
+          run sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test'
       - name: Save the image
         # For image-dry-run and, on a release tag, publish-image: the image
         # they push is the one tested here.

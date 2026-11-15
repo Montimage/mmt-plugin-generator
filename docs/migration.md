@@ -30,10 +30,12 @@ the model into it. The tpkt model of `plugins/` is the example:
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init tpkt_port --id 970 --sdk-profile 1.10.2
-mmt-plugin -C tpkt_port import plugins/tpkt_plugin
+mmt-plugin -C tpkt_port import plugins/tpkt_plugin -o tpkt_port/plugin.imported.yaml
 ```
 
-`import` writes `tpkt_port/plugin.yaml`. It warns, with a code that starts
+`init` wrote a sample model, `tpkt_port/plugin.yaml`; `import` writes the
+converted one next to it, `tpkt_port/plugin.imported.yaml` (it never
+replaces a file with other content unless you pass `--force`). It warns, with a code that starts
 with `model.legacy-`, about every construct whose meaning depended on a bug
 of the Java tool, and says what the Java tool did; `--strict` makes them
 errors. Here it is `model.legacy-sdk-conflict`, twice: the label TPKT is
@@ -43,15 +45,17 @@ mmt-dpi 1.10.2's own TPKT (`PROTO_TPKT`, id 637), and the id 636 is
 bug behind it and what to do. Any other model error stops `import` (exit 3)
 and writes nothing.
 
-Then fix what the warnings say and finish the model. Give it the project's
-label and id, pin the profile, and drop `init`'s sample model and test
-(they describe `init`'s own 4-byte header):
+Then make the converted model the project's, in place of `init`'s sample
+model, fix what the warnings say and finish it. Give it the project's label
+and id, pin the profile (as `init`'s did), and drop `init`'s test (it
+describes `init`'s own 4-byte header):
 
 <!-- doc:run no-sdk -->
 ```sh
+mv tpkt_port/plugin.imported.yaml tpkt_port/plugin.yaml
 sed -i -e 's/^  label: .*/  label: tpkt_port/' -e 's/^  id: .*/  id: 970/' tpkt_port/plugin.yaml
 printf 'sdk:\n  profile: "1.10.2"\n' >> tpkt_port/plugin.yaml
-rm tpkt_port/model.pdl tpkt_port/tests/tpkt_port-basic.yaml
+rm tpkt_port/tests/tpkt_port-basic.yaml
 mmt-plugin -C tpkt_port validate --no-sdk
 mmt-plugin -C tpkt_port generate
 ```

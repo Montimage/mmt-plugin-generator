@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "4d0bd60216dddcb274b2bee3c99fb0add40b26ae887e3b2fce2469122a2a97e3"
+  },
+  "files": [
+    {
+      "path": "generated/websocket_example_mmt_plugin.c",
+      "sha256": "cbd295b478586853d9da1ffd8dae22090ce67d0be8f424ef550019d7560d547d"
+    },
+    {
+      "path": "generated/websocket_example_mmt_plugin.h",
+      "sha256": "1862cd37a464c14e8528c4ad0311b828e239c1e4c56fecb5961a7e77fcc511a6"
+    }
+  ]
+}

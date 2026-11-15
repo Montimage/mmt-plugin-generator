@@ -29,17 +29,23 @@ protocol model. A Python rewrite is planned in
   mmt-plugin projects, `examples/<name>/` (`plugin.yaml` from `import`,
   then edited; the committed `plugin.lock` and `generated/`;
   `src/<label>_impl.c`; `tests/*.yaml`, the corpus packets of the model
-  with the port's name and id, same bytes, values from the specs). Labels
-  are `<protocol>_example`, ids 976-991, profile 1.10.2 pinned. All 16
-  build and pass their packet tests against mmt-dpi 1.10.2;
-  `examples/README.md` lists each one's label, id, parent, model fixes and
-  hooks. After a generator change (or a version bump: `plugin.lock`
-  records it), regenerate them all, as the README says. Tests in
-  `tests/unit/examples/`: `test_examples.py` (the models, `generate
-  --check`, the packet tests against the corpus, one `through` test per
-  example with a parent) and `test_sdk.py` (`validate`, `build` and `test
-  --sanitize` on each one, then each parent's classification broken, which
-  fails only the run through it; needs `MMT_GOLDEN_SDK`).
+  with the port's name and id, same bytes, values from the specs), and
+  `examples/websocket/` (#40), a WebSocket (RFC 6455) plugin made with
+  `init`, not a port: every attribute is a hook, and its session state
+  follows the TCP session (`src/websocket_example_impl.c` says where
+  mmt-dpi 1.10.2 runs it). Labels are `<protocol>_example`, ids 976-992,
+  profile 1.10.2 pinned. All 17 build and pass their packet tests against
+  mmt-dpi 1.10.2; `examples/README.md` lists each one's label, id,
+  parent, model fixes and hooks. After a generator change (or a version
+  bump: `plugin.lock` records it), regenerate them all, as the README
+  says. Tests in `tests/unit/examples/`: `test_examples.py` (the models,
+  `generate --check`, the ports' packet tests against the corpus, a source
+  for every value of the others', one `through` test per example with a
+  parent) and `test_sdk.py` (`validate`, `build` and `test --sanitize` on
+  each one, then each parent's classification broken, which fails only the
+  run through it, and the WebSocket example's TCP sessions, built by
+  `tcpsession.py`, replayed through the harness `test` built; needs
+  `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
 - `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example
@@ -373,9 +379,10 @@ protocol model. A Python rewrite is planned in
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
-  (`build` and `test` on every ported example), `tests/unit/init/test_sdk.py` (`init`
-  then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
-  project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
+  (`build` and `test` on every example, and the WebSocket session
+  replay), `tests/unit/init/test_sdk.py` (`init` then `test`),
+  `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
+  by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
   `tests/unit/skill/test_sdk.py` (the mmt-plugin-author evals, green),
   `tests/unit/docs/test_commands.py` (every `doc:run` block of the user

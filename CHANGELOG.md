@@ -5,6 +5,18 @@ All notable changes to `mmt-plugin` are recorded here. The format follows
 uses [semantic versioning](https://semver.org/) for its command line, its
 `--json` contract and its model format.
 
+## [Unreleased]
+
+### Added
+
+- `examples/websocket/`: a WebSocket (RFC 6455) plugin, `websocket_example`
+  (id 992), made with `mmt-plugin init` (#40). It claims a TCP session on
+  any port from its opening handshake and follows it across segments: the
+  frame header fields, the unmasked payload, close codes, fragmented
+  messages, the handshake's key, accept and the negotiated subprotocol.
+  Its packet tests come from RFC 6455; `tests/unit/examples/test_sdk.py`
+  also replays TCP sessions through it.
+
 ## [0.1.0] - 2026-11-15
 
 The first release of the Python generator, `mmt-plugin`. It replaces the
@@ -103,4 +115,5 @@ plugin, from a new project to a plugin that mmt-dpi loads:
   project (#31). The frozen Java output the parity test reads is kept in
   `tests/java-output/`.
 
+[Unreleased]: https://github.com/Montimage/mmt-plugin-generator/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Montimage/mmt-plugin-generator/releases/tag/v0.1.0

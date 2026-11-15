@@ -1,0 +1,115 @@
+# Packet test of examples/websocket, written from RFC 6455 (not a port: the
+# corpus has no WebSocket model). Format and rules: tests/corpus/README.md
+schema: 1
+id: "websocket/pong-masked"
+model: "websocket"
+summary: "A masked pong, the answer to the ping"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, after an HTTP Upgrade to websocket (any port)"
+  source: "RFC 6455 section 1.7 (over TCP) and section 4 (the opening handshake)"
+bytes:
+  - "8a 85 37 fa 21 3d 7f 9f 4d 51 58"
+bytes_source: "RFC 6455 section 5.7: the pong 0x8a 0x85 0x37 0xfa 0x21 0x3d 0x7f 0x9f 0x4d 0x51 0x58"
+expect:
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: the segment is frame data (base framing), not an HTTP message of section 4"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.5.3: FIN, the most significant bit of byte 0"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: RSV1, bit 1 of byte 0, 0 without an extension"
+    - name: "rsv2"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: RSV2, bit 2 of byte 0"
+    - name: "rsv3"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: RSV3, bit 3 of byte 0"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 10
+      source: "RFC 6455 section 5.5.3: opcode, the low 4 bits of byte 0"
+    - name: "mask"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2: MASK, the most significant bit of byte 1"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+      offset: 1
+      length: 1
+      value: 5
+      source: "RFC 6455 section 5.2: Payload length, the low 7 bits of byte 1 (0-125)"
+    - name: "masking_key"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 939139389
+      source: "RFC 6455 section 5.2: Masking-key, 4 bytes after the length, as a big-endian integer"
+    - name: "payload_offset"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 6
+      value: 6
+      source: "RFC 6455 section 5.2: the payload follows the 2-byte header, the extended length and the masking key"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 6
+      length: 5
+      value: "48 65 6c 6c 6f"
+      text: "Hello"
+      source: "RFC 6455 section 5.3, 5.5.3 and 5.7: the masked bytes at 6-10, unmasked: \"Hello\", the ping's data"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 11
+      value: 1
+      source: "RFC 6455 section 5.2: the frames whose header ends in the segment"
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: the segment starts with a frame header, so no bytes of an earlier frame"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "RFC 6455 section 5.5: a control frame is not part of a message"
+    - name: "close_code"
+      type: "MMT_U16_DATA"
+      status: "absent"
+      source: "RFC 6455 section 5.5.1: not a close frame"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+      status: "absent"
+      source: "RFC 6455 section 5.2: frame data has no HTTP status line"

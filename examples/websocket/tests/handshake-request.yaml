@@ -1,0 +1,80 @@
+# Packet test of examples/websocket, written from RFC 6455 (not a port: the
+# corpus has no WebSocket model). Format and rules: tests/corpus/README.md
+schema: 1
+id: "websocket/handshake-request"
+model: "websocket"
+summary: "The client's opening handshake (the RFC 6455 section 1.2 example)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, after an HTTP Upgrade to websocket (any port)"
+  source: "RFC 6455 section 1.7 (over TCP) and section 4 (the opening handshake)"
+through: "tcp:dport=80"
+bytes:
+  - "47 45 54 20 2f 63 68 61 74 20 48 54 54 50 2f 31"
+  - "2e 31 0d 0a 48 6f 73 74 3a 20 73 65 72 76 65 72"
+  - "2e 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a 55 70"
+  - "67 72 61 64 65 3a 20 77 65 62 73 6f 63 6b 65 74"
+  - "0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 55 70"
+  - "67 72 61 64 65 0d 0a 53 65 63 2d 57 65 62 53 6f"
+  - "63 6b 65 74 2d 4b 65 79 3a 20 64 47 68 6c 49 48"
+  - "4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51"
+  - "3d 3d 0d 0a 4f 72 69 67 69 6e 3a 20 68 74 74 70"
+  - "3a 2f 2f 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a"
+  - "53 65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72"
+  - "6f 74 6f 63 6f 6c 3a 20 63 68 61 74 2c 20 73 75"
+  - "70 65 72 63 68 61 74 0d 0a 53 65 63 2d 57 65 62"
+  - "53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a 20"
+  - "31 33 0d 0a 0d 0a"
+bytes_source: "RFC 6455 section 1.2, the client's handshake, CR LF line ends (RFC 7230 section 3)"
+expect:
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 4
+      value: 1
+      source: "RFC 6455 section 4.1: the client's opening handshake, an HTTP GET with Upgrade: websocket"
+    - name: "key"
+      type: "MMT_STRING_DATA"
+      offset: 106
+      length: 24
+      value: "64 47 68 6c 49 48 4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51 3d 3d"
+      text: "dGhlIHNhbXBsZSBub25jZQ=="
+      source: "RFC 6455 section 1.2 and 4.1: Sec-WebSocket-Key, the example's nonce"
+    - name: "subprotocol"
+      type: "MMT_STRING_DATA"
+      offset: 184
+      length: 15
+      value: "63 68 61 74 2c 20 73 75 70 65 72 63 68 61 74"
+      text: "chat, superchat"
+      source: "RFC 6455 section 1.2 and 4.1: Sec-WebSocket-Protocol, the subprotocols the client offers, as written"
+    - name: "accept"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "RFC 6455 section 4.1: the request has no Sec-WebSocket-Accept"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+      status: "absent"
+      source: "RFC 6455 section 4.1: a request has no status line"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "no frame header in the segment: an HTTP message of the opening handshake"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "no frame header in the segment: an HTTP message of the opening handshake"
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "no frame header in the segment: an HTTP message of the opening handshake"
+note: "the run through TCP is one segment of its own session: the classification sees the Upgrade request"

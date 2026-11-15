@@ -509,9 +509,10 @@ has the details.
 
 ## The example projects
 
-[`examples/`](../examples/README.md) holds 16 complete projects, the models
-of the Java tool's examples ported to `plugin.yaml`, each with its hooks
-and packet tests. Their generated files are committed:
+[`examples/`](../examples/README.md) holds 17 complete projects, each with
+its hooks and packet tests: the models of the Java tool's 16 examples ported
+to `plugin.yaml`, and a WebSocket (RFC 6455) plugin written with `init`,
+whose hooks follow the TCP session. Their generated files are committed:
 
 <!-- doc:run no-sdk -->
 ```sh

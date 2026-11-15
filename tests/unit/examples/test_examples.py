@@ -1,13 +1,15 @@
-"""The ported examples (plan T5.1, #28), without an SDK.
+"""The examples (plan T5.1, #28; the WebSocket example, #40), without an SDK.
 
 Every example model of the corpus (``kind: example`` in
 ``tests/corpus/index.yaml``: the Java tool's ``plugins/<name>_plugin``, removed
-by #78) has a project ``examples/<name>/``
-(``examples/README.md``): its ``plugin.yaml`` validates with the profile it
-pins, ``generate --check`` finds the committed ``generated/`` and
-``plugin.lock`` up to date, and its packet tests load, name the example's
-protocol and carry the bytes of the corpus fixture they were ported from.
-``tests/unit/examples/test_sdk.py`` builds and tests them against a real SDK.
+by #78) has a project ``examples/<name>/``, a port, and ``NEW`` lists the
+examples written with the tool instead (``examples/README.md``): each
+``plugin.yaml`` validates with the profile it pins, ``generate --check``
+finds the committed ``generated/`` and ``plugin.lock`` up to date, and the
+packet tests load and name the example's protocol; a port's carry the bytes
+of the corpus fixture they were ported from, a new example's give a source
+for every value. ``tests/unit/examples/test_sdk.py`` builds and tests them
+against a real SDK.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from mmt_plugin.cli import main
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP
 from mmt_plugin.sdk.resolve import resolve_profile
 from mmt_plugin.testing.packets import load
+from mmt_plugin.testing.yamlsubset import loads
 
 REPO = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO / "examples"
@@ -43,8 +46,12 @@ def _example_models() -> list[str]:
     return sorted(m["name"] for m in index["models"] if m["kind"] == "example")
 
 
-#: The example models of the corpus.
-NAMES = _example_models()
+#: The ports: the example models of the corpus.
+PORTS = _example_models()
+#: The examples that are not ports (no corpus model): written with mmt-plugin init.
+NEW = ["websocket"]
+#: Every example.
+NAMES = sorted(PORTS + NEW)
 
 
 def _json(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, Any]]:
@@ -72,9 +79,10 @@ def _readme_rows() -> dict[str, tuple[str, int]]:
 
 
 def test_every_example_model_has_a_project() -> None:
-    assert len(NAMES) == 16
-    ported = sorted(p.parent.name for p in EXAMPLES.glob("*/plugin.yaml"))
-    assert ported == NAMES
+    assert len(PORTS) == 16
+    assert not set(NEW) & set(PORTS)
+    projects = sorted(p.parent.name for p in EXAMPLES.glob("*/plugin.yaml"))
+    assert projects == NAMES
 
 
 def test_the_readme_lists_every_example_with_its_label_and_id() -> None:
@@ -124,7 +132,7 @@ def test_the_committed_generated_files_are_up_to_date(
     assert (project / ".gitignore").read_text() == "build/\n"
 
 
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", PORTS)
 def test_the_packet_tests_are_the_corpus_packets_of_the_example(name: str) -> None:
     label, pid = _protocol(name)
     profile = resolve_profile(PROFILE, {}, None, None).profile
@@ -139,6 +147,26 @@ def test_the_packet_tests_are_the_corpus_packets_of_the_example(name: str) -> No
         assert test.data == load(origin, origin.name, types).data, path
         # Only the corpus uses `undefined`: a port extracts every value it lists.
         assert all(a.status != "undefined" for a in test.attributes), path
+
+
+@pytest.mark.parametrize("name", NEW)
+def test_the_packet_tests_of_a_new_example_name_a_source_for_every_value(name: str) -> None:
+    label, pid = _protocol(name)
+    profile = resolve_profile(PROFILE, {}, None, None).profile
+    types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
+    paths = sorted((EXAMPLES / name / "tests").glob("*.yaml"))
+    assert paths, name
+    for path in paths:
+        test = load(path, path.name, types)
+        assert (test.protocol, test.proto_id) == (label.upper(), pid)
+        assert test.id == f"{name}/{path.stem}"
+        assert test.attributes, path
+        assert all(a.status != "undefined" for a in test.attributes), path
+        # load() reads no source: every expected attribute names where its value comes from.
+        doc = loads(path.read_bytes())
+        assert doc["model"] == name, path
+        for attr in doc["expect"]["attributes"]:
+            assert str(attr.get("source", "")).strip(), (path, attr["name"])
 
 
 @pytest.mark.parametrize("name", NAMES)

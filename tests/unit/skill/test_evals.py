@@ -9,7 +9,9 @@ tables against ``mmt_plugin.exitcodes`` and ``mmt_plugin.diagnostics.CODES``)
 and show that the evals fail when they should: a command that reads stdin or
 opens the terminal, an envelope that breaks the contract, a fix that misses
 the reported location, a deleted or rewritten packet test, a model without
-an attached parent. ``test_sdk.py`` runs the cases with an SDK.
+an attached parent, an update that does not keep the project's label, id,
+profile, parents or packet tests, or that starts from a project that is not
+green. ``test_sdk.py`` runs the cases with an SDK.
 """
 
 from __future__ import annotations
@@ -58,6 +60,12 @@ def copy_case(tmp_path: Path, name: str, change: Callable[[dict[str, Any]], None
     return target
 
 
+def seed_dir(case_dir: Path) -> Path:
+    """The seed project of a copied update case."""
+    case = json.loads((case_dir / "case.json").read_text("utf-8"))
+    return case_dir / str(case["project"])
+
+
 def run(case_dir: Path, tmp_path: Path) -> run_evals.CaseResult:
     work = tmp_path / "work"
     work.mkdir()
@@ -79,7 +87,7 @@ def test_the_case_passes_without_an_sdk(case_dir: Path, tmp_path: Path) -> None:
 
 def test_the_cases_cover_every_entry_point() -> None:
     entries = {run_evals.load_case(d)["entry"] for d in CASES}
-    assert entries == {"spec", "pcap", "pdl"}
+    assert entries == {"spec", "pcap", "pdl", "update"}
     assert {k for k in BLOCKS if k.startswith("entry ")} == {f"entry {e}" for e in entries}
 
 
@@ -87,6 +95,9 @@ def test_the_cases_cover_every_entry_point() -> None:
 def test_every_case_pins_the_profile_in_its_first_run(case_dir: Path) -> None:
     case = run_evals.load_case(case_dir)
     texts = []
+    if case["entry"] == "update":
+        # An existing project pins its profile before the first run.
+        texts.append((case_dir / case["project"] / "plugin.yaml").read_text("utf-8"))
     for edit in case["runs"][0]["edits"]:
         if "write" in edit and edit["write"] == "plugin.yaml":
             texts.append((case_dir / edit["from"]).read_text("utf-8"))
@@ -126,6 +137,11 @@ def test_the_entry_blocks_create_a_project_then_convert_or_scaffold() -> None:
     assert commands["entry spec"] == ["init"]
     assert commands["entry pcap"] == ["init", "scaffold"]
     assert commands["entry pdl"] == ["init", "import"]
+    # An existing project is checked, never re-created: one validate that
+    # writes nothing, with the profile the project pins.
+    assert commands["entry update"] == ["validate"]
+    (check,) = BLOCKS["entry update"]
+    assert "--no-sdk" in check and "--sdk-profile" not in check
     # The pdl entry converts next to init's plugin.yaml, never over it: no
     # entry command replaces a file (no --force, above), and scaffold reads
     # init's plugin.yaml, its default model.
@@ -503,6 +519,172 @@ def test_hook_parents_reads_the_parents_without_classify() -> None:
     )
     assert run_evals._hook_parents(model) == ["tcp", "ip"]
     assert run_evals._hook_parents("schema: 1\n") == []
+
+
+# --- updating an existing project (#89) -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("edit", "problem"),
+    [
+        (
+            {"replace": "plugin.yaml", "old": "value: 5684}", "new": "value: 5685}"},
+            "green: the update changes the parents of the project",
+        ),
+        (
+            {"replace": "plugin.yaml", "old": "  id: 963\n", "new": "  id: 964\n"},
+            "green: the update changes protocol.id from 963 to 964",
+        ),
+        (
+            {"replace": "tests/telem-ack.yaml", "old": "00 00 00 2a", "new": "00 00 00 2b"},
+            "run 3: changes the bytes or the expected protocol in tests/telem-ack.yaml",
+        ),
+        (
+            {"replace": "tests/telem-reading.yaml", "old": "value: 42", "new": "value: 43"},
+            "run 3: changes the expected values of sequence in tests/telem-reading.yaml",
+        ),
+        (
+            {"remove": "tests/telem-reading.yaml"},
+            "run 3: deletes the packet test tests/telem-reading.yaml",
+        ),
+    ],
+)
+def test_an_update_that_does_not_keep_the_project_fails(
+    tmp_path: Path, edit: dict[str, str], problem: str
+) -> None:
+    """AC2 and AC3: the label, id, profile and parents, and every packet test
+    of the project, stay as they were."""
+
+    def change(case: dict[str, Any]) -> None:
+        case["runs"][-1]["edits"].append(edit)
+
+    result = run(copy_case(tmp_path, "telem-update", change), tmp_path)
+    assert not result.ok
+    assert problem in result.problems, result.problems
+
+
+def test_an_update_may_not_delete_the_projects_basic_test(tmp_path: Path) -> None:
+    """Only a tests/<label>-basic.yaml that init wrote in the case may go, never
+    one the project already had."""
+
+    def change(case: dict[str, Any]) -> None:
+        case["runs"][-1]["edits"].append({"remove": "tests/telem-basic.yaml"})
+
+    case_dir = copy_case(tmp_path, "telem-update", change)
+    tests = seed_dir(case_dir) / "tests"
+    ack = (tests / "telem-ack.yaml").read_text("utf-8")
+    (tests / "telem-basic.yaml").write_text(ack.replace('"telem/ack"', '"telem/basic"'), "utf-8")
+    result = run(case_dir, tmp_path)
+    assert result.problems == ["run 3: deletes the packet test tests/telem-basic.yaml"]
+
+
+def test_an_update_without_a_new_or_changed_test_fails(tmp_path: Path) -> None:
+    def change(case: dict[str, Any]) -> None:
+        for run_ in case["runs"]:
+            run_["edits"] = [
+                e for e in run_["edits"] if e.get("write") != "tests/telem-status.yaml"
+            ]
+
+    result = run(copy_case(tmp_path, "telem-update", change), tmp_path)
+    assert result.problems == ["green: the update adds or changes no packet test"]
+
+
+def test_an_update_of_a_project_that_is_not_green_stops_before_its_runs(
+    tmp_path: Path,
+) -> None:
+    """The loop runs once on the project as it is; a failure there is the
+    user's, and the case's runs never start."""
+    case_dir = copy_case(tmp_path, "telem-update", lambda case: None)
+    seed = seed_dir(case_dir)
+    code, _, _, problems = run_evals.run_cli(
+        [sys.executable, "-m", "mmt_plugin", "-C", str(seed), "--json", "generate"],
+        cwd=seed,
+    )
+    assert (code, problems) == (0, [])
+    (source,) = (seed / "generated").glob("*.c")
+    source.write_text(source.read_text("utf-8") + "/* edited by hand */\n", "utf-8")
+    result = run(case_dir, tmp_path)
+    assert result.problems == [
+        "run 0: the project is not green before the update: generate exits 7 (state.modified)"
+    ]
+    assert not result.ok
+    assert [s.command for s in result.steps] == ["validate", "validate", "generate"]
+
+
+SEED_MODEL = (run_evals.CASES_DIR / "telem-update" / "project" / "plugin.yaml").read_text("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "problems"),
+    [
+        (
+            "  label: telem\n",
+            "  label: telex\n",
+            ["green: the update changes protocol.label from telem to telex"],
+        ),
+        (
+            "  id: 963\n",
+            "  id: 970   # 950-999\n",
+            ["green: the update changes protocol.id from 963 to 970"],
+        ),
+        (
+            '  profile: "1.10.2"\n',
+            '  profile: "1.10.3"\n',
+            ["green: the update changes sdk.profile from 1.10.2 to 1.10.3"],
+        ),
+        (
+            "      offset: 8\nattributes:",
+            "      offset: 0\nattributes:",
+            ["green: the update changes the parents of the project"],
+        ),
+        # The same values, written otherwise, are kept.
+        ('sdk:\n  profile: "1.10.2"\n', 'sdk: {profile: "1.10.2"}\n', []),
+        ("parents:\n", "parents:   # classified by the generated code\n\n", []),
+        ("  id: 963\n", "  id: 963          # 950-999\n", []),
+    ],
+)
+def test_kept_names_each_change_of_the_project(old: str, new: str, problems: list[str]) -> None:
+    assert run_evals._kept(SEED_MODEL, SEED_MODEL) == []
+    assert old in SEED_MODEL
+    assert run_evals._kept(SEED_MODEL, SEED_MODEL.replace(old, new)) == problems
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda c: c.pop("project"), "an update case needs 'project'"),
+        (lambda c: c.update(project="../spec-telem"), "not a path inside the case directory"),
+        (lambda c: c.update(project="/tmp"), "not a path inside the case directory"),
+        (lambda c: c.update(project=1), "is not a path"),
+        (lambda c: c.update(project="nope"), "is not a directory of the case"),
+        (lambda c: c.update(project="project/src"), "has no plugin.yaml"),
+        (lambda c: c["params"].update(id="964"), "protocol.id is not params.id"),
+        (lambda c: c["params"].update(label="telex"), "protocol.label is not params.label"),
+    ],
+)
+def test_a_broken_update_case_is_an_eval_error(
+    tmp_path: Path, change: Callable[[dict[str, Any]], Any], message: str
+) -> None:
+    with pytest.raises(run_evals.EvalError, match=message):
+        run_evals.load_case(copy_case(tmp_path, "telem-update", change))
+
+
+def test_a_project_is_only_for_an_update(tmp_path: Path) -> None:
+    case_dir = copy_case(tmp_path, "spec-telem", lambda c: c.update(project="."))
+    with pytest.raises(run_evals.EvalError, match="'project' is only for the update entry"):
+        run_evals.load_case(case_dir)
+
+
+def test_a_seed_that_is_a_link_or_pins_no_profile_is_an_eval_error(tmp_path: Path) -> None:
+    case_dir = copy_case(tmp_path, "telem-update", lambda c: c.update(project="link"))
+    (case_dir / "link").symlink_to(case_dir / "project")
+    with pytest.raises(run_evals.EvalError, match="is not a directory of the case"):
+        run_evals.load_case(case_dir)
+    case_dir = copy_case(tmp_path / "2", "telem-update", lambda c: None)
+    model = seed_dir(case_dir) / "plugin.yaml"
+    model.write_text(model.read_text("utf-8").replace('  profile: "1.10.2"\n', ""), "utf-8")
+    with pytest.raises(run_evals.EvalError, match=r"pins no sdk\.profile"):
+        run_evals.load_case(case_dir)
 
 
 # --- broken cases and the script ------------------------------------------

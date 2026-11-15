@@ -159,9 +159,12 @@ jobs:
         python: ['3.10', '3.12', '3.14']
         include:
           # Only this job installs zsh and fish; their completion tests then
-          # fail instead of skipping (MMT_REQUIRE_SHELLS below).
+          # fail instead of skipping (MMT_REQUIRE_SHELLS below). It also runs
+          # the user docs' `uv tool install` blocks (MMT_DOCS_INSTALL below,
+          # tests/unit/docs/test_commands.py), which need the network.
           - python: '3.12'
             shells: true
+            docs_install: true
     env:
       # Pinned uv; the sha256 is copied from the release's upstream
       # uv-x86_64-unknown-linux-gnu.tar.gz.sha256 file.
@@ -212,6 +215,7 @@ jobs:
       - name: Pytest
         env:
           MMT_REQUIRE_SHELLS: ${{ matrix.shells && '1' || '0' }}
+          MMT_DOCS_INSTALL: ${{ matrix.docs_install && '1' || '0' }}
         run: uv run pytest
       - name: Show the zsh and fish completion tests
         # Verbose, so the log shows each of them passing, none skipped.
@@ -534,6 +538,19 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/skill/test_sdk.py
+      - name: Run the user documentation's commands
+        # tests/unit/docs/test_commands.py (#29): every block of README.md,
+        # docs/user-guide.md and docs/migration.md marked doc:run, in page
+        # order, in a copy of the checkout: the no-sdk ones, the sdk ones
+        # against this SDK and compiler, and the install ones (uv tool
+        # install from the checkout and from a built wheel).
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_DOCS_INSTALL: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/docs/test_commands.py
       - name: Install, load and uninstall a plugin in a temporary prefix
         # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
         # default user prefix (a temporary XDG_DATA_HOME; no sudo, never

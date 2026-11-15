@@ -9,7 +9,9 @@ The format is defined by its JSON Schema,
 [`src/mmt_plugin/schemas/model/v1/plugin.json`](../src/mmt_plugin/schemas/model/v1/plugin.json)
 (draft 2020-12). The schema ships in the `mmt_plugin` package, so in each
 release, at `mmt_plugin/schemas/model/v1/plugin.json`. This page describes
-it; the schema is the reference.
+it; the schema is the reference, and
+[`model-reference.md`](model-reference.md), generated from it, lists every
+key.
 
 ## Example
 

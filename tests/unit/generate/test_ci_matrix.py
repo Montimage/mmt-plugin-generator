@@ -72,6 +72,7 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/examples/test_sdk.py" in job  # the ported examples (#28)
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
     assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-author evals (#27)
+    assert "tests/unit/docs/test_commands.py" in job  # the user docs' commands (#29)
 
 
 def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
@@ -86,3 +87,29 @@ def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
     lines = [line.strip() for line in step.splitlines()]
     assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py" in lines
     assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_docs_step_runs_every_doc_command_and_requires_the_sdk() -> None:
+    # #29: every example command of the user docs runs in CI; the sdk blocks
+    # only run here, and without the variables they would skip.
+    step = _step("Run the user documentation's commands")
+    assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+    assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
+    assert "MMT_DOCS_INSTALL: '1'" in step
+    assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+    lines = [line.strip() for line in step.splitlines()]
+    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/docs/test_commands.py" in lines
+    assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_python_job_runs_the_docs_install_blocks() -> None:
+    # #29: the uv tool install blocks run in the Python 3.12 job (the
+    # network is there) and fail instead of skipping.
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(
+        r"^          - python: '3.12'\n            shells: true\n"
+        r"            docs_install: true$",
+        text,
+        re.MULTILINE,
+    )
+    assert "MMT_DOCS_INSTALL: ${{ matrix.docs_install && '1' || '0' }}" in text

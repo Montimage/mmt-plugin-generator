@@ -282,6 +282,28 @@ protocol model. A Python rewrite is planned in
   tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
   fail) and `test_sdk.py` (every case green with a real SDK; needs
   `MMT_GOLDEN_SDK`).
+- User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
+  (install from a checkout, a project from `init` to `install`, every
+  command, `--json`, exit codes, settings), `docs/migration.md` (from the
+  Java tool and PDL v1) and `docs/model-reference.md`, generated from
+  `schemas/model/v1/plugin.json` by `src/mmt_plugin/pluginyaml/reference.py`
+  (never edit it: regenerate it, see Commands). The tool is not published:
+  the docs install it from a checkout or a built wheel until T5.3 (#30).
+  Tests in `tests/unit/docs/`: `test_links.py` (every relative link and
+  `#anchor` of every tracked `*.md` resolves, offline, GitHub's anchors),
+  `test_model_reference.py` (the committed page is current) and
+  `test_commands.py`: in the three user docs every fenced block has a
+  language, and every `sh` block a marker on the line before its fence,
+  `<!-- doc:run no-sdk|sdk|install -->` or `<!-- doc:skip REASON -->`. The
+  `doc:run` blocks of a page run in order with `bash -euo pipefail` in a copy
+  of the tracked tree, with `mmt-plugin` on `PATH`, `HOME` in the sandbox
+  and the host's `MMT_*`, `CC`, `PKG_CONFIG_*` and `XDG_*` dropped; a runnable
+  block may not name `sudo`, `--system` or `/opt/mmt`. `no-sdk` blocks run
+  with `MMT_BASE` an empty directory (so they must pin the profile and pass
+  `validate --no-sdk`) and may not depend on an `sdk` block; `sdk` blocks get
+  `MMT_BASE` and `CC` from `MMT_GOLDEN_SDK` and `MMT_GOLDEN_CC`; `install`
+  blocks (`uv tool install`, into the sandbox) run only with
+  `MMT_DOCS_INSTALL=1`. When you change a command, update the docs' blocks.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -299,6 +321,9 @@ protocol model. A Python rewrite is planned in
   project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
   `tests/unit/skill/test_sdk.py` (the mmt-plugin-author evals, green),
+  `tests/unit/docs/test_commands.py` (every `doc:run` block of the user
+  docs, with `MMT_DOCS_INSTALL=1`; the Python 3.12 job also runs the
+  install blocks),
   `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
@@ -527,6 +552,17 @@ against those headers (skips without `MMT_GOLDEN_SDK`):
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/install/test_sdk.py
+```
+
+Check the docs: links and anchors, the generated model reference, and the
+docs' commands (the `sdk` blocks skip without `MMT_GOLDEN_SDK`, the
+`install` blocks without `MMT_DOCS_INSTALL=1`). Regenerate the reference
+after a change to the model schema:
+
+```
+uv run pytest tests/unit/docs
+MMT_DOCS_INSTALL=1 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/docs/test_commands.py
+uv run python -m mmt_plugin.pluginyaml.reference --write docs/model-reference.md
 ```
 
 ## Writing a plugin as an agent

@@ -311,9 +311,12 @@ protocol model. A Python rewrite is planned in
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).
 - `skills/mmt-plugin-author/` (T4.2): the agent skill that writes a plugin
-  from a protocol spec, a capture or a legacy PDL v1 model. `SKILL.md` gives
-  the entry commands (`init`, then `import` or `scaffold --from-pcap`) and the
-  loop (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
+  from a protocol spec, a capture or a legacy PDL v1 model, or updates an
+  existing project (#89; changing a protocol mmt-dpi ships is out of
+  scope). `SKILL.md` gives the entry commands (`init`, then `import` or
+  `scaffold --from-pcap`; for an existing project, `validate --no-sdk`, then
+  the loop once before any edit, which must be green) and the loop
+  (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
   blocks marked `<!-- eval:entry ... -->` and `<!-- eval:loop ... -->`;
   `references/contract.md` the envelope keys it reads and an action for every
   exit class and every code of `diagnostics.CODES` (exact or a `*` family);
@@ -321,12 +324,16 @@ protocol model. A Python rewrite is planned in
   `evals/run_evals.py` (stdlib only) runs those blocks, as written, on each
   case of `evals/cases/<id>/` (`case.json`: the entry's parameters, then one
   set of scripted edits and an expected stop per loop run, the last one
-  green), each command with an open stdin pipe that gets no data, no
-  terminal and a time limit, and checks every envelope against
-  `contract.md`, that each fix touches the reported location, that no packet
-  test the case or `scaffold` wrote is deleted or rewritten, and that the
-  green model pins `sdk.profile` and attaches its parents. Without an SDK it
-  stops after `generate`. Tests in `tests/unit/skill/`: `test_evals.py`
+  green; an `update` case, `telem-update`, also names `project`, a seed
+  project in the case that the runner copies, checks with the entry block
+  and runs the loop on once, green, as run 0), each command with an open
+  stdin pipe that gets no data, no terminal and a time limit, and checks
+  every envelope against `contract.md`, that each fix touches the reported
+  location, that no packet test the case, `scaffold` or the seed wrote is
+  deleted or rewritten, that the green model pins `sdk.profile` and
+  attaches its parents, and, for an update, that it keeps the seed's label,
+  id, `sdk.profile` and `parents:` and adds or changes a packet test.
+  Without an SDK it stops after `generate`. Tests in `tests/unit/skill/`: `test_evals.py`
   (every case without an SDK, the envelopes against the JSON Schemas, the
   tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
   fail) and `test_sdk.py` (every case green with a real SDK; needs
@@ -630,6 +637,14 @@ Follow `skills/mmt-plugin-author/SKILL.md`. In short:
   (`-o <project>/plugin.imported.yaml`), never over it with `--force`.
 - Never delete a packet test written from the spec or by `scaffold`, or
   change its expected values to what the plugin outputs.
+- To update an existing project, check it (`validate --no-sdk`) and run the
+  loop once before any edit; stop and report if it is not green. Keep its
+  label, id, `sdk.profile` and `parents:` unless the request changes them,
+  and every packet test it has (never edit their bytes or expected values;
+  stop and report when the revised spec contradicts one); write the changed
+  behaviour in new packet tests from the spec. Scaffold a new capture into
+  a scratch directory (`--model <project>/plugin.yaml`), never into the
+  project. A protocol mmt-dpi already ships cannot be changed by a plugin.
 - When a command, a flag or a diagnostic code changes, update the skill:
   `tests/unit/skill/test_evals.py` fails until `contract.md` has a row for
   every code and the skill's blocks still run.

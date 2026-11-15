@@ -60,8 +60,8 @@ There are two kinds of model:
     the model file.
   - `valid`: whether a correct PDL v1 front end (T1.2 parser plus T1.3
     checks) accepts the model. `invalid_reason` says why not.
-  - `java`: what the legacy tool does with it. For examples this is the
-    inventory section 4 outcome: `compiles`, `compile-fail`,
+  - `java`: what the Java tool (removed in #31) did with it. For examples
+    this is the inventory section 4 outcome: `compiles`, `compile-fail`,
     `syntax-errors` (output written despite syntax errors) or `no-output`.
     Targeted models were only parsed: `parses` (output written, no syntax
     error) or `no-output`.

@@ -2,7 +2,7 @@
 
 Of the 16 ``plugins/`` models, only abb, cotp, s7com and tpkt give Java
 output that compiles against mmt-dpi 1.10.2 (inventory, section 4). For each
-of them this module reads the Java output pinned in ``legacy/reference-output/``
+of them this module reads the Java output pinned in ``tests/java-output/``
 and the new output, reduces both to what they mean to mmt-dpi (``Meaning``:
 the protocol id and alias, every attribute's id, alias, type, length,
 position, scope and how its value is read, the header's structs and the
@@ -28,6 +28,7 @@ lines) is not compared.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, replace
 from functools import cache
@@ -44,11 +45,25 @@ from .helpers import REPO, profile, source_text
 #: The models whose Java output compiles against mmt-dpi 1.10.2.
 PARITY = ("abb", "cotp", "s7com", "tpkt")
 
-REFERENCE = REPO / "legacy" / "reference-output"
+#: The Java tool's output for the parity models, frozen when the tool was
+#: removed (T5.4, #31): ``MANIFEST`` is the record of the jar's last run (each
+#: model's status and every file's sha256), byte for byte as it was in
+#: ``legacy/reference-output/`` at commit 4076899, and the generated files of
+#: the 4 models are the ones it lists.
+REFERENCE = REPO / "tests" / "java-output"
 INVENTORY = REPO / "docs" / "legacy" / "java-generator-inventory.md"
 
 #: The byte widths of the C types the outputs use in ``sizeof`` and casts.
 C_SIZES = {"uint8_t": 1, "uint16_t": 2, "uint32_t": 4, "uint64_t": 8, "char": 1}
+
+#: The sha256 of ``MANIFEST``: ``legacy/reference-output/MANIFEST`` at commit
+#: 4076899b853aab4d970a55ed8ba5e5f7255315ec, the last one with the jar.
+MANIFEST_SHA256 = "5d7d0a154bd91c82b63a4b5d36419664b99105b75877cf30b8eb097656b41fc9"
+
+#: The sha256 of the jar's exit code file for exit 0 (``0`` and a newline),
+#: and of an empty file.
+EXIT_0_SHA256 = hashlib.sha256(b"0\n").hexdigest()
+EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 #: The SDK extraction functions the Java tables use: (width, byte order).
 #: mmt-dpi's ``general_*_extraction`` read at ``position_in_packet``;
@@ -475,6 +490,21 @@ def _pair(files: dict[str, str]) -> tuple[str, str, str, str]:
     return headers[0], files[headers[0]], sources[0], files[sources[0]]
 
 
+@cache
+def manifest() -> dict[str, tuple[str, dict[str, str]]]:
+    """Each model of ``MANIFEST``: its status and the sha256 of each file the
+    jar's run left (``<model>.exit``, ``.stdout``, ``.stderr`` and the
+    generated files, as ``<model>/<file>``)."""
+    models = {}
+    for line in (REFERENCE / "MANIFEST").read_text(encoding="utf-8").splitlines():
+        fields = line.split()
+        if not fields or line.startswith("#") or fields[0].endswith(":"):
+            continue
+        hashes = dict(f.split("=", 1) for f in fields[2:])
+        models[fields[0]] = (fields[1], hashes)
+    return models
+
+
 def java_files(name: str) -> dict[str, str]:
     directory = REFERENCE / f"{name}_plugin"
     return {p.name: p.read_text(encoding="utf-8") for p in sorted(directory.iterdir())}
@@ -506,8 +536,11 @@ def test_the_parity_models_are_the_ones_whose_java_output_compiles() -> None:
     row = _one(r"^\| ([^|]+) \| ok \| \*\*OK\*\* \|", INVENTORY.read_text(), "the OK row", re.M)
     assert tuple(m.strip() for m in row.group(1).split(",")) == PARITY
     for name in PARITY:
-        assert (REFERENCE / f"{name}_plugin.exit").read_text().strip() == "0"
-        assert (REFERENCE / f"{name}_plugin.stderr").read_text() == ""
+        model = f"{name}_plugin"
+        status, hashes = manifest()[model]
+        assert status == "ok", name
+        assert hashes[f"{model}.exit"] == EXIT_0_SHA256, name
+        assert hashes[f"{model}.stderr"] == EMPTY_SHA256, name
 
 
 @pytest.mark.parametrize("name", PARITY)
@@ -657,10 +690,24 @@ def test_the_parser_fails_on_any_other_new_output(mutation: str) -> None:
 
 
 def test_the_reference_output_is_the_frozen_one() -> None:
-    # The Java side of the comparison is legacy/reference-output/, which CI
-    # regenerates from the jar (legacy/check-reference-output.sh).
-    manifest = (REFERENCE / "MANIFEST").read_text()
-    assert "MMTPluginGenerator.jar" in manifest
+    # The Java side of the comparison is tests/java-output/: MANIFEST is the
+    # one the jar's last run wrote (the jar was removed in #31), and every
+    # file kept with it is a file that MANIFEST lists, with its sha256.
+    text = (REFERENCE / "MANIFEST").read_bytes()
+    assert hashlib.sha256(text).hexdigest() == MANIFEST_SHA256
+    listed = {f: h for model, (_, hashes) in manifest().items() for f, h in hashes.items()}
+    assert len(manifest()) == 16
+    kept = sorted(
+        p.relative_to(REFERENCE).as_posix()
+        for p in REFERENCE.rglob("*")
+        if p.is_file() and p.name != "MANIFEST"
+    )
+    for path in kept:
+        assert path in listed, f"{path} is not in MANIFEST"
+        digest = hashlib.sha256((REFERENCE / path).read_bytes()).hexdigest()
+        assert digest == listed[path], path
     for name in PARITY:
-        files = sorted(java_files(name))
+        model = f"{name}_plugin"
+        files = sorted(f.split("/", 1)[1] for f in manifest()[model][1] if "/" in f)
+        assert files == sorted(java_files(name)), name
         assert files == sorted(f.name for f in new_generation(name).files), name

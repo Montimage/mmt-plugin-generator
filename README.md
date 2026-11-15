@@ -7,8 +7,8 @@ how to find the next protocol, what it runs on), write C only for what the
 model cannot say, and check the plugin on packets whose expected values come
 from the protocol's specification.
 
-It replaces the 2015 Java generator (`MMTPluginGenerator.jar`), which is
-kept, frozen, in [`legacy/`](legacy/README.md) until it is retired (#31).
+It replaces the 2015 Java generator (`MMTPluginGenerator.jar`), which was
+removed in #31 (its sources and jar are in `legacy/` at commit 4076899).
 Coming from the Java tool? Read the [migration guide](docs/migration.md).
 
 **Status:** the Python tool is not published yet: there is no PyPI package

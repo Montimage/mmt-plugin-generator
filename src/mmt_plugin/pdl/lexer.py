@@ -1,7 +1,8 @@
 """The PDL v1 lexer.
 
-Tokens follow the legacy lexer (``legacy/pdl_grammar/PluginGrammar.g``,
-G:791-878) with these differences, each a decision of T1.2 (#11):
+Tokens follow the Java tool's lexer (``legacy/pdl_grammar/PluginGrammar.g``
+at commit 4076899, the last before the tool was removed in #31; G:791-878)
+with these differences, each a decision of T1.2 (#11):
 
 - Words are not reserved. Every word is an ``IDENT`` token, and the parser
   reads keywords from context, so a field may be called ``id`` or ``len``.

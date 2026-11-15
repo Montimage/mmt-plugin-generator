@@ -4,7 +4,8 @@ The 16 example models of `plugins/*_plugin`, ported to mmt-plugin projects
 (plan task T5.1, `docs/design/workflow-redesign.md`). Each one builds with
 `mmt-plugin build` and passes its packet tests with `mmt-plugin test`
 against mmt-dpi 1.10.2, with gcc and clang, so no example is left out.
-`plugins/` stays as it was until the Java tool is retired (T5.4).
+`plugins/` stays as it was: the Java tool was retired (T5.4, #31), but the
+test corpus still reads the original models (#78).
 
 Each directory is a project:
 

@@ -1,6 +1,6 @@
 ---
 name: mmt-plugin-author
-description: "Write an mmt-dpi protocol plugin with mmt-plugin from a protocol spec, a pcap capture or a legacy PDL v1 model: draft plugin.yaml and packet tests, then run validate, generate, build and test with --json until they pass. Don't use for installing plugins system-wide, changing mmt-dpi itself, or editing the generator."
+description: "Write an mmt-dpi protocol plugin with mmt-plugin from a protocol spec, a pcap capture or a legacy PDL v1 model, or update an existing plugin project to a spec revision, added, changed or removed fields, or a new capture: draft plugin.yaml and packet tests, then run validate, generate, build and test with --json until they pass. Don't use for installing plugins system-wide, changing mmt-dpi itself or a protocol it already ships, or editing the generator."
 metadata:
   version: 0.1.0
   plan_task: T4.2
@@ -10,9 +10,17 @@ metadata:
 
 You write a third-party mmt-dpi protocol plugin with the `mmt-plugin` CLI.
 You get a protocol specification, a capture of the protocol's traffic, or a
-legacy PDL v1 model. You produce a project whose `plugin.yaml` describes the
-protocol and whose packet tests pass. The work runs as a loop, and you decide
-each step from the CLI's `--json` envelope, never from its human output.
+legacy PDL v1 model, or an existing plugin project and a change to make to
+it. You produce a project whose `plugin.yaml` describes the protocol and
+whose packet tests pass. The work runs as a loop, and you decide each step
+from the CLI's `--json` envelope, never from its human output.
+
+Out of scope: changing a protocol that mmt-dpi already ships (one of
+`libmmt_tcpip.so`, such as `ip`, `udp` or `http`). A plugin adds a protocol
+of its own, with its own label and id; it cannot change a built-in one, and
+`validate` rejects a label or an id the SDK has. Say so and stop.
+Installing plugins system-wide, changing mmt-dpi itself and editing the
+generator are out of scope too.
 
 The CLI contract is [`docs/design/cli.md`](../../docs/design/cli.md) in this
 repository: the envelope (section 6), the exit codes (section 5) and the I/O
@@ -33,7 +41,8 @@ to turn a spec, a capture or a PDL model into `plugin.yaml` and packet tests.
 - A C compiler, `gcc` or `clang`.
 - The SDK profile: the newest entry of `result.sdk_profiles` in
   `mmt-plugin --json --version`, or the version of the SDK you build
-  against.
+  against. In an existing project, `<profile>` is the one its `plugin.yaml`
+  pins in `sdk.profile`.
 
 Without an SDK you can still run `validate` and `generate`. `build` and
 `test` need one. If you have no SDK, stop after `generate` and say in your
@@ -61,11 +70,12 @@ report that the plugin was not built or tested.
    code goes in `src/<label>_impl.c`.
 8. Change one thing per loop run when you can, so the next envelope shows
    whether the change worked.
-9. Never delete a packet test you wrote from the spec or that `scaffold`
-   wrote, and never change its expected values to what the plugin outputs.
-   It may follow a rename, or lose an attribute you also remove from
-   `plugin.yaml`. Only `init`'s placeholder `tests/<label>-basic.yaml` may
-   go.
+9. Never delete a packet test that was in the project before this
+   session, that you wrote from the spec or that `scaffold` wrote, and never
+   change its expected values to what the plugin outputs. It may follow a
+   rename, or lose an attribute you also remove from `plugin.yaml`. Only the
+   placeholder `tests/<label>-basic.yaml` that `init` wrote in this session
+   may go.
 10. Stop after 10 loop runs that are not green, or when the same `error.code`
    comes back at the same location twice after you changed it. Report what
    you tried and the last envelope.
@@ -128,6 +138,40 @@ Keep the label and the id you gave `init` in `plugin.yaml`:
 `src/<label>_impl.c` includes `<label>_mmt_plugin.h`, which `generate`
 names after the label.
 
+## Or: update an existing project
+
+When the user gives you an existing plugin project (a directory with
+`plugin.yaml`, `src/<label>_impl.c` and `tests/*.yaml`) and a change to make
+(a revision of the spec, fields to add, change or remove, or a new
+capture), skip Step 1. First check that `<project>` is a project whose model
+reads:
+
+<!-- eval:entry update -->
+```sh
+mmt-plugin -C <project> --json validate --no-sdk
+```
+
+`<profile>` is the project's pinned `sdk.profile`, not the newest one. Then,
+before you edit anything, run the loop (Step 3) once on the project as it
+is. If that run is not green, stop and report its envelope: a failure that
+was there before you is the user's to decide, and fixing it would mix with
+the change they asked for.
+
+Then make the change, as Step 2 and
+[`references/drafting.md`](references/drafting.md), "Updating an existing
+project", say:
+
+- Keep `protocol.label`, `protocol.id`, `sdk.profile` and `parents:` as
+  they are, unless the request changes them.
+- Keep every packet test the project has: they pin what the plugin already
+  does. Write the changed behaviour in new test files whose expected values
+  come from the revised spec, never from what the plugin outputs.
+- Never edit an existing test's bytes or expected values to match the
+  revision; only a rename or a removed field may follow in it (Rule 9).
+  When the revision contradicts an existing test (a value it expects, a
+  field it reads), stop and report the test and the passage of the spec:
+  the user decides which is right.
+
 ## Step 2: draft plugin.yaml and the packet tests
 
 Follow [`references/drafting.md`](references/drafting.md):
@@ -143,7 +187,8 @@ Follow [`references/drafting.md`](references/drafting.md):
   the same changes in the packet tests `scaffold` wrote.
 - Write a packet test for each example of the spec, with the values the
   spec gives, never the values the plugin outputs. Delete
-  `tests/<label>-basic.yaml` once it no longer describes the protocol.
+  `tests/<label>-basic.yaml` once it no longer describes the protocol, if
+  `init` wrote it in this session.
 
 ## Step 3: the loop
 
@@ -179,7 +224,7 @@ four: each one's envelope shows only its own stage.
 | 3 | model | Fix `plugin.yaml` or a packet test at each error's `location`. |
 | 4 | sdk | Fix the SDK prefix, the profile or the compiler; never the model. |
 | 5 | build | Fix `src/<label>_impl.c` at each error's `location` (`build.missing-hook`: add the hook its hint declares). |
-| 6 | test | For each failing packet, check the attribute, the expected and the actual value against the spec, then fix the model or the test, whichever is wrong. |
+| 6 | test | For each failing packet, check the attribute, the expected and the actual value against the spec, then fix the model or the test, whichever is wrong. A test that was in the project before this session is never edited: fix the model, or stop and report when the spec contradicts the test. |
 | 7 | state | A file on disk is not what the command needs. Read `error.code`: regenerate, or ask before `--force`. |
 | 130 | interrupted | Run the command again. |
 
@@ -197,6 +242,9 @@ The plugin is green when, in one loop run, all four commands exit 0 and
 Report:
 
 - the project directory, the label, the id and the parent;
+- for an update, what changed in `plugin.yaml` and which packet tests you
+  added, and that the label, the id, the profile and the parents are those
+  of the project (or what the request changed);
 - how many loop runs it took, and what each fix was (its `error.code` and
   `location`);
 - the last `test` summary;
@@ -205,15 +253,19 @@ Report:
 ## Evals
 
 `evals/` holds scripted runs of this skill: each case in `evals/cases/` is a
-starting point (a spec, a capture or a PDL model) and the drafts an agent
-makes, one per loop run. `evals/run_evals.py` runs the entry and loop
-commands of this file, as written above, on each case, and fails when an
-envelope breaks [`references/contract.md`](references/contract.md), when a
-loop run does not stop where the case expects, when a fix does not touch the
-location the envelope gave, or when a command reads stdin (each command
-gets an open pipe with no data and no terminal, and a time limit). With
-`--sdk`, it runs all four loop commands; without, it stops after
-`generate`.
+starting point (a spec, a capture, a PDL model, or an existing project and a
+revision of its spec) and the drafts an agent makes, one per loop run.
+`evals/run_evals.py` runs the entry and loop commands of this file, as
+written above, on each case, and fails when an envelope breaks
+[`references/contract.md`](references/contract.md), when a loop run does
+not stop where the case expects, when a fix does not touch the location the
+envelope gave, or when a command reads stdin (each command gets an open
+pipe with no data and no terminal, and a time limit). An
+update case (`telem-update`) starts from a copy of its project, runs the
+loop once on it, which must be green, and fails when the update changes the
+label, the id, the profile or the parents, deletes or rewrites a test the
+project had, or adds no packet test. With `--sdk`, it runs all four loop
+commands; without, it stops after `generate`.
 
 ```sh
 uv run python skills/mmt-plugin-author/evals/run_evals.py

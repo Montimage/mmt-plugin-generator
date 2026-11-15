@@ -4,7 +4,8 @@
 its JSON Schema, `src/mmt_plugin/schemas/model/v1/plugin.json`, is the
 reference. Packet tests are corpus schema 1 files,
 [`tests/corpus/README.md`](../../../tests/corpus/README.md), "Packet files".
-This page says how to get from each starting point to both.
+This page says how to get from each starting point to both, and how to
+change them in an existing project.
 
 ## From a protocol specification
 
@@ -152,3 +153,49 @@ pinned profile. Then:
    `tests/corpus/models/<name>/packets/`, has some for the Java tool's
    example models (`kind: example` in `tests/corpus/index.yaml`); change
    their `protocol` and `proto_id` to yours.
+
+## Updating an existing project
+
+The project's `plugin.yaml` and its packet tests describe what the plugin
+does today. An update changes the model and adds tests; it keeps
+`protocol.label`, `protocol.id`, `sdk.profile` and `parents:` unless the
+request changes them, and it keeps every test the project has.
+
+- **Add a field.** Write it as for a new protocol, at the offset and with
+  the type the revision gives; a field that only some messages carry goes
+  in an `if` on what tells them apart. The tests the project has do not list
+  it, and need no change.
+- **Change a field** (its offset, type or width). The tests that read it
+  expect the old layout. When the request says the old one was wrong, the
+  revision contradicts those tests: stop and report them, with the passage
+  of the spec, before you change the model.
+- **Remove a field.** Remove it from `plugin.yaml` and from each test that
+  lists it: a test may lose an attribute that the model also loses.
+- **Rename a field.** Rename it in `plugin.yaml` and in every test that
+  lists it, keeping its expected values.
+- **New behaviour gets new tests.** Write a test for each example the
+  revision adds, in a new file, `tests/<label>-<example>.yaml`, with an `id`
+  no other test of the project has, and the values the revision gives.
+  Never edit an existing test's bytes or expected values to match the
+  revision.
+
+From a new capture, never let `scaffold` write into the project: it would
+want to replace `plugin.proposed.yaml` and the `tests/<label>-pcap-<n>.yaml`
+of an earlier run. Scaffold into a scratch directory outside the project,
+reading the project's model for the label and the id:
+
+```sh
+mmt-plugin -C <scratch> --json scaffold --from-pcap <pcap> --parent <selector> --model <project>/plugin.yaml
+```
+
+It writes `<scratch>/plugin.proposed.yaml` and
+`<scratch>/tests/<label>-pcap-<n>.yaml`, and nothing in the project. Then:
+
+1. Compare the proposal with `plugin.yaml`, and fold the fields that are
+   new into `plugin.yaml` by hand, named after the spec.
+2. Copy the drafted tests you keep into `<project>/tests/`, under file
+   names and `id`s that no test of the project has (for example
+   `tests/<label>-pcap2-<n>.yaml` and `"<label>/pcap2-<n>"`), and make the
+   same renames and deletions in them as in the model.
+3. Never write over the project's `plugin.proposed.yaml` or its tests, and
+   never `--force` over a file you did not write.

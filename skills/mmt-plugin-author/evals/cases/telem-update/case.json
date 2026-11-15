@@ -1,0 +1,45 @@
+{
+  "id": "telem-update",
+  "summary": "Updating an existing project (project/, the green end of spec-telem) to revision 2 of its spec (spec-v2.md), which adds a status message: a misspelt attribute in a condition, then an off-by-one offset, each fixed in its own loop run; the label, id, profile, parents and existing packet tests are kept.",
+  "entry": "update",
+  "project": "project",
+  "input": "spec-v2.md",
+  "params": {"label": "telem", "id": "963", "selector": "udp:dport=5684"},
+  "runs": [
+    {
+      "note": "Before the runs, the loop ran once on the project as it is, green. Add the status report's battery field behind its msg_type, and a new packet test for example 3 of spec-v2.md; the existing tests stay as they are. The draft misspells msg_type and puts battery one byte too far.",
+      "edits": [
+        {
+          "replace": "plugin.yaml",
+          "old": "  - name: readings\n",
+          "new": "  - if: val(msgtype) == 3\n    then:\n      - {name: battery, type: MMT_U8_DATA, offset: 9}\n  - name: readings\n"
+        },
+        {"write": "tests/telem-status.yaml", "from": "telem-status.yaml"}
+      ],
+      "expect": {"stop": "validate", "exit_code": 3, "error_code": "model.unknown-attribute"}
+    },
+    {
+      "note": "model.unknown-attribute at the condition: the message suggests msg_type.",
+      "edits": [
+        {"replace": "plugin.yaml", "old": "val(msgtype) == 3", "new": "val(msg_type) == 3"}
+      ],
+      "expect": {
+        "stop": "test",
+        "exit_code": 6,
+        "error_code": "test.packet-failed",
+        "failures": {"telem/status": ["battery"]}
+      }
+    },
+    {
+      "note": "battery is absent: spec-v2.md puts it at offset 8, right after the 8-byte header, and a status report is 9 bytes long. Fix the model, not the test.",
+      "edits": [
+        {
+          "replace": "plugin.yaml",
+          "old": "{name: battery, type: MMT_U8_DATA, offset: 9}",
+          "new": "{name: battery, type: MMT_U8_DATA, offset: 8}"
+        }
+      ],
+      "expect": {"stop": null}
+    }
+  ]
+}

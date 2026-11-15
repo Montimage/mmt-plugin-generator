@@ -272,7 +272,8 @@ def test_bash_loads_without_running_the_tool_and_completes(
     got = dict(line.split("|", 1) for line in lines[1:])
     assert (
         got["mmt-plugin "]
-        == "init validate generate build test install uninstall doctor completion dummy tricky "
+        == "init import validate generate build test install uninstall doctor completion dummy"
+        " tricky "
     )
     assert got["mmt-plugin --js"] == "--json "
     assert got["mmt-plugin completion "] == "bash zsh fish "
@@ -394,8 +395,8 @@ def test_zsh_completes_commands_options_and_values(
     setup = tmp_path / "setup.zsh"
     setup.write_text(_ZSH_SETUP)
     expected = {
-        "mmt-plugin ": "build completion doctor dummy generate init install test tricky uninstall"
-        " validate",
+        "mmt-plugin ": "build completion doctor dummy generate import init install test tricky"
+        " uninstall validate",
         "mmt-plugin --js": "--json",
         "mmt-plugin completion ": "bash fish zsh",
         "mmt-plugin tricky --le": "--level",

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin import --json result, schema_version 1",
+  "description": "The result of import (docs/design/cli.md, section 6). Paths are relative to the project (-C) when inside it (POSIX separators), absolute otherwise. With --dry-run, or when the output is in the way, nothing is written and the action is would-*; an unchanged output is not rewritten.",
+  "type": "object",
+  "required": ["input", "output", "model_hash", "protocol", "offsets", "files", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "input": {"type": "string", "minLength": 1, "description": "The PDL v1 model read, or <stdin>."},
+    "output": {"type": "string", "minLength": 1, "description": "The plugin.yaml written (-o, default <project>/plugin.yaml)."},
+    "model_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The sha256 of the PDL v1 model as read."},
+    "protocol": {
+      "type": "object",
+      "required": ["label", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "description": "The model's label, as written."},
+        "id": {"type": "integer"}
+      }
+    },
+    "offsets": {"enum": ["absolute", "running"], "description": "absolute (the plugin.yaml default), or running when the model does not analyse because of a duplicate name the Java tool accepted (model.legacy-duplicate-name)."},
+    "files": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "action", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "action": {"enum": ["created", "updated", "unchanged", "would-create", "would-update"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The plugin.yaml as import writes it."}
+        }
+      }
+    },
+    "dry_run": {"type": "boolean"}
+  }
+}

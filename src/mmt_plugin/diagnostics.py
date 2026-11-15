@@ -201,6 +201,31 @@ CODES: Mapping[str, str] = MappingProxyType(
         "regular file; init does not replace it without --force (a directory, never)",
         "state.not-a-project": "init: --dir is not a directory, or is not empty and has no "
         "model.pdl; init writes into such a directory only with --force",
+        # `import` (mmt_plugin.commands.import_pdl, mmt_plugin.pluginyaml.convert, #25):
+        # constructs whose meaning relied on a Java bug (docs/plugin-yaml.md, From PDL v1).
+        "model.legacy-sdk-conflict": "warning: import: the protocol id or name is the SDK's, "
+        "which the Java tool accepted (bug 23) and generate refuses",
+        "model.legacy-duplicate-name": "warning: import: a name used twice, which the Java tool "
+        "accepted (a conditional attribute, bug 12, or a name differing in case, bug 16); "
+        "plugin.yaml keeps running offsets until it is renamed",
+        "model.legacy-bitfield-order": "warning: import: a bitfield run, now numbered from the "
+        "most significant bit, not in the C compiler's order as the Java tool declared it",
+        "model.legacy-bitfield-offset": "warning: import: a struct field after a bitfield line "
+        "(bug 2), or an aligned element after a struct with bitfields (bug 3), which the Java "
+        "tool placed further on",
+        "model.legacy-constant-folding": "warning: import: an offset, data_len or nextoffset "
+        "that the Java tool folded to a constant by its last operand (bug 5) but is not one, "
+        "or is another number",
+        "model.legacy-comparison": "warning: import: a folded offset, data_len or nextoffset "
+        "whose value changes because the Java tool read >, <, >= and <= as != (bug 6)",
+        "model.legacy-sizeof": "warning: import: sizeof of a C or MMT type that the Java tool "
+        "wrote into the C as sizeof(MMT_*), an enum constant's size, 4 (bug 7)",
+        "model.legacy-classifynext": "warning: import: classifynext without encapsulation = "
+        '"true", which the Java tool dropped (bug 21) and generate emits',
+        "model.legacy-ip-addr": "warning: import: an MMT_DATA_IP_ADDR whose offset or data_len "
+        "the Java tool did not fold, which it byte-swapped in network byte order (bug 25)",
+        "state.output-differs": "import: the output file exists with other content, or is not a "
+        "regular file; import does not replace it without --force (a directory, never)",
     }
 )
 

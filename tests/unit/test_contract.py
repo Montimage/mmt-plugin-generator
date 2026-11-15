@@ -14,7 +14,7 @@ later issue registers is checked without a new test:
 - ``--json`` output carries no ESC byte, even with ``FORCE_COLOR``.
 
 A command whose shortest successful run needs input files or values
-(``init`` an id, ``generate`` and ``validate`` a model, ``build``, ``test``,
+(``init`` an id, ``import``, ``generate`` and ``validate`` a model, ``build``, ``test``,
 ``install`` and ``doctor`` also an SDK and a compiler, ``uninstall`` and
 ``install`` a prefix) gets them from ``SETUP``. ``result.stats`` holds the only timings
 (section 6), so the two runs are compared without it. With zero real commands the loop
@@ -286,6 +286,14 @@ def _doctor_args(directory: Path) -> list[str]:
     return [*args, "--prefix", str(directory / "prefix")]
 
 
+def _import_args(directory: Path) -> list[str]:
+    # The contract model (no SDK conflict, no legacy construct: no warning)
+    # and --dry-run, so the run writes nothing and a second run prints the
+    # same envelope.
+    (directory / "model.pdl").write_text(CONTRACT_MODEL)
+    return ["model.pdl", "--dry-run"]
+
+
 def _init_args(directory: Path) -> list[str]:
     # A pinned profile and an explicit id (no SDK is looked for), a parent
     # (no warning) and --dry-run, so a second run prints the same envelope.
@@ -294,6 +302,7 @@ def _init_args(directory: Path) -> list[str]:
 
 SETUP: dict[str, Callable[[Path], list[str]]] = {
     "init": _init_args,
+    "import": _import_args,
     "generate": _generate_args,
     "validate": _validate_args,
     "build": _build_args,

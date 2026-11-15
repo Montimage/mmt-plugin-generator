@@ -235,7 +235,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 | Command | `result` |
 |---|---|
 | init | `project`, `files: [{path, action}]` (`created`/`unchanged`/`would-create`) (#23 adds `protocol`, `parent`, `profile`, `model`, `next`, `dry_run`, `files[].sha256`, and `updated`/`would-update` with `--force`) |
-| import | `input`, `output`, `model_hash`, `files: [{path, action}]` |
+| import | `input`, `output`, `model_hash`, `files: [{path, action}]` (#25 adds `protocol`, `offsets`, `dry_run`, `files[].sha256`) |
 | validate | `model`, `format` (`yaml`/`pdl`), `protocol: {label, name, id}`, `checks: [{id, status, detail}]` |
 | generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
 | build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` (#19 adds `model`, `profile`, `build_dir`, `ldflags`, `commands`, `dry_run`) |
@@ -465,6 +465,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | `init`: the project files, the default id | `mmt_plugin.commands.init` | #23 |
 | `install`, `uninstall`, the install manifest and prefix; `doctor` | `mmt_plugin.commands.install`, `mmt_plugin.manifest`, `mmt_plugin/schemas/install/v1/manifest.json`; `mmt_plugin.commands.doctor` | #21 |
 | `plugin.yaml`: the YAML subset, the JSON Schema and its validator, reading it into the typed model, writing a model as `plugin.yaml` | `mmt_plugin.pluginyaml`, `mmt_plugin/schemas/model/v1/plugin.json`; the format in [`docs/plugin-yaml.md`](../plugin-yaml.md) | #24 |
+| `import`: converting PDL v1 to `plugin.yaml`, the `model.legacy-*` warnings | `mmt_plugin.commands.import_pdl`, `mmt_plugin.pluginyaml.convert` | #25 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 
 Details fixed by #43 where section 6 or 7 leaves a choice:
@@ -547,3 +548,12 @@ Details fixed by #24 where sections 4, 6 and 9 leave a choice:
 - `parents` names each parent by its registered name. One with `classify` (byte matches on the parent's header and this protocol's offset in it, optional `weight`, default 5) is attached by the generated init, with a generated classification function, and must be a protocol of the SDK profile (`model.unknown-parent` otherwise); the others are attached in `<label>_hook_register_parents`, and `validate` checks them all (`parents-exist`).
 - `mmt-plugin` reads `plugin.yaml` without a YAML library: a subset of YAML (block mappings and sequences, one-line flow collections of scalars, plain and quoted scalars, comments), whose scalars every YAML 1.1 and 1.2 reader resolves the same way. Text outside it is `model.yaml-syntax`; a document that does not follow the schema is `model.schema`, one diagnostic per violation at the offending node's line and column, checked by the package's validator of the schema's keywords (a test checks that `jsonschema` agrees); an expression is parsed as PDL v1 at its place in the YAML (`model.syntax.*`). All are exit 3, and `model.unsupported-format` is gone.
 - `sdk.profile` pins the profile below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE` (`context.sdk.profile_source` `plugin.yaml`); one that is not bundled is `sdk.profile-not-found` (exit 4). `validate`'s `schema` check reports `<model>, schema 1`. Every command that reads a model (`generate`, `validate`, `build`, `test`, `install`, `doctor`) reads both formats into the same typed model, so a model generates the same C from either; the generated files say "from the protocol model".
+
+Details fixed by #25 where sections 4, 5, 6 and 8 leave a choice:
+
+- `import PDL` reads a PDL v1 file or `-` (stdin, `<stdin>` in diagnostics) and writes `-o FILE`, by default `<project>/plugin.yaml`, as `mmt_plugin.pluginyaml.dumps` writes it: absolute offsets, no `sdk.profile`. It needs no SDK: the model is analysed against the newest bundled profile (`context.sdk.profile_source` `default`, with no `sdk.profile-default` warning, since nothing is generated or pinned), so it has no `--sdk-profile` and no exit 4. To pin a profile, add `sdk.profile` to the file it writes.
+- Every construct whose meaning relied on a Java bug is a warning, `model.legacy-*` (the table in [`docs/plugin-yaml.md`](../plugin-yaml.md), "From PDL v1"). An SDK id or name conflict (`model.id-taken`, `model.name-taken`, errors for `generate`) is `model.legacy-sdk-conflict`, so the plugins of `plugins/` import. A duplicate name the Java tool accepted (a conditional attribute, or a name differing only in case) is `model.legacy-duplicate-name`; the analysis cannot place the attributes then, so the model is written with `offsets: running` (`result.offsets`). Any other model error is exit 3 with nothing written. `model.default-scope` is not reported: an omitted `scope` is packet in `plugin.yaml`.
+- `--strict` fails before anything is written, with the code of the first warning (all `model.*`, exit 3).
+- An output with the same bytes is `unchanged` and not rewritten. One with other content, or a symbolic link, is `state.output-differs` (exit 7, nothing written) unless `--force` replaces it (`updated`); a directory is exit 7 even with `--force`. `--dry-run` reports `would-create`/`would-update`.
+- `-o -` prints the YAML as is on stdout (`result.output` `-`, `files` empty), and is `usage.conflicting-options` (exit 2) with `--json`. `result.model_hash` is the sha256 of the PDL v1 input; `files[].sha256` is the `plugin.yaml`'s.
+- Every corpus model that the PDL v1 parser reads imports, and `generate` gives the same header and source from it and from its `plugin.yaml` (`tests/unit/importpdl/test_corpus.py`); ethernet and mongodb have PDL v1 syntax errors and do not import.

@@ -5,6 +5,18 @@ All notable changes to `mmt-plugin` are recorded here. The format follows
 uses [semantic versioning](https://semver.org/) for its command line, its
 `--json` contract and its model format.
 
+## [Unreleased]
+
+### Changed
+
+- The build and test container (and so the release image) installs
+  pkg-config, and its build fails unless pkg-config finds mmt-dpi at the
+  package's version, with its headers where `mmt-dpi.pc` says. CI's
+  runner-based NDN job is gone: the container job, `make test-container` on
+  amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
+  `skills/` and the C templates in `src/`, and a unit test fails when a
+  tracked C source or C template lies outside the directories it scans (#42).
+
 ## [0.1.0] - 2026-11-15
 
 The first release of the Python generator, `mmt-plugin`. It replaces the
@@ -103,4 +115,5 @@ plugin, from a new project to a plugin that mmt-dpi loads:
   project (#31). The frozen Java output the parity test reads is kept in
   `tests/java-output/`.
 
+[Unreleased]: https://github.com/Montimage/mmt-plugin-generator/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Montimage/mmt-plugin-generator/releases/tag/v0.1.0

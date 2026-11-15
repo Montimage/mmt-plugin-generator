@@ -41,7 +41,13 @@ protocol model. A Python rewrite is planned in
   --sanitize` on each one, then each parent's classification broken, which
   fails only the run through it; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
-- `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
+- `tests/check_ndn_plugin.sh`: builds and loads the NDN example, and scans
+  the directories of its `SCAN_DIRS` for the macros mmt-dpi 1.10.0 made
+  private. Any new directory of maintained C sources or C templates
+  (`*.c`, `*.h`, `*.c.j2`, `*.h.j2`) must be added to `SCAN_DIRS`;
+  `tests/unit/test_ndn_check.py` fails until it is, and also pins how CI
+  runs the check (the `container` job, `make test-container`, the image's
+  pkg-config check).
 - `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example
   models plus
   targeted per-construct models, each with packet fixtures whose expected
@@ -53,7 +59,9 @@ protocol model. A Python rewrite is planned in
 - `Dockerfile`, `Makefile`: the pinned build and test container (T0.3):
   ubuntu:24.04 by digest, gcc, clang, Python 3.12 and the verified mmt-dpi
   v1.10.2 `.deb`. `make test-container` builds it (stage `toolchain`, the
-  default target `test`) and runs the NDN check. The target `release`
+  default target `test`) and runs the NDN check. The image build fails
+  unless pkg-config finds mmt-dpi at the package's version (its
+  `mmt-dpi.pc`), with the headers where it says. The target `release`
   (T5.3) adds a released wheel to it (`--build-arg WHEEL=<file in dist/>`,
   dependencies from `uv.lock` with hashes, in `/opt/mmt-plugin`);
   `make release-image` builds this checkout's.
@@ -362,9 +370,9 @@ protocol model. A Python rewrite is planned in
   blocks (`uv tool install`, into the sandbox) run only with
   `MMT_DOCS_INSTALL=1`. When you change a command, update the docs' blocks.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
-  Runs shellcheck on every tracked `*.sh`, the corpus validator,
-  `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
-  (amd64 and arm64), `make test-container` on both arches, the Python
+  Runs shellcheck on every tracked `*.sh`, the corpus validator, the NDN
+  check (the `container` job: `make test-container` on amd64 and arm64,
+  the only job that runs `check_ndn_plugin.sh`), the Python
   checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
   fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
   instead of skipping), the SDK profile header check (amd64 and arm64), and

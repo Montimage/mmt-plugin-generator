@@ -19,8 +19,10 @@
 # - apt packages: not pinned to exact versions. Ubuntu drops superseded
 #   versions from noble-updates and noble-security, so exact pins stop
 #   resolving, and snapshot.ubuntu.com does not serve ubuntu-ports (arm64).
-#   The build fails if the gcc, clang or Python major version changes, and
-#   lists every installed package version in /usr/share/doc/mmt-test-image.
+#   The build fails if the gcc, clang or Python major version changes, or
+#   if pkg-config cannot find mmt-dpi at the package's version (a broken
+#   mmt-dpi.pc), and lists every installed package version in
+#   /usr/share/doc/mmt-test-image.
 FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 AS toolchain
 
 ARG MMT_DPI_TAG=v1.10.2
@@ -30,7 +32,7 @@ ARG MMT_DPI_SHA256SUMS_SHA256=
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates clang curl gcc jq libc6-dev make python3 \
+        ca-certificates clang curl gcc jq libc6-dev make pkg-config python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tests/fetch_mmt_dpi_package.sh /tmp/fetch_mmt_dpi_package.sh
@@ -53,10 +55,15 @@ RUN fail() { echo "FAIL: $*" >&2; exit 1; }; \
     [ "$py" = 3.12 ] || fail "python3 is $py, expected 3.12"; \
     case "$mmt" in "${MMT_DPI_TAG#v}" | "${MMT_DPI_TAG#v}"-*) ;; \
         *) fail "mmt-dpi is $mmt, expected ${MMT_DPI_TAG#v}" ;; esac; \
+    pkg-config --exists mmt-dpi || fail "pkg-config cannot find mmt-dpi"; \
+    pc="$(pkg-config --modversion mmt-dpi)" || fail "pkg-config cannot read the mmt-dpi version"; \
+    [ "$pc" = "${MMT_DPI_TAG#v}" ] || fail "pkg-config reports mmt-dpi $pc, expected ${MMT_DPI_TAG#v}"; \
+    pcinc="$(pkg-config --variable=includedir mmt-dpi)" || fail "pkg-config cannot read the mmt-dpi includedir"; \
+    [ -f "$pcinc/mmt_log.h" ] || fail "pkg-config's mmt-dpi includedir $pcinc has no mmt_log.h"; \
     mkdir -p /usr/share/doc/mmt-test-image \
     && dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' \
         > /usr/share/doc/mmt-test-image/packages.txt \
-    && echo "gcc $gcc, clang $clang, python3 $py, mmt-dpi $mmt ($(dpkg --print-architecture))"
+    && echo "gcc $gcc, clang $clang, python3 $py, mmt-dpi $mmt (pkg-config $pc, $(dpkg --print-architecture))"
 
 ENV MMT_BASE=/opt/mmt
 WORKDIR /src

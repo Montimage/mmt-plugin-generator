@@ -14,7 +14,7 @@
  *   2 for the server's answer, with `status_code`, `accept` and
  *   `subprotocol` (the one the server selected). Header field names compare
  *   case-insensitively (RFC 7230 section 3.2), values without their
- *   surrounding spaces and tabs, at most 64 bytes, the first field of each
+ *   surrounding spaces and tabs, at most 63 bytes, the first field of each
  *   name. The segment that starts the message reports the fields it has; an
  *   answer's header block that goes on in later segments reports nothing
  *   there, but its Sec-WebSocket-Protocol still becomes the session's (a
@@ -74,7 +74,7 @@
 
 #include "websocket_example_mmt_plugin.h"
 
-#define WS_TEXT 64       /* the bytes of an MMT_STRING_DATA value */
+#define WS_TEXT 63       /* the bytes of an MMT_STRING_DATA value, before its NUL */
 #define WS_HEADER_MAX 14 /* 2, 8 of extended length, 4 of masking key */
 
 enum ws_kind { WS_KIND_NONE, WS_KIND_REQUEST, WS_KIND_ANSWER };
@@ -852,12 +852,17 @@ static int ws_u32(attribute_t *extracted_data, uint32_t value)
 static int ws_text_out(attribute_t *extracted_data, const struct ws_text *text)
 {
     mmt_binary_data_t *out = extracted_data->data;
+    size_t n;
 
     if (!text->present) {
         return 0;
     }
-    out->len = text->len;
-    memcpy(out->data, text->data, text->len);
+    /* As the generated code fills MMT_STRING_DATA: at most
+       sizeof(data) - 1 bytes, then a NUL, so a C string reader is safe. */
+    n = text->len < sizeof(out->data) - 1 ? text->len : sizeof(out->data) - 1;
+    memcpy(out->data, text->data, n);
+    out->data[n] = '\0';
+    out->len = (uint32_t)n;
     return 1;
 }
 

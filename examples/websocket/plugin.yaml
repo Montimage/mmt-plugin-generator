@@ -14,7 +14,7 @@ sdk:
 parents:
   - protocol: tcp    # any port, after an HTTP Upgrade: websocket_example_hook_register_parents
 attributes:
-  # The first frame whose header starts in the segment (RFC 6455 section 5.2).
+  # The first frame whose header ends in the segment (RFC 6455 section 5.2).
   - name: fin
     type: MMT_U8_DATA
   - name: rsv1
@@ -40,7 +40,7 @@ attributes:
   - name: message_opcode
     type: MMT_U8_DATA       # the opcode of the message a continuation frame belongs to
   - name: frame_count
-    type: MMT_U32_DATA      # frames whose header starts in the segment
+    type: MMT_U32_DATA      # frames whose header ends in the segment
   - name: carried_len
     type: MMT_U32_DATA      # bytes of a frame begun in an earlier segment
   # The opening handshake (RFC 6455 section 4).

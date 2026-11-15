@@ -15,19 +15,19 @@ also on a usage error, and nothing else. The skill reads these keys:
 | Key | What it is | How the skill uses it |
 |---|---|---|
 | `schema_version` | `1` | Anything else is a CLI this skill does not know: stop. |
-| `command` | the command that ran, or `null` on a usage error | Check that it is the command you ran. |
+| `command` | the command that ran, or `null` on a usage error the argument parser caught | Check that it is the command you ran; `null` only with exit 2. |
 | `ok` | `exit_code == 0` | |
 | `exit_code` | the process exit code | Its class decides what to fix (table below). |
 | `error` | `null` when `ok`; else `class`, `code`, `message`, `hint` | `error.code` picks the fix (table below); `hint` often names it. |
 | `diagnostics[]` | every error, warning and note, sorted by file, line, column | Fix each `severity: "error"` entry. Read the warnings. |
 | `diagnostics[].code` | a stable dotted code whose first part is the class | Decide from it, never from `message`. |
-| `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project; `line` and `column` are 1-based and may be `null` (a whole file). Edit there. |
+| `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project inside it, absolute outside it (a `build.cc` error or note in an SDK header); `line` and `column` are 1-based and may be `null` (a whole file). Edit there, unless `file` is outside the project. |
 | `diagnostics[].hint` | one line on how to fix it, or `null` | |
 | `diagnostics[].related[]` | other places (`"first defined here"`) | |
 | `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`). |
 
 Keys not listed here may be added; ignore them. Paths in the envelope are
-relative to the project (`-C`).
+relative to the project (`-C`) when inside it, absolute otherwise.
 
 Rules the skill relies on:
 
@@ -39,7 +39,7 @@ Rules the skill relies on:
   loop again is always safe.
 
 Where the fix goes: at the `location` of each error, the line when it has
-one, else the file. Two codes name a file whose fix is often elsewhere:
+one, else the file. Three cases name a file whose fix is often elsewhere:
 
 - `test.packet-failed` is located at the packet test, without a line. Its
   fix is usually in `plugin.yaml`, at the attribute that
@@ -48,6 +48,9 @@ one, else the file. Two codes name a file whose fix is often elsewhere:
   value, never to match what the plugin outputs.
 - `build.missing-hook` is located at `src/<label>_impl.c`, without a line:
   add the function there, with the declaration of the hint.
+- A `build.cc` error at an absolute path is in a file outside the project,
+  an SDK header: never edit it. Its cause is in the file that includes it,
+  `src/<label>_impl.c`, or in `plugin.yaml` when that is `generated/`.
 
 ## Exit codes
 
@@ -132,7 +135,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.bad-pcap` | The capture cannot be read: ask for another one. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
 | `build.cc` | One compiler message: fix the source at its location. |
-| `build.compile-failed` | Fix the `build.cc` errors in `src/<label>_impl.c`; an error in `generated/` comes from the model. |
+| `build.compile-failed` | Fix the `build.cc` errors in `src/<label>_impl.c`; an error in `generated/` comes from the model. A failure with no located `build.cc` error (a fatal compiler error, an object that is not ELF) is the toolchain or the SDK: check `--cc` and `--sdk`. |
 | `build.link-failed` | An undefined symbol: user code may call `libmmt_core` functions only. |
 | `build.missing-hook` | Add the hook to `src/<label>_impl.c` with the declaration the hint gives, returning 0. |
 | `build.harness-failed` | The test harness does not compile against the SDK: check the SDK prefix and the compiler, then report. |

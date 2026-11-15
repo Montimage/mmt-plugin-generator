@@ -391,6 +391,8 @@ def test_the_harness_source_names_the_protocol_and_the_attributes() -> None:
     assert "#define HARNESS_ATTRIBUTES 2" in text
     assert "!= 0x88" in text and "!= 0xb5" in text
     assert "#define HARNESS_RECORD_FRAME 1" in text
+    # Its own attachment never classifies a whole frame (a run through the parent).
+    assert "if (harness_whole_frame\n" in text
     assert '{MMT_U8_DATA, "MMT_U8_DATA"},' in text
     assert "register_classification_function_with_parent_protocol(PROTO_ETHERNET" in text
     for header in ("plugin_defs.h", "types_defs.h", "tcpip/mmt_tcpip.h", "mmt_core.h"):

@@ -185,6 +185,26 @@ def test_a_deliberately_broken_model_fails_with_the_attribute_and_both_values(
     ]
 
 
+def test_the_harness_attachment_never_classifies_a_run_through_the_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The scaffold attaches no parent, so a frame of the harness's own
+    # EtherType (0x88b5) must not be classified: only the plugin's parent
+    # classification may classify a run through it.
+    project = _project("pdl_scopes", tmp_path)
+    (path,) = (project / "tests").glob("*.yaml")
+    text = path.read_text()
+    path.write_text(text.replace("bytes:", 'through: "ethernet:ethertype=0x88b5"\nbytes:', 1))
+    code, doc = _test(project, monkeypatch, capsys)
+    assert code == 6, doc["error"]
+    plain, through = doc["result"]["packets"]
+    assert plain["status"] == "pass" and "through" not in plain
+    assert through["through"] == "ethernet:ethertype=0x88b5"
+    assert [(f["attribute"], f["actual"]) for f in through["failures"]] == [
+        ("<protocol>", "not classified")
+    ]
+
+
 def test_user_code_that_reads_past_the_packet_crashes_under_the_sanitizers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

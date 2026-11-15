@@ -352,6 +352,63 @@ def test_a_parent_the_user_code_does_not_attach_fails(tmp_path: Path) -> None:
     )
 
 
+def commented_label_and_id(case: dict[str, Any]) -> None:
+    """Give the label and id lines of ``pdl-rfc1006`` trailing comments, as
+    ``references/drafting.md``'s template writes them."""
+    for run_ in case["runs"]:
+        for edit in run_["edits"]:
+            if edit.get("new") == "  label: rfc1006\n":
+                edit["new"] = "  label: rfc1006   # mmtp_rfc1006.so\n"
+            elif edit.get("new") == "  id: 962\n":
+                edit["new"] = "  id: 962          # 950-999\n"
+
+
+def test_a_commented_label_and_id_still_pass(tmp_path: Path) -> None:
+    result = run(copy_case(tmp_path, "pdl-rfc1006", commented_label_and_id), tmp_path)
+    assert result.ok, result.problems
+    model = (tmp_path / "work" / "rfc1006" / "plugin.yaml").read_text("utf-8")
+    assert "  label: rfc1006   # mmtp_rfc1006.so\n" in model
+    assert "  id: 962          # 950-999\n" in model
+
+
+def test_a_commented_label_does_not_skip_the_parent_check(tmp_path: Path) -> None:
+    """A trailing comment on the label line must not hide an unattached parent."""
+
+    def change(case: dict[str, Any]) -> None:
+        commented_label_and_id(case)
+        for run_ in case["runs"]:
+            run_["edits"] = [e for e in run_["edits"] if e.get("write") != "src/rfc1006_impl.c"]
+
+    result = run(copy_case(tmp_path, "pdl-rfc1006", change), tmp_path)
+    assert not result.ok
+    assert (
+        "green: the parent tcp has no classify, and src/rfc1006_impl.c does not attach the "
+        "protocol to it" in result.problems
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "label"),
+    [
+        ("  label: telem\n", "telem"),
+        ('  label: "telem"   # quoted\n', "telem"),
+        ("  label: 'telem'\n", "telem"),
+        ("  label: telem           # mmtp_telem.so; registered name TELEM\n", "telem"),
+        ("  label: telem#x\n", None),
+        ("  label: \"telem'\n", None),
+    ],
+)
+def test_the_label_line_may_carry_a_comment(line: str, label: str | None) -> None:
+    found = run_evals._LABEL.search("protocol:\n" + line + "  id: 963   # 950-999\n")
+    assert (found.group(2) if found else None) == label
+    assert run_evals._ID.search("protocol:\n" + line + "  id: 963   # 950-999\n")
+
+
+def test_hook_parents_reads_a_commented_parents_line() -> None:
+    model = "schema: 1\nparents:   # attached by the hook\n  - protocol: tcp\n"
+    assert run_evals._hook_parents(model) == ["tcp"]
+
+
 def test_hook_parents_reads_the_parents_without_classify() -> None:
     model = (
         "schema: 1\nparents:\n  - protocol: udp\n    classify:\n      match: []\n"

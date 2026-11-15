@@ -144,6 +144,11 @@ _PLACEHOLDER = re.compile(r"<([a-z]+)>")
 _ROW = re.compile(r"^\|(.*)\|\s*$")
 _TEST_NAME = re.compile(r'^\s*- name: "?([A-Za-z_][A-Za-z0-9_]*)"?\s*$')
 _TEST_VALUE = re.compile(r"^\s*value: (.*?)\s*$")
+# The end of a ``plugin.yaml`` line: an optional comment, then spaces.
+_EOL = r"(?:[ \t]+#[^\n]*)?[ \t]*$"
+_LABEL = re.compile(rf"^  label: ([\"']?)([a-z][a-z0-9_]*)\1{_EOL}", re.M)
+_ID = re.compile(rf"^  id: (\d+){_EOL}", re.M)
+_PARENTS = re.compile(rf"^parents:{_EOL}\n", re.M)
 
 
 class EvalError(Exception):
@@ -652,7 +657,7 @@ def _test_rewrites(before: str, after: str, model_names: set[str]) -> list[str]:
 def _hook_parents(model: str) -> list[str]:
     """The parents of a ``plugin.yaml`` without ``classify``: those that
     ``<label>_hook_register_parents`` must attach."""
-    block = re.search(r"^parents:\n((?:  .*\n|\s*\n)*)", model, re.M)
+    block = re.search(_PARENTS.pattern + r"((?:  .*\n|\s*\n)*)", model, re.M)
     if not block:
         return []
     entries = re.split(r"^  - ", block.group(1), flags=re.M)[1:]
@@ -852,11 +857,14 @@ class _Runner:
         problems = self.result.problems
         if 'profile: "' not in model:
             problems.append("green: plugin.yaml pins no sdk.profile")
-        if not re.search(r"^parents:\n  - protocol: ", model, re.M):
+        if not re.search(_PARENTS.pattern + r"  - protocol: ", model, re.M):
             problems.append("green: plugin.yaml declares no parent")
-        label = re.search(r"^  label: \"?([a-z][a-z0-9_]*)\"?$", model, re.M)
-        if label:
-            impl = self.project / "src" / f"{label.group(1)}_impl.c"
+        found = _LABEL.search(model)
+        label = found.group(2) if found else None
+        if label is None:
+            problems.append("green: cannot read protocol.label from plugin.yaml")
+        else:
+            impl = self.project / "src" / f"{label}_impl.c"
             code = _strip_c_comments(impl.read_text("utf-8")) if impl.is_file() else ""
             for parent in _hook_parents(model):
                 if f"PROTO_{parent.upper()}" not in code:
@@ -864,7 +872,10 @@ class _Runner:
                         f"green: the parent {parent} has no classify, and "
                         f"src/{impl.name} does not attach the protocol to it"
                     )
-        ident = re.search(r"^  id: (\d+)$", model, re.M)
+        found = _ID.search(model)
+        ident = found.group(1) if found else None
+        if ident is None:
+            problems.append("green: cannot read protocol.id from plugin.yaml")
         names = _model_names(model)
         for path in sorted(self.project.glob("tests/*.yaml")):
             text = path.read_text("utf-8")
@@ -872,10 +883,10 @@ class _Runner:
             want_names, _ = _test_values(text)
             if missing := set(want_names) - names:
                 problems.append(f"green: {rel} expects {sorted(missing)}, not in plugin.yaml")
-            if label and f'protocol: "{label.group(1).upper()}"' not in text:
-                problems.append(f"green: {rel} does not expect the protocol {label.group(1)}")
-            if ident and f"proto_id: {ident.group(1)}\n" not in text:
-                problems.append(f"green: {rel} does not expect the id {ident.group(1)}")
+            if label and f'protocol: "{label.upper()}"' not in text:
+                problems.append(f"green: {rel} does not expect the protocol {label}")
+            if ident and f"proto_id: {ident}\n" not in text:
+                problems.append(f"green: {rel} does not expect the id {ident}")
         if self.sdk is None:
             return
         by_command = {s.command: s.envelope or {} for s in steps}

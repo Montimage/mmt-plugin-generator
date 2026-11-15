@@ -21,8 +21,12 @@ name: Release
 # - attest the assets' provenance (actions/attest: SLSA build provenance,
 #   signed with Sigstore, stored by GitHub) and create the GitHub release;
 # - push the image to ghcr.io/montimage/mmt-plugin and attest its digest;
-# - upload the wheel and the sdist to PyPI with trusted publishing (PEP 740
-#   attestations), once the repository variable PYPI_PUBLISH is 'true'.
+# - upload the wheel and the sdist to PyPI with `uv publish` and trusted
+#   publishing (OIDC, no token), once the repository variable PYPI_PUBLISH
+#   is 'true'.
+#
+# The repository allows only GitHub-owned actions (Settings, Actions), so
+# every other tool (uv, docker, gh) is a pinned download or on the runner.
 
 on:
   pull_request:
@@ -390,21 +394,30 @@ jobs:
     permissions:
       id-token: write
     steps:
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/uv" --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
           path: ${{ runner.temp }}/release
-      - name: Keep the wheel and the sdist
-        # The action uploads every file of packages-dir, which must be under
-        # the workspace (it runs in a container).
+      - name: Upload the wheel and the sdist
+        # Trusted publishing: uv trades the job's OIDC token for a
+        # short-lived PyPI token. --check-url skips a file PyPI already has
+        # with the same hash, so a re-run after a partial upload is safe.
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          (cd "$RUNNER_TEMP/release" && sha256sum -c SHA256SUMS)
-          mkdir -p dist
-          cp "$RUNNER_TEMP/release/mmt_plugin-$VERSION-py3-none-any.whl" \
-            "$RUNNER_TEMP/release/mmt_plugin-$VERSION.tar.gz" dist/
-          ls -l dist
-      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
-        with:
-          packages-dir: dist/
+          cd "$RUNNER_TEMP/release"
+          sha256sum -c SHA256SUMS
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/ \
+            "mmt_plugin-$VERSION-py3-none-any.whl" "mmt_plugin-$VERSION.tar.gz"

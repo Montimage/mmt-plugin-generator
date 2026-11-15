@@ -95,9 +95,13 @@ After `build`, `verify`, `container` and `image-dry-run` pass on that tag:
   multi-arch tag `V` (and `latest` for a final version) and attests the
   image's digest, the attestation pushed to the registry next to it.
 - `publish-pypi`, only when the repository variable `PYPI_PUBLISH` is
-  `true`, uploads the wheel and the sdist with trusted publishing, which
-  adds PEP 740 attestations. It runs last because PyPI never accepts the
-  same version twice.
+  `true`, uploads the wheel and the sdist with `uv publish` and trusted
+  publishing (OIDC, no token). It runs last because PyPI never accepts the
+  same version twice. Their provenance is the GitHub attestation of the
+  same files (`gh attestation verify` works on a wheel downloaded from
+  PyPI). The repository allows only GitHub-owned actions, so the workflow
+  uses `uv publish` rather than `pypa/gh-action-pypi-publish`; allowing
+  that action would also add PEP 740 attestations on PyPI.
 
 `tests/unit/release/test_workflow.py` checks that only these three jobs hold
 write permissions and that each of them runs only on a tag push.

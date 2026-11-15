@@ -246,6 +246,22 @@ def test_every_action_is_pinned_by_commit_sha(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", sorted(WORKFLOWS.glob("*.yml")), ids=lambda p: p.name)
+def test_every_action_is_github_owned(path: Path) -> None:
+    """The repository's Actions policy allows only GitHub-owned actions: any
+    other one fails the whole workflow at startup."""
+    uses = re.findall(r"^\s*(?:- )?uses: ([^@\s]+)@", path.read_text(encoding="utf-8"), re.M)
+    assert uses
+    for action in uses:
+        assert action.split("/", 1)[0] in {"actions", "github"}, action
+
+
+def test_pypi_uses_trusted_publishing() -> None:
+    job = _jobs()["publish-pypi"]
+    assert "uv publish --trusted-publishing always" in job
+    assert "secrets." not in job
+
+
+@pytest.mark.parametrize("path", sorted(WORKFLOWS.glob("*.yml")), ids=lambda p: p.name)
 def test_no_checkout_keeps_its_credentials(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     checkouts = re.findall(r"uses: actions/checkout@\S+.*\n((?:\s+.*\n){0,4})", text)

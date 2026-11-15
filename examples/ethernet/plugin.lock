@@ -2,7 +2,7 @@
   "lock_version": 1,
   "generator": {
     "name": "mmt-plugin",
-    "version": "0.1.0.dev0"
+    "version": "0.1.0"
   },
   "sdk_profile": "1.10.2",
   "model": {

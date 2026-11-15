@@ -1,6 +1,6 @@
 [project]
 name = "mmt-plugin"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Generate, build and test mmt-dpi protocol plugins from a protocol model."
 requires-python = ">=3.10"
 authors = [{ name = "Montimage" }]

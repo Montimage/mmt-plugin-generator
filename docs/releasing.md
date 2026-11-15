@@ -147,7 +147,12 @@ No secret is needed: the workflow uses its `GITHUB_TOKEN` and OIDC.
    ```
 
    `uv version` updates `pyproject.toml` and `uv.lock`; the examples change
-   only in `plugin.lock`. Open the PR against `dev`.
+   only in `plugin.lock`. Run `uv version` with the uv that CI pins
+   (`UV_VERSION` in `.github/workflows/release.yml`): a newer uv may also
+   raise the `revision` of `uv.lock`. Add the release's section to
+   [`CHANGELOG.md`](../CHANGELOG.md), then open the PR against `dev`.
+   A final version on `dev` keeps the dry run green: it checks the tag
+   against the tip of `main`, where a final release is tagged.
 2. Open the release PR from `dev` to `main` (T5.5); its CI runs the dry run.
 3. Once it is merged, tag the merge commit on `main` and push the tag:
 

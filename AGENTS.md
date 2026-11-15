@@ -72,7 +72,8 @@ protocol model. A Python rewrite is planned in
   `test_release_tag.py` the tag rules. Never push a tag, create a release
   or run the workflow to publish without the maintainer's explicit OK. A
   version bump (`uv version V`) makes every example stale: regenerate them
-  in the same change (`examples/README.md`).
+  in the same change (`examples/README.md`), with CI's pinned uv, and add
+  the release's section to `CHANGELOG.md` (Keep a Changelog).
 - `pyproject.toml`, `uv.lock`, `src/`, `tests/unit/`: the Python rewrite
   (T1.1 onwards). The package `mmt_plugin` is in `src/mmt_plugin/` (uv_build's
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI

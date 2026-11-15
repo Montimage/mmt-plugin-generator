@@ -264,7 +264,21 @@ expect:
   next:
     kind: "none"
   attributes:
-    - {name: "version", type: "MMT_U8_DATA", offset: 0, length: 1, value: 1}
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 4
 ```
 
 Take the expected values from the protocol's specification, not from what

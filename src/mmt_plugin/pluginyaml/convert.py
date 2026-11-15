@@ -17,8 +17,10 @@ and what mmt-plugin does instead (``docs/behaviour-changes.md``):
   order;
 - ``model.legacy-bitfield-offset`` (bugs 2 and 3): a line of a struct that
   starts with a plain field after a line that ends with a bitfield, or an
-  aligned element after a struct with bitfields, which the Java tool placed
-  further on;
+  aligned element after a struct with bitfields that the Java tool's running
+  offset passed by another amount than the struct's size (it added each
+  field's type length, a bitfield's included), which the Java tool placed
+  elsewhere;
 - ``model.legacy-constant-folding`` (bug 5): an offset, data_len or
   nextoffset that the Java tool folded to a constant (its last operand is a
   literal or ``ntohs``/``ntohl``, and it is no comparison) but is not one, or
@@ -382,8 +384,48 @@ def _bitfields(model: pdl.Model) -> Iterator[Diagnostic]:
                 )
 
 
+def _java_increment(struct: sem.AnalysedStruct) -> int | None:
+    """What the Java tool added to its running offset for ``struct``: each
+    field's type length, a bitfield's included (G:276-282, bug 3); ``None``
+    when a field is a nested struct, whose length it took from a line number
+    (bug 8)."""
+    total = 0
+    for f in struct.fields:
+        if f.kind is sem.FieldKind.STRUCT:
+            return None
+        if f.kind is sem.FieldKind.POINTER:
+            total += _JAVA_MMT_LENGTHS["MMT_DATA_POINTER"]
+        else:
+            total += _JAVA_MMT_LENGTHS.get(f.data_type.value, 0)
+    return total
+
+
+def _bytes(n: int) -> str:
+    return f"{n} byte" if n == 1 else f"{n} bytes"
+
+
 def _running_offset(analysed: sem.AnalysedModel) -> Iterator[Diagnostic]:
-    """An aligned element after an aligned struct with bitfields (bug 3)."""
+    """An aligned element after an aligned struct with bitfields that the
+    Java tool advanced its running offset past by another amount than the
+    struct's size (bug 3): a run of one field is counted right."""
+
+    def why(s: sem.AnalysedStruct, name: str) -> str:
+        java = _java_increment(s)
+        if java is None:
+            return (
+                f"`{name}` is placed by the running offset after struct `{s.name}`, which"
+                " the Java tool advanced by each field's type length (a bitfield's at its"
+                " type's full width), counting a line number for a nested struct (bug 8),"
+                f" so it placed `{name}` elsewhere (bug 3)"
+            )
+        diff = java - s.size
+        where = "further on" if diff > 0 else "earlier"
+        return (
+            f"`{name}` is placed by the running offset after struct `{s.name}`: the Java tool"
+            " added each field's type length, a bitfield's at its type's full width, and"
+            f" advanced that offset by {_bytes(java)}, not by the struct's size, {s.size},"
+            f" so it placed `{name}` {_bytes(abs(diff))} {where} (bug 3)"
+        )
 
     def walk(
         elements: tuple[sem.Element, ...], pending: list[sem.AnalysedStruct]
@@ -403,14 +445,17 @@ def _running_offset(analysed: sem.AnalysedModel) -> Iterator[Diagnostic]:
                 for s in pending:
                     yield _warning(
                         "model.legacy-bitfield-offset",
-                        f"`{name}` is placed by the running offset after struct `{s.name}`,"
-                        " whose bitfields the Java tool counted at their type's full width"
-                        f" each, so it placed `{name}` further on (bug 3)",
+                        why(s, name),
                         f"`{name}` is now at {s.name}'s end: check it against the protocol's spec",
                         el.span,
                     )
                 pending.clear()
-            if isinstance(el, sem.AnalysedStruct) and el.aligned and el.runs:
+            if (
+                isinstance(el, sem.AnalysedStruct)
+                and el.aligned
+                and el.runs
+                and _java_increment(el) != el.size
+            ):
                 pending.append(el)
 
     yield from walk(analysed.elements, [])

@@ -211,8 +211,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.legacy-bitfield-order": "warning: import: a bitfield run, now numbered from the "
         "most significant bit, not in the C compiler's order as the Java tool declared it",
         "model.legacy-bitfield-offset": "warning: import: a struct field after a bitfield line "
-        "(bug 2), or an aligned element after a struct with bitfields (bug 3), which the Java "
-        "tool placed further on",
+        "(bug 2), or an aligned element after a struct with bitfields whose length the Java "
+        "tool counted otherwise (bug 3), which the Java tool placed elsewhere",
         "model.legacy-constant-folding": "warning: import: an offset, data_len or nextoffset "
         "that the Java tool folded to a constant by its last operand (bug 5) but is not one, "
         "or is another number",

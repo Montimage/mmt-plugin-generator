@@ -118,6 +118,10 @@ def test_scalars_resolve_as_yaml_1_2_core(text: str, value: object) -> None:
         ("k:\n\tv: 1\n", 2, 1, "tab"),
         ("k: 1\nk: 2\n", 2, 1, "duplicate key `k`"),
         ("k: {a: 1, a: 2}\n", 1, 11, "duplicate key `a`"),
+        ("k: {a:1}\n", 1, 6, "a space must follow `:`"),
+        ("k: {a :1}\n", 1, 7, "a space must follow `:`"),
+        ("k: {offset:12, length:2}\n", 1, 11, "a space must follow `:`"),
+        ("k: {a: 1, b:x}\n", 1, 12, "a space must follow `:`"),
         ("k: a: b\n", 1, 5, "`:` followed by a space"),
         ("k: [1, [2]]\n", 1, 8, "inside a flow collection"),
         ("k: [1, 2\n", 1, 4, "not closed"),
@@ -146,6 +150,16 @@ def test_text_outside_the_subset_is_an_error_at_its_place(
         parse(text)
     assert (info.value.line, info.value.column) == (line, column)
     assert message in info.value.message
+
+
+def test_a_flow_mapping_value_follows_its_colon_and_a_space() -> None:
+    # YAML 1.2 reads `{a:1}` as the key `a:1`, so the subset needs a space,
+    # a tab, `,` or `}` after the `:` of a flow mapping key.
+    assert to_data(parse("k: {a: 1, b:\t2, c:, d:}\n")) == {
+        "k": {"a": 1, "b": 2, "c": None, "d": None}
+    }
+    assert to_data(parse("k: {a: b:c}\n")) == {"k": {"a": "b:c"}}
+    assert to_data(parse("k: [a:1]\n")) == {"k": ["a:1"]}
 
 
 def test_crlf_and_a_bom_are_read() -> None:

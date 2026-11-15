@@ -139,8 +139,10 @@ in this subset of YAML, which every YAML 1.1 and 1.2 reader reads the same
 way:
 
 - block mappings and block lists, indented with spaces; one-line flow lists
-  (`[a, b]`) and mappings (`{name: a, width: 4}`) of values; `#` comments;
-  an optional `---` before the document;
+  (`[a, b]`) and mappings (`{name: a, width: 4}`) of values, with a space
+  after each `:` of a flow mapping (`{name: a}`, not `{name:a}`, which YAML
+  1.2 reads as the key `name:a`); `#` comments; an optional `---` before the
+  document;
 - plain, `'single'` and `"double"` (JSON escapes) quoted values. A decimal
   integer (without a leading zero) or a `0x` hex one is a number; `true`,
   `false` are booleans; anything else is a string. A value that YAML 1.1 and

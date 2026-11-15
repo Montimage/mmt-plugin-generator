@@ -147,6 +147,20 @@ def test_max_packets_and_tests_dir(scaffold: Run, work: Path) -> None:
     assert doc["result"]["tests_dir"] == "drafts"
 
 
+def test_reading_stops_at_the_max_packets_th_payload(scaffold: Run, work: Path) -> None:
+    # A broken tail after the second payload is never read with
+    # --max-packets 2; read in full, it is a bad capture (#71).
+    capture = work / "capture.pcap"
+    capture.write_bytes(capture.read_bytes() + b"\xff" * 7)
+    code, doc = scaffold(*ARGS, "--max-packets", "2")
+    assert code == 0, doc["error"]
+    assert doc["result"]["packets"]["frames"] == 3
+    code, doc = scaffold(*ARGS)
+    assert code == 3
+    assert doc["error"]["code"] == "model.bad-pcap"
+    assert "a truncated record header (7 of 16 bytes)" in doc["error"]["message"]
+
+
 @pytest.mark.parametrize("value", ["0", "-1", "x"])
 def test_max_packets_must_be_positive(scaffold: Run, value: str) -> None:
     code, doc = scaffold(*ARGS, "--max-packets", value)
@@ -252,6 +266,14 @@ def test_a_missing_pcap_is_exit_3(scaffold: Run) -> None:
     assert code == 3
     assert doc["error"]["code"] == "model.bad-pcap"
     assert "cannot read nope.pcap" in doc["error"]["message"]
+
+
+def test_a_directory_as_the_pcap_is_exit_3(scaffold: Run, work: Path) -> None:
+    (work / "dir.pcap").mkdir()
+    code, doc = scaffold("--from-pcap", "dir.pcap", "--parent", "udp")
+    assert code == 3
+    assert doc["error"]["code"] == "model.bad-pcap"
+    assert "cannot read dir.pcap" in doc["error"]["message"]
 
 
 def test_no_payload_under_the_parent_is_exit_3(scaffold: Run, work: Path) -> None:

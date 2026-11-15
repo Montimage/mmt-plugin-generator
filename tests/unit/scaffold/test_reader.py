@@ -1,15 +1,21 @@
 """``mmt_plugin.pcap.reader``: classic pcap and pcapng, in both byte orders,
-the files tcpdump and editcap write (``data/``), and the broken files that
-are ``PcapError``."""
+the files tcpdump and editcap write (``data/``), the broken files that are
+``PcapError``, and the streams ``read_stream`` reads record by record: never
+past the last frame taken (#71), a pipe as a file, a corrupt length without
+an allocation of its size."""
 
 from __future__ import annotations
 
+import io
+import re
 import struct
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from mmt_plugin.pcap import Frame, PcapError, read
+from mmt_plugin.commands.init import parse_selector
+from mmt_plugin.pcap import Frame, Parent, PcapError, parent_of, read, read_stream, slice_payloads
 
 from . import samples
 
@@ -154,3 +160,149 @@ def test_a_simple_packet_block_needs_an_interface() -> None:
     block = struct.pack("<II", 3, 12 + len(body)) + body + struct.pack("<I", 12 + len(body))
     with pytest.raises(PcapError, match="before any interface description"):
         _frames(shb + block)
+
+
+class _Stream(io.RawIOBase):
+    """A capture read through ``read_stream``: ``seekable`` or not (a pipe),
+    returning at most ``step`` bytes a read, and failing the test on a read
+    that would go past byte ``limit`` or ask for more than ``largest``."""
+
+    def __init__(
+        self,
+        data: bytes,
+        *,
+        seekable: bool = True,
+        step: int | None = None,
+        limit: int | None = None,
+        largest: int | None = None,
+    ) -> None:
+        super().__init__()
+        self._data = data
+        self._seekable = seekable
+        self._step = step
+        self._limit = len(data) if limit is None else limit
+        self._largest = largest
+        self.at = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return self._seekable
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        if not self._seekable:
+            raise io.UnsupportedOperation("seek")
+        base = {io.SEEK_SET: 0, io.SEEK_CUR: self.at, io.SEEK_END: len(self._data)}[whence]
+        self.at = base + offset
+        return self.at
+
+    def tell(self) -> int:
+        return self.at
+
+    def readinto(self, buffer: Any) -> int:
+        n = len(buffer)
+        assert self._largest is None or n <= self._largest, f"a read of {n} bytes"
+        if self._step is not None:
+            n = min(n, self._step)
+        chunk = self._data[self.at : self.at + n]
+        assert self.at + len(chunk) <= self._limit, f"a read past byte {self._limit}"
+        buffer[: len(chunk)] = chunk
+        self.at += len(chunk)
+        return len(chunk)
+
+
+def _udp(text: str) -> Parent:
+    selector = parse_selector(text)
+    return parent_of(selector.text, selector.proto, selector.keys)
+
+
+@pytest.mark.parametrize("fmt", ["pcap", "pcapng"])
+@pytest.mark.parametrize("seekable", [True, False])
+def test_slicing_stops_reading_at_the_limit(fmt: str, seekable: bool) -> None:
+    # Two payloads to port 4433 around a DNS frame, then frames the reader
+    # must never reach: the stream fails the test on a read past the
+    # record of the second payload (the end of the third frame).
+    frames = [FRAMES[0], samples.udp4(53, 53, b"dns"), FRAMES[1], FRAMES[2]]
+    build = samples.pcap if fmt == "pcap" else samples.pcapng
+    limit = len(build(frames[:3]))
+    data = build(frames) + b"garbage past the limit"
+    stream = _Stream(data, seekable=seekable, limit=limit)
+    slicing = slice_payloads(read_stream(stream).frames(), _udp("udp:port=4433"), 2)
+    assert [p.frame for p in slicing.payloads] == [1, 3]
+    assert slicing.frames == 3
+    assert stream.at == limit
+
+
+@pytest.mark.parametrize("seekable", [True, False])
+def test_the_stream_is_read_from_its_position(seekable: bool) -> None:
+    data = b"prefix" + samples.pcap(FRAMES)
+    stream = _Stream(data, seekable=seekable, step=7)
+    stream.read(6)
+    assert [f.data for f in read_stream(stream).frames()] == FRAMES
+
+
+@pytest.mark.parametrize("seekable", [True, False])
+def test_a_corrupt_length_is_not_read_in_one_allocation(seekable: bool) -> None:
+    # A pcap record and a pcapng block claiming almost 4 GiB: with a known
+    # size it is an error without a read, otherwise it is read in chunks.
+    record = struct.pack("<IIII", 0, 0, 0xFFFFFFF0, 0xFFFFFFF0) + bytes(100)
+    data = samples.pcap([]) + record
+    with pytest.raises(PcapError, match="a record of 4294967280 bytes, but only 100") as info:
+        list(read_stream(_Stream(data, seekable=seekable, largest=1 << 20)).frames())
+    assert info.value.offset == 24
+    head = samples.pcapng([])
+    block = struct.pack("<II", 6, 0xFFFFFFF0) + bytes(100)
+    with pytest.raises(PcapError, match=r"length 4294967280 \(108 bytes are left\)") as info:
+        list(read_stream(_Stream(head + block, seekable=seekable, largest=1 << 20)).frames())
+    assert info.value.offset == len(head)
+
+
+@pytest.mark.parametrize(
+    ("tail", "message"),
+    [
+        (b"\x06\0\0\0", r"a truncated pcapng block \(4 bytes\)"),
+        (struct.pack("<II", 6, 13) + bytes(8), r"a pcapng block of length 13$"),
+        (struct.pack("<II", 6, 400) + bytes(8), r"length 400 \(16 bytes are left\)"),
+        (struct.pack("<III", 6, 12, 16), "whose two lengths differ"),
+        (_epb(FRAMES[0], caplen=200), "a packet of 200 bytes in a block that holds"),
+        (b"\x0a\x0d\x0d\x0a" + bytes(20), "a truncated pcapng section header block"),
+    ],
+)
+def test_broken_pcapng_blocks_through_a_pipe(tail: bytes, message: str) -> None:
+    # A pipe's size is unknown: a length that is wrong in itself is said
+    # without the bytes left, a short block with what was read.
+    head = samples.pcapng([])
+    stream = _Stream(head + tail, seekable=False, step=5)
+    with pytest.raises(PcapError) as info:
+        list(read_stream(stream).frames())
+    assert re.search(message, info.value.message)
+    assert info.value.offset == len(head)
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        (b"\xd4\xc3", "not a pcap or pcapng file"),
+        (b"\xd4\xc3\xb2\xa1" + bytes(10), "the pcap file header is 24 bytes, the file has 14"),
+        (samples.pcap(FRAMES)[:-10], "only "),
+    ],
+)
+def test_broken_pcap_through_a_pipe(data: bytes, message: str) -> None:
+    with pytest.raises(PcapError, match=message):
+        list(read_stream(_Stream(data, seekable=False, step=3)).frames())
+
+
+def test_a_section_header_shorter_than_its_fields_is_an_error() -> None:
+    shb = samples.pcapng([])[:28]
+    short = struct.pack("<III", 0x0A0D0D0A, 24, 0x1A2B3C4D) + bytes(8) + struct.pack("<I", 24)
+    with pytest.raises(PcapError, match="a truncated pcapng section header block") as info:
+        _frames(shb + short + bytes(8))
+    assert info.value.offset == 28
+
+
+def test_the_frames_of_a_capture_are_read_once() -> None:
+    capture = read(samples.pcap(FRAMES))
+    assert len(list(capture.frames())) == 3
+    with pytest.raises(RuntimeError, match="read once"):
+        capture.frames()

@@ -9,7 +9,8 @@ run with its class's exit code:
    parent ``mmt_plugin.pcap.layers`` decodes and its keys; usage, exit 2);
 2. read the project's model (``--model``, default ``<project>/plugin.yaml``)
    for the protocol's label and id; a model that does not parse is exit 3;
-3. read the capture (pcap or pcapng): one that is not a capture, or is
+3. read the capture (pcap or pcapng) record by record, up to the record of
+   the ``--max-packets``-th payload: one that is not a capture, or is
    broken before the payloads are found, is ``model.bad-pcap`` (exit 3);
    one with no payload under the parent is ``model.no-payloads`` (exit 3);
 4. propose the skeleton from the first ``--max-packets`` payloads, render
@@ -58,7 +59,7 @@ from mmt_plugin.pcap import (
     parent_of,
     propose,
     proposed_yaml,
-    read,
+    read_stream,
     slice_payloads,
 )
 from mmt_plugin.pdl import PdlSyntaxError
@@ -212,17 +213,18 @@ class ScaffoldCommand:
 
         pcap_path = absolute(args.from_pcap)
         pcap = show_path(pcap_path, project)
+        # The capture is read record by record and only up to the record of
+        # the --max-packets-th payload: never the whole file (#71).
         try:
-            data = pcap_path.read_bytes()
+            with pcap_path.open("rb") as stream:
+                capture = read_stream(stream)
+                slicing = slice_payloads(capture.frames(), parent, args.max_packets)
         except OSError as exc:
             raise CliError(
                 "model.bad-pcap",
                 f"cannot read {pcap}: {exc.strerror or exc}",
                 "check the --from-pcap path and its permissions",
             ) from None
-        try:
-            capture = read(data)
-            slicing = slice_payloads(capture.frames(), parent, args.max_packets)
         except PcapError as exc:
             raise CliError(
                 "model.bad-pcap",

@@ -220,6 +220,37 @@ def test_a_failure_the_skill_does_not_fix_at_a_location_needs_none() -> None:
     assert check(env, code=6) == []
 
 
+def test_a_compile_failure_without_a_location_needs_none() -> None:
+    # ``cc1: fatal error: ...`` has no file:line, and the hooks stage's
+    # compile-failed (an object that is not ELF) has no diagnostic at all.
+    env = good_envelope()
+    env.update(command="build", exit_code=5)
+    env["error"].update({"class": "build", "code": "build.compile-failed"})
+    env["diagnostics"][0].update(code="build.cc", message="cc1: fatal error", location=None)
+    stdout = json.dumps(env) + "\n"
+    assert run_evals.check_envelope(stdout, "", 5, "build", CONTRACT)[1] == []
+    env["diagnostics"] = []
+    stdout = json.dumps(env) + "\n"
+    assert run_evals.check_envelope(stdout, "", 5, "build", CONTRACT)[1] == []
+
+
+def usage_envelope(command: str | None) -> dict[str, Any]:
+    env = good_envelope()
+    env.update(command=command, exit_code=2, result=None, diagnostics=[])
+    env["error"].update({"class": "usage", "code": "usage.unknown-option"})
+    return env
+
+
+def test_a_usage_error_may_have_no_command() -> None:
+    # The argument parser fails before it knows the command (cli.md, 5).
+    assert check(usage_envelope(None), code=2) == []
+    assert check(usage_envelope("validate"), code=2) == []
+    assert any("command is 'build'" in p for p in check(usage_envelope("build"), code=2))
+    env = good_envelope()
+    env.update(command=None)
+    assert any("command is None" in p for p in check(env))
+
+
 def test_stderr_and_a_second_document_are_reported() -> None:
     assert any("stderr" in p for p in check(good_envelope(), stderr="warning\n"))
     stdout = json.dumps(good_envelope()) + "\n{}\n"
@@ -404,6 +435,48 @@ def test_the_label_line_may_carry_a_comment(line: str, label: str | None) -> Non
     assert run_evals._ID.search("protocol:\n" + line + "  id: 963   # 950-999\n")
 
 
+def test_model_names_reads_plain_and_quoted_names() -> None:
+    model = (
+        "attributes:\n  - name: plain\n    type: MMT_U8_DATA\n"
+        "  - name: \"double\"\n  - name: 'single'   # quoted\n"
+        "  - {name: flow, type: MMT_U8_DATA}\n"
+        "  - name: \"odd'\n"
+    )
+    assert run_evals._model_names(model) == {"plain", "double", "single", "flow"}
+
+
+def failed_step(file: str, line: int | None = 3) -> run_evals.Step:
+    env = {
+        "diagnostics": [
+            {
+                "severity": "error",
+                "code": "build.cc",
+                "message": "m",
+                "location": {"file": file, "line": line, "column": None},
+            }
+        ]
+    }
+    return run_evals.Step(1, ["build"], "build", 5, "", "", env)
+
+
+def test_an_error_outside_the_project_is_fixed_in_the_model_or_the_user_code() -> None:
+    before = {"plugin.yaml": "a\n", "src/x_impl.c": "int x;\n", "notes.txt": "n\n"}
+    header = failed_step("/sdk/dpi/include/mmt_core.h")
+    for path in ("src/x_impl.c", "plugin.yaml"):
+        assert run_evals._fix_problems(header, before, {**before, path: "b\n"}, 1) == []
+    for after in (before, {**before, "notes.txt": "m\n"}, {**before, "src/sub/y.c": "y\n"}):
+        problems = run_evals._fix_problems(header, before, after, 1)
+        assert problems == [
+            "run 1: the edits change neither plugin.yaml nor src/*.c for "
+            "/sdk/dpi/include/mmt_core.h (build.cc)"
+        ]
+    # Inside the project, the edit must still be at the reported line.
+    impl = failed_step("src/x_impl.c", 1)
+    assert run_evals._fix_problems(impl, before, {**before, "plugin.yaml": "b\n"}, 1) == [
+        "run 1: the edits do not touch src/x_impl.c:1 (build.cc)"
+    ]
+
+
 def test_hook_parents_reads_a_commented_parents_line() -> None:
     model = "schema: 1\nparents:   # attached by the hook\n  - protocol: tcp\n"
     assert run_evals._hook_parents(model) == ["tcp"]
@@ -432,6 +505,29 @@ def test_hook_parents_reads_the_parents_without_classify() -> None:
         (lambda c: c["runs"][0]["expect"].update(stop="install"), "not a loop command"),
         (lambda c: c.update(runs=c["runs"] * 4), "1 to 10"),
         (lambda c: c["params"].pop("selector"), "params.selector"),
+        (lambda c: c["runs"].__setitem__(0, []), "run 1 must be an object"),
+        (lambda c: c["runs"][0]["edits"].append("x"), "must be an object"),
+        (lambda c: c["runs"][0]["edits"].append({"remove": 1}), "is not a path"),
+        (lambda c: c["runs"][0]["edits"].append({"write": "x"}), "needs 'from'"),
+        (
+            lambda c: c["runs"][0]["edits"].append(
+                {"write": "x", "from": "../spec-telem/spec.md"}
+            ),
+            "not a path inside the case directory",
+        ),
+        (
+            lambda c: c["runs"][0]["edits"].append({"append": "x", "from": "/etc/hostname"}),
+            "not a path inside the case directory",
+        ),
+        (lambda c: c["runs"][0]["edits"].append({"write": "x", "from": "nope"}), "no case file"),
+        (lambda c: c["runs"][0]["edits"].append({"copy": "x"}), "needs 'source'"),
+        (lambda c: c["runs"][0]["edits"].append({"copy": "x", "source": "../x"}), "not a path"),
+        (lambda c: c["runs"][0]["edits"].append({"replace": "x", "old": "a"}), "needs 'new'"),
+        (lambda c: c["runs"][0]["edits"].append({"regex": "x", "new": "a"}), "needs 'pattern'"),
+        (
+            lambda c: c["runs"][0]["edits"].append({"regex": "x", "pattern": "(", "new": ""}),
+            "does not compile",
+        ),
     ],
 )
 def test_a_broken_case_is_an_eval_error(
@@ -439,6 +535,13 @@ def test_a_broken_case_is_an_eval_error(
 ) -> None:
     with pytest.raises(run_evals.EvalError, match=message):
         run_evals.load_case(copy_case(tmp_path, "spec-telem", change))
+
+
+def test_a_bad_regex_replacement_is_an_eval_error(tmp_path: Path) -> None:
+    (tmp_path / "plugin.yaml").write_text("name: x\n", "utf-8")
+    edit = {"regex": "plugin.yaml", "pattern": "x", "new": r"\2"}
+    with pytest.raises(run_evals.EvalError, match="not a replacement"):
+        run_evals.apply_edits([edit], tmp_path, tmp_path)
 
 
 def test_main_prints_one_line_per_case(capsys: pytest.CaptureFixture[str]) -> None:

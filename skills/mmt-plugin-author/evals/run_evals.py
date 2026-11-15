@@ -29,9 +29,10 @@ What fails a case (each is one line of ``CaseResult.problems``):
   ``ok``/``exit_code``/``error`` that disagree with each other or with the
   process, an exit code or class not in the contract's exit table, an
   ``error.code`` or ``diagnostics[].code`` the contract does not document, a
-  failure the skill fixes at a location (``LOCATED``) with no located error;
-  and, without an SDK, an
-  envelope whose ``context.sdk.prefix`` is set;
+  failure the skill fixes at a location (``LOCATED``) with no located error,
+  and a ``command`` that is not the one run (``null`` only on exit 2, a
+  usage error); and, without an SDK, an envelope whose
+  ``context.sdk.prefix`` is set;
 - a command that does not end within the time limit. Every command gets an
   open pipe with no data as stdin and runs in a new session (no controlling
   terminal), so a command that reads stdin or prompts waits until the limit;
@@ -39,7 +40,9 @@ What fails a case (each is one line of ``CaseResult.problems``):
 - a fix that does not touch what the envelope pointed at: each located error
   of a failed run must be in a file the next run's edits change, at its line
   when it has one; a ``test.packet-failed`` is also fixed by a change to a
-  ``plugin.yaml`` line that names a failing attribute;
+  ``plugin.yaml`` line that names a failing attribute, and an error outside
+  the project (an absolute path: an SDK header) by a change to ``plugin.yaml``
+  or a ``src/*.c`` file;
 - a packet test the case or the entry commands wrote that is deleted, or
   whose bytes, protocol or expected attributes change, other than an
   attribute renamed or dropped in the test and in ``plugin.yaml`` alike
@@ -127,13 +130,14 @@ SCRUBBED_ENV = (
 )
 #: The failures whose fix the skill puts at a location (contract.md), so
 #: whose envelope must locate an error; others (``model.unreadable``,
-#: ``test.load-failed``) may have none.
+#: ``test.load-failed``) may have none, and so may ``build.compile-failed``:
+#: a fatal compiler error (``cc1: fatal error``) or an object that is not
+#: ELF has no location.
 LOCATED = (
     "model.schema",
     "model.yaml-syntax",
     "model.syntax.",
     "model.duplicate-name",
-    "build.compile-failed",
     "build.missing-hook",
     "test.packet-failed",
 )
@@ -345,9 +349,10 @@ def check_envelope(
     tool = env.get("tool")
     if not isinstance(tool, dict) or tool.get("name") != "mmt-plugin":
         problems.append(f"tool is {tool!r}, not mmt-plugin's")
-    if env.get("command") != command:
-        problems.append(f"command is {env.get('command')!r}, not {command!r}")
     exit_code = env.get("exit_code")
+    # A usage error the argument parser catches has no command yet.
+    if env.get("command") != command and not (env.get("command") is None and exit_code == 2):
+        problems.append(f"command is {env.get('command')!r}, not {command!r}")
     if exit_code != returncode:
         problems.append(f"exit_code is {exit_code!r} but the process exited {returncode!r}")
     if env.get("ok") is not (exit_code == 0):
@@ -416,11 +421,52 @@ def case_dirs(root: Path = CASES_DIR) -> list[Path]:
     return sorted(p.parent for p in root.glob("*/case.json"))
 
 
-def _relative(path: str, what: str) -> str:
+def _relative(path: object, what: str, inside: str = "the project") -> str:
+    if not isinstance(path, str):
+        raise EvalError(f"{what}: {path!r} is not a path")
     pure = PurePosixPath(path)
     if not path or pure.is_absolute() or ".." in pure.parts:
-        raise EvalError(f"{what}: {path!r} is not a path inside the project")
+        raise EvalError(f"{what}: {path!r} is not a path inside {inside}")
     return path
+
+
+#: The keys each edit kind needs besides its own, all strings.
+EDIT_KEYS: Mapping[str, tuple[str, ...]] = {
+    "write": ("from",),
+    "append": ("from",),
+    "copy": ("source",),
+    "remove": (),
+    "replace": ("old", "new"),
+    "regex": ("pattern", "new"),
+}
+
+
+def _check_edit(edit: object, case_dir: Path, what: str) -> None:
+    """Check one edit of a run (``EvalError`` when it cannot apply)."""
+    if not isinstance(edit, dict):
+        raise EvalError(f"{what}: an edit must be an object: {edit!r}")
+    kinds = [k for k in EDIT_KINDS if k in edit]
+    if len(kinds) != 1:
+        raise EvalError(f"{what}: an edit needs one of {EDIT_KINDS}: {edit}")
+    kind = kinds[0]
+    _relative(edit[kind], what)
+    for key in EDIT_KEYS[kind]:
+        if not isinstance(edit.get(key), str):
+            raise EvalError(f"{what}: a {kind} edit needs {key!r} (a string): {edit}")
+    if kind in ("write", "append"):
+        source = edit["from"]
+        _relative(source, what, "the case directory")
+        if not (case_dir / source).is_file():
+            raise EvalError(f"{what}: no case file {source!r}")
+    elif kind == "copy":
+        _relative(edit["source"], what)
+    elif kind == "regex":
+        try:
+            re.compile(edit["pattern"], re.M)
+        except re.error as exc:
+            raise EvalError(
+                f"{what}: the pattern {edit['pattern']!r} does not compile: {exc}"
+            ) from None
 
 
 def load_case(case_dir: Path) -> dict[str, Any]:
@@ -444,16 +490,13 @@ def load_case(case_dir: Path) -> dict[str, Any]:
     if not isinstance(runs, list) or not 1 <= len(runs) <= MAX_RUNS:
         raise EvalError(f"{where}: 'runs' must list 1 to {MAX_RUNS} loop runs")
     for n, run in enumerate(runs, 1):
+        if not isinstance(run, dict):
+            raise EvalError(f"{where}: run {n} must be an object")
         edits, expect = run.get("edits"), run.get("expect")
         if not isinstance(edits, list) or not isinstance(expect, dict):
             raise EvalError(f"{where}: run {n} needs 'edits' (a list) and 'expect'")
         for edit in edits:
-            kinds = [k for k in EDIT_KINDS if k in edit]
-            if len(kinds) != 1:
-                raise EvalError(f"{where}: run {n}: an edit needs one of {EDIT_KINDS}: {edit}")
-            _relative(edit[kinds[0]], f"{where}: run {n}")
-            if kinds[0] in ("write", "append") and not (case_dir / edit["from"]).is_file():
-                raise EvalError(f"{where}: run {n}: no case file {edit['from']!r}")
+            _check_edit(edit, case_dir, f"{where}: run {n}")
         stop = expect.get("stop")
         if stop is not None and stop not in LOOP_COMMANDS:
             raise EvalError(f"{where}: run {n}: stop {stop!r} is not a loop command")
@@ -498,9 +541,14 @@ def apply_edits(edits: Iterable[Mapping[str, Any]], case_dir: Path, project: Pat
                 path.write_text(text.replace(edit["old"], edit["new"]), "utf-8")
         else:
             for path in _files(project, edit["regex"]):
-                text, count = re.subn(
-                    edit["pattern"], edit["new"], path.read_text("utf-8"), flags=re.M
-                )
+                try:
+                    text, count = re.subn(
+                        edit["pattern"], edit["new"], path.read_text("utf-8"), flags=re.M
+                    )
+                except re.error as exc:
+                    raise EvalError(
+                        f"regex: {edit['new']!r} is not a replacement: {exc}"
+                    ) from None
                 if not count:
                     raise EvalError(f"regex: {edit['pattern']!r} matches nothing in {path.name}")
                 path.write_text(text, "utf-8")
@@ -556,6 +604,19 @@ def _fix_problems(
         if diag.get("severity") != "error" or not loc:
             continue
         file, line = loc["file"], loc.get("line")
+        if PurePosixPath(file).is_absolute():
+            # Outside the project (an SDK header): the skill never edits it,
+            # the fix is in the model or the user code that includes it.
+            if not any(
+                before.get(path) != after.get(path)
+                for path in {*before, *after}
+                if path == "plugin.yaml" or re.fullmatch(r"src/[^/]+\.c", path)
+            ):
+                problems.append(
+                    f"run {run}: the edits change neither plugin.yaml nor src/*.c for "
+                    f"{file} ({diag['code']})"
+                )
+            continue
         if file.startswith("generated/"):
             # Generated code comes from the model: the fix is in plugin.yaml.
             file, line = "plugin.yaml", None
@@ -673,8 +734,12 @@ def _strip_c_comments(code: str) -> str:
     return re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", code, flags=re.S))
 
 
+_NAME = re.compile(r"\bname: ([\"']?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
 def _model_names(text: str) -> set[str]:
-    return set(re.findall(r"\bname: ([A-Za-z_][A-Za-z0-9_]*)", text))
+    """The names a ``plugin.yaml`` gives, plain or quoted."""
+    return {m.group(2) for m in _NAME.finditer(text)}
 
 
 @dataclass

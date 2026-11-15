@@ -191,12 +191,12 @@ does instead.
 | `model.legacy-sdk-conflict` | A protocol id or name that the SDK already has. The model is converted; `generate` refuses it. | 23 | 2 |
 | `model.legacy-duplicate-name` | A name used twice, where the second is conditional or differs only in case. The analysis cannot place the attributes, so the model is written with `offsets: running`, as PDL v1 placed them, until one is renamed. | 12, 16 | 30, 31 |
 | `model.legacy-bitfield-order` | A bitfield run: numbered from the most significant bit of its unit, not in the C compiler's order (least significant bit first with gcc on x86). | – (plan decision 8) | 17 |
-| `model.legacy-bitfield-offset` | The first plain struct field after a bitfield line, or an element the running offset places after a struct with bitfields: the Java tool placed both further on. | 2, 3 | 22, 23 |
-| `model.legacy-constant-folding` | An offset, `data_len` or `nextoffset` that the Java tool folded to a constant because its last operand is a literal or `ntohs`/`ntohl` (and it is not a comparison), but that is not one (`val(x) - 4` became -4), or is another number: it read `offset()` and `len()` as 0 and did not swap the bytes of `ntohs`/`ntohl`. | 5, 19 | 25, 33, 34 |
+| `model.legacy-bitfield-offset` | A struct line that starts with a plain field after a line that ends with a bitfield, or an element the running offset places after a struct with bitfields (each branch of an `if` from the offset before it): the Java tool placed both further on. | 2, 3 | 22, 23 |
+| `model.legacy-constant-folding` | An offset, `data_len` or `nextoffset` that the Java tool folded to a constant because its last operand is a literal or `ntohs`/`ntohl` (and it is not a comparison), but that is not one (`val(x) - 4` became -4), or is another number: it read `offset()` and `len()` as 0, `a AND b` as `a > 0`, and did not swap the bytes of `ntohs`/`ntohl`. | 5, 19 | 25, 33, 34 |
 | `model.legacy-comparison` | Such an expression whose value changes because the Java tool folded `>`, `<`, `>=` and `<=` as `!=`. A comparison it wrote into the C as text (an `if` condition, an expression it did not fold) was right. | 6 | 26 |
 | `model.legacy-sizeof` | `sizeof` of a C or MMT type that the Java tool wrote into the C (an `if` condition, the switch subject, an expression it did not fold) as `sizeof(MMT_U8_DATA)` and the like, the size of an enum constant, 4: `sizeof(char)` is 1, `sizeof(short)` 2, `sizeof(MMT_DATA_MAC_ADDR)` 6. | 7 | 27 |
 | `model.legacy-classifynext` | A `classifynext` block without `encapsulation = "true"`, which the Java tool dropped. | 21 | 15 |
-| `model.legacy-ip-addr` | An `MMT_DATA_IP_ADDR` of a model in network byte order whose offset or `data_len` the Java tool did not fold, so that it byte-swapped the address. | 25 | 16 |
+| `model.legacy-ip-addr` | An `MMT_DATA_IP_ADDR` of a model in network byte order that the Java tool byte-swapped: one whose offset or `data_len` it did not fold, and every one in an `if` block. | 25 | 16 |
 
 The other bugs of the inventory are not in the model (22, 24) or made
 output that did not compile or did not work, so no working model relied on

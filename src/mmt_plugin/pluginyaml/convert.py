@@ -15,9 +15,10 @@ and what mmt-plugin does instead (``docs/behaviour-changes.md``):
 - ``model.legacy-bitfield-order`` (plan decision 8): a bitfield run, whose
   bits are numbered from the most significant bit, not in the C compiler's
   order;
-- ``model.legacy-bitfield-offset`` (bugs 2 and 3): a struct field after a
-  bitfield line, or an aligned element after a struct with bitfields, which
-  the Java tool placed further on;
+- ``model.legacy-bitfield-offset`` (bugs 2 and 3): a line of a struct that
+  starts with a plain field after a line that ends with a bitfield, or an
+  aligned element after a struct with bitfields, which the Java tool placed
+  further on;
 - ``model.legacy-constant-folding`` (bug 5): an offset, data_len or
   nextoffset that the Java tool folded to a constant (its last operand is a
   literal or ``ntohs``/``ntohl``, and it is no comparison) but is not one, or
@@ -31,8 +32,8 @@ and what mmt-plugin does instead (``docs/behaviour-changes.md``):
 - ``model.legacy-classifynext`` (bug 21): a classifynext block without
   ``encapsulation = "true"``, which the Java tool dropped;
 - ``model.legacy-ip-addr`` (bug 25): an ``MMT_DATA_IP_ADDR`` of a network
-  byte order model whose offset or data_len the Java tool did not fold,
-  which it byte-swapped.
+  byte order model that the Java tool byte-swapped: one whose offset or
+  data_len it did not fold, or one in an if block.
 
 The model keeps the absolute offsets the analysis computes (the format's
 default). An SDK id or name conflict does not stop the conversion. When the
@@ -283,7 +284,9 @@ def _java_value(expr: pdl.Expr) -> int | None:
     if op is pdl.BinaryOperator.OR:
         return int(left > 0 or right > 0)
     if op is pdl.BinaryOperator.AND:
-        return int(left > 0 and right > 0)
+        # G:674, `(v > 0)?true:false && (b > 0)?true:false`: Java's ?: binds
+        # looser than &&, so this is just `v > 0`.
+        return int(left > 0)
     if op is pdl.BinaryOperator.EQ:
         return int(left == right)
     if op in _COMPARISONS:
@@ -346,13 +349,13 @@ def _bitfields(model: pdl.Model) -> Iterator[Diagnostic]:
     for el in _elements(model.attributes.elements):
         if not isinstance(el, pdl.Struct):
             continue
-        after_bits = False
+        after_bits = False  # the previous line ended with a bitfield
         reported = False
         for element in el.elements:
             bits = [f for f in element.fields if f.bit_width is not None]
-            plain = [f for f in element.fields if f.bit_width is None]
-            if after_bits and not reported and plain:
-                f = plain[0]
+            first = element.fields[0] if element.fields else None
+            if after_bits and not reported and first is not None and first.bit_width is None:
+                f = first
                 reported = True
                 yield _warning(
                     "model.legacy-bitfield-offset",
@@ -363,8 +366,9 @@ def _bitfields(model: pdl.Model) -> Iterator[Diagnostic]:
                     " each other with no gap",
                     f.name.span,
                 )
+            if element.fields:
+                after_bits = element.fields[-1].bit_width is not None
             if bits:
-                after_bits = True
                 names = ", ".join(f"`{f.name.text}`" for f in bits)
                 yield _warning(
                     "model.legacy-bitfield-order",
@@ -380,13 +384,19 @@ def _bitfields(model: pdl.Model) -> Iterator[Diagnostic]:
 
 def _running_offset(analysed: sem.AnalysedModel) -> Iterator[Diagnostic]:
     """An aligned element after an aligned struct with bitfields (bug 3)."""
-    pending: list[sem.AnalysedStruct] = []
 
-    def walk(elements: tuple[sem.Element, ...]) -> Iterator[Diagnostic]:
+    def walk(
+        elements: tuple[sem.Element, ...], pending: list[sem.AnalysedStruct]
+    ) -> Iterator[Diagnostic]:
         for el in elements:
             if isinstance(el, sem.AnalysedConditional):
-                yield from walk(el.then_branch)
-                yield from walk(el.else_branch or ())
+                # Each branch starts from the offset before the if, and the
+                # else branch's (or, without one, that one) goes on (G:313-318).
+                yield from walk(el.then_branch, list(pending))
+                if el.else_branch is not None:
+                    after = list(pending)
+                    yield from walk(el.else_branch, after)
+                    pending[:] = after
                 continue
             if el.aligned and pending:
                 name = el.name
@@ -403,7 +413,7 @@ def _running_offset(analysed: sem.AnalysedModel) -> Iterator[Diagnostic]:
             if isinstance(el, sem.AnalysedStruct) and el.aligned and el.runs:
                 pending.append(el)
 
-    yield from walk(analysed.elements)
+    yield from walk(analysed.elements, [])
 
 
 def _folded(model: pdl.Model, values: dict[pdl.Span, int | None]) -> Iterator[Diagnostic]:
@@ -437,6 +447,8 @@ def _folded(model: pdl.Model, values: dict[pdl.Span, int | None]) -> Iterator[Di
                 causes.append("it read every comparison but == as != (bug 6)")
             if any(isinstance(n, (pdl.OffsetOf, pdl.LengthOf)) for n in nodes):
                 causes.append("it read offset() and len() as 0 (bug 19)")
+            if any(isinstance(n, pdl.BinaryOp) and n.op is pdl.BinaryOperator.AND for n in nodes):
+                causes.append("it read a AND b as a > 0")
             if any(isinstance(n, pdl.ByteSwap) for n in nodes):
                 causes.append("it did not swap the bytes of ntohs and ntohl")
             yield _warning(
@@ -489,26 +501,46 @@ def _classifynext(model: pdl.Model) -> Iterator[Diagnostic]:
 
 
 def _ip_addr(model: pdl.Model) -> Iterator[Diagnostic]:
-    """An ``MMT_DATA_IP_ADDR`` the Java tool read on its complex path (an
-    offset or data_len it did not fold), where it byte-swapped it in network
-    byte order (bug 25)."""
+    """An ``MMT_DATA_IP_ADDR`` the Java tool byte-swapped in network byte
+    order (bug 25): on its complex path (an offset or data_len it did not
+    fold), and in every conditional attribute or field."""
     encoding = model.properties.encoding
     if encoding is None or encoding.value is not pdl.Encoding.NETWORK:
         return
-    for el in _elements(model.attributes.elements):
-        if not (
-            isinstance(el, pdl.Attribute) and el.data_type.type is pdl.DataType.MMT_DATA_IP_ADDR
-        ):
-            continue
-        if any(e is not None and not _java_simple(e) for e in (el.offset, el.data_len)):
-            yield _warning(
-                "model.legacy-ip-addr",
-                f"`{el.alias.text}` is an MMT_DATA_IP_ADDR whose offset or data_len the Java"
-                " tool did not fold: it byte-swapped the address there (bug 25); it is now"
-                " copied byte for byte, as everywhere else",
-                "check code that reads this attribute: the address is in network byte order",
-                el.alias.span,
-            )
+
+    def warn(name: pdl.Name, where: str) -> Diagnostic:
+        return _warning(
+            "model.legacy-ip-addr",
+            f"`{name.text}` is an MMT_DATA_IP_ADDR {where}: the Java tool byte-swapped the"
+            " address there (bug 25); it is now copied byte for byte, as everywhere else",
+            "check code that reads this attribute: the address is in network byte order",
+            name.span,
+        )
+
+    def walk(
+        elements: tuple[pdl.AttributeElement, ...], conditional: bool
+    ) -> Iterator[Diagnostic]:
+        for el in elements:
+            if isinstance(el, pdl.Conditional):
+                yield from walk(el.then_branch, True)
+                yield from walk(el.else_branch or (), True)
+            elif isinstance(el, pdl.Attribute):
+                if el.data_type.type is not pdl.DataType.MMT_DATA_IP_ADDR:
+                    continue
+                if conditional:
+                    yield warn(el.alias, "in an if block")
+                elif any(e is not None and not _java_simple(e) for e in (el.offset, el.data_len)):
+                    yield warn(el.alias, "whose offset or data_len the Java tool did not fold")
+            elif conditional:
+                for element in el.elements:
+                    if (
+                        isinstance(element.type, pdl.MmtType)
+                        and element.type.type is pdl.DataType.MMT_DATA_IP_ADDR
+                    ):
+                        for f in element.fields:
+                            yield warn(f.name, "in an if block")
+
+    yield from walk(model.attributes.elements, False)
 
 
 def legacy_warnings(model: pdl.Model, analysed: sem.AnalysedModel | None) -> list[Diagnostic]:

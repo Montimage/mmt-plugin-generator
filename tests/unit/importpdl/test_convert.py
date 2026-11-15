@@ -170,6 +170,12 @@ def test_decision_8_and_bug_2_bitfield_order_and_the_offsets_after_a_bitfield_li
     assert covered(text, offset) == "c" and "(bug 2)" in offset.message
 
 
+def test_bug_2_needs_a_line_ending_with_a_bitfield_then_one_starting_plain() -> None:
+    # The Java tool placed e at 2 and f at 3, which is right.
+    text = build(struct("h", "uint8_t a:4, b:4;", "uint8_t c:4, d:4, e;", "uint8_t f;"))
+    assert "model.legacy-bitfield-offset" not in legacy(run(text))
+
+
 def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
     text = build(struct("h", "uint8_t hi:4, lo:4;") + attr("next", "0") + attr("more", "0"))
     conversion = run(text)
@@ -188,6 +194,30 @@ def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
         )
     )
     assert legacy(stopped) == ["model.legacy-bitfield-order"]
+
+
+def test_bug_3_each_branch_starts_from_the_offset_before_the_if() -> None:
+    # Both branches start after the struct: y and z are both shifted.
+    both = build(
+        struct("h", "uint8_t hi:4, lo:4;")
+        + "\t\tif (val(hi) == 1) {\n"
+        + attr("y", "0")
+        + "\t\t} else {\n"
+        + attr("z", "0")
+        + "\t\t}\n"
+    )
+    found = [d for d in run(both).diagnostics if d.code == "model.legacy-bitfield-offset"]
+    assert [covered(both, d).split('"')[1] for d in found] == ["y", "z"]
+    # A struct in the then branch does not shift the else branch.
+    then_only = build(
+        attr("k", "0")
+        + "\t\tif (val(k) == 1) {\n"
+        + struct("h", "uint8_t hi:4, lo:4;")
+        + "\t\t} else {\n"
+        + attr("z", "0")
+        + "\t\t}\n"
+    )
+    assert "model.legacy-bitfield-offset" not in legacy(run(then_only))
 
 
 CLASSIFY = (
@@ -233,6 +263,15 @@ def test_bug_5_an_expression_the_java_tool_folded_by_its_last_operand() -> None:
         "is 10; the Java tool folded it to 1: it read offset() and len() as 0 (bug 19)"
     )
     assert "the nextoffset of classifynext" in found[4].message
+
+
+def test_the_java_tool_read_and_as_its_left_operand() -> None:
+    # (1 AND 0) + 1 came out at 2: Java's ?: binds looser than && (G:674).
+    text = build(attr("a", "(1 AND 0) + 1") + attr("b", "(1 AND 1) + 1"))
+    found = [d for d in run(text).diagnostics if d.code.startswith("model.legacy-")]
+    assert [(d.code, covered(text, d)) for d in found] == [
+        ("model.legacy-constant-folding", "(1 AND 0) + 1")
+    ]
 
 
 def test_ntohs_and_ntohl_the_java_tool_did_not_swap() -> None:
@@ -324,6 +363,16 @@ def test_bug_25_an_ip_address_the_java_tool_read_on_its_complex_path() -> None:
     conversion = run(text)
     found = [d for d in conversion.diagnostics if d.code == "model.legacy-ip-addr"]
     assert [covered(text, d) for d in found] == ["moved", "sized"]
+    # In an if block, at any offset.
+    inside = build(
+        attr("x", "0")
+        + "\t\tif (val(x) == 1) {\n"
+        + attr("addr", "1", dtype="MMT_DATA_IP_ADDR", length="4")
+        + struct("s", "MMT_DATA_IP_ADDR src, dst;")
+        + "\t\t}\n"
+    )
+    found = [d for d in run(inside).diagnostics if d.code == "model.legacy-ip-addr"]
+    assert [covered(inside, d) for d in found] == ["addr", "src", "dst"]
     # The Java tool swapped only in network byte order.
     host = run(build(attributes, properties='label = "p"\n\t\tid = "960"\n\t\tencoding = "host"'))
     assert "model.legacy-ip-addr" not in legacy(host)

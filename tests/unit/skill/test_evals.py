@@ -208,6 +208,18 @@ def test_a_broken_envelope_is_reported(
     assert any(problem in p for p in problems), problems
 
 
+def test_a_failure_the_skill_does_not_fix_at_a_location_needs_none() -> None:
+    env = good_envelope()
+    env["error"].update(code="model.unreadable")
+    env["diagnostics"] = []
+    assert check(env) == []
+    env = good_envelope()
+    env.update(exit_code=6)
+    env["error"].update({"class": "test", "code": "test.load-failed"})
+    env["diagnostics"][0].update(severity="note", code="test.load-failed", location=None)
+    assert check(env, code=6) == []
+
+
 def test_stderr_and_a_second_document_are_reported() -> None:
     assert any("stderr" in p for p in check(good_envelope(), stderr="warning\n"))
     stdout = json.dumps(good_envelope()) + "\n{}\n"
@@ -278,7 +290,7 @@ def test_a_run_that_stops_elsewhere_fails(tmp_path: Path) -> None:
         ({"remove": "tests/telem-ack.yaml"}, "deletes the packet test tests/telem-ack.yaml"),
         (
             {"replace": "tests/telem-ack.yaml", "old": "value: 42", "new": "value: 43"},
-            "changes expected values in tests/telem-ack.yaml",
+            "changes the expected values of sequence in tests/telem-ack.yaml",
         ),
         (
             {
@@ -286,7 +298,27 @@ def test_a_run_that_stops_elsewhere_fails(tmp_path: Path) -> None:
                 "pattern": '^    - name: "sequence"\\n(?:      .*\\n)*',
                 "new": "",
             },
-            "drops ['sequence'] from tests/telem-ack.yaml but plugin.yaml keeps them",
+            "drops sequence but plugin.yaml keeps it in tests/telem-ack.yaml",
+        ),
+        (
+            {
+                "regex": "tests/telem-reading.yaml",
+                "pattern": "value: 1\\n(.*\\n(?:.*\\n){3}.*)value: 2\\n",
+                "new": "value: 2\\n\\1value: 1\\n",
+            },
+            "changes the expected values of version in tests/telem-reading.yaml",
+        ),
+        (
+            {"replace": "tests/telem-ack.yaml", "old": "00 00 00 2a", "new": "00 00 00 2b"},
+            "changes the bytes or the expected protocol in tests/telem-ack.yaml",
+        ),
+        (
+            {
+                "regex": "tests/telem-ack.yaml",
+                "pattern": '(name: "sequence"\\n.*\\n)(?:      .*\\n)*',
+                "new": '\\1      status: "absent"\\n',
+            },
+            "changes the expected values of sequence in tests/telem-ack.yaml",
         ),
         (
             {"regex": "plugin.yaml", "pattern": "^parents:\\n(?:  .*\\n)*", "new": ""},

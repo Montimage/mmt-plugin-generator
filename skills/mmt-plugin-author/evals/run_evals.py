@@ -29,7 +29,8 @@ What fails a case (each is one line of ``CaseResult.problems``):
   ``ok``/``exit_code``/``error`` that disagree with each other or with the
   process, an exit code or class not in the contract's exit table, an
   ``error.code`` or ``diagnostics[].code`` the contract does not document, a
-  model, build or test failure with no located error; and, without an SDK, an
+  failure the skill fixes at a location (``LOCATED``) with no located error;
+  and, without an SDK, an
   envelope whose ``context.sdk.prefix`` is set;
 - a command that does not end within the time limit. Every command gets an
   open pipe with no data as stdin and runs in a new session (no controlling
@@ -40,8 +41,9 @@ What fails a case (each is one line of ``CaseResult.problems``):
   when it has one; a ``test.packet-failed`` is also fixed by a change to a
   ``plugin.yaml`` line that names a failing attribute;
 - a packet test the case or the entry commands wrote that is deleted, or
-  whose expected values change (other than an attribute dropped from the
-  test and from ``plugin.yaml`` alike); only ``init``'s placeholder
+  whose bytes, protocol or expected attributes change, other than an
+  attribute renamed or dropped in the test and in ``plugin.yaml`` alike
+  (``_test_rewrites``); only ``init``'s placeholder
   ``tests/<label>-basic.yaml`` may go;
 - a final run that is not green: with an SDK, every loop command exits 0,
   ``validate``'s ``parents-exist`` is ``pass`` and ``test`` passes at least
@@ -74,7 +76,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -123,6 +124,18 @@ SCRUBBED_ENV = (
     "PKG_CONFIG_LIBDIR",
     "CC",
     "FORCE_COLOR",
+)
+#: The failures whose fix the skill puts at a location (contract.md), so
+#: whose envelope must locate an error; others (``model.unreadable``,
+#: ``test.load-failed``) may have none.
+LOCATED = (
+    "model.schema",
+    "model.yaml-syntax",
+    "model.syntax.",
+    "model.duplicate-name",
+    "build.compile-failed",
+    "build.missing-hook",
+    "test.packet-failed",
 )
 EDIT_KINDS = ("write", "append", "copy", "remove", "replace", "regex")
 SEVERITIES = ("error", "warning", "note")
@@ -376,8 +389,9 @@ def check_envelope(
             problems.append(f"diagnostics[{i}].location.line is {line!r}")
         if diag.get("severity") == "error":
             located = True
-    if cls in ("model", "build", "test") and not located:
-        problems.append(f"a {cls} failure with no located error in diagnostics")
+    code = error.get("code") if isinstance(error, dict) else None
+    if isinstance(code, str) and code.startswith(LOCATED) and not located:
+        problems.append(f"a {code} failure with no located error in diagnostics")
     if exit_code == 0 and not isinstance(env.get("result"), dict):
         problems.append("result is not an object on success")
     context = env.get("context")
@@ -566,6 +580,75 @@ def _test_values(text: str) -> tuple[list[str], list[str]]:
     return names, values
 
 
+_INFORMATIONAL = re.compile(r"^\s*(-\s+)?(summary|source|bytes_source):")
+
+
+def _parse_test(text: str) -> tuple[list[str], list[dict[str, str]]]:
+    """A packet test as its checked lines outside ``expect.attributes`` (the
+    bytes, the protocol, the id, the next protocol, ...) and its expected
+    attributes, each a mapping of its keys to their text; comments and the
+    informational keys (``summary``, ``source``, ``bytes_source``) left out."""
+    header: list[str] = []
+    attrs: list[dict[str, str]] = []
+    inside = False
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#") or _INFORMATIONAL.match(line):
+            continue
+        if line == "  attributes:":
+            inside = True
+            continue
+        if inside and line.startswith("    - "):
+            attrs.append({})
+            line = "      " + line[6:]
+        if inside and line.startswith("      ") and attrs:
+            key, _, value = line.strip().partition(":")
+            attrs[-1][key] = value.strip()
+            continue
+        inside = False
+        header.append(line.rstrip())
+    return header, attrs
+
+
+def _test_rewrites(before: str, after: str, model_names: set[str]) -> list[str]:
+    """How an edit of a protected packet test changed what it checks. Allowed:
+    an attribute dropped from the test whose name the model no longer has,
+    and a rename (every key but ``name`` the same, the old name gone from the
+    model, the new one in it). Anything else is a rewrite."""
+    old_header, old_attrs = _parse_test(before)
+    new_header, new_attrs = _parse_test(after)
+    problems = []
+    if old_header != new_header:
+        problems.append("changes the bytes or the expected protocol")
+
+    def rest(attr: Mapping[str, str]) -> dict[str, str]:
+        return {k: v for k, v in attr.items() if k != "name"}
+
+    def name(attr: Mapping[str, str]) -> str:
+        return attr.get("name", "?").strip('"')
+
+    def dropped(attrs: Sequence[Mapping[str, str]]) -> None:
+        problems.extend(
+            f"drops {name(a)} but plugin.yaml keeps it" for a in attrs if name(a) in model_names
+        )
+
+    def same(old: Mapping[str, str], new: Mapping[str, str]) -> bool:
+        renamed = name(old) not in model_names and name(new) in model_names
+        return rest(old) == rest(new) and (name(old) == name(new) or renamed)
+
+    i = 0
+    for new in new_attrs:
+        j = next((j for j in range(i, len(old_attrs)) if same(old_attrs[j], new)), None)
+        if j is None:
+            problems.append(f"changes the expected values of {name(new)}")
+            if i < len(old_attrs) and name(old_attrs[i]) == name(new):
+                i += 1
+            continue
+        dropped(old_attrs[i:j])
+        i = j + 1
+    dropped(old_attrs[i:])
+    return problems
+
+
 def _hook_parents(model: str) -> list[str]:
     """The parents of a ``plugin.yaml`` without ``classify``: those that
     ``<label>_hook_register_parents`` must attach."""
@@ -718,16 +801,10 @@ class _Runner:
                 self.result.problems.append(f"run {run}: deletes the packet test {path}")
             if path not in before or path not in after:
                 continue
-            old_names, old_values = _test_values(before[path])
-            new_names, new_values = _test_values(after[path])
-            if Counter(new_values) - Counter(old_values):
-                self.result.problems.append(f"run {run}: changes expected values in {path}")
-            # A rename drops the old name from the test and the model alike.
-            kept = (set(old_names) - set(new_names)) & _model_names(model)
-            if kept:
-                self.result.problems.append(
-                    f"run {run}: drops {sorted(kept)} from {path} but plugin.yaml keeps them"
-                )
+            self.result.problems += [
+                f"run {run}: {p} in {path}"
+                for p in _test_rewrites(before[path], after[path], _model_names(model))
+            ]
 
     def check_stop(self, run: int, expect: Mapping[str, Any], failure: Step | None) -> None:
         want = expect.get("stop")

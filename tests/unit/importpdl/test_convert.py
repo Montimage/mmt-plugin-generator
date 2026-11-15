@@ -196,6 +196,62 @@ def test_bug_3_an_aligned_element_after_a_struct_with_bitfields() -> None:
     assert legacy(stopped) == ["model.legacy-bitfield-order"]
 
 
+@pytest.mark.parametrize(
+    "lines",
+    [
+        pytest.param(("uint16_t a;", "uint8_t f:3;"), id="a plain field, then a run"),
+        pytest.param(("uint8_t a:4, b, c:4;",), id="two runs around a plain field"),
+    ],
+)
+def test_bug_3_not_when_the_java_tool_advanced_by_the_struct_size(lines: tuple[str, ...]) -> None:
+    # Each run has one field: the Java tool advanced its running offset by
+    # each field's type width, 3, which is the struct's size, so it placed
+    # `next` right (#69).
+    conversion = run(build(struct("h", *lines) + attr("next", "0")))
+    assert legacy(conversion) == ["model.legacy-bitfield-order"]
+    assert conversion.text is not None
+    assert "  - name: next\n    type: MMT_U8_DATA\n    offset: 3\n" in conversion.text
+
+
+@pytest.mark.parametrize(
+    ("lines", "message"),
+    [
+        pytest.param(
+            ("uint32_t a:1, b:31;",),
+            "advanced that offset by 8 bytes, not by the struct's size, 4,"
+            " so it placed `next` 4 bytes further on",
+            id="two fields of one run",
+        ),
+        pytest.param(
+            # The Java tool gave MMT_DATA_CHAR no length (0).
+            ("MMT_DATA_CHAR c;", "uint8_t f:3;"),
+            "advanced that offset by 1 byte, not by the struct's size, 2,"
+            " so it placed `next` 1 byte earlier",
+            id="a type the Java tool gave no length",
+        ),
+    ],
+)
+def test_bug_3_when_the_java_increment_differs_from_the_struct_size(
+    lines: tuple[str, ...], message: str
+) -> None:
+    conversion = run(build(struct("h", *lines) + attr("next", "0")))
+    assert legacy(conversion) == ["model.legacy-bitfield-order", "model.legacy-bitfield-offset"]
+    d = only(conversion, "model.legacy-bitfield-offset")
+    assert message in d.message and "(bug 3)" in d.message
+
+
+def test_bug_3_a_nested_struct_whose_java_width_was_a_line_number() -> None:
+    # The Java tool took a nested struct's width from its line number (bug
+    # 8), so where it placed `next` cannot be known: still a warning.
+    text = build(
+        struct("inner", "uint8_t x;")
+        + struct("h", "struct inner i;", "uint8_t f:3;")
+        + attr("next", "0")
+    )
+    d = only(run(text), "model.legacy-bitfield-offset")
+    assert "a line number for a nested struct (bug 8)" in d.message and "(bug 3)" in d.message
+
+
 def test_bug_3_each_branch_starts_from_the_offset_before_the_if() -> None:
     # Both branches start after the struct: y and z are both shifted.
     both = build(

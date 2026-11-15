@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0.dev0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "ee2e384f827bc151f70864c9243dd0f0e8d7cb63efd54c5b413f0c3c0a156bfa"
+  },
+  "files": [
+    {
+      "path": "generated/ethernet_example_mmt_plugin.c",
+      "sha256": "e75073622f8106f1ffe0c7ff2edb4589d63f39d7ab221447f5c85cd96e8e3db4"
+    },
+    {
+      "path": "generated/ethernet_example_mmt_plugin.h",
+      "sha256": "431f95c521c95fbeb6c2065e0348060bc6f2692fd01661d63b1c47c1034d2e70"
+    }
+  ]
+}

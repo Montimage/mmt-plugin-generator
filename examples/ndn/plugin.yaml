@@ -1,0 +1,23 @@
+# Port of plugins/ndn_plugin (NDN packet format 0.3): the TLV-TYPE of the
+# outer TLV, 5 for an Interest, 6 for a Data packet.
+schema: 1
+protocol:
+  label: ndn_example
+  id: 980
+  context: false
+  session: true
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: ethernet
+    classify:
+      match:
+        - {offset: 12, length: 2, value: 0x8624}   # the NDN EtherType
+      offset: 14
+attributes:
+  - name: packet_type
+    type: MMT_U8_DATA
+    offset: 0
+    length: sizeof(char)

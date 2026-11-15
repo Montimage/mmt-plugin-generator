@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0.dev0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "bdb7104c49a763740f91e2e445a19f16e8960a866709f501253af2d643952c06"
+  },
+  "files": [
+    {
+      "path": "generated/topo_ind_sch_example_mmt_plugin.c",
+      "sha256": "2d8c7ffb09e989df74b0e2902a24eccb2fa552a4a3bb0528a7dec6b362f1381c"
+    },
+    {
+      "path": "generated/topo_ind_sch_example_mmt_plugin.h",
+      "sha256": "eb58f62363b57911e4e9f404318514ccc6f4caf9f58e3aca9d4163e686e08f4a"
+    }
+  ]
+}

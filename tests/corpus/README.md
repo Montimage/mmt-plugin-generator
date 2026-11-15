@@ -277,7 +277,7 @@ implement them.
 - **Bitfield order** (decided by the maintainer, 2026-11-10, PR #35 review). Bitfields are numbered from the most significant
   bit of the storage unit, read in the model's byte order. This is the only
   rule. The `ip` model's `ihl:4, version:4` is a model bug, fixed when the
-  examples are ported (T5.1). Bitfields are a declared divergence from Java
+  examples are ported (T5.1, `examples/ip`). Bitfields are a declared divergence from Java
   for T1.6. A per-struct `bit_order` key may be added later, defaulting to
   `msb`. The dns, ip, tcp, topo_ind_sch and pdl_bitfields values depend on
   this rule.

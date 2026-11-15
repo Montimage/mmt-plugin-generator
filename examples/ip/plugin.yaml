@@ -1,0 +1,56 @@
+# Port of plugins/ip_plugin (RFC 791 section 3.1). The model's first byte
+# was `ihl:4, version:4`, Linux's little-endian bitfield order: bitfields
+# are numbered from the most significant bit (plan decision 8), so Version
+# comes first. The next protocol is a hook, as in the model:
+# src/ip_example_impl.c says why it classifies none.
+schema: 1
+protocol:
+  label: ip_example
+  id: 984
+  context: true
+  session: true
+  encapsulation: true
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: ethernet
+    classify:
+      match:
+        - {offset: 12, length: 2, value: 0x0800}   # the EtherType
+      offset: 14
+attributes:
+  - struct: iphdr
+    fields:
+      - type: uint8_t
+        bits:
+          - name: version
+            width: 4
+          - name: ihl
+            width: 4
+      - name: tos
+        type: uint8_t
+      - name: tot_len
+        type: uint16_t
+      - name: id
+        type: uint16_t
+      - type: uint16_t
+        bits:
+          - name: r_flag
+            width: 1
+          - name: df
+            width: 1
+          - name: mf
+            width: 1
+          - name: frag_off
+            width: 13
+      - name: ttl
+        type: uint8_t
+      - name: protocol
+        type: uint8_t
+      - name: check
+        type: uint16_t
+      - name: saddr
+        type: uint32_t
+      - name: daddr
+        type: uint32_t

@@ -1,0 +1,89 @@
+# Packet test of examples/tcp, ported from tests/corpus/models/tcp/packets/syn-ack-options.yaml.
+# Format and rules: tests/corpus/README.md
+schema: 1
+id: "tcp/syn-ack-options"
+model: "tcp"
+summary: "TCP SYN-ACK with MSS, SACK-permitted, timestamps and window scale options"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+  selector: "IPv4 protocol 6"
+  source: "RFC 9293 section 3.1; RFC 791 protocol numbers"
+bytes:
+  - "00 50 c0 00 9a 8b 7c 6d 1a 2b 3c 4e a0 12 fe 88"
+  - "1b ca 00 00 02 04 05 b4 04 02 08 0a 00 00 0b b8"
+  - "00 00 07 d0 01 03 03 07"
+bytes_source: "RFC 9293 section 3.1: source port 80, destination port 49152, data offset 10, SYN and ACK, window 65160, checksum over the RFC 9293 section 3.1 pseudo-header for 198.51.100.10 -> 192.0.2.20 (RFC 5737); options MSS 1460, SACK-permitted, timestamps 3000/2000, NOP, window scale 7 (RFC 9293 section 3.2, RFC 2018, RFC 7323)"
+expect:
+  protocol: "TCP_EXAMPLE"
+  proto_id: 989
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "source"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 80
+      source: "RFC 9293 section 3.1 Source Port, bytes 0-1"
+    - name: "dest"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 49152
+      source: "RFC 9293 section 3.1 Destination Port, bytes 2-3"
+    - name: "seq"
+      type: "MMT_U32_DATA"
+      offset: 4
+      length: 4
+      value: 2592832621
+      source: "RFC 9293 section 3.1 Sequence Number, bytes 4-7"
+    - name: "ack_seq"
+      type: "MMT_U32_DATA"
+      offset: 8
+      length: 4
+      value: 439041102
+      source: "RFC 9293 section 3.1 Acknowledgment Number, bytes 8-11"
+    - name: "doff"
+      type: "MMT_U8_DATA"
+      offset: 12
+      length: 1
+      value: 10
+      bit_offset: 0
+      bit_width: 4
+      source: "RFC 9293 section 3.1 Data Offset (10 32-bit words: 20 bytes and 20 of options), the high nibble of byte 12"
+    - name: "reserved"
+      type: "MMT_U8_DATA"
+      offset: 12
+      length: 1
+      value: 0
+      bit_offset: 4
+      bit_width: 4
+      source: "RFC 9293 section 3.1 Rsrvd, the low nibble of byte 12"
+    - name: "flags"
+      type: "MMT_U8_DATA"
+      offset: 13
+      length: 1
+      value: 18
+      source: "RFC 9293 section 3.1 control bits, byte 13: ACK (0x10) and SYN (0x02)"
+    - name: "window"
+      type: "MMT_U16_DATA"
+      offset: 14
+      length: 2
+      value: 65160
+      source: "RFC 9293 section 3.1 Window, bytes 14-15"
+    - name: "check"
+      type: "MMT_U16_DATA"
+      offset: 16
+      length: 2
+      value: 7114
+      source: "RFC 9293 section 3.1 Checksum, bytes 16-17"
+    - name: "urg_ptr"
+      type: "MMT_U16_DATA"
+      offset: 18
+      length: 2
+      value: 0
+      source: "RFC 9293 section 3.1 Urgent Pointer, bytes 18-19"

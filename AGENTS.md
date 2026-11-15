@@ -17,7 +17,22 @@ protocol model. A Python rewrite is planned in
 - `plugins/`: the 16 example models (`plugins/*_plugin`) and generated or
   hand-written C sources (`*_src/`, `cotp/`, `tpkt/`, ...). Only 4 of the
   16 models (abb, cotp, s7com, tpkt) produce code that compiles against
-  mmt-dpi 1.10.2.
+  mmt-dpi 1.10.2 with the Java tool. Left as it is until T5.4 (#31); the
+  ported projects are in `examples/`.
+- `examples/` (T5.1): the 16 `plugins/*_plugin` models ported to
+  mmt-plugin projects, `examples/<name>/` (`plugin.yaml` from `import`,
+  then edited; the committed `plugin.lock` and `generated/`;
+  `src/<label>_impl.c`; `tests/*.yaml`, the corpus packets of the model
+  with the port's name and id, same bytes, values from the specs). Labels
+  are `<protocol>_example`, ids 976-991, profile 1.10.2 pinned. All 16
+  build and pass their packet tests against mmt-dpi 1.10.2;
+  `examples/README.md` lists each one's label, id, parent, model fixes and
+  hooks. After a generator change (or a version bump: `plugin.lock`
+  records it), regenerate them all, as the README says. Tests in
+  `tests/unit/examples/`: `test_examples.py` (the models, `generate
+  --check`, the packet tests against the corpus) and `test_sdk.py`
+  (`validate`, `build` and `test --sanitize` on each one; needs
+  `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
 - `tests/corpus/`: the test corpus (T0.4): every `plugins/` model plus
@@ -278,7 +293,8 @@ protocol model. A Python rewrite is planned in
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
-  (`test` on every corpus model), `tests/unit/init/test_sdk.py` (`init`
+  (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
+  (`build` and `test` on every ported example), `tests/unit/init/test_sdk.py` (`init`
   then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
   project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
@@ -466,6 +482,14 @@ headers (skips without `MMT_GOLDEN_SDK`):
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/packettest/test_sdk.py
+```
+
+Build and test a ported example, then all of them, against those headers
+(the second skips without `MMT_GOLDEN_SDK`):
+
+```
+uv run mmt-plugin -C examples/dns test --sdk <dir>/opt/mmt --cc gcc --sanitize
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/examples/test_sdk.py
 ```
 
 Draft packet tests and a field skeleton from a capture (writes

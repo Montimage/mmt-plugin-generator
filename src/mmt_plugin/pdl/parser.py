@@ -1,7 +1,8 @@
 """The PDL v1 parser: a hand-written recursive-descent parser.
 
-Each method parses one rule of the legacy grammar
-(``legacy/pdl_grammar/PluginGrammar.g``, cited as ``G:<line>``) and returns
+Each method parses one rule of the Java tool's grammar
+(``legacy/pdl_grammar/PluginGrammar.g`` at commit 4076899, the last before
+the tool was removed in #31; cited as ``G:<line>``) and returns
 the node of ``mmt_plugin.pdl.model`` for it. The grammar is LL(1) once words
 are read in context, so one token of lookahead is enough everywhere and
 every error names the token where the text stopped making sense.

@@ -1,15 +1,17 @@
 # Behaviour changes from the Java generator
 
 Plan task T1.6 (#15). The Python generator (`mmt-plugin generate`, T1.5)
-replaces the 2015 Java tool kept in `legacy/`. This page records where the two
+replaces the 2015 Java tool, removed in #31 (in `legacy/` up to commit
+4076899). This page records where the two
 differ, so that a difference is a decision and not an accident.
 
 ## Parity
 
 Only 4 of the 16 `plugins/` models give Java output that compiles against
 mmt-dpi 1.10.2: abb, cotp, s7com and tpkt (inventory, section 4). For each of
-them, `tests/unit/generate/test_parity.py` reads the Java output pinned in
-`legacy/reference-output/` and the new output, and reduces both to what they
+them, `tests/unit/generate/test_parity.py` reads the Java output frozen in
+`tests/java-output/` (the jar's last run, checked against its `MANIFEST`)
+and the new output, and reduces both to what they
 mean to mmt-dpi:
 
 - the protocol id and alias (`PROTO_<L>`, `PROTO_<L>_ALIAS`);

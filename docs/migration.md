@@ -129,19 +129,14 @@ the test that pins it. The ones you are most likely to notice:
 
 ## The Java tool
 
-The jar and its sources are kept, frozen, in [`legacy/`](../legacy/README.md),
-with its output for every `plugins/` model in `legacy/reference-output/`,
-which CI regenerates; the parity test
-(`tests/unit/generate/test_parity.py`) compares that output with
-`mmt-plugin`'s. It still runs with a Java 8 runtime (create the output
-directory first: the jar writes nothing into a missing one and still exits
-0):
+The jar and its sources were removed in #31 (plan task T5.4), once
+`mmt-plugin` was shown to match it; they are in `legacy/` at commit
+4076899 if you need them. What the tests still compare with is frozen in
+`tests/java-output/`: the record of the jar's last run on every `plugins/`
+model, and its C output for the 4 models whose output compiled, which the
+parity test (`tests/unit/generate/test_parity.py`) compares with
+`mmt-plugin`'s.
 
-<!-- doc:skip needs a Java 8 runtime -->
-```sh
-mkdir -p tpkt-java
-java -jar legacy/dist/MMTPluginGenerator.jar plugins/tpkt_plugin tpkt-java
-```
-
-`legacy/` and `plugins/` are removed when the Java tool is retired, plan
-task T5.4 (#31); the ported projects in `examples/` replace `plugins/`.
+The ported projects in `examples/` replace the models of `plugins/`, which
+stays for now: the test corpus and the examples above still read it
+(#78).

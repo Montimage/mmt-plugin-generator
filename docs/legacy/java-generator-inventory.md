@@ -7,8 +7,11 @@
 > (#9); everything below the line is that comment, unedited.
 >
 > Paths in it are the locations before T0.5: `dist/`, `src/`, `lib/`,
-> `pdl_grammar/`, `nbproject/`, `build.xml` and `manifest.mf` now live under
-> `legacy/`. Its findings are pinned by `legacy/reference-output/`.
+> `pdl_grammar/`, `nbproject/`, `build.xml` and `manifest.mf` moved under
+> `legacy/`, and T5.4 (#31) removed the Java tool; they are in `legacy/` at
+> commit 4076899, the last with the tool. The jar's last run on every model
+> is frozen in `tests/java-output/` (`MANIFEST`, the output of the models
+> the parity test compares and the non-empty stderr files).
 
 ---
 

@@ -6,19 +6,22 @@ protocol model. A Python rewrite is planned in
 
 ## What exists today
 
-- `legacy/`: the legacy Java generator (2015, NetBeans Ant project), frozen
-  by T0.5: `src/`, `lib/`, `dist/`, `pdl_grammar/`, `nbproject/`,
-  `build.xml`, `manifest.mf`. The prebuilt jar is
-  `legacy/dist/MMTPluginGenerator.jar`. `legacy/reference-output/` holds its
-  output for every `plugins/*_plugin` model (exit code, stdout and stderr
-  included) and a `MANIFEST` with the jar's sha256; CI regenerates it with
-  `legacy/check-reference-output.sh`. `docs/legacy/java-generator-inventory.md`
-  describes the tool's behaviour.
+- The Java generator (2015, `MMTPluginGenerator.jar`) was removed by T5.4
+  (#31); its sources, jar and reference output were in `legacy/` up to
+  commit 4076899. `docs/legacy/java-generator-inventory.md` describes its
+  behaviour. `tests/java-output/` keeps, frozen, what the tests still need
+  from its last run: `MANIFEST` (each model's status and every output
+  file's sha256, byte for byte as it was), the generated C of abb, cotp,
+  s7com and tpkt (the parity test) and the three non-empty stderr files
+  (ethernet, ip, mongodb: the syntax errors `tests/unit/pdl/test_corpus.py`
+  compares with). The tests check every kept file against `MANIFEST`, and
+  `MANIFEST` against its sha256 at that commit; never edit them.
 - `plugins/`: the 16 example models (`plugins/*_plugin`) and generated or
   hand-written C sources (`*_src/`, `cotp/`, `tpkt/`, ...). Only 4 of the
-  16 models (abb, cotp, s7com, tpkt) produce code that compiles against
-  mmt-dpi 1.10.2 with the Java tool. Left as it is until T5.4 (#31); the
-  ported projects are in `examples/`.
+  16 models (abb, cotp, s7com, tpkt) produced code that compiles against
+  mmt-dpi 1.10.2 with the Java tool. Kept by T5.4 because the corpus
+  (`origin:`), its tests and the doc examples read it; whether it goes is
+  #78. The ported projects are in `examples/`.
 - `examples/` (T5.1): the 16 `plugins/*_plugin` models ported to
   mmt-plugin projects, `examples/<name>/` (`plugin.yaml` from `import`,
   then edited; the committed `plugin.lock` and `generated/`;
@@ -139,8 +142,8 @@ protocol model. A Python rewrite is planned in
   each with its inventory bug (or where it was decided) and the test that
   pins it; `tests/unit/test_behaviour_changes.py` checks that every inventory
   bug has a row and every named test exists. The parity test,
-  `tests/unit/generate/test_parity.py`, reduces the Java output in
-  `legacy/reference-output/` and the new output of abb, cotp, s7com and tpkt
+  `tests/unit/generate/test_parity.py`, reduces the Java output frozen in
+  `tests/java-output/` and the new output of abb, cotp, s7com and tpkt
   to protocol, attributes, table rows, reads, structs and registrations, and
   asserts they are equal apart from Java's `register_protocol_stack` (bug 22)
   and the new init's call of `<label>_hook_register_parents` (T2.2).
@@ -356,23 +359,6 @@ protocol model. A Python rewrite is planned in
   SDK). `.github/workflows/release.yml` (above) runs alongside it.
 
 ## Commands
-
-Generate C sources from a model with the legacy tool (needs Java):
-
-```
-java -jar legacy/dist/MMTPluginGenerator.jar plugins/tpkt_plugin <output dir>
-```
-
-Create the output dir first: if it is missing, the tool prints
-`Error in writing to file` and still exits 0.
-
-Check that the jar still reproduces `legacy/reference-output/` byte for byte
-(needs a Java 8 runtime; set `JAVA` to pick one). It exits non-zero on any
-difference; `--write` regenerates the reference instead:
-
-```
-bash legacy/check-reference-output.sh
-```
 
 Build and check the NDN example. It needs mmt-dpi >= 1.10.2 installed into a
 private prefix (see README, "Install mmt-dpi"); pass that prefix as an

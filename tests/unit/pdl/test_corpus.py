@@ -1,8 +1,10 @@
 """Parse every model of ``plugins/`` and ``tests/corpus/models/``.
 
-What the Java tool did with each ``plugins/*_plugin`` model comes from
-``legacy/reference-output/`` (the ``MANIFEST`` status and the stderr lines
-``line L:C ...``, with 0-based columns):
+What the Java tool did with each ``plugins/*_plugin`` model comes from the
+record of its last run, frozen in ``tests/java-output/`` when it was removed
+(T5.4, #31): the ``MANIFEST`` status and the stderr lines ``line L:C ...``,
+with 0-based columns. ``MANIFEST`` holds the sha256 of every model's stderr;
+the non-empty ones are kept next to it.
 
 - a model it parsed without a syntax error parses here;
 - ``ip_plugin``, which it rejected only because ``id`` was a reserved word,
@@ -15,6 +17,7 @@ The corpus models are checked against ``tests/corpus/index.yaml``.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
 from pathlib import Path
@@ -28,7 +31,7 @@ from mmt_plugin.pdl.model import Encoding
 
 ROOT = Path(__file__).parents[3]
 PLUGINS = sorted(p.name for p in (ROOT / "plugins").glob("*_plugin"))
-REFERENCE = ROOT / "legacy" / "reference-output"
+REFERENCE = ROOT / "tests" / "java-output"
 CORPUS = ROOT / "tests" / "corpus"
 
 #: Models the Java grammar rejected only for a keyword used as a name.
@@ -37,16 +40,31 @@ KEYWORD_LIMITED = {"ip_plugin": "no viable alternative at input 'id'"}
 _JAVA_ERROR = re.compile(r"^line (\d+):(\d+) (.*)$")
 
 
-def _java_status(model: str) -> str:
+def _manifest_line(model: str) -> list[str]:
     for line in (REFERENCE / "MANIFEST").read_text(encoding="utf-8").splitlines():
         fields = line.split()
         if fields and fields[0] == model:
-            return fields[1]
+            return fields
     raise AssertionError(f"{model} is not in the reference MANIFEST")
 
 
+def _java_status(model: str) -> str:
+    return _manifest_line(model)[1]
+
+
+def _java_stderr(model: str) -> str:
+    hashes = dict(f.split("=", 1) for f in _manifest_line(model)[2:])
+    expected = hashes[f"{model}.stderr"]
+    if expected == hashlib.sha256(b"").hexdigest():
+        assert not (REFERENCE / f"{model}.stderr").exists(), model
+        return ""
+    data = (REFERENCE / f"{model}.stderr").read_bytes()
+    assert hashlib.sha256(data).hexdigest() == expected, model
+    return data.decode("utf-8")
+
+
 def _java_errors(model: str) -> list[tuple[int, int, str]]:
-    stderr = (REFERENCE / f"{model}.stderr").read_text(encoding="utf-8")
+    stderr = _java_stderr(model)
     found = []
     for line in stderr.splitlines():
         match = _JAVA_ERROR.match(line)

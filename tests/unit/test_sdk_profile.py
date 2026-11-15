@@ -137,7 +137,7 @@ def test_what_the_generator_needs(profile: Profile) -> None:
 
 
 def test_the_sdk_names_of_the_java_output_and_the_corpus(profile: Profile) -> None:
-    # Used by legacy/reference-output/, the example sources and the corpus
+    # Used by tests/java-output/ (the Java output), the example sources and the corpus
     # models (review of PR #49, F1).
     assert [t.header for t in profile.types if t.name == "mac_addr_t"] == ["types_defs.h"]
     layout = {c.name: c.header for c in profile.constants if c.group == "data_len_or_offset"}

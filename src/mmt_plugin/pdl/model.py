@@ -10,9 +10,10 @@ for: absolute offsets (``Model.offsets``), a struct's offset
 (``Struct.offset``) and the parent protocols (``Model.parents``). Their
 defaults are PDL v1's meaning, which the parser never changes.
 
-The grammar that fixes each construct's meaning is the legacy one,
-``legacy/pdl_grammar/PluginGrammar.g`` (``G:<line>`` below), with the decided
-rules of ``tests/corpus/README.md``.
+The grammar that fixes each construct's meaning is the Java tool's,
+``legacy/pdl_grammar/PluginGrammar.g`` at commit 4076899 (the last before the
+tool was removed in #31; ``G:<line>`` below), with the decided rules of
+``tests/corpus/README.md``.
 """
 
 from __future__ import annotations

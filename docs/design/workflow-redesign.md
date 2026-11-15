@@ -19,7 +19,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 3. **Your code vs generated code:** generated files are never hand-edited. User logic goes in `src/<name>_impl.c` as hook functions declared by the generated header. A missing hook is a compile error.
 4. **Plugin `.so` naming:** `mmtp_<label>.so`, which always sorts after `libmmt_tcpip.so`. `validate` enforces it.
 5. **Third-party protocol ids:** ask mmt-dpi to reserve and document a range (950–999). `validate` warns outside it and fails on a taken id or name.
-6. **Java tool:** moved to `legacy/` and kept until the parity tests (#3) pass, then deleted.
+6. **Java tool:** moved to `legacy/` and kept until the parity tests (#3) pass, then deleted. Done: T5.4 (#31) deleted `legacy/`; it is in the history up to commit 4076899, and `tests/java-output/` keeps the reference output the tests still read.
 7. **Tracking:** one epic plus one issue per task below. Implementation by Claude Code; review by a separate agent session.
 8. **PDL semantics (T0.4 corpus, PR #35):** decided by Luong on 2026-11-10. Details in [`tests/corpus/README.md`, Decided rules](../../tests/corpus/README.md#decided-rules).
    - Bitfields: numbered from the most significant bit of the storage unit, read in the model's byte order; the only rule. The `ip` model's `ihl:4, version:4` is a model bug, fixed in T5.1. A declared divergence from Java for T1.6. A per-struct `bit_order` key (default `msb`) may come later.
@@ -69,7 +69,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
   - Move the Java tool (`src/`, `lib/`, `dist/`, `pdl_grammar/`, `nbproject/`, `build.xml`, `manifest.mf`) to `legacy/`.
   - Store its output for every model as reference artifacts under `legacy/reference-output/`, with the generator version and the date.
   - Add the inventory from #3 as `docs/legacy/java-generator-inventory.md`.
-  - Verify: `java -jar legacy/dist/MMTPluginGenerator.jar` still runs on every model, and the reference outputs match a fresh run byte for byte.
+  - Verify: `java -jar legacy/dist/MMTPluginGenerator.jar` still runs on every model, and the reference outputs match a fresh run byte for byte. (Historical: T5.4 removed `legacy/`.)
 
 ### Phase 1 — Core rewrite (Montimage/mmt-plugin-generator#3)
 
@@ -184,6 +184,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 - **T5.4 Retire the Java tool.** Depends on T1.6 and T5.1.
   - Delete `legacy/` once parity is proven.
   - Verify: no Java left in the build or docs.
+  - Done in #31: `plugins/` stays, because the test corpus reads it; its removal is #78.
 - **T5.5 Release: merge `dev` into `main`.** Depends on all tasks above.
   - A release PR from `dev` to `main` with a changelog, then the first release of the Python generator. Needs Luong's explicit OK.
 

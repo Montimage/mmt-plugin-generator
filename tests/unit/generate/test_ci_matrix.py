@@ -81,4 +81,8 @@ def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
     assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
     assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
     assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
-    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py" in step
+    # The command is a whole line (no `|| true`), and nothing skips the step
+    # or lets it fail without failing the job.
+    lines = [line.strip() for line in step.splitlines()]
+    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py" in lines
+    assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)

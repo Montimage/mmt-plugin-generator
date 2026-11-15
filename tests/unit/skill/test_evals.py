@@ -122,9 +122,23 @@ def test_every_block_command_is_json_and_reads_no_stdin(key: str) -> None:
 
 def test_the_entry_blocks_create_a_project_then_convert_or_scaffold() -> None:
     commands = {k: [run_evals.command_of(a) for a in v] for k, v in BLOCKS.items()}
-    assert commands["entry spec"] == ["init", "import"]
+    # init writes plugin.yaml itself (#65): a spec needs no conversion.
+    assert commands["entry spec"] == ["init"]
     assert commands["entry pcap"] == ["init", "scaffold"]
     assert commands["entry pdl"] == ["init", "import"]
+    # The pdl entry converts next to init's plugin.yaml, never over it: no
+    # entry command replaces a file (no --force, above), and scaffold reads
+    # init's plugin.yaml, its default model.
+    (_, imp) = BLOCKS["entry pdl"]
+    assert imp[imp.index("-o") + 1] == "<project>/plugin.imported.yaml"
+    assert "--model" not in BLOCKS["entry pcap"][1]
+
+
+def test_the_entry_commands_stop_at_the_first_failure() -> None:
+    # An entry command after a failed init would work on files init did not
+    # write (state.file-differs, state.not-a-project).
+    text = " ".join(SKILL_TEXT.split())
+    assert "Run the entry commands in order and stop at the first that does not exit 0" in text
 
 
 def test_the_exit_tables_are_exitcodes() -> None:

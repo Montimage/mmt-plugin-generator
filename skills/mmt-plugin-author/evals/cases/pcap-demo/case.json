@@ -6,9 +6,8 @@
   "params": {"label": "demo", "id": "978", "selector": "udp:dport=4433", "pcap": "{case}/capture.pcap"},
   "runs": [
     {
-      "note": "Take scaffold's proposal as the model, pinned to the profile, and drop init's sample model; keep everything else.",
+      "note": "Take scaffold's proposal as the model, in place of init's sample model, pinned to the profile; keep everything else.",
       "edits": [
-        {"remove": "model.pdl"},
         {"copy": "plugin.yaml", "source": "plugin.proposed.yaml"},
         {"replace": "plugin.yaml", "old": "  encoding: network\n", "new": "  encoding: network\nsdk:\n  profile: \"1.10.2\"\n"}
       ],

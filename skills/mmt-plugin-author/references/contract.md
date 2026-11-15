@@ -155,6 +155,6 @@ A row is a code, or a family ending in `*`. Codes are the
 | `state.installed-modified` | An installed file was changed since install: ask the user. |
 | `state.invalid-manifest` | An install manifest cannot be read: ask the user. |
 | `state.not-installed` | Warning from `uninstall`: nothing was installed. |
-| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. |
+| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. At a `model.pdl` (a project of an older `init`): the hint's `import` converts it; ask the user before you run it. |
 | `state.not-a-project` | `init --dir` is not empty and not a project: pick an empty directory. |
 | `state.output-differs` | `import` or `scaffold` would replace a file with other content: `--force` only if you wrote it. |

@@ -2,11 +2,16 @@
 end-to-end test from init to test").
 
 In a temporary directory, ``mmt-plugin init demo`` picks its id from the
-SDK's run-time registry, then ``mmt-plugin test --json`` builds the project
-(generate, compile with ``-Wall -Wextra -Werror``, link) and runs its packet
-test: exit 0, every packet passing, also under ``--sanitize``. A second
-``init`` is a no-op. The SDK is an extracted mmt-dpi package, a private
-prefix (never ``/opt/mmt``)::
+SDK's run-time registry, then ``mmt-plugin test --json`` (``result.next``:
+no ``--model``, since the project's ``plugin.yaml`` is the default model and
+pins the profile) builds the project (generate, compile with ``-Wall
+-Wextra -Werror``, link) and runs its packet test: exit 0, every packet
+passing, also under ``--sanitize``. A second ``init`` is a no-op. With a
+``--parent`` the generated code can attach (an EtherType, a UDP port), the
+packet test also runs ``through`` it, so the generated classification must
+find the protocol in a whole frame; a broken one fails that run (#65).
+The SDK is an extracted mmt-dpi package, a private prefix (never
+``/opt/mmt``)::
 
     MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/init/test_sdk.py
 
@@ -81,7 +86,7 @@ def test_init_then_test_passes_every_packet(
     assert doc["result"]["protocol"]["id"] == 950  # the lowest id the SDK leaves free
     assert doc["context"]["sdk"]["source"] == "MMT_BASE"
     argv = doc["result"]["next"]
-    assert argv == ["mmt-plugin", "-C", "demo", "test", "--model", "demo/model.pdl"]
+    assert argv == ["mmt-plugin", "-C", "demo", "test"]
 
     code, doc = _json(capsys, *argv[1:])
     assert code == 0, doc["error"]
@@ -101,14 +106,44 @@ def test_init_then_test_passes_every_packet(
     assert {f["action"] for f in doc["result"]["files"]} == {"unchanged"}
 
 
-def test_init_with_a_parent_and_an_id_tests_green(
-    work: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("parent", ["ethernet:ethertype=0x88b5", "udp:dport=4433"])
+def test_init_with_a_classified_parent_tests_green_through_it(
+    work: Path, capsys: pytest.CaptureFixture[str], parent: str
 ) -> None:
-    code, doc = _json(
-        capsys, "init", "demo2", "--id", "977", "--parent", "ethernet:ethertype=0x88b5"
-    )
+    code, doc = _json(capsys, "init", "demo2", "--id", "977", "--parent", parent)
     assert code == 0, doc["error"]
     assert doc["diagnostics"] == []
+    argv = doc["result"]["next"][1:]
+    code, doc = _json(capsys, *argv)
+    assert code == 0, doc["error"]
+    packets = doc["result"]["packets"]
+    assert [(p["id"], p.get("through"), p["status"]) for p in packets] == [
+        ("demo2/basic", None, "pass"),
+        ("demo2/basic", parent, "pass"),
+    ]
+    code, doc = _json(capsys, *argv, "--sanitize", "--fuzz-count", "20")
+    assert code == 0, doc["error"]
+    assert doc["result"]["sanitize"]["crashes"] == []
+
+    # The through run tests the generated classification: a classify that
+    # matches another value fails it, and only it.
+    model = work / "demo2" / "plugin.yaml"
+    text = model.read_text()
+    value = parent.rpartition("=")[2]
+    assert f"value: {value}}}" in text
+    model.write_text(text.replace(f"value: {value}}}", "value: 0x1234}"))
+    code, doc = _json(capsys, *argv)
+    assert code == 6
+    assert doc["error"]["code"] == "test.packet-failed"
+    failed = [(p.get("through"), p["status"]) for p in doc["result"]["packets"]]
+    assert failed == [(None, "pass"), (parent, "fail")]
+
+
+def test_init_with_a_hook_parent_tests_green(
+    work: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, doc = _json(capsys, "init", "demo3", "--id", "978", "--parent", "tcp:port=102")
+    assert code == 0, doc["error"]
     code, doc = _json(capsys, *doc["result"]["next"][1:])
     assert code == 0, doc["error"]
-    assert doc["result"]["summary"]["passed"] == 1
+    assert [p.get("through") for p in doc["result"]["packets"]] == [None]

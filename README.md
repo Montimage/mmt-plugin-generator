@@ -72,15 +72,15 @@ docker run --rm ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin --version
 
 ## Quick start
 
-Create a project, convert its model to `plugin.yaml`, then check it and
+Create a project, whose model `quick/plugin.yaml` pins the SDK profile and
+attaches the protocol to UDP port 4433 in generated code, then check it and
 generate its C sources (no SDK needed for these):
 
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init quick --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2
-mmt-plugin -C quick import quick/model.pdl
-mmt-plugin -C quick validate --no-sdk --sdk-profile 1.10.2
-mmt-plugin -C quick generate --sdk-profile 1.10.2
+mmt-plugin -C quick validate --no-sdk
+mmt-plugin -C quick generate
 ```
 
 With mmt-dpi in a private prefix (below) and `MMT_BASE` set to it, build

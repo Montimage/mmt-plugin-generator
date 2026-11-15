@@ -34,7 +34,16 @@ from dataclasses import dataclass
 from mmt_plugin.pcap.layers import Parent, Payload
 from mmt_plugin.ui.render import escape
 
-__all__ = ["HEADER_LIMIT", "Field", "Skeleton", "packet_test", "propose", "proposed_yaml"]
+__all__ = [
+    "HEADER_LIMIT",
+    "Field",
+    "Skeleton",
+    "classifies",
+    "packet_test",
+    "parent_yaml",
+    "propose",
+    "proposed_yaml",
+]
 
 #: The most header bytes proposed as fields.
 HEADER_LIMIT = 16
@@ -210,6 +219,26 @@ def _classify(parent: Parent, tagged: bool) -> list[str] | None:
     return lines
 
 
+def classifies(parent: Parent, *, tagged: bool = False) -> bool:
+    """Whether ``parent_yaml`` gives ``parent`` a generated ``classify``."""
+    return _classify(parent, tagged) is not None
+
+
+def parent_yaml(label: str, parent: Parent, *, tagged: bool = False) -> list[str]:
+    """The ``parents`` entry of ``parent`` in a ``plugin.yaml`` of ``label``
+    (``init`` and ``scaffold`` write the same one): with ``classify`` when
+    the generated code can attach the protocol exactly, else a comment that
+    names the hook that must (``<label>_hook_register_parents``)."""
+    lc = label.lower()
+    classify = _classify(parent, tagged)
+    if classify is None:
+        return [
+            f"  - protocol: {parent.proto}    # {_comment(parent.text)}: attach it in"
+            f" {lc}_hook_register_parents (src/{lc}_impl.c)"
+        ]
+    return [f"  - protocol: {parent.proto}    # {_comment(parent.text)}", *classify]
+
+
 def proposed_yaml(
     label: str,
     pid: int,
@@ -223,7 +252,6 @@ def proposed_yaml(
     """``plugin.proposed.yaml``: the protocol of the project's model, the
     parent, and the skeleton's attributes. ``tagged``: a payload came
     through an 802.1Q/802.1ad tag."""
-    lc = label.lower()
     lines = [
         f"# The fields mmt-plugin scaffold proposes for {label.upper()}, from {count}"
         f" payload{'s' if count != 1 else ''}",
@@ -238,17 +266,9 @@ def proposed_yaml(
         f"  id: {pid}",
         "  encoding: network",
         "parents:",
+        *parent_yaml(label, parent, tagged=tagged),
+        "attributes:",
     ]
-    classify = _classify(parent, tagged)
-    if classify is None:
-        lines.append(
-            f"  - protocol: {parent.proto}    # {_comment(parent.text)}: attach it in"
-            f" {lc}_hook_register_parents (src/{lc}_impl.c)"
-        )
-    else:
-        lines.append(f"  - protocol: {parent.proto}    # {_comment(parent.text)}")
-        lines += classify
-    lines.append("attributes:")
     for field in skeleton.fields:
         lines += [
             f"  - name: {field.name}    # {field.note}",

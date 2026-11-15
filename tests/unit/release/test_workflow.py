@@ -218,7 +218,8 @@ def test_the_dry_run_builds_checks_installs_and_builds_the_image() -> None:
     assert "docker build --target release" in jobs["container"]
     # The release's own wheel, by its exact name.
     assert '--build-arg WHEEL="mmt_plugin-$VERSION-py3-none-any.whl"' in jobs["container"]
-    assert "mmt-plugin init demo" in jobs["container"]
+    # init writes plugin.yaml, test's default model (#65).
+    assert "mmt-plugin init demo && mmt-plugin -C demo test'" in jobs["container"]
     assert "bash tests/push_release_image.sh" in jobs["image-dry-run"]
     assert "localhost:5000/mmt-plugin" in jobs["image-dry-run"]
     assert re.search(r"^        image: registry@sha256:[0-9a-f]{64}$", jobs["image-dry-run"], re.M)

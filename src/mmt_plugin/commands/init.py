@@ -3,28 +3,37 @@
 Creates a plugin project that builds and tests green out of the box, in
 ``--dir`` (default ``./<LABEL>``, relative to the current directory):
 
-- ``model.pdl``: a PDL v1 model of a 4-byte header (``version``, ``kind``,
-  ``length``), read with ``--model model.pdl``; writing the canonical
-  ``plugin.yaml`` (#24) instead is #65;
+- ``plugin.yaml`` (``docs/plugin-yaml.md``), the default ``MODEL`` of every
+  command: a 4-byte header (``version``, ``kind``, ``length``), the profile
+  the scaffold is written for pinned in ``sdk.profile``, and ``--parent`` as
+  its ``parents`` entry (#65). A parent that the generated code can attach
+  exactly (an EtherType, a UDP source or destination port:
+  ``mmt_plugin.pcap.skeleton.parent_yaml``, which ``scaffold`` writes too)
+  gets a ``classify``; any other is left to
+  ``<label>_hook_register_parents``;
 - ``src/<label>_impl.c``: the user code scaffold
   (``mmt_plugin.codegen.scaffold``), which defines every hook;
 - ``tests/<label>-basic.yaml``: one packet test (corpus schema 1) of that
-  header, which ``mmt-plugin test`` runs;
+  header, which ``mmt-plugin test`` runs; with a ``classify`` parent, it
+  also runs ``through`` it, so the generated classification is tested;
 - ``.gitignore``: ``build/``.
 
 The generated sources are not created: ``build`` and ``test`` generate them.
 
 Stages, each stopping the run with its class's exit code:
 
-1. check ``LABEL`` (``[a-z][a-z0-9_]*``), ``--name`` and ``--parent``
-   (usage, exit 2; a parent that the profile does not know is
+1. check ``LABEL`` (``[a-z][a-z0-9_]*``), ``--name`` (only the label
+   upper-cased: ``plugin.yaml`` has no key for another name) and
+   ``--parent`` (usage, exit 2; the keys of a parent that
+   ``mmt_plugin.pcap.layers`` decodes must be its own, each once, with a
+   number in range; a parent that the profile does not know is
    ``model.unknown-parent``, exit 3; no parent is the warning
    ``model.no-parent``);
 2. choose the profile (``--sdk-profile``, ``MMT_PLUGIN_SDK_PROFILE``, the
    detected SDK's, else the newest bundled one with a warning). The SDK is
    looked for only when it is needed: no ``--id`` (to pick one), ``--sdk``,
    or no pinned profile;
-3. the id: ``--id``, else the id of an existing ``model.pdl`` of the same
+3. the id: ``--id``, else the id of an existing ``plugin.yaml`` of the same
    label (so a re-run keeps it), else the lowest id from 950 to 999 that
    neither the profile nor the installed plugins (``mmt_plugin.sdk.registry``, the
    project's own ``mmtp_<label>.so`` excluded) take. Without an SDK, only
@@ -40,18 +49,22 @@ Stages, each stopping the run with its class's exit code:
    directory). A file or a symbolic link where a directory of the project
    goes (``src``, ``tests``) is ``state.file-differs`` even with ``--force``,
    so nothing is written outside ``--dir``. A ``--dir`` that holds more than ``.git`` but no
-   ``model.pdl`` is not a project: ``state.not-a-project`` (exit 7) unless
-   ``--force``;
+   ``plugin.yaml`` is not a project: ``state.not-a-project`` (exit 7) unless
+   ``--force``. One that holds the ``model.pdl`` of an ``init`` before #65 and
+   no ``plugin.yaml`` is ``state.file-differs`` (exit 7) even with ``--force``,
+   whose hint converts it with ``mmt-plugin import``;
 6. write each file atomically (``mmt_plugin.fsio``). Re-running on the same
    arguments is a no-op.
 
 ``--dry-run`` writes nothing and reports ``would-*`` actions.
-``result.next`` is the command line that tests the new project.
+``result.next`` is the command line that tests the new project:
+``mmt-plugin -C <dir> test`` (and ``--sdk`` when given).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -62,11 +75,14 @@ from pathlib import Path
 from mmt_plugin.codegen import scaffold
 from mmt_plugin.commands import Context, Outcome, Subparsers
 from mmt_plugin.commands.generate import make_generation
-from mmt_plugin.commands.modelio import absolute, show_path
+from mmt_plugin.commands.modelio import PROJECT_FILE, absolute, show_path
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, write_atomic
-from mmt_plugin.pdl import PdlSyntaxError, parse
+from mmt_plugin.pcap.layers import PARENTS, Parent, parent_of
+from mmt_plugin.pcap.skeleton import classifies, parent_yaml
+from mmt_plugin.pdl import PdlSyntaxError
+from mmt_plugin.pluginyaml import load as load_yaml
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, find_sdk
 from mmt_plugin.sdk.profile import Profile
 from mmt_plugin.sdk.registry import Registry, RegistryError, read_registry
@@ -77,8 +93,10 @@ from mmt_plugin.ui.streams import StreamStyle
 
 __all__ = [
     "DIAGNOSTIC_CODES",
+    "LEGACY_MODEL_FILE",
     "MODEL_FILE",
     "InitCommand",
+    "parent_of_selector",
     "parse_selector",
     "project_files",
 ]
@@ -95,8 +113,10 @@ DIAGNOSTIC_CODES = (
     "state.not-a-project",
 )
 
-#: The project's model, until init writes ``plugin.yaml`` (#65).
-MODEL_FILE = "model.pdl"
+#: The project's model, the default ``MODEL`` of every command.
+MODEL_FILE = PROJECT_FILE
+#: The model an ``init`` before #65 wrote, PDL v1.
+LEGACY_MODEL_FILE = "model.pdl"
 GITIGNORE = ".gitignore"
 
 _LABEL = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -141,47 +161,66 @@ def parse_selector(text: str) -> Selector:
     ok = _LABEL.match(proto) is not None and (not sep or bool(rest))
     for item in rest.split(",") if sep and rest else ():
         key, eq, value = item.partition("=")
-        if not (eq and _KEY.match(key) and _VALUE.match(value)):
+        if not (eq and _KEY.match(key) and _VALUE.match(value)) or key in dict(keys):
             ok = False
             break
         keys.append((key, value))
     if not ok:
         raise CliError(
             "usage.invalid-value",
-            f"--parent {text!r} is not a selector (<proto>[:<key>=<value>[,...]])",
+            f"--parent {text!r} is not a selector (<proto>[:<key>=<value>[,...]], each key once)",
             "for example --parent ethernet:ethertype=0x88b5 or --parent udp:port=4433",
         )
     return Selector(text, proto, tuple(keys))
 
 
-def _model_text(label: str, pid: int, parent: Selector | None) -> str:
-    """The starter model, PDL v1."""
+def parent_of_selector(selector: Selector) -> Parent:
+    """The ``Parent`` of ``--parent``: a parent that ``mmt_plugin.pcap.layers``
+    decodes (``PARENTS``: Ethernet, IPv4, IPv6, UDP, TCP) has its keys
+    checked and decoded as numbers (``CliError`` ``usage.invalid-value``
+    otherwise); any other protocol of the SDK keeps no keys, since only
+    user code can attach it."""
+    if selector.proto not in PARENTS:
+        return Parent(selector.text, selector.proto, ())
+    return parent_of(selector.text, selector.proto, selector.keys)
+
+
+def _model_text(label: str, pid: int, profile: str, parent: Parent | None) -> str:
+    """The starter model, ``plugin.yaml`` (``docs/plugin-yaml.md``)."""
     lc = label.lower()
-    if parent is None:
-        where = "no parent yet: attach it in"
-    else:
-        where = f"parent {parent.text}: attach it in"
     lines = [
-        f"// The {label.upper()} protocol plugin's model, created by mmt-plugin init.",
-        f"// {where} src/{lc}_impl.c, {lc}_hook_register_parents().",
-        "Protocol {",
-        "\tProperties {",
-        f'\t\tlabel = "{label}"',
-        f'\t\tid = "{pid}"',
-        '\t\tencoding = "network"',
-        "\t}",
-        "\tAttributes {",
-        f"\t\tstruct {lc}_hdr {{",
-        *(f"\t\t\t{ctype} {name};" for name, ctype, _, _, _ in _FIELDS),
-        "\t\t}",
-        "\t}",
-        "}",
+        f"# The {label.upper()} protocol plugin's model, created by mmt-plugin init. Every",
+        "# mmt-plugin command of the project reads it (docs/plugin-yaml.md): describe",
+        "# the protocol here, and keep the label and the id, which src/ is written for.",
+        "schema: 1",
+        "protocol:",
+        f"  label: {json.dumps(label)}",
+        f"  id: {pid}",
+        "  encoding: network    # big-endian integers",
+        "sdk:",
+        f"  profile: {json.dumps(profile)}",
     ]
+    if parent is None:
+        lines += [
+            "# No parent yet: declare it under parents: (with classify, the generated",
+            f"# code attaches {label.upper()}), or attach it in {lc}_hook_register_parents",
+            f"# (src/{lc}_impl.c).",
+        ]
+    else:
+        lines += ["parents:", *parent_yaml(label, parent)]
+    lines += [
+        "attributes:",
+        f"  - struct: {lc}_hdr    # at offset 0",
+        "    fields:",
+    ]
+    for name, ctype, _, _, _ in _FIELDS:
+        lines += [f"      - name: {name}", f"        type: {ctype}"]
     return "\n".join(lines) + "\n"
 
 
-def _test_text(label: str, pid: int) -> str:
-    """The starter packet test (corpus schema 1, ``tests/corpus/README.md``)."""
+def _test_text(label: str, pid: int, through: str | None = None) -> str:
+    """The starter packet test (corpus schema 1, ``tests/corpus/README.md``);
+    ``through``: the parent selector it also runs through."""
     lc = label.lower()
     data: list[str] = []
     for _, _, _, length, value in _FIELDS:
@@ -189,9 +228,20 @@ def _test_text(label: str, pid: int) -> str:
     lines = [
         f"# Packet test {lc}/basic, created by mmt-plugin init. Format: corpus schema 1",
         "# (tests/corpus/README.md). Run it with mmt-plugin test.",
+    ]
+    if through is not None:
+        lines += [
+            f"# through: it also runs as a whole frame under {through}, so the",
+            f"# classification generated from plugin.yaml's parent must find {label.upper()}.",
+        ]
+    lines += [
         "schema: 1",
         f'id: "{lc}/basic"',
         f'summary: "One {label.upper()} header: version 1, kind 2, length 4"',
+    ]
+    if through is not None:
+        lines.append(f"through: {json.dumps(through)}")
+    lines += [
         "bytes:",
         f'  - "{" ".join(data)}"',
         "expect:",
@@ -215,11 +265,13 @@ def _test_text(label: str, pid: int) -> str:
 
 
 def _project_id(target: Path, label: str) -> int | None:
-    """The id of ``<target>/model.pdl`` when it parses and has ``label``, so
-    that re-running ``init`` without ``--id`` keeps the project's id."""
+    """The id of ``<target>/plugin.yaml`` when it reads and has ``label``, so
+    that re-running ``init`` without ``--id`` keeps the project's id. (The
+    ``model.pdl`` of an older ``init`` is never read: such a project is
+    refused, and converted by ``import``.)"""
     try:
         text = (target / MODEL_FILE).read_text("utf-8")
-        props = parse(text, filename=MODEL_FILE).properties
+        props = load_yaml(text, filename=MODEL_FILE).model.properties
     except (OSError, UnicodeDecodeError, PdlSyntaxError):
         return None
     if props.label.text.lower() != label.lower() or props.id is None:
@@ -228,21 +280,24 @@ def _project_id(target: Path, label: str) -> int | None:
 
 
 def project_files(
-    label: str, pid: int, parent: Selector | None, choice: ProfileChoice
+    label: str, pid: int, parent: Parent | None, choice: ProfileChoice
 ) -> tuple[list[tuple[str, bytes]], list[Diagnostic], CliError | None]:
     """Every file of a new project, by path relative to it, sorted; the
-    model's diagnostics; and the model error that stops the run, if any."""
-    model = _model_text(label, pid, parent).encode("utf-8")
-    generation, diagnostics, error = make_generation(MODEL_FILE, model, choice)
+    model's diagnostics; and the model error that stops the run, if any.
+    The packet test runs ``through`` the parent when the model's
+    ``classify`` attaches the protocol to it."""
+    model = _model_text(label, pid, choice.profile.version, parent).encode("utf-8")
+    generation, diagnostics, error = make_generation(MODEL_FILE, model, choice, "yaml")
     if generation is None:
         assert error is not None
         return [], diagnostics, error
     impl = scaffold(generation, choice.profile)
+    through = parent.text if parent is not None and classifies(parent) else None
     files = [
         (GITIGNORE, b"build/\n"),
         (MODEL_FILE, model),
         (impl.path, impl.data),
-        (f"tests/{label.lower()}-basic.yaml", _test_text(label, pid).encode("utf-8")),
+        (f"tests/{label.lower()}-basic.yaml", _test_text(label, pid, through).encode("utf-8")),
     ]
     return sorted(files), diagnostics, None
 
@@ -285,17 +340,17 @@ class InitCommand:
             self.name,
             help="create a plugin project that builds and tests green",
             description=(
-                "Create a plugin project in --dir: model.pdl (a PDL v1 model; plugin.yaml\n"
-                "is #65), the user code scaffold src/<label>_impl.c, the packet test\n"
-                "tests/<label>-basic.yaml and a .gitignore. build and test generate the C\n"
-                "sources. Re-running is a no-op; a file with other content is not replaced\n"
-                "without --force."
+                "Create a plugin project in --dir: plugin.yaml (the model, its SDK profile\n"
+                "pinned, the --parent declared), the user code scaffold src/<label>_impl.c,\n"
+                "the packet test tests/<label>-basic.yaml and a .gitignore. build and test\n"
+                "generate the C sources. Re-running is a no-op; a file with other content\n"
+                "is not replaced without --force."
             ),
             epilog=(
                 "examples:\n"
                 "  mmt-plugin init demo\n"
                 "  mmt-plugin init demo --id 960 --parent ethernet:ethertype=0x88b5\n"
-                "  mmt-plugin -C demo test --model demo/model.pdl"
+                "  mmt-plugin -C demo test"
             ),
         )
         parser.add_argument(
@@ -317,13 +372,13 @@ class InitCommand:
         parser.add_argument(
             "--name",
             metavar="NAME",
-            help="the registered protocol name (default and only value until #65: LABEL"
-            " upper-cased)",
+            help="the registered protocol name (default and only value: LABEL upper-cased)",
         )
         parser.add_argument(
             "--parent",
             metavar="SELECTOR",
-            help="the parent protocol, e.g. ethernet:ethertype=0x88b5 (default: none, a warning)",
+            help="the parent protocol, e.g. ethernet:ethertype=0x88b5 or udp:dport=4433, attached"
+            " by generated code when it can be (default: none, a warning)",
         )
         parser.add_argument(
             "--sdk",
@@ -350,7 +405,7 @@ class InitCommand:
 
     # --- stages ---
 
-    def _arguments(self, args: argparse.Namespace) -> Selector | None:
+    def _arguments(self, args: argparse.Namespace) -> Parent | None:
         label = args.label
         if not _LABEL.match(label):
             raise CliError(
@@ -361,12 +416,15 @@ class InitCommand:
         if args.name is not None and args.name != label.upper():
             raise CliError(
                 "usage.invalid-value",
-                f"--name {args.name!r}: the registered name of a PDL v1 model is its label"
-                f" upper-cased, {label.upper()}",
-                "omit --name, or pass a LABEL whose upper case is the name (a separate"
-                " name is #65)",
+                f"--name {args.name!r}: the registered name is the label upper-cased,"
+                f" {label.upper()}",
+                "omit --name, or pass a LABEL whose upper case is the name: plugin.yaml has"
+                " no key for another name (the generated code and mmt-plugin test register"
+                " LABEL upper-cased)",
             )
-        return None if args.parent is None else parse_selector(args.parent)
+        if args.parent is None:
+            return None
+        return parent_of_selector(parse_selector(args.parent))
 
     def _registry(
         self, sdk: Sdk, profile: Profile, label: str, diagnostics: list[Diagnostic]
@@ -601,8 +659,41 @@ class InitCommand:
                 f"cannot list {show_path(target, project)}: {exc.strerror or exc}",
                 "check its permissions",
             ) from None
+        # A project of an init before #65: its model is model.pdl. init never
+        # writes into it, even with --force, which would replace the user's
+        # code and shadow their model with the starter plugin.yaml.
+        legacy = os.path.lexists(target / LEGACY_MODEL_FILE) and not os.path.lexists(
+            target / MODEL_FILE
+        )
         # A new repository (only .git) counts as empty.
-        foreign = bool(set(entries) - {".git"}) and not os.path.lexists(target / MODEL_FILE)
+        foreign = (
+            not legacy
+            and bool(set(entries) - {".git"})
+            and not os.path.lexists(target / MODEL_FILE)
+        )
+        if legacy:
+            shown = show_path(target, absolute("."))
+            convert = (
+                f"convert its model to {MODEL_FILE}, which every command reads: mmt-plugin"
+                f" -C {shown} import {show_path(target / LEGACY_MODEL_FILE, absolute('.'))},"
+                f" then delete {LEGACY_MODEL_FILE}; the project needs no new init"
+            )
+            diagnostics.append(
+                Diagnostic(
+                    Severity.ERROR,
+                    "state.file-differs",
+                    f"a PDL v1 model of an older mmt-plugin init, and no {MODEL_FILE}: not"
+                    " written into, even with --force",
+                    hint=convert,
+                    location=Location(show_path(target / LEGACY_MODEL_FILE, project)),
+                )
+            )
+            error = CliError(
+                "state.file-differs",
+                f"--dir {show_path(target, project)} is a project of an older mmt-plugin init"
+                f" ({LEGACY_MODEL_FILE}): nothing written",
+                convert,
+            )
         if foreign:
             note = Diagnostic(
                 Severity.WARNING if args.force else Severity.ERROR,
@@ -637,13 +728,10 @@ class InitCommand:
             for p in planned:
                 p.action = _WOULD.get(p.action, p.action)
 
-        cwd = absolute(".")
-        next_argv = ["mmt-plugin", "-C", show_path(target, cwd)]
-        next_argv += ["test", "--model", show_path(target / MODEL_FILE, cwd)]
+        # plugin.yaml is test's default MODEL and pins the profile.
+        next_argv = ["mmt-plugin", "-C", show_path(target, absolute(".")), "test"]
         if args.sdk is not None:
             next_argv += ["--sdk", args.sdk]
-        if args.sdk_profile is not None:
-            next_argv += ["--sdk-profile", profile.version]
         files_out = [{"path": p.shown, "action": p.action, "sha256": p.sha256} for p in planned]
         result = {
             "project": show_path(target, project),

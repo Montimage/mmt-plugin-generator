@@ -19,7 +19,7 @@
     },
     "parent": {"type": ["string", "null"], "description": "The --parent selector, or null."},
     "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the scaffold is written for."},
-    "model": {"type": "string", "minLength": 1, "description": "The project's model, model.pdl (plugin.yaml is #65)."},
+    "model": {"type": "string", "minLength": 1, "description": "The project's model, plugin.yaml: the default MODEL of every command."},
     "files": {
       "type": "array",
       "items": {
@@ -37,7 +37,7 @@
       "type": "array",
       "items": {"type": "string"},
       "minItems": 1,
-      "description": "The command line (argv) that tests the project, paths relative to the current directory."
+      "description": "The command line (argv) that tests the project, mmt-plugin -C <dir> test (and --sdk when given), paths relative to the current directory."
     },
     "dry_run": {"type": "boolean"}
   }

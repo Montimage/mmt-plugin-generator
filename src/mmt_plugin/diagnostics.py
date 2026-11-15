@@ -224,8 +224,13 @@ CODES: Mapping[str, str] = MappingProxyType(
         '"true", which the Java tool dropped (bug 21) and generate emits',
         "model.legacy-ip-addr": "warning: import: an MMT_DATA_IP_ADDR whose offset or data_len "
         "the Java tool did not fold, which it byte-swapped in network byte order (bug 25)",
-        "state.output-differs": "import: the output file exists with other content, or is not a "
-        "regular file; import does not replace it without --force (a directory, never)",
+        "state.output-differs": "import, scaffold: an output file exists with other content, or "
+        "is not a regular file; they do not replace it without --force (a directory, never)",
+        # `scaffold` (mmt_plugin.commands.scaffold, mmt_plugin.pcap, #26).
+        "model.bad-pcap": "scaffold: the --from-pcap file cannot be read, or is not a pcap or "
+        "pcapng capture, or its structure is broken (a truncated record or block)",
+        "model.no-payloads": "scaffold: no frame of the capture has a non-empty payload under "
+        "--parent",
     }
 )
 

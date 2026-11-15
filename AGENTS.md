@@ -35,9 +35,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and ten commands, `init` (T2.7), `import`
+  envelope and its schema) and eleven commands, `init` (T2.7), `import`
   (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
-  `uninstall` and `doctor` (T2.5) and
+  `uninstall` and `doctor` (T2.5), `scaffold` (T4.1) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
   declaring its `exit_codes` and shipping its `result` schema as
@@ -227,6 +227,25 @@ protocol model. A Python rewrite is planned in
   directory always. Tests in `tests/unit/importpdl/`: `test_convert.py` (each
   warning), `test_command.py` and `test_corpus.py` (every corpus model that
   parses imports, and `generate` gives the same C from both formats).
+- `src/mmt_plugin/commands/scaffold.py` (T4.1): `mmt-plugin scaffold
+  --from-pcap PCAP --parent SELECTOR` slices the payloads of a pcap or pcapng
+  capture under a parent (`init --parent`'s selector: `ethernet:ethertype`,
+  `ip`/`ipv6:proto`, `udp`/`tcp:port|sport|dport`) into packet tests,
+  `<tests-dir>/<label>-pcap-<n>.yaml` (`--tests-dir`, default
+  `<project>/tests/`), and proposes a field skeleton,
+  `<project>/plugin.proposed.yaml`, whose values the tests expect; it never
+  edits `plugin.yaml`. The label and id come from `--model` (default
+  `<project>/plugin.yaml`). `--max-packets` (default 20), `--dry-run`,
+  `--force`. A malformed pcap is `model.bad-pcap`, none under the parent
+  `model.no-payloads` (exit 3); an output with other content is
+  `state.output-differs` (exit 7) unless `--force`. `src/mmt_plugin/pcap/`:
+  `reader.py` (pcap and pcapng, no dependency), `layers.py` (Ethernet,
+  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons) and `skeleton.py` (the field
+  rules, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
+  `samples.py` builds captures, `data/` holds two written by tcpdump and
+  editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
+  `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
+  proposal passes `test`; needs `MMT_GOLDEN_SDK`).
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`
@@ -240,7 +259,9 @@ protocol model. A Python rewrite is planned in
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/init/test_sdk.py` (`init`
   then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
-  project classified by its generated parent code), `tests/unit/install/test_sdk.py`
+  project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
+  (`scaffold` on sample pcaps, then `test` on the proposal),
+  `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
   SDK).
@@ -423,6 +444,16 @@ headers (skips without `MMT_GOLDEN_SDK`):
 
 ```
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/packettest/test_sdk.py
+```
+
+Draft packet tests and a field skeleton from a capture (writes
+`<project>/plugin.proposed.yaml` and `<project>/tests/<label>-pcap-<n>.yaml`,
+never `plugin.yaml`), then check that the proposal passes them against those
+headers (skips without `MMT_GOLDEN_SDK`):
+
+```
+uv run mmt-plugin -C <project> scaffold --from-pcap capture.pcap --parent udp:port=4433 --model <project>/model.pdl --dry-run
+MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/scaffold/test_sdk.py
 ```
 
 Install a plugin into a private prefix (never `--system` on a host whose

@@ -500,6 +500,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/pluginyaml/test_sdk.py
+      - name: Scaffold packet tests from sample pcaps and test the proposal
+        # tests/unit/scaffold/test_sdk.py: mmt-plugin init, then scaffold
+        # --from-pcap (#26) on sample captures under UDP and Ethernet
+        # parents; the proposed plugin.yaml passes every packet test
+        # scaffold wrote, also under ASan and UBSan.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
       - name: Install, load and uninstall a plugin in a temporary prefix
         # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
         # default user prefix (a temporary XDG_DATA_HOME; no sudo, never

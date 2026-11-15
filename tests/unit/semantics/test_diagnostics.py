@@ -13,6 +13,7 @@ from mmt_plugin.codegen import DIAGNOSTIC_CODES as GENERATION_CODES
 from mmt_plugin.commands.generate import DIAGNOSTIC_CODES as GENERATE_CODES
 from mmt_plugin.commands.import_pdl import DIAGNOSTIC_CODES as IMPORT_CODES
 from mmt_plugin.commands.init import DIAGNOSTIC_CODES as INIT_CODES
+from mmt_plugin.commands.scaffold import DIAGNOSTIC_CODES as SCAFFOLD_CODES
 from mmt_plugin.commands.test import DIAGNOSTIC_CODES as TEST_CODES
 from mmt_plugin.commands.validate import DIAGNOSTIC_CODES as VALIDATE_CODES
 from mmt_plugin.diagnostics import CODES, Severity
@@ -231,8 +232,9 @@ def test_branch_offset_mismatch_after_an_if_without_else() -> None:
 
 #: The model codes of generation, of the generate command (#14), of the
 #: validate command (#17), of the test command (#20), of init (#23), of
-#: plugin.yaml (#24) and of import (#25), which come after the semantic block. (Generation also
-#: reuses two semantic codes, model.missing-length and model.out-of-range.)
+#: plugin.yaml (#24), of import (#25) and of scaffold (#26), which come after
+#: the semantic block. (Generation also reuses two semantic codes,
+#: model.missing-length and model.out-of-range.)
 LATER = {
     *GENERATION_CODES,
     *GENERATE_CODES,
@@ -241,6 +243,7 @@ LATER = {
     *INIT_CODES,
     *PLUGIN_YAML_CODES,
     *IMPORT_CODES,
+    *SCAFFOLD_CODES,
 } - set(HINTS)
 SEMANTIC = [
     c

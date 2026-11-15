@@ -1,0 +1,45 @@
+# Packet test telem/status: spec-v2.md, example 3.
+schema: 1
+id: "telem/status"
+summary: "A status report: version 1, flags 2 (battery low), sequence 43, battery 15%"
+bytes:
+  - "12 03 00 09 00 00 00 2b 0f"
+expect:
+  protocol: "TELEM"
+  proto_id: 963
+  next:
+    kind: "none"
+  attributes:
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+    - name: "flags"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+    - name: "msg_type"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 3
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 9
+    - name: "sequence"
+      type: "MMT_U32_DATA"
+      offset: 4
+      length: 4
+      value: 43
+    - name: "payload"
+      type: "MMT_BINARY_DATA"
+      status: "absent"
+    - name: "battery"
+      type: "MMT_U8_DATA"
+      offset: 8
+      length: 1
+      value: 15

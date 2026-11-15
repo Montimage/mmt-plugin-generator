@@ -9,10 +9,18 @@ with their ``<placeholders>`` filled in, and checks every envelope against
 
 A case is ``case.json`` and the files it names:
 
-- ``entry``: ``spec``, ``pcap`` or ``pdl``, the entry block of ``SKILL.md``;
-  ``params``: its placeholders (``label``, ``id``, ``selector``, ``pcap``,
-  ``pdl``), where ``{case}`` is the case directory; ``input``: what the agent
-  starts from (a spec, notes, a PDL model).
+- ``entry``: ``spec``, ``pcap``, ``pdl`` or ``update``, the entry block of
+  ``SKILL.md``; ``params``: its placeholders (``label``, ``id``,
+  ``selector``, ``pcap``, ``pdl``), where ``{case}`` is the case directory;
+  ``input``: what the agent starts from (a spec, notes, a PDL model, a
+  revision of the spec).
+- ``project``: for ``update`` only, and required there: a directory of the
+  case holding an existing project, the seed (``plugin.yaml``, with
+  ``params``' label and id and a pinned ``sdk.profile``, ``src/``,
+  ``tests/``). The runner copies it to the project directory, fills
+  ``<profile>`` from its pin, runs the entry block and then the skill's loop
+  once on the project as it is (run 0), which must be green, before the
+  case's runs.
 - ``runs``: one per loop run, at most ``MAX_RUNS``. Each has ``edits``, made
   in the project before the loop runs (``write``/``append`` a case file,
   ``copy`` a project file, ``remove``, ``replace`` a string or ``regex`` a
@@ -36,6 +44,7 @@ What fails a case (each is one line of ``CaseResult.problems``):
 - a command that does not end within the time limit. Every command gets an
   open pipe with no data as stdin and runs in a new session (no controlling
   terminal), so a command that reads stdin or prompts waits until the limit;
+- a seed project that is not green before the update (run 0);
 - a loop run that does not stop where the case expects;
 - a fix that does not touch what the envelope pointed at: each located error
   of a failed run must be in a file the next run's edits change, at its line
@@ -43,17 +52,21 @@ What fails a case (each is one line of ``CaseResult.problems``):
   ``plugin.yaml`` line that names a failing attribute, and an error outside
   the project (an absolute path: an SDK header) by a change to ``plugin.yaml``
   or a ``src/*.c`` file;
-- a packet test the case or the entry commands wrote that is deleted, or
-  whose bytes, protocol or expected attributes change, other than an
-  attribute renamed or dropped in the test and in ``plugin.yaml`` alike
-  (``_test_rewrites``); only ``init``'s placeholder
-  ``tests/<label>-basic.yaml`` may go;
+- a packet test the case, the entry commands or the seed project wrote that
+  is deleted, or whose bytes, protocol or expected attributes change, other
+  than an attribute renamed or dropped in the test and in ``plugin.yaml``
+  alike (``_test_rewrites``); only the placeholder
+  ``tests/<label>-basic.yaml`` that ``init`` wrote in the case's entry may
+  go, never one of the seed;
 - a final run that is not green: with an SDK, every loop command exits 0,
   ``validate``'s ``parents-exist`` is ``pass`` and ``test`` passes at least
   one packet, every protected test among them, with no ``test.no-packets``;
   without one, ``validate`` and ``generate`` exit 0, and the run's model
   pins ``sdk.profile``, declares a parent and every attribute its tests
-  expect, under the label and id the tests expect.
+  expect, under the label and id the tests expect;
+- an update whose final model does not keep the seed's ``protocol.label``,
+  ``protocol.id``, ``sdk.profile`` and ``parents:`` (``_kept``), or whose
+  ``tests/*.yaml`` are all the seed's, unchanged.
 
 Run it from a checkout (``uv run`` puts ``mmt_plugin`` on the path)::
 
@@ -153,6 +166,9 @@ _EOL = r"(?:[ \t]+#[^\n]*)?[ \t]*$"
 _LABEL = re.compile(rf"^  label: ([\"']?)([a-z][a-z0-9_]*)\1{_EOL}", re.M)
 _ID = re.compile(rf"^  id: (\d+){_EOL}", re.M)
 _PARENTS = re.compile(rf"^parents:{_EOL}\n", re.M)
+# ``sdk.profile``, in a block (``  profile: "1.10.2"``) or a flow mapping
+# (``sdk: {profile: "1.10.2"}``): no other key of plugin.yaml is ``profile``.
+_PROFILE = re.compile(r"""\bprofile: (["']?)([0-9][^"'\s,}#]*)\1""")
 
 
 class EvalError(Exception):
@@ -469,6 +485,31 @@ def _check_edit(edit: object, case_dir: Path, what: str) -> None:
             ) from None
 
 
+def _check_seed(case: Mapping[str, Any], case_dir: Path, where: str) -> None:
+    """Check the seed project of an update case: a directory of the case
+    whose ``plugin.yaml`` has the case's label and id and pins a profile."""
+    if "project" not in case:
+        raise EvalError(f"{where}: an update case needs 'project', the existing project")
+    path = _relative(case["project"], f"{where}: project", "the case directory")
+    seed = case_dir / path
+    if (
+        seed.is_symlink()
+        or not seed.is_dir()
+        or not seed.resolve().is_relative_to(case_dir.resolve())
+    ):
+        raise EvalError(f"{where}: project {path!r} is not a directory of the case")
+    if not (seed / "plugin.yaml").is_file():
+        raise EvalError(f"{where}: the project {path!r} has no plugin.yaml")
+    model = (seed / "plugin.yaml").read_text("utf-8")
+    label, ident = _LABEL.search(model), _ID.search(model)
+    if label is None or label.group(2) != case["params"]["label"]:
+        raise EvalError(f"{where}: the project's protocol.label is not params.label")
+    if ident is None or ident.group(1) != case["params"]["id"]:
+        raise EvalError(f"{where}: the project's protocol.id is not params.id")
+    if _PROFILE.search(model) is None:
+        raise EvalError(f"{where}: the project's plugin.yaml pins no sdk.profile")
+
+
 def load_case(case_dir: Path) -> dict[str, Any]:
     """Read and check ``case.json`` (``EvalError`` when it is not usable)."""
     where = f"{case_dir.name}/case.json"
@@ -486,6 +527,10 @@ def load_case(case_dir: Path) -> dict[str, Any]:
     for key in ("label", "id", "selector"):
         if not isinstance(case["params"].get(key), str):
             raise EvalError(f"{where}: params.{key} must be a string")
+    if case["entry"] == "update":
+        _check_seed(case, case_dir, where)
+    elif "project" in case:
+        raise EvalError(f"{where}: 'project' is only for the update entry")
     runs = case.get("runs")
     if not isinstance(runs, list) or not 1 <= len(runs) <= MAX_RUNS:
         raise EvalError(f"{where}: 'runs' must list 1 to {MAX_RUNS} loop runs")
@@ -730,6 +775,38 @@ def _hook_parents(model: str) -> list[str]:
     return out
 
 
+def _parents_block(model: str) -> list[str]:
+    """The lines of a ``plugin.yaml``'s ``parents:`` block, without comments
+    and blank lines (``[]`` without one)."""
+    block = re.search(_PARENTS.pattern + r"((?:  .*\n|\s*\n)*)", model, re.M)
+    if not block:
+        return []
+    lines = (re.sub(r"[ \t]+#.*$", "", line).rstrip() for line in block.group(1).splitlines())
+    return [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+
+
+def _kept(seed: str, model: str) -> list[str]:
+    """What an update changed of the seed's ``plugin.yaml`` that it must
+    keep: ``protocol.label``, ``protocol.id``, ``sdk.profile``, ``parents:``."""
+
+    def value(pattern: re.Pattern[str], text: str, group: int) -> str | None:
+        found = pattern.search(text)
+        return found.group(group) if found else None
+
+    problems = []
+    for what, pattern, group in (
+        ("protocol.label", _LABEL, 2),
+        ("protocol.id", _ID, 1),
+        ("sdk.profile", _PROFILE, 2),
+    ):
+        old, new = value(pattern, seed, group), value(pattern, model, group)
+        if old != new:
+            problems.append(f"green: the update changes {what} from {old} to {new}")
+    if _parents_block(seed) != _parents_block(model):
+        problems.append("green: the update changes the parents of the project")
+    return problems
+
+
 def _strip_c_comments(code: str) -> str:
     return re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", code, flags=re.S))
 
@@ -789,6 +866,8 @@ class _Runner:
         if sdk is not None:
             self.values["prefix"] = str(sdk)
         self.result = CaseResult(self.case["id"], sdk is not None)
+        #: An update case's seed project as it was copied (``_snapshot``).
+        self.seed: dict[str, str] | None = None
 
     def fill(self, args: Sequence[str]) -> list[str]:
         def one(m: re.Match[str]) -> str:
@@ -823,7 +902,17 @@ class _Runner:
         return str(profiles[-1])
 
     def run(self) -> CaseResult:
-        self.values["profile"] = self.profile()
+        update = self.case["entry"] == "update"
+        if update:
+            # An existing project: its own pin is the profile (SKILL.md).
+            shutil.copytree(self.case_dir / self.case["project"], self.project, symlinks=True)
+            self.seed = _snapshot(self.project)
+            pin = _PROFILE.search(self.seed.get("plugin.yaml", ""))
+            if pin is None:
+                raise EvalError(f"{self.case['id']}: the project pins no sdk.profile")
+            self.values["profile"] = pin.group(2)
+        else:
+            self.values["profile"] = self.profile()
         entry = self.blocks.get(f"entry {self.case['entry']}")
         if entry is None:
             raise EvalError(
@@ -833,10 +922,18 @@ class _Runner:
             if self.execute(0, args).returncode != 0:
                 self.result.problems.append("entry: a command failed")
                 return self.result
-        label = self.case["params"]["label"]
-        basic = f"tests/{label}-basic.yaml"
-        protected = {p for p in _snapshot(self.project) if p.startswith("tests/") and p != basic}
         loop = self.blocks["loop sdk" if self.sdk is not None else "loop no-sdk"]
+        if update:
+            # The loop once on the project as it is: a failure that was there
+            # before the update is the user's (SKILL.md), not a case's run.
+            if not self.baseline(loop):
+                return self.result
+            protected = {p for p in _snapshot(self.project) if p.startswith("tests/")}
+        else:
+            basic = f"tests/{self.case['params']['label']}-basic.yaml"
+            protected = {
+                p for p in _snapshot(self.project) if p.startswith("tests/") and p != basic
+            }
         failure: Step | None = None
         steps: list[Step] = []
         for n, run in enumerate(self.case["runs"], 1):
@@ -861,6 +958,30 @@ class _Runner:
             self.check_stop(n, run["expect"], failure)
         self.check_green(steps, failure, protected)
         return self.result
+
+    def baseline(self, loop: Sequence[Sequence[str]]) -> bool:
+        """Run the loop on an update's seed before any edit (run 0); whether
+        it is green: every command exits 0 and, with an SDK, ``test`` passes
+        every packet of at least one."""
+        for args in loop:
+            step = self.execute(0, args)
+            env = step.envelope or {}
+            why = None
+            if step.returncode != 0:
+                code = (env.get("error") or {}).get("code")
+                why = f"{step.command} exits {step.returncode} ({code})"
+            elif step.command == "test":
+                summary = (env.get("result") or {}).get("summary") or {}
+                if not (
+                    summary.get("total", 0) >= 1 and summary.get("passed") == summary.get("total")
+                ):
+                    why = f"test passes {summary}"
+            if why is not None:
+                self.result.problems.append(
+                    f"run 0: the project is not green before the update: {why}"
+                )
+                return False
+        return True
 
     def check_tests(
         self, run: int, protected: set[str], before: Mapping[str, str], after: Mapping[str, str]
@@ -952,6 +1073,12 @@ class _Runner:
                 problems.append(f"green: {rel} does not expect the protocol {label}")
             if ident and f"proto_id: {ident}\n" not in text:
                 problems.append(f"green: {rel} does not expect the id {ident}")
+        if self.seed is not None:
+            problems += _kept(self.seed.get("plugin.yaml", ""), model)
+            now = _snapshot(self.project)
+            tests = [p for p in now if re.fullmatch(r"tests/[^/]+\.yaml", p)]
+            if all(self.seed.get(p) == now[p] for p in tests):
+                problems.append("green: the update adds or changes no packet test")
         if self.sdk is None:
             return
         by_command = {s.command: s.envelope or {} for s in steps}

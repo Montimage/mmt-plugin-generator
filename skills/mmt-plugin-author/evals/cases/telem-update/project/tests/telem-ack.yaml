@@ -1,0 +1,40 @@
+# Packet test telem/ack: spec.md, example 2.
+schema: 1
+id: "telem/ack"
+summary: "An acknowledgement of sequence 42: no payload"
+bytes:
+  - "10 02 00 08 00 00 00 2a"
+expect:
+  protocol: "TELEM"
+  proto_id: 963
+  next:
+    kind: "none"
+  attributes:
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+    - name: "flags"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+    - name: "msg_type"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 8
+    - name: "sequence"
+      type: "MMT_U32_DATA"
+      offset: 4
+      length: 4
+      value: 42
+    - name: "payload"
+      type: "MMT_BINARY_DATA"
+      status: "absent"

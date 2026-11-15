@@ -45,10 +45,11 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   fix is usually in `plugin.yaml`, at the attribute that
   `result.packets[].failures[].attribute` names (an offset, a type, a bit
   order). Change the test only when the spec contradicts its expected
-  value, never to match what the plugin outputs. A failing entry with
-  `through` ran through the plugin's parent: `<protocol>` there (not
-  classified) or `<parent>` is fixed in `parents:` (its `classify`) or in
-  `<label>_hook_register_parents`.
+  value, never to match what the plugin outputs, and never a test that was
+  in the project before this session (stop and report instead). A failing
+  entry with `through` ran through the plugin's parent: `<protocol>` there
+  (not classified) or `<parent>` is fixed in `parents:` (its `classify`) or
+  in `<label>_hook_register_parents`.
 - `build.missing-hook` is located at `src/<label>_impl.c`, without a line:
   add the function there, with the declaration of the hint.
 - A `build.cc` error at an absolute path is in a file outside the project,
@@ -65,7 +66,7 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
 | 3 | model | Fix the model or a packet test at each error's `location`, then run the loop again. |
 | 4 | sdk | Fix the environment: the SDK prefix (`--sdk`), the profile (`--sdk-profile`, `sdk.profile`) or the compiler (`--cc`). Never the model. |
 | 5 | build | Fix `src/<label>_impl.c` (or the model, when the error is in generated code) at each error's `location`. |
-| 6 | test | For each failing packet in `result.packets`, compare `attribute`, `expected` and `actual` with the spec, then fix whichever of the model and the test is wrong. |
+| 6 | test | For each failing packet in `result.packets`, compare `attribute`, `expected` and `actual` with the spec, then fix whichever of the model and the test is wrong; never a test that was in the project before this session. |
 | 7 | state | Files on disk are not what the command needs: see the code. Never `--force` over a file you did not write. |
 | 130 | interrupted | Run the command again. |
 
@@ -142,7 +143,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `build.link-failed` | An undefined symbol: user code may call `libmmt_core` functions only. |
 | `build.missing-hook` | Add the hook to `src/<label>_impl.c` with the declaration the hint gives, returning 0. |
 | `build.harness-failed` | The test harness does not compile against the SDK: check the SDK prefix and the compiler, then report. |
-| `test.packet-failed` | Compare each failure's `attribute`, `expected` and `actual` with the spec: fix the model (an offset, a type, a bit order) or the test (a wrong expected value). |
+| `test.packet-failed` | Compare each failure's `attribute`, `expected` and `actual` with the spec: fix the model (an offset, a type, a bit order) or the test (a wrong expected value). A test that was in the project before this session is never edited: fix the model, or stop and report when the spec contradicts the test. |
 | `test.crash` | The plugin crashed on a packet: check the lengths and conditions of variable-length attributes, and the user code. |
 | `test.load-failed` | The plugin does not load: check the hooks in `src/<label>_impl.c` (`register_parents` must return 1). |
 | `test.no-packets` | Warning: write packet tests in `tests/*.yaml`; a run without one is not green. |

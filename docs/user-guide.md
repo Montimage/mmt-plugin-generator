@@ -486,8 +486,8 @@ python3 -c 'import json; d = json.load(open("validate.json")); print(d["exit_cod
 `result` have JSON Schemas, shipped in the package
 (`mmt_plugin/schemas/cli/v1/`); the design is in
 [`docs/design/cli.md`](design/cli.md#6-the---json-envelope-shared-by-every-command).
-To write plugins with an AI agent, see the
-[mmt-plugin-author skill](../skills/mmt-plugin-author/SKILL.md).
+To write plugins with an AI agent, or to update an existing project, see
+the [mmt-plugin-author skill](../skills/mmt-plugin-author/SKILL.md).
 
 ## Settings and where they come from
 

@@ -114,3 +114,7 @@ regenerate them all and commit the result:
 ```
 for d in examples/*/; do uv run mmt-plugin -C "$d" generate; done
 ```
+
+A release bumps the version, so it regenerates them in the same change;
+the release workflow's `verify` job runs `generate --check` on every
+example with the built wheel ([`docs/releasing.md`](../docs/releasing.md)).

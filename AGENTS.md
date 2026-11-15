@@ -44,7 +44,32 @@ protocol model. A Python rewrite is planned in
   `SHA256SUMS` and `manifest.json`); it never installs.
 - `Dockerfile`, `Makefile`: the pinned build and test container (T0.3):
   ubuntu:24.04 by digest, gcc, clang, Python 3.12 and the verified mmt-dpi
-  v1.10.2 `.deb`. `make test-container` builds it and runs the NDN check.
+  v1.10.2 `.deb`. `make test-container` builds it (stage `toolchain`, the
+  default target `test`) and runs the NDN check. The target `release`
+  (T5.3) adds a released wheel to it (`--build-arg WHEEL=<file in dist/>`,
+  dependencies from `uv.lock` with hashes, in `/opt/mmt-plugin`);
+  `make release-image` builds this checkout's.
+- Packaging and releases (T5.3): `.github/workflows/release.yml` and
+  `docs/releasing.md`. Every PR to `dev`/`main`, push to `dev` and manual
+  run is a dry run: `tests/build_release_assets.sh OUT_DIR` (the wheel, the
+  sdist, `mmt-plugin-schemas-<version>.tar.gz` with every
+  `src/mmt_plugin/schemas/**/*.json`, and `SHA256SUMS`) checked by
+  `tests/unit/release/test_dist.py` (with `MMT_RELEASE_DIST=OUT_DIR`),
+  `tests/check_release_tag.sh`, `tests/check_action_pins.sh` (each pinned
+  action SHA is its tag's commit; needs gh and the network), `uv tool
+  install` of the wheel and of the sdist (Python 3.10 and 3.14, then
+  `generate --check` on every example), the release image on amd64 and
+  arm64 (smoke-tested from `init` to `test`) and its push, by
+  `tests/push_release_image.sh`, to a registry service in the job. Only a
+  pushed `v*` tag runs the `publish-*` jobs, the only ones with write
+  permissions: attestations and the GitHub release, the image on
+  `ghcr.io/montimage/mmt-plugin`, and PyPI (trusted publishing) once the
+  variable `PYPI_PUBLISH` is `true`. `tests/unit/release/test_workflow.py`
+  checks the gates, the permissions and the pins;
+  `test_release_tag.py` the tag rules. Never push a tag, create a release
+  or run the workflow to publish without the maintainer's explicit OK. A
+  version bump (`uv version V`) makes every example stale: regenerate them
+  in the same change (`examples/README.md`).
 - `pyproject.toml`, `uv.lock`, `src/`, `tests/unit/`: the Python rewrite
   (T1.1 onwards). The package `mmt_plugin` is in `src/mmt_plugin/` (uv_build's
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
@@ -287,8 +312,9 @@ protocol model. A Python rewrite is planned in
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
   Java tool and PDL v1) and `docs/model-reference.md`, generated from
   `schemas/model/v1/plugin.json` by `src/mmt_plugin/pluginyaml/reference.py`
-  (never edit it: regenerate it, see Commands). The tool is not published:
-  the docs install it from a checkout or a built wheel until T5.3 (#30).
+  (never edit it: regenerate it, see Commands). The tool is not published
+  yet (the first release is T5.5, #32): the docs install it from a checkout
+  or a built wheel, and show the release's installs as `doc:skip` blocks.
   Tests in `tests/unit/docs/`: `test_links.py` (every relative link and
   `#anchor` of every tracked `*.md` resolves, offline, GitHub's anchors),
   `test_model_reference.py` (the committed page is current) and
@@ -327,7 +353,7 @@ protocol model. A Python rewrite is planned in
   `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
-  SDK).
+  SDK). `.github/workflows/release.yml` (above) runs alongside it.
 
 ## Commands
 
@@ -563,6 +589,17 @@ after a change to the model schema:
 uv run pytest tests/unit/docs
 MMT_DOCS_INSTALL=1 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/docs/test_commands.py
 uv run python -m mmt_plugin.pluginyaml.reference --write docs/model-reference.md
+```
+
+Build and check the release assets (`<dir>` must not exist or be empty;
+`check_action_pins.sh` needs gh and the network), and the release image
+(docker, or `CONTAINER=podman`):
+
+```
+bash tests/build_release_assets.sh <dir>
+MMT_RELEASE_DIST=<dir> uv run pytest tests/unit/release
+bash tests/check_action_pins.sh
+make release-image
 ```
 
 ## Writing a plugin as an agent

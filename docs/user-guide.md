@@ -26,17 +26,17 @@ machine-readable output.
 
 The commands below run from the root of a checkout of this repository: some
 use its files (`examples/`, `plugins/`, a sample capture). CI runs every one
-of them (`tests/unit/docs/test_commands.py`) except the two blocks marked
-`doc:skip`, which need the network to clone the repository or download
-mmt-dpi; CI's own SDK jobs fetch and verify the package with the same
-script, `tests/fetch_mmt_dpi_package.sh`.
+of them (`tests/unit/docs/test_commands.py`) except the blocks marked
+`doc:skip`: they need the network to clone the repository or download
+mmt-dpi (CI's own SDK jobs fetch and verify the package with the same
+script, `tests/fetch_mmt_dpi_package.sh`), or a published release.
 
 ## Install mmt-plugin
 
 `mmt-plugin` is not published yet: there is no PyPI package and no release
-(packaging is plan task T5.3, #30, and the first release T5.5, #32). Install
-it from a checkout of this repository. It needs Python 3.10 or later and
-Linux (amd64 or arm64); building and testing plugins also need gcc or clang.
+(the first release is plan task T5.5, #32). Until then, install it from a
+checkout of this repository. It needs Python 3.10 or later and Linux (amd64
+or arm64); building and testing plugins also need gcc or clang.
 
 <!-- doc:skip needs the network -->
 ```sh
@@ -58,12 +58,42 @@ Or build a wheel and install that, for example on another machine:
 <!-- doc:run install -->
 ```sh
 uv build --wheel --out-dir dist
-uv tool install --reinstall dist/mmt_plugin-0.1.0.dev0-py3-none-any.whl
+uv tool install --reinstall dist/mmt_plugin-*-py3-none-any.whl
 mmt-plugin --version
 ```
 
 Inside the checkout, `uv run mmt-plugin ...` runs the checkout's code
 without installing it (that is how `AGENTS.md` runs it).
+
+### From a release
+
+Once a release is published ([`docs/releasing.md`](releasing.md)), each
+GitHub release of this repository carries the wheel, the sdist, the JSON
+Schemas of the `--json` output and of `plugin.yaml`
+(`mmt-plugin-schemas-<version>.tar.gz`), a `SHA256SUMS` and a provenance
+attestation. Install the wheel straight from the release, or from PyPI
+when the release is also published there:
+
+<!-- doc:skip needs a published release -->
+```sh
+uv tool install https://github.com/Montimage/mmt-plugin-generator/releases/download/v0.1.0/mmt_plugin-0.1.0-py3-none-any.whl
+uv tool install mmt-plugin
+mmt-plugin --version
+```
+
+`0.1.0` stands for the release's version. To check a downloaded asset,
+`sha256sum -c SHA256SUMS`, then
+`gh attestation verify <file> --repo Montimage/mmt-plugin-generator`.
+
+The release also publishes a container image with mmt-plugin, gcc, clang
+and mmt-dpi v1.10.2 in `/opt/mmt`, for amd64 and arm64. Run it on a
+project directory as your uid:
+
+<!-- doc:skip needs a published release and docker -->
+```sh
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
+    ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin -C demo test --model demo/model.pdl
+```
 
 ## Get mmt-dpi
 

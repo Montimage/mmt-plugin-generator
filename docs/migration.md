@@ -36,8 +36,9 @@ mmt-plugin -C tpkt_port import plugins/tpkt_plugin
 `import` writes `tpkt_port/plugin.yaml`. It warns, with a code that starts
 with `model.legacy-`, about every construct whose meaning depended on a bug
 of the Java tool, and says what the Java tool did; `--strict` makes them
-errors. Here it is `model.legacy-sdk-conflict`, twice: mmt-dpi 1.10.2 has
-its own TPKT, so the model's label and id 636 are taken. The table in
+errors. Here it is `model.legacy-sdk-conflict`, twice: the label TPKT is
+mmt-dpi 1.10.2's own TPKT (`PROTO_TPKT`, id 637), and the id 636 is
+`PROTO_LOOPBACK`'s. The table in
 [`plugin-yaml.md`](plugin-yaml.md#from-pdl-v1) lists every warning, the Java
 bug behind it and what to do. Any other model error stops `import` (exit 3)
 and writes nothing.

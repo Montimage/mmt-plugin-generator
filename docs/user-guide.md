@@ -26,7 +26,10 @@ machine-readable output.
 
 The commands below run from the root of a checkout of this repository: some
 use its files (`examples/`, `plugins/`, a sample capture). CI runs every one
-of them (`tests/unit/docs/test_commands.py`).
+of them (`tests/unit/docs/test_commands.py`) except the two blocks marked
+`doc:skip`, which need the network to clone the repository or download
+mmt-dpi; CI's own SDK jobs fetch and verify the package with the same
+script, `tests/fetch_mmt_dpi_package.sh`.
 
 ## Install mmt-plugin
 

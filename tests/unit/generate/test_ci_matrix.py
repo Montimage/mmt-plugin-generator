@@ -44,8 +44,25 @@ def test_the_matrix_covers_gcc_and_clang() -> None:
     assert {c.strip() for c in cc.group(1).split(",")} == {"gcc", "clang"}
 
 
+def _commands() -> str:
+    """The job without its comment lines: a step's comment naming a test
+    file must not stand in for the command that runs it."""
+    return "\n".join(line for line in _job().splitlines() if not line.lstrip().startswith("#"))
+
+
+def _step(name: str) -> str:
+    """The text of the job's step ``name`` (comments excluded), up to the next step."""
+    match = re.search(
+        rf"^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)",
+        _commands(),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"no step {name!r} in the {JOB} job"
+    return match.group(1)
+
+
 def test_the_job_requires_the_compile_and_load_tests() -> None:
-    job = _job()
+    job = _commands()
     assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in job
     assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in job
     assert "MMT_DPI_TAG: ${{ matrix.mmt_dpi.tag }}" in job
@@ -55,3 +72,13 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/examples/test_sdk.py" in job  # the ported examples (#28)
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
     assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-author evals (#27)
+
+
+def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
+    # #28: CI builds and tests every ported example; without the variables the
+    # tests would skip instead of failing.
+    step = _step("Build and test every ported example")
+    assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+    assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
+    assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py" in step

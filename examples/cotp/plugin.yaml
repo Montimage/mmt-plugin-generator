@@ -1,0 +1,29 @@
+# Port of plugins/cotp_plugin (RFC 905 transport protocol class 0 over TPKT,
+# RFC 1006). The tpkt example classifies it after a TPKT header; a DT TPDU's
+# user data is the s7com example.
+schema: 1
+protocol:
+  label: cotp_example
+  id: 979
+  context: false
+  session: false
+  encapsulation: true
+  encoding: network
+sdk:
+  profile: "1.10.2"
+defines:
+  COTP_DT: 0xf0            # RFC 905 section 13.7: DT TPDU, code 1111 and EOT
+  S7COMM_EXAMPLE: 988      # the s7com example's id
+attributes:
+  - struct: cotp_hdr
+    fields:
+      - name: length
+        type: uint8_t
+      - name: pdu_type
+        type: uint8_t
+classify_next:
+  switch: val(pdu_type)
+  cases:
+    - case: COTP_DT
+      next: S7COMM_EXAMPLE
+      offset: val(length) + 1   # the length indicator does not count itself

@@ -1,0 +1,106 @@
+# Port of plugins/radius_plugin (RFC 2865). The attributes after the
+# authenticator are TLVs: src/radius_example_impl.c finds each one by its
+# type.
+schema: 1
+protocol:
+  label: radius_example
+  id: 987
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: udp
+    classify:
+      match:
+        - {offset: 2, length: 2, value: 1812}   # the UDP destination port
+      offset: 8
+attributes:
+  - struct: radiushdr
+    fields:
+      - name: code
+        type: uint8_t
+      - name: rid
+        type: uint8_t
+      - name: rlen
+        type: uint16_t
+  - name: authenticator
+    type: MMT_BINARY_DATA
+    offset: sizeof(struct radiushdr)
+    length: 16
+  - name: User_Name
+    type: MMT_BINARY_DATA
+  - name: User_Password
+    type: MMT_BINARY_DATA
+  - name: CHAP_Password
+    type: MMT_BINARY_DATA
+  - name: NAS_IP_Address
+    type: MMT_U32_DATA
+  - name: NAS_Port
+    type: MMT_U32_DATA
+  - name: Service_Type
+    type: MMT_U32_DATA
+  - name: Framed_Protocol
+    type: MMT_U32_DATA
+  - name: Framed_IP_Address
+    type: MMT_U32_DATA
+  - name: Framed_IP_Netmask
+    type: MMT_U32_DATA
+  - name: Framed_MTU
+    type: MMT_U32_DATA
+  - name: Callback_Number
+    type: MMT_BINARY_DATA
+  - name: Callback_Id
+    type: MMT_BINARY_DATA
+  - name: State
+    type: MMT_BINARY_DATA
+  - name: Class
+    type: MMT_BINARY_DATA
+  - name: Session_Timeout
+    type: MMT_U32_DATA
+  - name: Idle_Timeout
+    type: MMT_U32_DATA
+  - name: Called_Station_Id
+    type: MMT_BINARY_DATA
+  - name: Calling_Station_Id
+    type: MMT_BINARY_DATA
+  - name: NAS_Identifier
+    type: MMT_BINARY_DATA
+  - name: Acct_Status_Type
+    type: MMT_U32_DATA
+  - name: Acct_Delay_Time
+    type: MMT_U32_DATA
+  - name: Acct_Input_Octets
+    type: MMT_U32_DATA
+  - name: Acct_Output_Octets
+    type: MMT_U32_DATA
+  - name: Acct_Session_Id
+    type: MMT_BINARY_DATA
+  - name: Acct_Authentic
+    type: MMT_U32_DATA
+  - name: Acct_Session_Time
+    type: MMT_U32_DATA
+  - name: Acct_Input_Packets
+    type: MMT_U32_DATA
+  - name: Acct_Output_Packets
+    type: MMT_U32_DATA
+  - name: Acct_Terminate_Cause
+    type: MMT_U32_DATA
+  - name: Event_Timestamp
+    type: MMT_U32_DATA
+  - name: NAS_Port_Type
+    type: MMT_U32_DATA
+  - name: Message_Authenticator
+    type: MMT_BINARY_DATA
+  - name: NAS_Port_Id
+    type: MMT_BINARY_DATA
+  - name: NAS_IPv6_Address
+    type: MMT_DATA_IP6_ADDR
+  - name: Framed_Interface_Id
+    type: MMT_DATA_IP6_ADDR
+  - name: Framed_IPv6_Prefix
+    type: MMT_DATA_IP6_ADDR
+  - name: Framed_IPv6_Pool
+    type: MMT_BINARY_DATA

@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0.dev0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "7df31a10dcc57ddb694e1a63abc817c5b651bb521edc85542a7d7ae8cbeddd9f"
+  },
+  "files": [
+    {
+      "path": "generated/mongodb_example_mmt_plugin.c",
+      "sha256": "b9a291f9fc3bfa5fd3bbcd16982a19365a97193ca5b18ded45dbc7c0cb81053e"
+    },
+    {
+      "path": "generated/mongodb_example_mmt_plugin.h",
+      "sha256": "601d2d93dad046c40e743b622feeffb07c57fb40468e02cc6074da66473c3781"
+    }
+  ]
+}

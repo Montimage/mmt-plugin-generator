@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0.dev0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "0dd807ab9c5131ca3a93086a5b963684b1dfc1136f93e32a0ca0dbd6be17406a"
+  },
+  "files": [
+    {
+      "path": "generated/radius_example_mmt_plugin.c",
+      "sha256": "801705c2ad99328a7d0b75eb755f4b460d55b7b73ed4ab1fc8026fcc0a8679ca"
+    },
+    {
+      "path": "generated/radius_example_mmt_plugin.h",
+      "sha256": "3b1b585ccef11a11fd27836a6c9fae98aff5f9356a0efe53ad8b09dc53aabfe1"
+    }
+  ]
+}

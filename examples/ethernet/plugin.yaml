@@ -1,0 +1,52 @@
+# Port of plugins/ethernet_plugin (IEEE 802.3 clause 3.1.1). The model's
+# `sizeof (mac_addr_t)` is not a PDL type and put src at 0 and dst at 2: the
+# destination address is bytes 0-5 and the source address bytes 6-11. The
+# next protocols are mmt-dpi's, not the model's own ids (11, 15, 16).
+schema: 1
+protocol:
+  label: ethernet_example
+  id: 983
+  context: false
+  session: false
+  encapsulation: true
+  encoding: network
+sdk:
+  profile: "1.10.2"
+defines:
+  ETH_P_IP: 0x0800
+  ETH_P_ARP: 0x0806
+  ETH_P_IPV6: 0x86dd
+  ETH_P_RARP: 0x8035
+  NEXT_IP: PROTO_IP
+  NEXT_ARP: PROTO_ARP
+  NEXT_IPV6: PROTO_IPV6
+attributes:
+  - struct: ethhdr
+    fields:
+      - name: h_dest
+        type: MMT_DATA_MAC_ADDR
+      - name: h_source
+        type: MMT_DATA_MAC_ADDR
+      - name: h_proto
+        type: uint16_t
+  - name: src
+    type: MMT_DATA_MAC_ADDR
+    offset: 6
+  - name: dst
+    type: MMT_DATA_MAC_ADDR
+    offset: 0
+classify_next:
+  switch: val(h_proto)
+  cases:
+    - case: ETH_P_IP
+      next: NEXT_IP
+      offset: sizeof(struct ethhdr)
+    - case: ETH_P_ARP
+      next: NEXT_ARP
+      offset: sizeof(struct ethhdr)
+    - case: ETH_P_IPV6
+      next: NEXT_IPV6
+      offset: sizeof(struct ethhdr)
+    - case: ETH_P_RARP
+      next: NEXT_ARP
+      offset: sizeof(struct ethhdr)

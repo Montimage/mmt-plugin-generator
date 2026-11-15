@@ -1,0 +1,53 @@
+# Port of plugins/dns_plugin (RFC 1035 section 4.1.1, RFC 6895 section 2).
+schema: 1
+protocol:
+  label: dns_example
+  id: 982
+  context: false
+  session_context: true
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: udp
+    classify:
+      match:
+        - {offset: 2, length: 2, value: 53}   # the UDP destination port
+      offset: 8
+attributes:
+  - struct: dnshdr
+    fields:
+      - name: tid
+        type: uint16_t
+      - type: uint16_t
+        bits:
+          - name: qr
+            width: 1
+          - name: opcode
+            width: 4
+          - name: aa
+            width: 1
+          - name: tc
+            width: 1
+          - name: rd
+            width: 1
+          - name: ra
+            width: 1
+          - name: z
+            width: 1
+          - name: ans_auth
+            width: 1
+          - name: data_auth
+            width: 1
+          - name: rcode
+            width: 4
+      - name: qdcount
+        type: uint16_t
+      - name: ancount
+        type: uint16_t
+      - name: nscount
+        type: uint16_t
+      - name: arcount
+        type: uint16_t

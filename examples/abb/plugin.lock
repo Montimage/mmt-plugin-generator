@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0.dev0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "2d01b45feadd94156dd13d9c8373a9d8bf5107374e84bb0e180d60334cb4b7c1"
+  },
+  "files": [
+    {
+      "path": "generated/abb_example_mmt_plugin.c",
+      "sha256": "ef658657294e1b8a79d763c85e86d1036715fa40131f6b001e6a92817410e0e2"
+    },
+    {
+      "path": "generated/abb_example_mmt_plugin.h",
+      "sha256": "da055e13dc4a41fba3485657f6ef67b01fa6262b5bf68efed9423f87833ea52e"
+    }
+  ]
+}

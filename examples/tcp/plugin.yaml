@@ -1,0 +1,38 @@
+# Port of plugins/tcp_plugin (RFC 9293 section 3.1). The model's struct did
+# not follow the TCP header (fields a to h, then seq at byte 12): this is
+# the RFC's, with the model's names where it had them.
+schema: 1
+protocol:
+  label: tcp_example
+  id: 989
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: ip   # IPv4 protocol 6: src/tcp_example_impl.c
+attributes:
+  - struct: tcphdr
+    fields:
+      - name: source
+        type: uint16_t
+      - name: dest
+        type: uint16_t
+      - name: seq
+        type: uint32_t
+      - name: ack_seq
+        type: uint32_t
+      - type: uint8_t
+        bits:
+          - {name: doff, width: 4}
+          - {name: reserved, width: 4}
+      - name: flags
+        type: uint8_t
+      - name: window
+        type: uint16_t
+      - name: check
+        type: uint16_t
+      - name: urg_ptr
+        type: uint16_t

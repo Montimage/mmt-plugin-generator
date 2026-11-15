@@ -1,12 +1,23 @@
 """Reading capture files: classic pcap and pcapng, without a library.
 
-``read(data)`` checks the file header and returns a ``Capture`` whose
-``frames()`` yields every packet record in file order, as a ``Frame``: its
-1-based number (as Wireshark numbers frames), its link type, the captured
-bytes and the original length. A file that is not a capture, or one whose
-structure is broken (a truncated record, a block whose lengths disagree, a
-packet of an interface that was never described), raises ``PcapError`` with
-the byte offset where it is wrong, when ``frames()`` reaches it.
+``read_stream(stream)`` checks the file header of a binary stream and
+returns a ``Capture`` whose ``frames()`` reads the stream one record (pcap)
+or block (pcapng) at a time and yields every packet record in file order,
+as a ``Frame``: its 1-based number (as Wireshark numbers frames), its link
+type, the captured bytes and the original length. Nothing past the record
+of the last frame taken is read, so a caller that stops early (``scaffold``
+at its ``--max-packets``-th payload) never reads the rest of the file.
+``read(data)`` is the same on bytes already in memory.
+
+A file that is not a capture, or one whose structure is broken (a truncated
+record, a block whose lengths disagree, a packet of an interface that was
+never described), raises ``PcapError`` with the byte offset where it is
+wrong, when ``frames()`` reaches it. Each length is checked against the
+bytes left before the record is read: on a stream whose size is known (a
+regular file, ``io.BytesIO``; the size when the capture was opened) a
+corrupt length is an error without a read, and on another one (a pipe) the
+record is read in chunks, so a corrupt length never allocates what it
+claims.
 
 Classic pcap: the four magic numbers (microsecond and nanosecond time
 stamps, either byte order); the link type is the low 16 bits of the
@@ -18,11 +29,13 @@ not read: nothing here needs them.
 
 from __future__ import annotations
 
+import io
 import struct
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Protocol
 
-__all__ = ["Capture", "Frame", "PcapError", "read"]
+__all__ = ["Capture", "Frame", "PcapError", "Readable", "read", "read_stream"]
 
 _PCAP_MAGIC = {
     b"\xd4\xc3\xb2\xa1": "<",  # microseconds, little-endian
@@ -33,12 +46,17 @@ _PCAP_MAGIC = {
 _PCAP_HEADER = 24
 _PCAP_RECORD = 16
 
-_SHB = 0x0A0D0D0A
+_SHB_MAGIC = b"\x0a\x0d\x0d\x0a"
+_SHB_HEADER = 28  # type, length, byte-order magic, version, section length, length
+_BLOCK_HEADER = 12  # type, length and the trailing length
 _IDB = 0x00000001
 _PB = 0x00000002
 _SPB = 0x00000003
 _EPB = 0x00000006
 _BYTE_ORDER_MAGIC = 0x1A2B3C4D
+
+#: The largest single read from a stream.
+_CHUNK = 1 << 20
 
 
 class PcapError(Exception):
@@ -68,85 +86,187 @@ class Frame:
         return len(self.data) < self.original
 
 
-@dataclass(frozen=True)
-class Capture:
-    """A capture file: ``format`` is ``pcap`` or ``pcapng``."""
+class Readable(Protocol):
+    """What ``read_stream`` reads: a binary file, ``io.BytesIO``, a pipe.
+    ``seekable``, ``tell`` and ``seek`` tell its size when it can seek."""
 
-    format: str
-    data: bytes
+    def read(self, size: int = -1, /) -> bytes | None: ...
+    def seekable(self) -> bool: ...
+    def tell(self) -> int: ...
+    def seek(self, offset: int, whence: int = 0, /) -> int: ...
+
+
+class _Short(Exception):
+    """Fewer bytes are left than a read needs: ``left`` of them."""
+
+    def __init__(self, left: int) -> None:
+        super().__init__(left)
+        self.left = left
+
+
+class _Source:
+    """A binary stream read in exact amounts; ``pos`` is the offset of the
+    next byte from where the stream was when the capture was opened."""
+
+    def __init__(self, stream: Readable) -> None:
+        self._stream = stream
+        self._end = _size(stream)
+        self.pos = 0
+
+    def left(self) -> int | None:
+        """The bytes left, ``None`` when the stream's size is unknown."""
+        return None if self._end is None else self._end - self.pos
+
+    def take(self, n: int) -> bytes:
+        """The next ``n`` bytes; ``_Short`` when fewer are left (then, with a
+        known size, nothing is read)."""
+        left = self.left()
+        if left is not None and n > left:
+            raise _Short(left)
+        chunks = []
+        got = 0
+        while got < n:
+            chunk = self._stream.read(min(n - got, _CHUNK))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            got += len(chunk)
+        self.pos += got
+        if got < n:
+            raise _Short(got)
+        return chunks[0] if len(chunks) == 1 else b"".join(chunks)
+
+
+def _size(stream: Readable) -> int | None:
+    """The bytes from the stream's position to its end, when it can seek."""
+    try:
+        if not stream.seekable():
+            return None
+        here = stream.tell()
+        end = stream.seek(0, io.SEEK_END)
+        stream.seek(here)
+    except (OSError, ValueError):
+        return None
+    return max(end - here, 0)
+
+
+class Capture:
+    """A capture file: ``format`` is ``pcap`` or ``pcapng``. It reads its
+    stream, which must stay open until ``frames()`` is consumed."""
+
+    def __init__(self, fmt: str, source: _Source, header: bytes) -> None:
+        self.format = fmt
+        self._source = source
+        self._header = header
+        self._started = False
 
     def frames(self) -> Iterator[Frame]:
-        """Every packet record, in file order; ``PcapError`` on a broken one."""
+        """Every packet record, in file order; ``PcapError`` on a broken one.
+        It reads the stream: a capture's frames can be taken once."""
+        if self._started:
+            raise RuntimeError("the frames of a capture can be read once")
+        self._started = True
         if self.format == "pcap":
-            return _pcap_frames(self.data)
-        return _pcapng_frames(self.data)
+            return _pcap_frames(self._source, self._header)
+        return _pcapng_frames(self._source, self._header)
 
 
 def read(data: bytes) -> Capture:
     """The capture of ``data``; ``PcapError`` when it is neither format."""
-    if len(data) >= 4 and data[:4] in _PCAP_MAGIC:
-        if len(data) < _PCAP_HEADER:
+    return read_stream(io.BytesIO(data))
+
+
+def read_stream(stream: Readable) -> Capture:
+    """The capture of a binary ``stream``, from its position; ``PcapError``
+    when it is neither format. Only the file header is read here."""
+    source = _Source(stream)
+    try:
+        magic = source.take(4)
+    except _Short:
+        raise PcapError("not a pcap or pcapng file (unknown magic number)", 0) from None
+    if magic in _PCAP_MAGIC:
+        try:
+            rest = source.take(_PCAP_HEADER - 4)
+        except _Short as short:
             raise PcapError(
-                f"the pcap file header is {_PCAP_HEADER} bytes, the file has {len(data)}", 0
-            )
-        return Capture("pcap", data)
-    if len(data) >= 4 and data[:4] == b"\x0a\x0d\x0d\x0a":
-        _section_order(data, 0)
-        return Capture("pcapng", data)
+                f"the pcap file header is {_PCAP_HEADER} bytes, the file has {4 + short.left}", 0
+            ) from None
+        return Capture("pcap", source, magic + rest)
+    if magic == _SHB_MAGIC:
+        header = _section_header(source, magic, 0)
+        return Capture("pcapng", source, header)
     raise PcapError("not a pcap or pcapng file (unknown magic number)", 0)
 
 
-def _pcap_frames(data: bytes) -> Iterator[Frame]:
-    order = _PCAP_MAGIC[data[:4]]
-    linktype = struct.unpack_from(order + "I", data, 20)[0] & 0xFFFF
-    pos = _PCAP_HEADER
+def _pcap_frames(source: _Source, header: bytes) -> Iterator[Frame]:
+    order = _PCAP_MAGIC[header[:4]]
+    linktype = struct.unpack_from(order + "I", header, 20)[0] & 0xFFFF
     number = 0
-    while pos < len(data):
-        if len(data) - pos < _PCAP_RECORD:
+    while True:
+        pos = source.pos
+        try:
+            record = source.take(_PCAP_RECORD)
+        except _Short as short:
+            if short.left == 0:
+                return
             raise PcapError(
-                f"a truncated record header ({len(data) - pos} of {_PCAP_RECORD} bytes)", pos
-            )
-        caplen, original = struct.unpack_from(order + "II", data, pos + 8)
-        start = pos + _PCAP_RECORD
-        if caplen > len(data) - start:
+                f"a truncated record header ({short.left} of {_PCAP_RECORD} bytes)", pos
+            ) from None
+        caplen, original = struct.unpack_from(order + "II", record, 8)
+        try:
+            data = source.take(caplen)
+        except _Short as short:
             raise PcapError(
-                f"a record of {caplen} bytes, but only {len(data) - start} bytes are left", pos
-            )
+                f"a record of {caplen} bytes, but only {short.left} bytes are left", pos
+            ) from None
         number += 1
-        yield Frame(number, linktype, data[start : start + caplen], max(original, caplen))
-        pos = start + caplen
+        yield Frame(number, linktype, data, max(original, caplen))
 
 
-def _section_order(data: bytes, pos: int) -> str:
-    """The byte order of the section header block at ``pos``."""
-    if len(data) - pos < 28:
-        raise PcapError("a truncated pcapng section header block", pos)
+def _section_header(source: _Source, head: bytes, pos: int) -> bytes:
+    """The first ``_SHB_HEADER`` bytes of the section header block at
+    ``pos``, of which ``head`` was read; its byte order is checked."""
+    try:
+        head += source.take(_SHB_HEADER - len(head))
+    except _Short:
+        raise PcapError("a truncated pcapng section header block", pos) from None
+    _section_order(head, pos)
+    return head
+
+
+def _section_order(head: bytes, pos: int) -> str:
+    """The byte order of the section header block starting with ``head``."""
     for order in ("<", ">"):
-        if struct.unpack_from(order + "I", data, pos + 8)[0] == _BYTE_ORDER_MAGIC:
+        if struct.unpack_from(order + "I", head, 8)[0] == _BYTE_ORDER_MAGIC:
             return order
     raise PcapError("a pcapng section header block without its byte-order magic", pos)
 
 
-def _pcapng_frames(data: bytes) -> Iterator[Frame]:
-    pos = 0
+def _pcapng_frames(source: _Source, first: bytes) -> Iterator[Frame]:
     order = "<"
     # Per interface: (link type, snap length); reset by each section header.
     interfaces: list[tuple[int, int]] = []
     number = 0
-    while pos < len(data):
-        if len(data) - pos < 12:
-            raise PcapError(f"a truncated pcapng block ({len(data) - pos} bytes)", pos)
-        if data[pos : pos + 4] == b"\x0a\x0d\x0d\x0a":
-            order = _section_order(data, pos)
+    pos, head = 0, first  # the section header that read_stream checked
+    while True:
+        if head[:4] == _SHB_MAGIC:
+            order = _section_order(head, pos)
             interfaces = []
-        kind, length = struct.unpack_from(order + "II", data, pos)
-        if length < 12 or length % 4 or length > len(data) - pos:
-            raise PcapError(
-                f"a pcapng block of length {length} ({len(data) - pos} bytes are left)", pos
-            )
-        if struct.unpack_from(order + "I", data, pos + length - 4)[0] != length:
+        kind, length = struct.unpack_from(order + "II", head, 0)
+        left = source.left()
+        whole = None if left is None else left + len(head)  # from the block's start
+        if length < _BLOCK_HEADER or length % 4 or (whole is not None and length > whole):
+            raise PcapError(_bad_length(length, whole), pos)
+        if length < len(head):
+            # A section header block shorter than its fixed fields.
+            raise PcapError("a truncated pcapng section header block", pos)
+        try:
+            block = head + source.take(length - len(head))
+        except _Short as short:
+            raise PcapError(_bad_length(length, len(head) + short.left), pos) from None
+        if struct.unpack_from(order + "I", block, length - 4)[0] != length:
             raise PcapError("a pcapng block whose two lengths differ", pos)
-        body = data[pos + 8 : pos + length - 4]
+        body = block[8:-4]
         if kind == _IDB:
             if len(body) < 8:
                 raise PcapError("a truncated pcapng interface description block", pos)
@@ -155,7 +275,31 @@ def _pcapng_frames(data: bytes) -> Iterator[Frame]:
         elif kind in (_EPB, _PB, _SPB):
             number += 1
             yield _packet(kind, body, order, interfaces, number, pos)
-        pos += length
+        pos = source.pos
+        next_head = _block_head(source, pos)
+        if next_head is None:
+            return
+        head = next_head
+
+
+def _block_head(source: _Source, pos: int) -> bytes | None:
+    """The start of the block at ``pos``: its type and length and 4 more
+    bytes (all of a section header's fixed fields), ``None`` at the end."""
+    try:
+        head = source.take(_BLOCK_HEADER)
+    except _Short as short:
+        if short.left == 0:
+            return None
+        raise PcapError(f"a truncated pcapng block ({short.left} bytes)", pos) from None
+    if head[:4] == _SHB_MAGIC:
+        head = _section_header(source, head, pos)
+    return head
+
+
+def _bad_length(length: int, left: int | None) -> str:
+    if left is None:
+        return f"a pcapng block of length {length}"
+    return f"a pcapng block of length {length} ({left} bytes are left)"
 
 
 def _packet(

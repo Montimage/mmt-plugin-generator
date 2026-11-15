@@ -53,3 +53,4 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/build/test_sdk.py" in job  # build (#19): every corpus model
     assert "tests/unit/packettest/test_sdk.py" in job  # test (#20): every corpus model
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
+    assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-author evals (#27)

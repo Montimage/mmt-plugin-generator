@@ -1,6 +1,6 @@
 {
   "id": "pdl-rfc1006",
-  "summary": "From a legacy PDL v1 model (legacy.pdl, the TPKT model of plugins/): import keeps the SDK's id and name, which validate refuses, and a struct name the SDK also has, which the build refuses once the hook that attaches the protocol to TCP port 102 includes the SDK's TCP header; init's sample test fails until it is removed.",
+  "summary": "From a legacy PDL v1 model (legacy.pdl, the Java tool's TPKT model, tests/corpus/models/tpkt/model.pdl): import keeps the SDK's id and name, which validate refuses, and a struct name the SDK also has, which the build refuses once the hook that attaches the protocol to TCP port 102 includes the SDK's TCP header; init's sample test fails until it is removed.",
   "entry": "pdl",
   "input": "legacy.pdl",
   "params": {

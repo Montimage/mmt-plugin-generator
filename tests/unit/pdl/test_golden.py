@@ -21,8 +21,8 @@ ROOT = Path(__file__).parents[3]
 GOLDEN = Path(__file__).with_name("golden")
 
 MODELS = {
-    "tpkt": "plugins/tpkt_plugin",
-    "cotp": "plugins/cotp_plugin",
+    "tpkt": "tests/corpus/models/tpkt/model.pdl",
+    "cotp": "tests/corpus/models/cotp/model.pdl",
     "pdl_bitfields": "tests/corpus/models/pdl_bitfields/model.pdl",
     "pdl_expressions": "tests/corpus/models/pdl_expressions/model.pdl",
     "pdl_conditionals": "tests/corpus/models/pdl_conditionals/model.pdl",

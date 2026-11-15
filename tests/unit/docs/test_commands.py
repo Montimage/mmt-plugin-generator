@@ -17,7 +17,7 @@ a fenced block with no language, or a runnable block that names ``sudo``,
 touch the host's SDK.
 The blocks of one page run in order, each with ``bash -euo pipefail`` from
 the root of a sandbox: a copy of the tracked tree (so ``examples/`` and
-``plugins/`` are there), with ``HOME`` and ``XDG_DATA_HOME`` inside it and
+``tests/corpus/`` are there), with ``HOME`` and ``XDG_DATA_HOME`` inside it and
 an ``mmt-plugin`` on ``PATH`` that runs this checkout's package. A block
 keeps the files of the blocks before it, not their ``cd`` or variables.
 

@@ -68,12 +68,13 @@ pass "compile ndn_mmt_plugin.c with -DMMT_LOG_ENABLE_DEBUG"
 
 # 2. No C source uses the logging/branch macros mmt-dpi 1.10.0 made private.
 #    Only the dirs that hold the repo's C sources are scanned, so generated and
-#    tool dirs (.venv, .git, build/, caches, a private mmt-dpi prefix), whose
-#    third-party C uses these names, never are.
-SCAN_DIRS=(ndn_src plugins tests)
+#    tool dirs (.venv, .git, caches, a private mmt-dpi prefix), whose
+#    third-party C uses these names, never are; nor is any build/ dir under
+#    them (an example's build output).
+SCAN_DIRS=(ndn_src examples tests)
 rc=0
 (cd "$REPO_ROOT" && grep -rnE '\b(debug|log_err|likely|unlikely)[[:space:]]*\(' \
-        --include='*.c' --include='*.h' -- "${SCAN_DIRS[@]}") || rc=$?
+        --include='*.c' --include='*.h' --exclude-dir=build -- "${SCAN_DIRS[@]}") || rc=$?
 case "$rc" in
     0) fail "unprefixed debug()/log_err()/likely()/unlikely() found (use mmt_log_* / MMT_LIKELY)" ;;
     1) ;;

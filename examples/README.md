@@ -1,17 +1,19 @@
 # Examples
 
-The 16 example models of `plugins/*_plugin`, ported to mmt-plugin projects
-(plan task T5.1, `docs/design/workflow-redesign.md`). Each one builds with
-`mmt-plugin build` and passes its packet tests with `mmt-plugin test`
-against mmt-dpi 1.10.2, with gcc and clang, so no example is left out.
-`plugins/` stays as it was: the Java tool was retired (T5.4, #31), but the
-test corpus still reads the original models (#78).
+The 16 example models of the Java tool (`plugins/*_plugin`), ported to
+mmt-plugin projects (plan task T5.1, `docs/design/workflow-redesign.md`).
+Each one builds with `mmt-plugin build` and passes its packet tests with
+`mmt-plugin test` against mmt-dpi 1.10.2, with gcc and clang, so no example
+is left out. The Java tool was retired (T5.4, #31) and `plugins/` removed
+(#78): the test corpus keeps the models, and these projects replace the
+hand-written C (below, "The Java tool's C sources").
 
 Each directory is a project:
 
 - `plugin.yaml`: the model. `mmt-plugin import` converted the PDL model
-  (`tests/corpus/models/<name>/model.pdl`, a copy of
-  `plugins/<name>_plugin`); the table below lists what changed after that.
+  (`tests/corpus/models/<name>/model.pdl`, the Java tool's
+  `plugins/<name>_plugin` byte for byte); the table below lists what
+  changed after that. Its first line still names `plugins/<name>_plugin`.
 - `plugin.lock` and `generated/`: written by `mmt-plugin generate`, and
   committed, so that `generate --check` shows when they are stale.
 - `src/<label>_impl.c`: the hooks that the generated header declares.
@@ -134,6 +136,31 @@ protocol.
 - The values of `cam`, `cpm` (after byte 7) and `quic` are what the model
   declares: the specifications have no byte-aligned field there (ETSI UPER)
   or another layout (RFC 9000). The tests say so in each `source`.
+
+## The Java tool's C sources
+
+`plugins/` held, next to the models, C that the Java tool generated and
+someone then edited, or wrote by hand. It was removed in #78; every file is
+in the tree at commit f081d43, for example
+`git show f081d43:plugins/http2_src/http2_mmt_plugin.c`. The `source` of a
+packet test and the first line of a `plugin.yaml` that name a `plugins/`
+file mean that commit's.
+
+| directory at f081d43 | what it was | its port |
+|---|---|---|
+| `plugins/abb_src/` | the abb plugin, attached to UDP port 12118 (source or destination) | `abb`: `parents[].classify` (destination port 12118) |
+| `plugins/arp_src/` | the arp plugin, attached to Ethernet, EtherType 0x0806 | `arp`: `parents[].classify` |
+| `plugins/cam_plugin_src/` | the cam plugin, attached to UDP, payload starting 02 02 | `cam`: `parents[].classify` |
+| `plugins/cotp/` | the cotp plugin, attached to TPKT | `cotp`: `tpkt_example`'s `classify_next` |
+| `plugins/cpm_plugin_src/` | the cpm plugin, attached to UDP, payload starting 01 32 | `cpm`: `parents[].classify` (02 0e, the ETSI header: `tests/corpus/index.yaml`) |
+| `plugins/mongodb_src/` | the mongodb plugin, attached to TCP, on the header's `opCode` | `mongodb`: `<label>_hook_register_parents` (port 27017) |
+| `plugins/quic_src/` | the quic plugin, attached to UDP ports 80 and 443 | `quic`: `parents[].classify` (destination port 443 only) |
+| `plugins/s7comm/` | the s7com plugin, attached to COTP | `s7com`: `cotp_example`'s `classify_next` |
+| `plugins/tpkt/` | the tpkt plugin, attached to TCP port 102 (source or destination) | `tpkt`: `<label>_hook_register_parents` |
+| `plugins/tptk_src/` | an older tpkt plugin (id 636, registered as a protocol stack, no parent) | none: `plugins/tpkt/` superseded it |
+| `plugins/new_abb_src/` | `ABB_CAMERA` (id 800), a variant of abb with no model | none: no model to port, and `abb` covers the protocol |
+| `plugins/http2_src/` | an HTTP/2 plugin (id 700) with no model | none: mmt-dpi 1.10.2 has `PROTO_HTTP2`, id 700, in `libmmt_tcpip` |
+| `plugins/mongodb_extraction.c`, `plugins/quic_extraction.c` | programs that read a pcap with `libmmt_core` and print the mongodb or quic attributes, not plugins | none: `mmt-plugin test` prints each attribute of a packet test, and `scaffold --from-pcap` reads a capture |
 
 ## Installing
 

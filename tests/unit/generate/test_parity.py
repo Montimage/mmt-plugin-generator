@@ -1,9 +1,10 @@
 """Parity with the Java generator (T1.6, #15).
 
-Of the 16 ``plugins/`` models, only abb, cotp, s7com and tpkt give Java
-output that compiles against mmt-dpi 1.10.2 (inventory, section 4). For each
-of them this module reads the Java output pinned in ``tests/java-output/``
-and the new output, reduces both to what they mean to mmt-dpi (``Meaning``:
+Of the Java tool's 16 example models (``tests/corpus/models/``), only abb,
+cotp, s7com and tpkt give Java output that compiles against mmt-dpi 1.10.2
+(inventory, section 4). For each of them this module reads the Java output
+pinned in ``tests/java-output/`` and the new output, reduces both to what
+they mean to mmt-dpi (``Meaning``:
 the protocol id and alias, every attribute's id, alias, type, length,
 position, scope and how its value is read, the header's structs and the
 registration calls) and asserts the two are equal, apart from the two

@@ -1,6 +1,8 @@
 """The ported examples (plan T5.1, #28), without an SDK.
 
-Every ``plugins/<name>_plugin`` model has a project ``examples/<name>/``
+Every example model of the corpus (``kind: example`` in
+``tests/corpus/index.yaml``: the Java tool's ``plugins/<name>_plugin``, removed
+by #78) has a project ``examples/<name>/``
 (``examples/README.md``): its ``plugin.yaml`` validates with the profile it
 pins, ``generate --check`` finds the committed ``generated/`` and
 ``plugin.lock`` up to date, and its packet tests load, name the example's
@@ -10,6 +12,7 @@ protocol and carry the bytes of the corpus fixture they were ported from.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -28,8 +31,20 @@ EXAMPLES = REPO / "examples"
 CORPUS = REPO / "tests" / "corpus" / "models"
 PROFILE = "1.10.2"
 
-#: The example models: plugins/<name>_plugin.
-NAMES = sorted(p.name[: -len("_plugin")] for p in (REPO / "plugins").glob("*_plugin"))
+
+def _example_models() -> list[str]:
+    """The names of the corpus's example models."""
+    path = REPO / "tests" / "corpus" / "validate.py"
+    spec = importlib.util.spec_from_file_location("corpus_validate", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    index = module.load_yaml(REPO / "tests" / "corpus" / "index.yaml")
+    return sorted(m["name"] for m in index["models"] if m["kind"] == "example")
+
+
+#: The example models of the corpus.
+NAMES = _example_models()
 
 
 def _json(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str, Any]]:
@@ -56,7 +71,7 @@ def _readme_rows() -> dict[str, tuple[str, int]]:
     return rows
 
 
-def test_every_plugins_model_has_an_example() -> None:
+def test_every_example_model_has_a_project() -> None:
     assert len(NAMES) == 16
     ported = sorted(p.parent.name for p in EXAMPLES.glob("*/plugin.yaml"))
     assert ported == NAMES

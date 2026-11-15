@@ -279,7 +279,8 @@ class ValidateCommand:
             ),
             epilog=(
                 "examples:\n"
-                "  mmt-plugin validate plugins/tpkt_plugin --sdk $HOME/mmt/opt/mmt\n"
+                "  mmt-plugin validate tests/corpus/models/tpkt/model.pdl"
+                " --sdk $HOME/mmt/opt/mmt\n"
                 "  mmt-plugin validate model.pdl --no-sdk --sdk-profile 1.10.2 --strict"
             ),
         )

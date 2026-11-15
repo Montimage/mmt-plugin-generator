@@ -1,5 +1,5 @@
 {
-  "file": "plugins/tpkt_plugin",
+  "file": "tests/corpus/models/tpkt/model.pdl",
   "model": {
     "node": "Model",
     "defines": [],

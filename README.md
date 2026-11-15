@@ -246,7 +246,8 @@ What to do:
   ```
 
   mmt-dpi 1.10.x registers many more protocols than older releases, so
-  several `plugins/` models now collide with built-in protocols.
+  several of the Java tool's example models now collide with built-in
+  protocols.
 - The headers list only the SDK's own protocols: any other `.so` in the
   plugin directory can take ids and names too. The reliable check is at run
   time, with every plugin you deploy in the plugin directory: after
@@ -265,7 +266,8 @@ hold the built-in plugins the new one depends on, e.g. a copy or symlink of
 ## NDN example and the built-in NDN dissector
 
 `ndn_src/` holds a hand-written NDN (Named Data Networking) plugin, and
-`plugins/ndn_plugin` its model (ported to [`examples/ndn/`](examples/ndn/)).
+`tests/corpus/models/ndn/model.pdl` its model (ported to
+[`examples/ndn/`](examples/ndn/)).
 mmt-dpi now ships its own NDN dissector in `libmmt_tcpip` (`PROTO_NDN` =
 625, name `ndn`, `NDN_*` attributes), so this example is kept only as a
 plugin-writing sample. To coexist with the built-in dissector it registers
@@ -297,7 +299,10 @@ its classifiers are attached. It also fails if the plugin file name
 if its id or name is defined by the SDK headers. It prints one
 `PASS:`/`FAIL:` line per check and exits non-zero on failure.
 
-The other plugin sources under `plugins/` are not covered by this check;
-several of them do not build against mmt-dpi 1.10.x, mostly because they
-redeclare protocols that mmt-dpi now ships. Their models are ported, and
-build, in [`examples/`](examples/README.md).
+The other example plugins are the projects of [`examples/`](examples/README.md),
+which build and test against mmt-dpi 1.10.2; this check also scans their C
+for the removed macros. The Java tool's other plugin sources, in `plugins/`,
+were removed in #78 (several did not build against mmt-dpi 1.10.x, mostly
+because they redeclare protocols that mmt-dpi now ships);
+[`examples/README.md`](examples/README.md#the-java-tools-c-sources) says
+where they are and what replaced them.

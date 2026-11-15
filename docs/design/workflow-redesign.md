@@ -185,6 +185,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
   - Delete `legacy/` once parity is proven.
   - Verify: no Java left in the build or docs.
   - Done in #31: `plugins/` stays, because the test corpus reads it; its removal is #78.
+  - Done in #78: `plugins/` removed; `tests/corpus/models/` keeps the 16 models (their sha256 in `tests/corpus/index.yaml`) and `examples/README.md` records the hand-written C, at commit f081d43.
 - **T5.5 Release: merge `dev` into `main`.** Depends on all tasks above.
   - A release PR from `dev` to `main` with a changelog, then the first release of the Python generator. Needs Luong's explicit OK.
 

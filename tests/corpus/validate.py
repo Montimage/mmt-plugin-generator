@@ -5,8 +5,10 @@ Checks that:
   - index.yaml declares exactly the PDL constructs of the Java generator
     inventory (REQUIRED_CONSTRUCTS below), and every construct is exercised
     by at least one packet of at least one valid model;
-  - every example model in plugins/*_plugin has a corpus entry whose model
-    file is a byte-identical copy, with at least one packet;
+  - the example models are the 16 models the Java tool ran on, the
+    <name>_plugin lines of tests/java-output/MANIFEST (read, never written),
+    each one with the bytes it had then (its sha256 in index.yaml), with at
+    least one packet;
   - each packet file is well-formed (required keys, types, value ranges);
   - each expected value agrees with the packet bytes at the stated offset
     under the corpus byte-order and bitfield rules (README.md, "Semantics");
@@ -24,6 +26,7 @@ Usage: python3 tests/corpus/validate.py [corpus dir]
 Exit status: 0 when the corpus is valid, 1 otherwise.
 """
 
+import hashlib
 import ipaddress
 import json
 import re
@@ -565,10 +568,34 @@ def model_facts(rep, where, text):
     }
 
 
-MODEL_KEYS = {"name", "kind", "origin", "model", "encoding", "valid",
+MODEL_KEYS = {"name", "kind", "sha256", "model", "encoding", "valid",
               "invalid_reason", "java", "spec", "notes", "packets"}
 JAVA_STATUS = {"compiles", "compile-fail", "parses", "syntax-errors",
                "no-output"}
+
+
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def manifest_models(rep, path):
+    """The model names of the Java tool's last run (``<model> <status> ...``
+    lines of tests/java-output/MANIFEST, after the comments and the
+    ``key: value`` header); None, with an error, when it cannot be read."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        rep.err(str(path), f"cannot read the Java tool's MANIFEST: {exc}")
+        return None
+    found = set()
+    for line in lines:
+        fields = line.split()
+        if not fields or line.startswith("#") or fields[0].endswith(":"):
+            continue
+        found.add(fields[0])
+    if not found:
+        rep.err(str(path), "the Java tool's MANIFEST lists no model")
+        return None
+    return found
 
 
 def validate(corpus):
@@ -616,7 +643,7 @@ def validate(corpus):
     models = _need(rep, iw, index, "models", list) or []
     coverage = {cid: set() for cid in declared}
     runnable = set()  # constructs exercised by a packet of a valid model
-    names, origins = set(), set()
+    names, examples = set(), set()
     for i, model in enumerate(models):
         mw = f"{iw} models[{i}]"
         if not isinstance(model, dict):
@@ -655,16 +682,15 @@ def validate(corpus):
             continue
         text = model_path.read_bytes()
         if kind == "example":
-            origin = _need(rep, mw, model, "origin", str)
-            if origin:
-                origins.add(origin)
-                src = repo / origin
-                if not src.is_file():
-                    rep.err(mw, f"origin {origin} is missing")
-                elif src.read_bytes() != text:
-                    rep.err(mw, f"model.pdl differs from {origin}")
-        elif "origin" in model:
-            rep.err(mw, "a targeted model has no origin")
+            examples.add(name)
+            digest = _need(rep, mw, model, "sha256", str)
+            if digest is not None and not SHA256.match(digest):
+                rep.err(mw, "sha256 must be 64 lowercase hex digits")
+            elif digest is not None and hashlib.sha256(text).hexdigest() != digest:
+                rep.err(mw, "model.pdl differs from the model the Java tool ran on "
+                            "(its sha256 is not the index's)")
+        elif "sha256" in model:
+            rep.err(mw, "a targeted model has no sha256")
         facts = model_facts(rep, mw, text.decode("utf-8", "replace"))
         if facts is None:
             continue
@@ -693,12 +719,14 @@ def validate(corpus):
             continue
         if d.name not in names:
             rep.err(iw, f"models/{d.name} has no entry in the index")
-    plugin_models = {f"plugins/{p.name}" for p in (repo / "plugins").glob("*_plugin")
-                     if p.is_file()}
-    for origin in sorted(plugin_models - origins):
-        rep.err(iw, f"example model {origin} has no corpus entry")
-    for origin in sorted(origins - plugin_models):
-        rep.err(iw, f"origin {origin} is not a plugins/*_plugin model")
+    java_models = manifest_models(rep, repo / "tests" / "java-output" / "MANIFEST")
+    if java_models is not None:
+        ours = {f"{name}_plugin" for name in examples}
+        for missing in sorted(java_models - ours):
+            rep.err(iw, f"the Java tool's model {missing} has no example entry")
+        for extra in sorted(ours - java_models):
+            rep.err(iw, f"example {extra[:-len('_plugin')]} is not a model of "
+                        f"tests/java-output/MANIFEST ({extra})")
 
     for cid, cov in declared.items():
         got = coverage.get(cid, set())

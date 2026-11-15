@@ -55,7 +55,7 @@ All parsers use `allow_abbrev=False` (an abbreviation would break when an option
 
 ## 4. Arguments and options per command
 
-`MODEL` everywhere: a `plugin.yaml` path, a PDL v1 file (for example `plugins/tpkt_plugin`), or `-` for stdin. Default: `<project>/plugin.yaml`. The format is detected (`.yaml`/`.yml` → YAML, else PDL); `--model-format {auto,yaml,pdl}` overrides it (needed for `-`).
+`MODEL` everywhere: a `plugin.yaml` path, a PDL v1 file (for example `tests/corpus/models/tpkt/model.pdl`), or `-` for stdin. Default: `<project>/plugin.yaml`. The format is detected (`.yaml`/`.yml` → YAML, else PDL); `--model-format {auto,yaml,pdl}` overrides it (needed for `-`).
 `SELECTOR` everywhere: `<proto>[:<key>=<value>[,<key>=<value>...]]`, for example `udp:port=4433`, `tcp:port=102`, `ethernet:ethertype=0x8624`.
 
 ### `init LABEL`
@@ -405,8 +405,8 @@ mmt-plugin -C tpkt validate --json | jq '.diagnostics[] | select(.severity == "e
 mmt-plugin -C tpkt test --json --sdk "$HOME/mmt/opt/mmt" > result.json; echo "exit $?"
 
 # 3. Migrate a legacy PDL model, and generate from PDL without a project (old jar workflow)
-mmt-plugin import plugins/tpkt_plugin -o tpkt/plugin.yaml
-mmt-plugin generate plugins/tpkt_plugin -o /tmp/tpkt-out --sdk-profile 1.10.2
+mmt-plugin import tests/corpus/models/tpkt/model.pdl -o tpkt/plugin.yaml
+mmt-plugin generate tests/corpus/models/tpkt/model.pdl -o /tmp/tpkt-out --sdk-profile 1.10.2
 
 # 4. CI drift gate: fails with exit 7 if committed generated files are stale
 mmt-plugin generate --check
@@ -554,7 +554,7 @@ Details fixed by #24 where sections 4, 6 and 9 leave a choice:
 Details fixed by #25 where sections 4, 5, 6 and 8 leave a choice:
 
 - `import PDL` reads a PDL v1 file or `-` (stdin, `<stdin>` in diagnostics) and writes `-o FILE`, by default `<project>/plugin.yaml`, as `mmt_plugin.pluginyaml.dumps` writes it: absolute offsets, no `sdk.profile`. It needs no SDK: the model is analysed against the newest bundled profile (`context.sdk.profile_source` `default`, with no `sdk.profile-default` warning, since nothing is generated or pinned), so it has no `--sdk-profile` and no exit 4. To pin a profile, add `sdk.profile` to the file it writes.
-- Every construct whose meaning relied on a Java bug is a warning, `model.legacy-*` (the table in [`docs/plugin-yaml.md`](../plugin-yaml.md), "From PDL v1"). An SDK id or name conflict (`model.id-taken`, `model.name-taken`, errors for `generate`) is `model.legacy-sdk-conflict`, so the plugins of `plugins/` import. A duplicate name the Java tool accepted (a conditional attribute, or a name differing only in case) is `model.legacy-duplicate-name`; the analysis cannot place the attributes then, so the model is written with `offsets: running` (`result.offsets`). Any other model error is exit 3 with nothing written. `model.default-scope` is not reported: an omitted `scope` is packet in `plugin.yaml`.
+- Every construct whose meaning relied on a Java bug is a warning, `model.legacy-*` (the table in [`docs/plugin-yaml.md`](../plugin-yaml.md), "From PDL v1"). An SDK id or name conflict (`model.id-taken`, `model.name-taken`, errors for `generate`) is `model.legacy-sdk-conflict`, so the Java tool's example models (`tests/corpus/models/`) import. A duplicate name the Java tool accepted (a conditional attribute, or a name differing only in case) is `model.legacy-duplicate-name`; the analysis cannot place the attributes then, so the model is written with `offsets: running` (`result.offsets`). Any other model error is exit 3 with nothing written. `model.default-scope` is not reported: an omitted `scope` is packet in `plugin.yaml`.
 - `--strict` fails before anything is written, with the code of the first warning (all `model.*`, exit 3).
 - An output with the same bytes is `unchanged` and not rewritten. One with other content, or a symbolic link, is `state.output-differs` (exit 7, nothing written) unless `--force` replaces it (`updated`); a directory is exit 7 even with `--force`. `--dry-run` reports `would-create`/`would-update`.
 - `-o -` prints the YAML as is on stdout (`result.output` `-`, `files` empty), and is `usage.conflicting-options` (exit 2) with `--json`. `result.model_hash` is the sha256 of the PDL v1 input; `files[].sha256` is the `plugin.yaml`'s.

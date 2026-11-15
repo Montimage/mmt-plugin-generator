@@ -4,7 +4,8 @@
  * MongoDB runs over TCP, port 27017 by default. The TCP header has a
  * variable length (its data offset), so the generated code cannot attach
  * the protocol with a fixed offset: this hook does, as the hand-written
- * plugins/mongodb_src/mongodb_mmt_plugin.c did.
+ * plugins/mongodb_src/mongodb_mmt_plugin.c did (removed by #78; it is in
+ * the tree at commit f081d43, examples/README.md).
  */
 #include <stdbool.h>
 #include <stddef.h>

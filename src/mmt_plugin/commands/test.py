@@ -597,14 +597,15 @@ class TestCommand:
         if recorded == digest and program.is_file():
             return program, True, []
         tools.test_dir.mkdir(parents=True, exist_ok=True)
-        write_atomic(source_path, source)
+        # build/test/ is test's own directory: a link there is replaced.
+        write_atomic(source_path, source, replace_link=True)
         stamp.unlink(missing_ok=True)
         program.unlink(missing_ok=True)
         code, output = run_compiler(command, tools.project, ctx)
         found = parse_compiler_output(output, tools.project, tools.project, failed=code != 0)
         if code != 0 or not program.is_file():
             return None, False, found
-        write_atomic(stamp, json.dumps({"inputs": digest}) + "\n")
+        write_atomic(stamp, json.dumps({"inputs": digest}) + "\n", replace_link=True)
         return program, False, found
 
     def _harness_failed(self, name: str, tools: _Toolchain) -> CliError:
@@ -999,7 +1000,9 @@ class TestCommand:
         baseline_dir.mkdir(parents=True, exist_ok=True)
         source = baseline_dir / f"mmtp_{label}.c"
         baseline = baseline_dir / f"mmtp_{label}.so"
-        write_atomic(source, harness_mod.baseline_source(generation, tools.profile))
+        write_atomic(
+            source, harness_mod.baseline_source(generation, tools.profile), replace_link=True
+        )
         command = [
             tools.cc.path,
             f"-std={tools.profile.c_std}",

@@ -402,14 +402,20 @@ class InstallCommand:
                 "sha256": None,
             }
             return None
-        written = write_atomic(target, data, dry_run=bool(args.dry_run), mode=PLUGIN_MODE)
+        # A link at the target was refused above unless --force; the manifest
+        # is install's own file, a link there is replaced.
+        written = write_atomic(
+            target, data, dry_run=bool(args.dry_run), mode=PLUGIN_MODE, replace_link=True
+        )
         run.files = [
             {"path": show_path(target, project), "action": written.action.value, "sha256": new_sha}
         ]
         manifest = Manifest(
             __version__, label, proto_id, name, (InstalledFile(file_name, written.sha256),)
         )
-        recorded = write_atomic(mpath, manifest.dumps(), dry_run=bool(args.dry_run))
+        recorded = write_atomic(
+            mpath, manifest.dumps(), dry_run=bool(args.dry_run), replace_link=True
+        )
         run.manifest = {
             "path": shown_manifest,
             "action": recorded.action.value,
@@ -696,7 +702,7 @@ class UninstallCommand:
                     manifest.name,
                     tuple(remaining),
                 )
-                write_atomic(mpath, rest.dumps())
+                write_atomic(mpath, rest.dumps(), replace_link=True)
             else:
                 mpath.unlink(missing_ok=True)
                 with contextlib.suppress(OSError):  # not empty: other plugins' manifests

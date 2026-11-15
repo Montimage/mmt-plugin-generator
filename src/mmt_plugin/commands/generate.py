@@ -439,12 +439,14 @@ class GenerateCommand:
         if writes:
             for p in planned:
                 if p.data is not None:
-                    written = write_atomic(p.path, p.data)
+                    # A link was refused above unless --force.
+                    written = write_atomic(p.path, p.data, replace_link=True)
                     p.action = written.action.value
             for p in planned:
                 if p.data is None:
                     p.path.unlink()
-            lock_action = write_atomic(lock_path, lock_data).action.value
+            # plugin.lock is generate's own: a link there is replaced.
+            lock_action = write_atomic(lock_path, lock_data, replace_link=True).action.value
         else:
             for p in planned:
                 p.action = _WOULD.get(p.action, p.action)

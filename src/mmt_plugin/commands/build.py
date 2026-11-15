@@ -854,7 +854,10 @@ class BuildCommand:
             "artifact_sha256": sha,
             "dependencies": dependencies,
         }
-        write_atomic(stamp_path, json.dumps(stamp, sort_keys=True, indent=2) + "\n")
+        # The stamp is build's own file: a link there is replaced.
+        write_atomic(
+            stamp_path, json.dumps(stamp, sort_keys=True, indent=2) + "\n", replace_link=True
+        )
         run.stages["link"] = "ran"
         run.artifact = {"path": show_path(artifact, project), "sha256": sha}
         return None

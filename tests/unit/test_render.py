@@ -18,10 +18,27 @@ from mmt_plugin.ui.render import escape, format_diagnostic, format_error, record
         ("a\\b", "a\\\\b"),
         ("\x1b[31mred", "\\x1b[31mred"),
         ("\r\x00\x7f\x9b", "\\x0d\\x00\\x7f\\x9b"),
+        # Format characters and the line and paragraph separators.
+        ("abc\u202edcba", "abc\\u202edcba"),
+        ("a\u2028b\u2029c", "a\\u2028b\\u2029c"),
+        ("soft\xadhyphen\u200dzwj\ufeff", "soft\\u00adhyphen\\u200dzwj\\ufeff"),
+        ("tag\U000e0041", "tag\\U000e0041"),
+        # Undecodable bytes (surrogateescape) are their byte; other surrogates
+        # are \uXXXX.
+        ("\udc80\udc9b\udc9d\udc90\udcff", "\\x80\\x9b\\x9d\\x90\\xff"),
+        ("\ud800\udc7f\udd00", "\\ud800\\udc7f\\udd00"),
+        # What stays: other non-ASCII text, and spaces of other widths.
+        ("\u00a0\u3000é", "\u00a0\u3000é"),
     ],
 )
 def test_escape(text: str, escaped: str) -> None:
     assert escape(text) == escaped
+
+
+def test_an_escaped_record_has_only_printable_text() -> None:
+    line = record(["\u202e\udc9b", "\u2028"])
+    assert line == "\\u202e\\x9b\t\\u2028\n"
+    assert line[:-1].replace("\t", "").isprintable()
 
 
 def test_a_record_with_esc_and_tab_keeps_its_field_count() -> None:

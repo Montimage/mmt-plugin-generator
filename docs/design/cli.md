@@ -37,7 +37,7 @@ Accepted before or after the command (`mmt-plugin --json validate` = `mmt-plugin
 | Option | Type | Default | Help |
 |---|---|---|---|
 | `-h`, `--help` | flag | — | Show help for this level and exit 0. Help is always plain text. |
-| `--version` | flag | — | Print `mmt-plugin <version>` and exit 0 (with `--json`: an envelope with `result.version`, `result.python`, `result.sdk_profiles`). |
+| `--version` | flag | — | Print `mmt-plugin <version>` and exit 0 (with `--json`: an envelope with `result.version`, `result.python`, `result.sdk_profiles`). Only when the rest of the command line parses: any usage error wins (`--bogus --version`, `--version init` without its `LABEL`: exit 2). |
 | `-C`, `--project DIR` | path | `.` | The plugin project directory (holds `plugin.yaml`). All relative paths in output are relative to it. |
 | `--json` | flag | off | Print exactly one JSON envelope (section 6) on stdout; nothing else on stdout. |
 | `--no-color` | flag | off | No escape codes at all (same as `NO_COLOR=1`). |
@@ -45,6 +45,13 @@ Accepted before or after the command (`mmt-plugin --json validate` = `mmt-plugin
 | `-v`, `--verbose` | count | 0 | `-v`: each stage and every external command line (gcc, harness) on stderr. `-vv`: debug, plus tracebacks on internal errors. |
 
 All parsers use `allow_abbrev=False` (an abbreviation would break when an option is added later). `--` ends options. No option is ever prompted for.
+
+The command line parses the same on every supported Python (3.10 to 3.14), whose argparse versions differ; the CLI decides these cases itself before argparse runs (#46):
+
+- `--` ends the options of a command, so it comes after the command name: a `--` before it (`mmt-plugin -- validate`) is `usage.unknown-command`. Python 3.13+ argparse would skip it and run the command.
+- A flag takes no value: `--json=1` and `--json=` are `usage.invalid-value`, as is a cluster of short flags with a letter that is not a flag (`-vx`: `argument -v/--verbose: ignored explicit argument 'x'`, where Python 3.12+ argparse would report an unknown option `-x`). Clusters of flags (`-vv`, `-qv`) and a short option's value in the cluster (`-vCDIR`, `-vC DIR`) parse as usual.
+- `-h`/`--help` prints the help as soon as argparse reaches it, left to right, so a usage error before it wins (`-vx --help` is exit 2) and an unknown option after it does not (`--help --bogus` prints the help).
+- One difference is left to argparse: in a cluster, `-vC=DIR` gives the project `=DIR` on Python 3.10 and `DIR` on 3.12+. Write `-vCDIR`, `-C DIR` or `--project=DIR`.
 
 **Shared option groups** (only on the commands that use them; never accepted and ignored):
 
@@ -227,7 +234,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 - `severity`: `error` | `warning` | `note`. `location` is `null` for diagnostics with no file. `line`/`column` are 1-based; columns count Unicode code points. Compiler diagnostics are mapped into the same shape (`code: "build.cc"`, the compiler's file:line:col relative to the project).
 - Codes (`error.code`, `diagnostics[].code`) are stable dotted slugs whose prefix is the class (D8). The list is documented and tested; a code is never reused for another meaning.
 - `context`: the resolved settings and where each came from (`source`: `--sdk`, `MMT_BASE`, `pkg-config`, `/opt/mmt`, `plugin.yaml`, `default`). `sdk` is `null` for commands that do not use it. In `sdk` (#13), `source` is where the prefix came from (`null` with no SDK), `version` is the SDK's `VERSION` macro (`null` when unknown), and `profile_source` is where the profile came from: `--sdk-profile`, `MMT_PLUGIN_SDK_PROFILE`, `plugin.yaml`, `sdk` (the detected version) or `default` (no SDK).
-- `result` is `null` on usage errors. With `--json`, a usage error is still an envelope (the CLI checks for a `--json` token before `--` before parsing). `--help --json` prints plain help.
+- `result` is `null` on usage errors. With `--json`, a usage error is still an envelope (the CLI checks for a `--json` token before `--` before parsing; `--json=<anything>` counts, so its own usage error is an envelope too). `--help --json` prints plain help.
 - JSON Schemas: one for the envelope and one per command's `result`, shipped in the package (`mmt_plugin/schemas/cli/v1/*.json`) and in each release; contract tests validate every command's output against them (#22).
 
 `result` per command (main keys; lists sorted by path or id):
@@ -277,6 +284,8 @@ Not used: NDJSON/streaming events. One document at the end is enough for the loo
 | scaffold | no-op | output exists with other content | yes |
 
 - Atomic writes: each file is written to a temp file in the same directory, fsynced, then `os.replace`d. `generate` renders the whole set first and writes `plugin.lock` last, so an interrupted run leaves either the old set (and `--check` reports it) or the new one. `build` links to a temp name and renames, so a failed build never leaves a broken `.so`.
+- Symbolic links (`mmt_plugin.fsio.write_atomic`, #46): a write never goes through a link. The files the user owns (a generated file, `init`'s, `import`'s and `scaffold`'s outputs, the installed plugin) are checked by the command first: a link there is refused (`state.modified`, `state.file-differs`, `state.output-differs`, `state.exists` or `state.installed-modified`) unless `--force`, which replaces the link itself by a regular file (`updated`) and leaves the file it led to alone. The files the tool owns (`plugin.lock`, `build/` stamps and harness sources, install manifests) are replaced the same way without asking. A future writer that decides neither is refused by `write_atomic` itself (`internal.io`, `ELOOP`), unless the link already leads to a regular file with the same content (`unchanged`).
+- A rewritten file is a new inode: it keeps the old file's permission bits, but not its owner and group (it belongs to the user who ran the command), and other hard links to the old file keep the old content.
 - Output is deterministic: byte-identical on re-run (plan T1.5); staleness is hash-based, never mtime-based.
 - `generate` removes a file it generated before and no longer produces only when `plugin.lock` lists it and it is unmodified.
 
@@ -325,7 +334,7 @@ stderr: errors `✗ error:` (high, bold) + `hint:` (dim), compiler-style locatio
 **Theme**: the cli-builder skill's btop roles, unchanged: `text` (terminal default), `title` (bold), `accent` (`#b54040` bold / 16-color `91` bold), `dim` (faint), `border` (`cpu_box #556d59`/`32` by default; `mem_box`, `net_box`, `proc_box` for doctor's sections), `low → mid → high` (`#77ca9b → #cbc06c → #dc4c4c` / `92 93 91`) for meters and pass/warn/fail. Statuses always print their word, so color never carries meaning alone.
 
 **Fallbacks** (decided per stream, once, right after parsing; commands never probe the terminal):
-- stdout is plain with `--json` (wins over `FORCE_COLOR`), when `TERM=dumb`, or when it is not a TTY and `FORCE_COLOR` is unset/empty/`0`. Plain = records only, tab-separated, no header, no frames or escape codes; control characters in user text escaped (`\t`, `\n`, `\xNN`, `\\`).
+- stdout is plain with `--json` (wins over `FORCE_COLOR`), when `TERM=dumb`, or when it is not a TTY and `FORCE_COLOR` is unset/empty/`0`. Plain = records only, tab-separated, no header, no frames or escape codes; control characters in user text escaped (`\t`, `\n`, `\xNN`, `\\`), and so are the characters that can disguise a line: format characters (Unicode category Cf, such as U+202E, the right-to-left override) and U+2028/U+2029 are `\uXXXX` (`\UXXXXXXXX` above U+FFFF). A byte that is not valid in the locale's encoding (argv and file names are decoded with `surrogateescape`) prints as `\xNN` of that byte whatever the locale (`LC_ALL=C`, `C.UTF-8` or a strict UTF-8 one), so no raw 8-bit C1 control (0x80-0x9F) reaches the terminal; any other lone surrogate is `\uXXXX` (#46). Styled output and the comments `scaffold` writes escape user text the same way. `--json` is unchanged: JSON escapes, ASCII only.
 - Color tier: `--no-color` or non-empty `NO_COLOR` → none (no SGR at all, not even bold); `COLORTERM=truecolor|24bit` → 24-bit; `TERM=*256color*` → 256; else 16.
 - Glyphs: Unicode when the stream encoding is UTF-8, else ASCII (`+ - |`, `[title]`, `#`/`.` meters, `+ ! x` statuses).
 - `--help` stays plain: argparse on Python 3.10–3.13 has no styling hook, and on 3.14+ the CLI passes `color=False` so help never carries escape codes (it would otherwise follow its own environment rules).
@@ -442,7 +451,7 @@ Each is where this design goes beyond the plan, conflicts with it, or follows th
 | D13 | `init` defaults | **`--id` = lowest free id in 950–999 from the detected SDK (950 + warning without one); `--parent` optional with a `model.no-parent` warning**, so `init <label>` alone works. | Require `--id` and `--parent`. |
 | D14 | Registered commands | **Only implemented commands appear**; each issue registers its command. | Register all now as stubs exiting 1 "not implemented". |
 
-Changes to the existing skeleton (`src/mmt_plugin/cli.py`): none breaking. `--version`, `--help`, the no-command usage error (exit 2) and `python -m` stay as they are; the epilog grows to the full exit-code table.
+Changes to the existing skeleton (`src/mmt_plugin/cli.py`): none breaking. `--version`, `--help`, the no-command usage error (exit 2) and `python -m` stay as they are (#46 later made any usage error win over `--version`, section 3); the epilog grows to the full exit-code table.
 
 ## 13. Where it is implemented
 

@@ -18,7 +18,15 @@ from pathlib import Path
 import pytest
 
 from mmt_plugin import __version__
-from mmt_plugin.cli import EXIT_OK, EXIT_USAGE, _classify, build_parser, main, parse_args
+from mmt_plugin.cli import (
+    EXIT_OK,
+    EXIT_USAGE,
+    UsageError,
+    _classify,
+    build_parser,
+    main,
+    parse_args,
+)
 from mmt_plugin.commands import Command, Context, Outcome
 from mmt_plugin.exitcodes import ExitCode
 
@@ -296,6 +304,114 @@ def test_classify_matches_only_the_fixed_argparse_forms(message: str, code: str)
     assert _classify(message) == code
 
 
+@pytest.mark.parametrize("argv", [["--json=1"], ["--json="], ["dummy", "--json=yes"]])
+def test_json_with_a_value_is_a_usage_error_in_one_envelope(
+    dummy: Command, argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(argv, commands=[dummy]) == EXIT_USAGE
+    captured = capsys.readouterr()
+    doc = json.loads(captured.out)
+    assert doc["error"]["code"] == "usage.invalid-value"
+    assert "ignored explicit argument" in doc["error"]["message"]
+    assert captured.err == ""
+
+
+#: Command lines that argparse reads differently from one Python version to
+#: the next (3.10 to 3.14), with the code each one gets on every version.
+_VERSION_DEPENDENT = [
+    (["-vx", "dummy"], "usage.invalid-value"),
+    (["dummy", "-vx"], "usage.invalid-value"),
+    (["-qvx", "dummy"], "usage.invalid-value"),
+    (["-v=x", "dummy"], "usage.invalid-value"),
+    (["-vx", "dummy", "--help"], "usage.invalid-value"),
+    (["--", "dummy"], "usage.unknown-command"),
+    (["-v", "--", "dummy", "x"], "usage.unknown-command"),
+    (["--"], "usage.unknown-command"),
+    (["--version", "--"], "usage.unknown-command"),
+]
+
+
+@pytest.mark.parametrize(("argv", "code"), _VERSION_DEPENDENT)
+def test_argv_parses_the_same_on_every_python(
+    dummy: Command, argv: list[str], code: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["--json", *argv], commands=[dummy]) == EXIT_USAGE
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == code
+    assert main(argv, commands=[dummy]) == EXIT_USAGE
+    err = capsys.readouterr().err
+    assert err.startswith("usage: mmt-plugin")
+    assert f"[{code}]" in err
+
+
+def test_the_ignored_value_of_a_flag_cluster_is_named() -> None:
+    with pytest.raises(UsageError) as exc:
+        parse_args(["-vqx", "dummy"])
+    assert exc.value.message == "argument -q/--quiet: ignored explicit argument 'x'"
+
+
+@pytest.mark.parametrize(
+    ("argv", "verbose", "quiet", "project", "value"),
+    [
+        (["-vv", "dummy"], 2, False, ".", "hello"),
+        (["-qv", "dummy"], 1, True, ".", "hello"),
+        (["-vC", "p", "dummy"], 1, False, "p", "hello"),
+        (["-vCp", "dummy"], 1, False, "p", "hello"),
+        (["-C", "-1", "dummy"], 0, False, "-1", "hello"),
+        (["dummy", "-vv", "-"], 2, False, ".", "-"),
+        (["dummy", "--", "-vx"], 0, False, ".", "-vx"),
+        (["dummy", "x", "-qC", "p"], 0, True, "p", "x"),
+    ],
+)
+def test_flag_clusters_and_values_still_parse(
+    dummy: Command, argv: list[str], verbose: int, quiet: bool, project: str, value: str
+) -> None:
+    ns = parse_args(argv, [dummy])
+    assert (ns.verbose, ns.quiet, ns.project, ns.value) == (verbose, quiet, project, value)
+
+
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [
+        (["--bogus", "--version"], "usage.unknown-option"),
+        (["--version", "--bogus"], "usage.unknown-option"),
+        (["--version", "-x"], "usage.unknown-option"),
+        (["--version", "dummy", "a", "b"], "usage.unexpected-argument"),
+        (["--version", "nope"], "usage.unknown-command"),
+        (["--version", "--no-color=1"], "usage.invalid-value"),
+        (["--version", "dummy", "--fail"], "usage.missing-argument"),
+    ],
+)
+def test_a_usage_error_wins_over_version(
+    dummy: Command, argv: list[str], code: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _code(argv, [dummy]) == EXIT_USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"[{code}]" in captured.err
+    assert main(["--json", *argv], commands=[dummy]) == EXIT_USAGE
+    doc = json.loads(capsys.readouterr().out)
+    assert (doc["error"]["code"], doc["result"]) == (code, None)
+
+
+@pytest.mark.parametrize(
+    "argv", [["--version"], ["-v", "--version", "-q"], ["--version", "-C", "x"]]
+)
+def test_version_with_valid_options(
+    dummy: Command, argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _code(argv, [dummy]) == EXIT_OK
+    assert capsys.readouterr().out == f"mmt-plugin {__version__}\n"
+    assert main(["--json", *argv], commands=[dummy]) == EXIT_OK
+    assert json.loads(capsys.readouterr().out)["result"]["version"] == __version__
+
+
+def test_help_after_version_prints_the_help(
+    dummy: Command, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _code(["--version", "--help"], [dummy]) == EXIT_OK
+    assert capsys.readouterr().out.startswith("usage: mmt-plugin")
+
+
 def test_usage_error_in_human_mode_is_compiler_style_on_stderr(
     dummy: Command, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -520,11 +636,48 @@ def test_undecodable_argv_is_escaped_on_a_strict_utf8_stdout(
     proc = run_cli(["dummy", os.fsdecode(b"\xff"), *extra], env=env)
     assert b"Traceback" not in proc.stderr
     assert proc.returncode == code
-    assert proc.stdout == b"value\t\\udcff\n"
+    assert proc.stdout == b"value\t\\xff\n"
     proc = run_cli(["--json", "dummy", os.fsdecode(b"\xff"), *extra], env=env)
     assert proc.returncode == code
     assert json.loads(proc.stdout)["result"]["value"] == "\udcff"
     assert b'"value": "\\udcff"' in proc.stdout
+
+
+def test_a_bidi_override_is_escaped_in_plain_output_only(
+    dummy: Command, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["dummy", "txt.exe\u202egpj.c"], commands=[dummy]) == EXIT_OK
+    assert capsys.readouterr().out == "value\ttxt.exe\\u202egpj.c\n"
+    assert main(["--json", "dummy", "txt.exe\u202egpj.c"], commands=[dummy]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert json.loads(out)["result"]["value"] == "txt.exe\u202egpj.c"
+    assert '"value": "txt.exe\\u202egpj.c"' in out
+
+
+#: Bytes that are not UTF-8: the 8-bit C1 controls (0x9B is CSI, 0x9D OSC,
+#: 0x90 DCS), the rest of 0x80-0x9F, and 0xFF.
+_NOT_UTF8 = bytes(range(0x80, 0xA0)) + b"\xff"
+
+
+@pytest.mark.parametrize("locale", ["C", "C.UTF-8", "ascii", "strict UTF-8"])
+def test_undecodable_argv_prints_the_same_in_every_locale(
+    locale: str,
+    run_cli: Callable[..., subprocess.CompletedProcess[bytes]],
+    clean_env: Callable[..., dict[str, str]],
+) -> None:
+    # C and C.UTF-8 give a surrogateescape stdout, which would write the raw
+    # bytes; ascii and strict UTF-8 a strict one, switched to backslashreplace.
+    if locale == "strict UTF-8":
+        env = _strict_utf8_env(clean_env)
+    else:
+        env = clean_env(
+            **{"C": {"LC_ALL": "C"}, "ascii": {"PYTHONIOENCODING": "ascii"}}.get(locale, {})
+        )
+    proc = run_cli(["dummy", os.fsdecode(b"a" + _NOT_UTF8 + b"z")], env=env)
+    assert (proc.returncode, proc.stderr) == (EXIT_OK, b"")
+    escaped = "".join(f"\\x{b:02x}" for b in _NOT_UTF8).encode("ascii")
+    assert proc.stdout == b"value\ta" + escaped + b"z\n"
+    assert all(b < 0x80 for b in proc.stdout)
 
 
 @pytest.mark.parametrize(

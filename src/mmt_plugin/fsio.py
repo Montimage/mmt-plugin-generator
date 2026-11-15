@@ -5,11 +5,18 @@ directory, fsyncs it, then ``os.replace``s it over the target, so a reader (or
 an interrupted run) sees either the old file or the new one, never a partial
 one. A file whose content already matches is not rewritten, so its mtime is
 kept. Staleness is decided by sha256, never by mtime.
+
+A write never goes through a symbolic link: the link is either refused or,
+when the caller asks, replaced by a regular file (``write_atomic``). The new
+file is a new inode, so it is owned by the writing user and group, not the
+old file's, and other hard links to the old file keep the old content; only
+the permission bits are carried over.
 """
 
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import os
 import stat
@@ -60,7 +67,9 @@ def sha256_file(path: Path) -> str | None:
 
 
 def _default_mode() -> int:
-    # The mode open() would give a new file: 0o666 minus the umask.
+    # The mode open() would give a new file: 0o666 minus the umask. Reading
+    # the umask means setting it, so for a moment it is 0 for the whole
+    # process: this assumes one thread, as the CLI is.
     umask = os.umask(0)
     os.umask(umask)
     return 0o666 & ~umask
@@ -80,24 +89,44 @@ def _fsync_dir(directory: Path) -> None:
 
 
 def write_atomic(
-    path: Path | str, data: bytes | str, *, dry_run: bool = False, mode: int | None = None
+    path: Path | str,
+    data: bytes | str,
+    *,
+    dry_run: bool = False,
+    mode: int | None = None,
+    replace_link: bool = False,
 ) -> WriteResult:
     """Write ``data`` to ``path`` atomically and report what changed.
 
     ``str`` data is encoded as UTF-8, newlines unchanged. Missing parent
     directories are created (not with ``dry_run``). A new file gets ``mode``,
     else the umask default; an existing file keeps its permission bits unless
-    ``mode`` is given. If ``path`` is a symbolic link, the link is replaced by
-    a regular file. On any exception, including ``KeyboardInterrupt``, the
-    temporary file is removed and the target is left as it was.
+    ``mode`` is given. Owner, group and other hard links are not kept (see
+    the module docstring). On any exception, including ``KeyboardInterrupt``,
+    the temporary file is removed and the target is left as it was.
+
+    A symbolic link at ``path`` is never followed for writing. By default it
+    is refused: ``unchanged`` when it leads to a regular file that already
+    has this content (and ``mode``), else ``OSError`` ``ELOOP``, with
+    ``dry_run`` too, which the CLI reports as ``internal.io``. With
+    ``replace_link`` (the caller has decided, for example on ``--force``)
+    the link itself is replaced by a regular file, reported ``updated``,
+    and the file it led to is left alone.
     """
     target = Path(path)
     content = data.encode("utf-8") if isinstance(data, str) else data
     new_hash = sha256_bytes(content)
-    old_hash = sha256_file(target) if not target.is_symlink() else None
-    exists = old_hash is not None or target.is_symlink()
+    link = target.is_symlink()
+    if link and not replace_link:
+        if target.is_file() and sha256_file(target) == new_hash and _mode_ok(target, mode):
+            return WriteResult(target, Action.UNCHANGED, new_hash)
+        raise OSError(
+            errno.ELOOP, "is a symbolic link: not followed, and not replaced", str(target)
+        )
+    old_hash = None if link else sha256_file(target)
+    exists = old_hash is not None or link
 
-    if old_hash == new_hash and (mode is None or stat.S_IMODE(target.stat().st_mode) == mode):
+    if old_hash == new_hash and _mode_ok(target, mode):
         return WriteResult(target, Action.UNCHANGED, new_hash)
     if dry_run:
         return WriteResult(
@@ -121,3 +150,7 @@ def write_atomic(
         raise
     _fsync_dir(target.parent)
     return WriteResult(target, Action.UPDATED if exists else Action.CREATED, new_hash)
+
+
+def _mode_ok(target: Path, mode: int | None) -> bool:
+    return mode is None or stat.S_IMODE(target.stat().st_mode) == mode

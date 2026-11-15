@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import stat
@@ -104,14 +105,67 @@ def test_permissions(tmp_path: Path) -> None:
     assert write_atomic(existing, "new", mode=0o700).action is Action.UNCHANGED
 
 
-def test_a_symlink_is_replaced_by_a_file(tmp_path: Path) -> None:
+def _link(tmp_path: Path, content: str) -> tuple[Path, Path]:
     real = tmp_path / "real.c"
-    real.write_text("same")
+    real.write_text(content)
     link = tmp_path / "link.c"
     link.symlink_to(real)
-    assert write_atomic(link, "same").action is Action.UPDATED
+    return link, real
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_a_symlink_is_not_followed_or_replaced_by_default(tmp_path: Path, dry_run: bool) -> None:
+    link, real = _link(tmp_path, "old")
+    with pytest.raises(OSError) as exc:
+        write_atomic(link, "new", dry_run=dry_run)
+    assert exc.value.errno == errno.ELOOP
+    assert exc.value.filename == str(link)
+    assert link.is_symlink() and real.read_text() == "old"
+    assert _files(tmp_path) == ["link.c", "real.c"]
+
+
+def test_a_symlink_to_the_same_content_is_unchanged(tmp_path: Path) -> None:
+    link, real = _link(tmp_path, "same")
+    assert write_atomic(link, "same").action is Action.UNCHANGED
+    assert write_atomic(link, "same", dry_run=True).action is Action.UNCHANGED
+    assert link.is_symlink() and real.read_text() == "same"
+    real.chmod(0o600)
+    with pytest.raises(OSError):
+        write_atomic(link, "same", mode=0o644)
+
+
+def test_a_dangling_symlink_or_one_to_a_directory_is_refused(tmp_path: Path) -> None:
+    dangling = tmp_path / "dangling.c"
+    dangling.symlink_to(tmp_path / "missing.c")
+    to_dir = tmp_path / "dir.c"
+    to_dir.symlink_to(tmp_path)
+    for link in (dangling, to_dir):
+        with pytest.raises(OSError):
+            write_atomic(link, "x")
+        assert link.is_symlink()
+    assert not (tmp_path / "missing.c").exists()
+
+
+@pytest.mark.parametrize("content", ["same", "old"])
+def test_replace_link_replaces_the_link_not_its_target(tmp_path: Path, content: str) -> None:
+    link, real = _link(tmp_path, content)
+    assert write_atomic(link, "same", dry_run=True, replace_link=True).action is (
+        Action.WOULD_UPDATE
+    )
+    assert link.is_symlink()
+    assert write_atomic(link, "same", replace_link=True).action is Action.UPDATED
     assert not link.is_symlink() and link.read_text() == "same"
-    assert real.read_text() == "same"
+    assert real.read_text() == content
+    assert write_atomic(link, "same", replace_link=True).action is Action.UNCHANGED
+
+
+def test_a_hard_link_keeps_the_old_content(tmp_path: Path) -> None:
+    target = tmp_path / "a.c"
+    target.write_text("old")
+    other = tmp_path / "b.c"
+    os.link(target, other)
+    assert write_atomic(target, "new").action is Action.UPDATED
+    assert (target.read_text(), other.read_text()) == ("new", "old")
 
 
 def test_sha256_file_of_a_missing_file(tmp_path: Path) -> None:

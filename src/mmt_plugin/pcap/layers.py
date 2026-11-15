@@ -304,7 +304,11 @@ def _reason(frame: Frame, parent: Parent) -> tuple[str, Payload | None]:
                 return "truncated", None
             if not layer.payload:
                 return "empty", None
-            path = tuple(x.name for x in layers[: i + 1])
+            # The tags after an Ethernet header are part of its path.
+            end = i + 1
+            while end < len(layers) and layers[end].name == "8021q":
+                end += 1
+            path = tuple(x.name for x in layers[:end])
             return "", Payload(frame.number, path, layer.payload)
     if stopped is None:
         return "no-match", None

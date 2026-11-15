@@ -8,6 +8,7 @@ bad model)."""
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -310,3 +311,14 @@ def test_human_output(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["scaffold", *ARGS]) == 0
     out = capsys.readouterr().out
     assert out.splitlines() == [f"created\t{p}" for p in ["plugin.proposed.yaml", *TESTS]]
+
+
+def test_tagged_frames_and_a_name_that_is_not_utf8(scaffold: Run, work: Path) -> None:
+    name = os.fsdecode(b"cap\xff.pcap")
+    frames = [samples.vlan(5, 0x88B5, p) for p in samples.demo_payloads()]
+    (work / name).write_bytes(samples.pcap(frames))
+    code, doc = scaffold("--from-pcap", name, "--parent", "ethernet:ethertype=0x88b5")
+    assert code == 0, doc["error"]
+    text = (work / "plugin.proposed.yaml").read_text()
+    assert "classify:" not in text
+    assert "cap\\udcff.pcap" in text

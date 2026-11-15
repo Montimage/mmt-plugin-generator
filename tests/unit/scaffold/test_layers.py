@@ -97,7 +97,7 @@ def test_parent_of_refuses_what_it_does_not_decode(text: str, message: str) -> N
             samples.vlan(10, 0x88B5, PAYLOAD),
             samples.ETHERNET,
             "ethernet:ethertype=0x88b5",
-            ("ethernet",),
+            ("ethernet", "8021q"),
         ),
         (
             samples.vlan(10, 0x0800, samples.ipv4(6, samples.tcp(102, 5000, PAYLOAD))),

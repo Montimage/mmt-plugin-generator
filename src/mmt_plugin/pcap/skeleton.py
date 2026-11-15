@@ -182,17 +182,20 @@ def _quote(text: str) -> str:
 
 
 def _comment(text: str) -> str:
-    """``text`` safe in a ``#`` comment: control characters escaped."""
-    return escape(text)
+    """``text`` safe in a ``#`` comment: control characters escaped, and
+    what UTF-8 cannot encode (the surrogates of a file name that is not
+    UTF-8) as backslash escapes."""
+    return escape(text).encode("utf-8", "backslashreplace").decode("utf-8")
 
 
-def _classify(parent: Parent) -> list[str] | None:
+def _classify(parent: Parent, tagged: bool) -> list[str] | None:
     """The ``classify`` lines of a parent the generated code can attach
-    exactly, or ``None``: an Ethernet type, a UDP source or destination
-    port. Every other selector (``port`` matches either, IP and TCP headers
-    have options) needs user code."""
+    exactly, or ``None``: an Ethernet type of untagged frames, a UDP source
+    or destination port. Every other selector (``port`` matches either, IP
+    and TCP headers have options, a tagged frame has 0x8100 at offset 12)
+    needs user code."""
     keys = dict(parent.keys)
-    if not keys:
+    if not keys or (parent.proto == "ethernet" and tagged):
         return None
     if parent.proto == "ethernet":
         matches, offset = [(12, 2, f"{keys['ethertype']:#06x}")], 14
@@ -208,10 +211,18 @@ def _classify(parent: Parent) -> list[str] | None:
 
 
 def proposed_yaml(
-    label: str, pid: int, parent: Parent, skeleton: Skeleton, pcap: str, count: int
+    label: str,
+    pid: int,
+    parent: Parent,
+    skeleton: Skeleton,
+    pcap: str,
+    count: int,
+    *,
+    tagged: bool = False,
 ) -> str:
     """``plugin.proposed.yaml``: the protocol of the project's model, the
-    parent, and the skeleton's attributes."""
+    parent, and the skeleton's attributes. ``tagged``: a payload came
+    through an 802.1Q/802.1ad tag."""
     lc = label.lower()
     lines = [
         f"# The fields mmt-plugin scaffold proposes for {label.upper()}, from {count}"
@@ -228,7 +239,7 @@ def proposed_yaml(
         "  encoding: network",
         "parents:",
     ]
-    classify = _classify(parent)
+    classify = _classify(parent, tagged)
     if classify is None:
         lines.append(
             f"  - protocol: {parent.proto}    # {_comment(parent.text)}: attach it in"

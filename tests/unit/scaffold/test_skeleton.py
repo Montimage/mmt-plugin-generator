@@ -5,6 +5,7 @@ the proposal's)."""
 
 from __future__ import annotations
 
+import os
 import struct
 from pathlib import Path
 
@@ -203,3 +204,20 @@ def test_packet_test_bytes_are_16_per_line(tmp_path: Path) -> None:
     )
     rows = [line for line in text.splitlines() if line.startswith('  - "')]
     assert [len(r[5:-1].split()) for r in rows] == [16, 16, 8]
+
+
+def test_tagged_ethernet_frames_are_attached_by_user_code() -> None:
+    skeleton = propose(samples.demo_payloads())
+    parent = _parent("ethernet:ethertype=0x88b5")
+    text = proposed_yaml("demo", 960, parent, skeleton, "a.pcap", 3, tagged=True)
+    _generates(text)
+    assert "classify:" not in text
+    assert "attach it in demo_hook_register_parents" in text
+    assert "classify:" in proposed_yaml("demo", 960, parent, skeleton, "a.pcap", 3)
+
+
+def test_a_file_name_that_is_not_utf8() -> None:
+    name = os.fsdecode(b"cap\xff.pcap")
+    text = proposed_yaml("demo", 960, _parent("udp"), propose([b"ab"]), name, 1)
+    assert "cap\\udcff.pcap" in text
+    text.encode("utf-8")

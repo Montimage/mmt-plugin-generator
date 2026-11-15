@@ -247,8 +247,9 @@ class ScaffoldCommand:
         proposed_shown = show_path(proposed_path, project)
         # The files name the capture by its file name only, so they do not
         # depend on where it is.
+        tagged = any("8021q" in p.path for p in slicing.payloads)
         proposed = proposed_yaml(
-            label, pid, parent, skeleton, pcap_path.name, len(slicing.payloads)
+            label, pid, parent, skeleton, pcap_path.name, len(slicing.payloads), tagged=tagged
         )
         generation, model_diagnostics, model_error = make_generation(
             proposed_shown, proposed.encode("utf-8"), choice, "yaml"

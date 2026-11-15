@@ -202,3 +202,14 @@ The other bugs of the inventory are not in the model (22, 24) or made
 output that did not compile or did not work, so no working model relied on
 them; the analysis reports what is still wrong with its own codes. The analysis warnings are kept, apart from
 `model.default-scope`.
+
+## From a capture
+
+`mmt-plugin scaffold --from-pcap PCAP --parent SELECTOR` (#26) drafts a
+`plugin.yaml` from captured traffic: it writes `plugin.proposed.yaml` next
+to `plugin.yaml` (which it never edits), with the label and id of the
+project's model, the parent, and a field skeleton of the first bytes every
+payload has, plus one packet test per payload whose values that proposal
+extracts. Rename the fields, check them against the protocol's
+specification, and copy what you keep into `plugin.yaml`. The rules are in
+[`docs/design/cli.md`](design/cli.md), "Details fixed by #26".

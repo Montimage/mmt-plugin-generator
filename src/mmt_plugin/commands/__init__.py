@@ -147,6 +147,7 @@ from mmt_plugin.commands.generate import GenerateCommand  # noqa: E402
 from mmt_plugin.commands.import_pdl import ImportCommand  # noqa: E402
 from mmt_plugin.commands.init import InitCommand  # noqa: E402
 from mmt_plugin.commands.install import InstallCommand, UninstallCommand  # noqa: E402
+from mmt_plugin.commands.scaffold import ScaffoldCommand  # noqa: E402
 from mmt_plugin.commands.test import TestCommand  # noqa: E402
 from mmt_plugin.commands.validate import ValidateCommand  # noqa: E402
 
@@ -161,5 +162,6 @@ COMMANDS: tuple[Command, ...] = (
     InstallCommand(),
     UninstallCommand(),
     DoctorCommand(),
+    ScaffoldCommand(),
     CompletionCommand(),
 )

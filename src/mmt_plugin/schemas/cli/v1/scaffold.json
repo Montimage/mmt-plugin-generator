@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin scaffold --json result, schema_version 1",
+  "description": "The result of scaffold --from-pcap (docs/design/cli.md, section 6). Paths are relative to the project (-C) when inside it (POSIX separators), absolute otherwise. With --dry-run, or when an output is in the way, nothing is written and the actions are would-*; an unchanged file is not rewritten.",
+  "type": "object",
+  "required": ["pcap", "format", "parent", "model", "protocol", "packets", "skeleton", "proposed", "tests_dir", "files", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "pcap": {"type": "string", "minLength": 1, "description": "The capture read (--from-pcap)."},
+    "format": {"enum": ["pcap", "pcapng"]},
+    "parent": {"type": "string", "minLength": 1, "description": "The --parent selector, as given."},
+    "model": {"type": "string", "minLength": 1, "description": "The model the label and the id come from (--model, default <project>/plugin.yaml), or <stdin>."},
+    "protocol": {
+      "type": "object",
+      "required": ["label", "name", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1, "description": "The registered name: the label upper-cased."},
+        "id": {"type": "integer"}
+      }
+    },
+    "packets": {
+      "type": "object",
+      "required": ["frames", "payloads", "skipped"],
+      "additionalProperties": false,
+      "properties": {
+        "frames": {"type": "integer", "minimum": 1, "description": "The frames read: until --max-packets payloads were found, else all of them."},
+        "payloads": {"type": "integer", "minimum": 1, "description": "The payloads sliced, one packet test each."},
+        "skipped": {
+          "type": "object",
+          "description": "The frames read that gave no payload, by reason.",
+          "required": ["no-match", "empty", "fragment", "malformed", "truncated", "unsupported-link"],
+          "additionalProperties": false,
+          "properties": {
+            "no-match": {"type": "integer", "minimum": 0, "description": "The parent selector does not match."},
+            "empty": {"type": "integer", "minimum": 0, "description": "It matches, with an empty payload."},
+            "fragment": {"type": "integer", "minimum": 0, "description": "An IPv4 or IPv6 fragment: not reassembled."},
+            "malformed": {"type": "integer", "minimum": 0, "description": "A header below the payload is broken."},
+            "truncated": {"type": "integer", "minimum": 0, "description": "The capture cut the frame."},
+            "unsupported-link": {"type": "integer", "minimum": 0, "description": "A link type scaffold does not decode."}
+          }
+        }
+      }
+    },
+    "skeleton": {
+      "type": "object",
+      "required": ["header_length", "fields", "length_field", "payload_lengths"],
+      "additionalProperties": false,
+      "properties": {
+        "header_length": {"type": "integer", "minimum": 1, "description": "The bytes proposed as fields: the shortest payload, at most 16."},
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "offset", "length", "constant"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "type": {"enum": ["MMT_U8_DATA", "MMT_U16_DATA", "MMT_U32_DATA"]},
+              "offset": {"type": "integer", "minimum": 0},
+              "length": {"enum": [1, 2, 4]},
+              "constant": {"type": "boolean", "description": "Every payload has the same value."}
+            }
+          }
+        },
+        "length_field": {
+          "description": "The field whose value is the payload length minus adjust in every payload, or null.",
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["name", "adjust"],
+              "additionalProperties": false,
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "adjust": {"type": "integer", "minimum": 0}
+              }
+            }
+          ]
+        },
+        "payload_lengths": {
+          "type": "object",
+          "required": ["min", "max"],
+          "additionalProperties": false,
+          "properties": {
+            "min": {"type": "integer", "minimum": 1},
+            "max": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "proposed": {"type": "string", "minLength": 1, "description": "The proposed model, <project>/plugin.proposed.yaml."},
+    "tests_dir": {"type": "string", "minLength": 1, "description": "Where the packet tests go (--tests-dir, default <project>/tests)."},
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "action", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "action": {"enum": ["created", "updated", "unchanged", "would-create", "would-update"]},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The file as scaffold writes it."}
+        }
+      }
+    },
+    "dry_run": {"type": "boolean"}
+  }
+}

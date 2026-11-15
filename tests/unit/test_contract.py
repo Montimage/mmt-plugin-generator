@@ -16,7 +16,8 @@ later issue registers is checked without a new test:
 A command whose shortest successful run needs input files or values
 (``init`` an id, ``import``, ``generate`` and ``validate`` a model, ``build``, ``test``,
 ``install`` and ``doctor`` also an SDK and a compiler, ``uninstall`` and
-``install`` a prefix) gets them from ``SETUP``. ``result.stats`` holds the only timings
+``install`` a prefix, ``scaffold`` a model and a capture) gets them from
+``SETUP``. ``result.stats`` holds the only timings
 (section 6), so the two runs are compared without it. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
 """
@@ -294,6 +295,19 @@ def _import_args(directory: Path) -> list[str]:
     return ["model.pdl", "--dry-run"]
 
 
+def _scaffold_args(directory: Path) -> list[str]:
+    # A plugin.yaml for the label and the id, a capture of one UDP payload
+    # and --dry-run, so the run writes nothing and a second run prints the
+    # same envelope.
+    (directory / "plugin.yaml").write_text("schema: 1\nprotocol:\n  label: contract\n  id: 990\n")
+    frame = bytes(12) + b"\x88\xb5" + b"\x01\x02\x00\x04"
+    header = (0xA1B2C3D4).to_bytes(4, "little") + bytes([2, 0, 4, 0]) + bytes(8)
+    header += (65535).to_bytes(4, "little") + (1).to_bytes(4, "little")
+    record = bytes(8) + len(frame).to_bytes(4, "little") * 2 + frame
+    (directory / "capture.pcap").write_bytes(header + record)
+    return ["--from-pcap", "capture.pcap", "--parent", "ethernet:ethertype=0x88b5", "--dry-run"]
+
+
 def _init_args(directory: Path) -> list[str]:
     # A pinned profile and an explicit id (no SDK is looked for), a parent
     # (no warning) and --dry-run, so a second run prints the same envelope.
@@ -310,6 +324,7 @@ SETUP: dict[str, Callable[[Path], list[str]]] = {
     "install": _install_args,
     "uninstall": _uninstall_args,
     "doctor": _doctor_args,
+    "scaffold": _scaffold_args,
 }
 
 

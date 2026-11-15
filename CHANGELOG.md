@@ -21,9 +21,10 @@ plugin, from a new project to a plugin that mmt-dpi loads:
 
 - **Code that compiles and loads.** Only 4 of the 16 example models gave
   Java output that compiled against mmt-dpi 1.10.2. Every example and
-  corpus model that `mmt-plugin generate` accepts compiles with `-Wall -Wextra -Werror`
-  (gcc and clang, amd64 and arm64), registers every attribute and loads
-  through `init_extraction()`; CI checks it on every change.
+  corpus model that `mmt-plugin generate` accepts compiles with
+  `-Wall -Wextra -Werror` (gcc and clang, amd64 and arm64), registers
+  every attribute and loads through `init_extraction()`; CI checks it on
+  every change.
 - **Same meaning where Java was right.** For abb, cotp, s7com and tpkt the
   generated C means to mmt-dpi what the Java output meant (protocol,
   attributes, reads, structs, registrations), apart from Java's

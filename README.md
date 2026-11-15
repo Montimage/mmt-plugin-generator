@@ -11,11 +11,12 @@ It replaces the 2015 Java generator (`MMTPluginGenerator.jar`), which was
 removed in #31 (its sources and jar are in `legacy/` at commit 4076899).
 Coming from the Java tool? Read the [migration guide](docs/migration.md).
 
-**Status:** the Python tool is not published yet: there is no PyPI package
-and no release. Install it from a checkout of this repository (below).
-The release workflow is ready ([`docs/releasing.md`](docs/releasing.md));
-the first release is plan task T5.5 (#32), in
-[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md).
+**Status:** 0.1.0 is the first release of the Python tool
+([changelog](CHANGELOG.md)). Until it is published (plan task T5.5, #32, in
+[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md))
+there is no PyPI package and no GitHub release: install it from a checkout
+of this repository (below). [`docs/releasing.md`](docs/releasing.md)
+describes how a release is published.
 
 ## Documentation
 
@@ -29,7 +30,8 @@ the first release is plan task T5.5 (#32), in
 - [Examples](examples/README.md): 16 complete plugin projects.
 - [CLI design](docs/design/cli.md): the command contract in full.
 - [Releasing](docs/releasing.md): the release assets, the dry run and
-  how a release is published.
+  how a release is published; the [changelog](CHANGELOG.md) lists what
+  each release changed.
 - [mmt-plugin-author](skills/mmt-plugin-author/SKILL.md): the agent skill
   that writes a plugin from a spec, a capture or a PDL v1 model.
 - [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the

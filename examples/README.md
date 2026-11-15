@@ -18,7 +18,8 @@ Each directory is a project:
 - `tests/*.yaml`: the packet tests, ported from the corpus fixtures in
   `tests/corpus/models/<name>/packets/`, same bytes. Their expected values
   come from the protocol specifications, by the rules of
-  `tests/corpus/README.md`; each one names its source.
+  `tests/corpus/README.md`; each one names its source. In an example with a
+  parent, one of them also runs through it (`through`, below).
 - `.gitignore`: `build/`.
 
 Build and test one, with an SDK in a private prefix (`AGENTS.md`, "A
@@ -30,7 +31,9 @@ uv run mmt-plugin -C examples/dns test --sdk <dir>/opt/mmt --cc gcc --sanitize
 
 `tests/unit/examples/` checks every example without an SDK (the models,
 `generate --check`, the packet tests' bytes) and, with `MMT_GOLDEN_SDK`, runs
-`validate`, `build` and `test --sanitize` on each one; CI runs both.
+`validate`, `build` and `test --sanitize` on each one, then breaks each
+parent's classification and checks that only the run through the parent
+fails; CI runs both.
 
 ## The ports
 
@@ -84,13 +87,48 @@ only, so they classify requests, not the answers.
   SIGSEGV), whose transport protocols expect mmt-dpi's own IP below them.
 - The others have only the parent registration.
 
+## Through the parent
+
+`mmt-plugin test` attaches the plugin to Ethernet itself (EtherType 0x88b5)
+and hands it the packet's bytes, so most packet tests do not run the parent
+classification (the `classify` of `plugin.yaml` or the hook's function).
+One test of each example with a parent also runs through it: its `through`
+key names the parent, and `test` builds the lower layers, hands the frame
+to mmt-dpi's stack and checks that the plugin is classified directly above
+that parent, where the layers end, with the same values.
+
+| example | test | `through` |
+|---|---|---|
+| `abb` | `frame` | `udp:dport=12118` |
+| `arp` | `request-ethernet-ipv4` | `ethernet:ethertype=0x0806` |
+| `cam` | `header` | `udp` (any port: the classify matches the payload) |
+| `cpm` | `header` | `udp` |
+| `dns` | `query-a` | `udp:dport=53` (a query: the parent matches the destination port) |
+| `ip` | `udp-df` | `ethernet:ethertype=0x0800` |
+| `mongodb` | `op-msg-ping` | `tcp:dport=27017` |
+| `ndn` | `interest` | `ethernet:ethertype=0x8624` |
+| `quic` | `initial-prefix` | `udp:dport=443` |
+| `radius` | `access-request` | `udp:dport=1812` |
+| `tcp` | `syn-ack-options` | `ip:proto=6` |
+| `tpkt` | `cr` | `tcp:dport=102` (one segment, no handshake) |
+
+`tests/unit/examples/test_sdk.py` removes each `classify` (or attaches each
+hook's function to another protocol, or moves the `dns` classify's offset)
+and checks that the run through the parent then fails, and only it.
+
+That run does not check the next protocol. mmt-dpi 1.10.2's TCP and UDP
+stop a packet at a layer that a plugin, not their own detection,
+classified above them (`tcp_post_classification_function` and
+`udp_post_classification_function` return 0), so that layer's
+`classify_next` never runs there: installed, `tpkt_example` would not hand
+a segment to `cotp_example`. The harness's run checks `tpkt`'s next
+protocol.
+
 ## What the packet tests do not cover
 
-- `mmt-plugin test` attaches the plugin to Ethernet itself (EtherType
-  0x88b5) and hands it the packet's bytes, so the parent classification
-  (the `classify` of `plugin.yaml` or the hook's function) never runs. It
-  is registered when the plugin loads, so a registration that fails fails
-  the test.
+- The other packet tests run where the harness attaches the plugin, so
+  only one packet per example exercises the parent's checks (the port, the
+  IHL, the data offset), and with one value of each.
 - `cotp` and `s7com` are tested alone: `tpkt_example` and `cotp_example`
   report the next protocol's id and offset, which their tests check.
 - The values of `cam`, `cpm` (after byte 7) and `quic` are what the model

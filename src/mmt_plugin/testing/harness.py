@@ -18,6 +18,12 @@ on a timeout or any exception (SIGINT included). With the sanitizers,
 ``SANITIZER_EXIT``; leak detection is off (mmt-dpi keeps its tables until
 exit).
 
+``write_packets`` writes the harness's packet file: each record is a
+packet (``bytes``, which the harness puts behind an Ethernet header of
+``ETHERTYPE``) or a ``Record`` with ``frame=True``, a whole Ethernet frame
+(``mmt_plugin.testing.frames``) that reaches the plugin through mmt-dpi's
+own stack and the plugin's parent classification.
+
 ``parse_check`` reads the output of ``harness check`` into one
 ``mmt_plugin.testing.packets.Observation`` per packet; ``at_index`` and
 ``parse_sample`` read the ``at N`` and ``sample PACKETS NANOSECONDS`` lines
@@ -53,6 +59,7 @@ __all__ = [
     "TCPIP",
     "HarnessRun",
     "ParsedCheck",
+    "Record",
     "at_index",
     "baseline_source",
     "crash_reason",
@@ -159,11 +166,32 @@ def baseline_source(generation: Generation, profile: Profile) -> str:
     )
 
 
-def write_packets(path: Path, packets: Sequence[bytes]) -> None:
-    """The packet file of the harness: a 4-byte little-endian length, then
-    the bytes, per packet."""
+#: The kind byte of a record: a packet the harness puts behind its own
+#: Ethernet header, or a whole frame.
+RECORD_PACKET = 0
+RECORD_FRAME = 1
+
+
+@dataclass(frozen=True)
+class Record:
+    """One record of the packet file: ``data``, a whole Ethernet frame when
+    ``frame`` is true, else a packet the harness attaches itself."""
+
+    data: bytes
+    frame: bool = False
+
+
+def write_packets(path: Path, packets: Sequence[bytes | Record]) -> None:
+    """The packet file of the harness: per record, a kind byte
+    (``RECORD_PACKET`` for ``bytes``, else the ``Record``'s), a 4-byte
+    little-endian length, then the bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"".join(len(p).to_bytes(4, "little") + p for p in packets))
+    out = bytearray()
+    for packet in packets:
+        record = packet if isinstance(packet, Record) else Record(packet)
+        out.append(RECORD_FRAME if record.frame else RECORD_PACKET)
+        out += len(record.data).to_bytes(4, "little") + record.data
+    path.write_bytes(bytes(out))
 
 
 @dataclass
@@ -322,6 +350,8 @@ def parse_check(lines: Sequence[str], names: Sequence[str]) -> ParsedCheck:
     parsed = ParsedCheck()
     current: int | None = None
     index: int | None = None
+    offset: int | None = None
+    parent: int | None = None
     next_id: int | None = None
     next_offset: int | None = None
     values: dict[str, ObservedValue] = {}
@@ -335,14 +365,20 @@ def parse_check(lines: Sequence[str], names: Sequence[str]) -> ParsedCheck:
                 parsed.error = line.partition(" ")[2]
             elif head == "packet":
                 current, index, next_id, next_offset, values = int(words[1]), None, None, None, {}
+                offset = parent = None
             elif head == "proto" and current is not None:
+                # proto none | proto INDEX OFFSET PARENT (PARENT -1: none)
                 index = None if words[1] == "none" else int(words[1])
+                if index is not None and len(words) >= 4:
+                    offset, parent = int(words[2]), int(words[3])
             elif head == "next" and current is not None and words[1] != "none":
                 next_id, next_offset = int(words[1]), int(words[2])
             elif head == "attr" and current is not None:
                 values[names[int(words[1])]] = _value(words[2:])
             elif head == "done" and current is not None:
-                parsed.observations[current] = Observation(index, next_id, next_offset, values)
+                parsed.observations[current] = Observation(
+                    index, next_id, next_offset, values, offset, parent
+                )
                 current = None
         except (ValueError, IndexError):
             parsed.malformed = line

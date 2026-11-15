@@ -12,6 +12,7 @@ parent:
     - "udp"
   selector: "UDP port 12118"
   source: "plugins/abb_src/abb_mmt_plugin.c (hand-written classification, no public spec)"
+through: "udp:dport=12118"
 bytes:
   - "00 00 00 1c 00 00 00 01 00 00 00 2a 00 00 03 e8"
   - "00 00 be ef 00 00 00 03 00 00 00 00"

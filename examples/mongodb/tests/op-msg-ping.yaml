@@ -12,6 +12,7 @@ parent:
     - "tcp"
   selector: "TCP port 27017"
   source: "MongoDB documentation, default port 27017; plugins/mongodb_src registers under PROTO_TCP"
+through: "tcp:dport=27017"
 bytes:
   - "33 00 00 00 07 00 00 00 00 00 00 00 dd 07 00 00"
   - "00 00 00 00 00 1e 00 00 00 10 70 69 6e 67 00 01"

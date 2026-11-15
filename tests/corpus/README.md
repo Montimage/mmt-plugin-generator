@@ -129,6 +129,7 @@ parent:
   path: ["ethernet", "ip", "udp"]
   selector: "UDP port 53"      # what makes the parent hand these bytes over
   source: "RFC 1035 section 4.2.1"
+through: "udp:dport=53"        # optional, projects only: also run through the parent
 bytes:                         # lower-case hex pairs; lines are concatenated
   - "1a 2b 01 00 ..."
 bytes_source: "..."            # where the byte layout and values come from
@@ -154,6 +155,18 @@ note: "..."                    # optional
   protocol to Ethernet itself (EtherType 0x88b5), so a packet is tested
   without the user code's parent registration; `parent` documents the real
   transport.
+- `through` (optional; read by `mmt-plugin test`, #74; no corpus fixture
+  has it, and the validator does not accept it here): a selector with
+  `mmt-plugin init --parent`'s syntax, `ethernet:ethertype=N`, `ip:proto=N`,
+  `ipv6:proto=N`, or `udp`/`tcp` with `dport` (or `port`, the same) and
+  `sport`. The test then runs a second time, as a whole Ethernet frame:
+  `mmt-plugin test` puts the headers the selector names in front of `bytes`
+  (IPv4 below UDP and TCP, a lone PSH/ACK TCP segment, ephemeral ports
+  where none is given) and hands it to mmt-dpi's stack, so the plugin's own
+  parent classification must find it, directly above the selector's
+  protocol and where those headers end (`<parent>`). That run checks the
+  classification and `expect.attributes`, not `expect.next`: mmt-dpi 1.10.2
+  does not process a layer a plugin classified above its TCP or UDP.
 - `parent.kind`:
   - `stack`: `path` lists the mmt-dpi protocols below this one, outermost
     first. The models do not declare their parent (inventory section 2:

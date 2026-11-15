@@ -12,6 +12,7 @@ parent:
     - "udp"
   selector: "UDP payload carrying an ITS PDU"
   source: "plugins/cpm_plugin_src/cpm_mmt_plugin.c registers on UDP (hand-written); ETSI's own transport is BTP-B (ETSI EN 302 636-5-1)"
+through: "udp"
 bytes:
   - "02 0e 00 0f 12 06 01 23 45 67 89 ab"
 bytes_source: "ETSI TS 103 324 V2.1.1: CollectivePerceptionMessage ::= SEQUENCE { header ItsPduHeader (protocolVersion (2), messageId(cpm)), payload CpmPayload }; bytes 6-11 are filler"

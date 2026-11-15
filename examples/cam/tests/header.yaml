@@ -12,6 +12,7 @@ parent:
     - "udp"
   selector: "UDP payload starting 02 02 (protocolVersion 2, messageID cam(2))"
   source: "plugins/cam_plugin_src/cam_mmt_plugin.c (hand-written classification on UDP); ETSI's own transport is BTP-B (ETSI EN 302 636-5-1)"
+through: "udp"
 bytes:
   - "02 02 00 01 e2 40 7d 00 40 05 05 1a 2b 3c 4d 5e"
   - "6f 70 81 92 a3 b4 c5 d6"

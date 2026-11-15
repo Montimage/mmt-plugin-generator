@@ -21,15 +21,21 @@ Stages, reported in ``result.stages`` (``ran``, ``up-to-date``, ``failed``,
    SDK (``build.harness-failed``, exit 5);
 3. ``packets``: the harness loads the plugin next to the SDK's
    ``libmmt_tcpip.so``, attaches it to Ethernet, and checks each packet's
-   classification, next protocol and attribute values. A mismatch is
-   ``test.packet-failed``, a crash or a timeout ``test.crash`` (exit 6);
-   the harness restarts after a crash, so every packet is reported.
-   ``--fail-fast`` stops at the first failing packet (the rest are
-   ``skipped``);
+   classification, next protocol and attribute values. A test with
+   ``through`` runs a second time (its own ``result.packets`` entry, with
+   ``through``): behind the lower layers its selector names
+   (``mmt_plugin.testing.frames``), through mmt-dpi's stack, so the plugin's
+   own parent classification must find it, directly above the selector's
+   protocol and at the offset those layers end at (``<parent>``); its next
+   protocol is not checked there. A mismatch is ``test.packet-failed``, a
+   crash or a timeout ``test.crash`` (exit 6); the harness restarts after a
+   crash, so every packet is reported. ``--fail-fast`` stops at the first
+   failing packet (the rest are ``skipped``);
 4. ``sanitize`` (``--sanitize``): the plugin is built again with ASan and
    UBSan into ``<build-dir>/sanitize/``, and a sanitized harness runs each
    packet, then its ``--fuzz-count`` truncated and random packets
-   (``mmt_plugin.testing.fuzz``, seeded by ``--seed``). Any sanitizer report,
+   (``mmt_plugin.testing.fuzz``, seeded by ``--seed``); a test with
+   ``through`` runs them again behind its lower layers. Any sanitizer report,
    crash or timeout is ``test.crash`` (exit 6);
 5. ``bench`` (``--bench``): packets per second of the plugin, and of an
    empty plugin with the same id and name (the baseline), in samples.
@@ -75,8 +81,10 @@ from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, Profile
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.testing import harness as harness_mod
+from mmt_plugin.testing.frames import build_frame
 from mmt_plugin.testing.fuzz import fuzz_packets
 from mmt_plugin.testing.packets import (
+    ExpectedParent,
     Failure,
     PacketTest,
     PacketTestError,
@@ -210,21 +218,37 @@ def packet_paths(given: Sequence[str], project: Path) -> list[Path]:
 
 @dataclass
 class _Packet:
-    """One packet test's result."""
+    """One packet test's result: the harness's attachment, or the run
+    ``through`` the test's parent selector."""
 
     test: PacketTest
+    through: bool = False
     status: str = "skipped"
     checked: int = 0
     failures: list[Failure] = field(default_factory=list)
 
+    @property
+    def name(self) -> str:
+        """The id, and the parent of the run through it."""
+        if self.through and self.test.through is not None:
+            return f"{self.test.id} through {self.test.through.text}"
+        return self.test.id
+
+    def record(self, n: int) -> bytes | harness_mod.Record:
+        """The harness record of this run (``n``: its place in the file)."""
+        return _record(self.test, self.through, self.test.data, n)
+
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "id": self.test.id,
             "file": self.test.file,
             "status": self.status,
             "attributes": self.checked,
             "failures": [f.to_json() for f in self.failures],
         }
+        if self.through and self.test.through is not None:
+            out["through"] = self.test.through.text
+        return out
 
     def detail(self) -> str:
         if self.status == "skipped":
@@ -238,6 +262,35 @@ class _Packet:
             text = f"{first.attribute}: expected {first.expected}, got {first.actual}"
         more = len(self.failures) - 1
         return f"{text} (+{more} more)" if more else text
+
+
+def _record(test: PacketTest, through: bool, data: bytes, n: int) -> bytes | harness_mod.Record:
+    """``data`` as the harness attaches it, or the ``n``-th frame of a run
+    through ``test``'s parent."""
+    if through and test.through is not None:
+        return harness_mod.Record(build_frame(test.through, data, n), frame=True)
+    return data
+
+
+def _entries(tests: Sequence[PacketTest]) -> list[_Packet]:
+    """The runs of ``tests``: each one, then its run through its parent."""
+    out: list[_Packet] = []
+    for test in tests:
+        out.append(_Packet(test))
+        if test.through is not None:
+            out.append(_Packet(test, through=True))
+    return out
+
+
+def _expected_parent(profile: Profile, packet: _Packet) -> ExpectedParent | None:
+    """Where the run through the parent expects the plugin, or ``None``."""
+    through = packet.test.through
+    if not packet.through or through is None:
+        return None
+    parents = profile.parents
+    return ExpectedParent(
+        through.proto, parents.id_of(parents.id_for(through.proto)), through.offset
+    )
 
 
 @dataclass
@@ -613,7 +666,7 @@ class TestCommand:
             )
 
         tests, error = self._load_tests(args, project, choice.profile, run)
-        run.packets = [_Packet(t) for t in tests]
+        run.packets = _entries(tests)
         if error is not None:
             return outcome(error)
         if args.strict:
@@ -698,6 +751,8 @@ class TestCommand:
         run: _Run,
     ) -> CliError | None:
         pending = list(range(len(run.packets)))
+        records = [p.record(n) for n, p in enumerate(run.packets)]
+        aliases = {p.id: p.alias or p.macro for p in tools.profile.parents.protocols()}
         packets_file = tools.test_dir / "packets.bin"
         with ctx.progress("packets", total=len(pending)) as progress:
             done = 0
@@ -709,8 +764,7 @@ class TestCommand:
                     progress.update(done)
 
             while pending:
-                data = [run.packets[i].test.data for i in pending]
-                harness_mod.write_packets(packets_file, data)
+                harness_mod.write_packets(packets_file, [records[i] for i in pending])
                 result = harness_mod.run(
                     program,
                     ["check", str(packets_file)],
@@ -735,7 +789,11 @@ class TestCommand:
                 for k, observation in parsed.observations.items():
                     packet = run.packets[pending[k]]
                     packet.failures, packet.checked = check(
-                        packet.test, observation, parsed.plugin
+                        packet.test,
+                        observation,
+                        parsed.plugin,
+                        _expected_parent(tools.profile, packet),
+                        aliases,
                     )
                     packet.status = "fail" if packet.failures else "pass"
                 if reason is None:
@@ -776,7 +834,7 @@ class TestCommand:
                     Diagnostic(
                         Severity.ERROR,
                         code,
-                        f"{p.test.id}: {p.detail()}",
+                        f"{p.name}: {p.detail()}",
                         location=Location(p.test.file),
                     )
                 )
@@ -820,16 +878,15 @@ class TestCommand:
         if program is None:
             return self._harness_failed("harness-sanitize", tools)
         plugin = build_dir / SANITIZE_DIR / f"mmtp_{label}.so"
-        origin: list[tuple[str, int]] = []
-        packets: list[bytes] = []
+        # Per packet: its test, its index (0: the test's own packet), whether
+        # it runs through the test's parent, and its bytes (the payload).
+        origin: list[tuple[PacketTest, int, bool, bytes]] = []
         for test in tests:
-            origin.append((test.id, 0))
-            packets.append(test.data)
-            for k, packet in enumerate(
-                fuzz_packets(args.seed, test.id, test.data, args.fuzz_count), 1
-            ):
-                origin.append((test.id, k))
-                packets.append(packet)
+            fuzzed = fuzz_packets(args.seed, test.id, test.data, args.fuzz_count)
+            for through in (False, True) if test.through is not None else (False,):
+                for k, packet in enumerate([test.data, *fuzzed]):
+                    origin.append((test, k, through, packet))
+        packets = [_record(t, through, d, n) for n, (t, _, through, d) in enumerate(origin)]
         crashes: list[dict[str, Any]] = []
         start = 0
         ran = 0
@@ -870,24 +927,27 @@ class TestCommand:
                 if last is None:
                     return self._load_failed(reason, result.stderr, run)
                 index = start + last
-                test_id, k = origin[index]
-                crashes.append(
-                    {
-                        "test": test_id,
-                        "index": k,
-                        "length": len(packets[index]),
-                        "reason": reason,
-                        "bytes": packets[index].hex(" "),
-                    }
-                )
+                test, k, through, data = origin[index]
+                crash: dict[str, Any] = {
+                    "test": test.id,
+                    "index": k,
+                    "length": len(data),
+                    "reason": reason,
+                    "bytes": data.hex(" "),
+                }
+                where = ""
+                if through and test.through is not None:
+                    crash["through"] = test.through.text
+                    where = f" through {test.through.text}"
+                crashes.append(crash)
                 run.diagnostics.append(
                     Diagnostic(
                         Severity.ERROR,
                         "test.crash",
-                        f"{test_id}: {'the packet' if k == 0 else f'random packet {k}'}"
-                        f" ({_plural(len(packets[index]), 'byte')}, --seed {args.seed}): {reason}",
+                        f"{test.id}: {'the packet' if k == 0 else f'random packet {k}'}{where}"
+                        f" ({_plural(len(data), 'byte')}, --seed {args.seed}): {reason}",
                         hint="mmt-plugin test --sanitize -v shows the sanitizer's report",
-                        location=Location(next(t.file for t in tests if t.id == test_id)),
+                        location=Location(test.file),
                     )
                 )
                 if result.stderr and ctx.verbose:
@@ -1042,11 +1102,17 @@ def _result(
     }
 
 
+def _packet_name(packet: Mapping[str, Any]) -> str:
+    """A ``result.packets`` entry's id, and the parent it ran through."""
+    through = packet.get("through")
+    return f"{packet['id']} through {through}" if through else str(packet["id"])
+
+
 def _records(result: Mapping[str, Any], details: Sequence[str]) -> list[tuple[str, ...]]:
     """The plain records: ``packet⇥status⇥detail``, then ``sanitize⇥seed⇥
     count⇥crashes`` and ``bench⇥pps⇥baseline_pps⇥ratio`` when they ran."""
     records: list[tuple[str, ...]] = [
-        (p["id"], p["status"], d) for p, d in zip(result["packets"], details, strict=True)
+        (_packet_name(p), p["status"], d) for p, d in zip(result["packets"], details, strict=True)
     ]
     sanitize = result["sanitize"]
     if sanitize is not None:
@@ -1071,7 +1137,7 @@ def _view(label: str, result: Mapping[str, Any], details: Sequence[str], st: Str
     pass meter, then the sanitizer run and the bench when they ran."""
     sep = style.glyphs(st).separator
     rows = [
-        [p["id"], style.status(p["status"], _LEVELS[p["status"]], style=st), d]
+        [_packet_name(p), style.status(p["status"], _LEVELS[p["status"]], style=st), d]
         for p, d in zip(result["packets"], details, strict=True)
     ]
     body: list[str] = []

@@ -124,3 +124,23 @@ def test_the_packet_tests_are_the_corpus_packets_of_the_example(name: str) -> No
         assert test.data == load(origin, origin.name, types).data, path
         # Only the corpus uses `undefined`: a port extracts every value it lists.
         assert all(a.status != "undefined" for a in test.attributes), path
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_an_example_with_a_parent_runs_one_packet_test_through_it(name: str) -> None:
+    path = EXAMPLES / name / "plugin.yaml"
+    parents = {
+        p.protocol.text
+        for p in pluginyaml.load(path.read_text(), filename=str(path)).model.parents
+    }
+    profile = resolve_profile(PROFILE, {}, None, None).profile
+    types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
+    tests = [load(p, p.name, types) for p in sorted((EXAMPLES / name / "tests").glob("*.yaml"))]
+    through = [t.through for t in tests if t.through is not None]
+    if not parents:
+        assert through == [], name
+        return
+    # One test, through the parent plugin.yaml declares (tests/unit/examples/test_sdk.py
+    # runs it, and breaks that parent's classification).
+    assert len(through) == 1, name
+    assert through[0].proto in parents, (name, through[0].text, parents)

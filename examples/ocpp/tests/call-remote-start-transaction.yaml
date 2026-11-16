@@ -1,0 +1,106 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-remote-start-transaction"
+model: "ocpp"
+summary: "A CALL, RemoteStartTransaction, with connectorId, idTag and a TxProfile (an unmasked server frame)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 7e 01 2f 5b 32 2c 22 31 39 32 32 33 32 30 36"
+  - "22 2c 22 52 65 6d 6f 74 65 53 74 61 72 74 54 72"
+  - "61 6e 73 61 63 74 69 6f 6e 22 2c 7b 22 63 6f 6e"
+  - "6e 65 63 74 6f 72 49 64 22 3a 32 2c 22 69 64 54"
+  - "61 67 22 3a 22 42 34 46 36 32 43 45 46 22 2c 22"
+  - "63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 22"
+  - "3a 7b 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69"
+  - "6c 65 49 64 22 3a 31 2c 22 73 74 61 63 6b 4c 65"
+  - "76 65 6c 22 3a 30 2c 22 63 68 61 72 67 69 6e 67"
+  - "50 72 6f 66 69 6c 65 50 75 72 70 6f 73 65 22 3a"
+  - "22 54 78 50 72 6f 66 69 6c 65 22 2c 22 63 68 61"
+  - "72 67 69 6e 67 50 72 6f 66 69 6c 65 4b 69 6e 64"
+  - "22 3a 22 52 65 6c 61 74 69 76 65 22 2c 22 63 68"
+  - "61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 22 3a"
+  - "7b 22 63 68 61 72 67 69 6e 67 52 61 74 65 55 6e"
+  - "69 74 22 3a 22 41 22 2c 22 63 68 61 72 67 69 6e"
+  - "67 53 63 68 65 64 75 6c 65 50 65 72 69 6f 64 22"
+  - "3a 5b 7b 22 73 74 61 72 74 50 65 72 69 6f 64 22"
+  - "3a 30 2c 22 6c 69 6d 69 74 22 3a 31 36 7d 5d 7d"
+  - "7d 7d 5d"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL syntax, Action RemoteStartTransaction from the Central System (OCPP 1.6 section 5.11; RemoteStartTransaction.req, section 6.33: connectorId, idTag, chargingProfile of purpose TxProfile, section 7.8, whose chargingSchedule, section 7.13, has one ChargingSchedulePeriod, section 7.14, of 16 A), compact JSON, in one unmasked text frame (RFC 6455 section 5.2, 126 bytes or more: a 16-bit length)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 8
+      length: 8
+      value: "31 39 32 32 33 32 30 36"
+      text: "19223206"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 19
+      length: 22
+      value: "52 65 6d 6f 74 65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+      text: "RemoteStartTransaction"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.2.3: only a CALLERROR has an errorCode"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 43
+      length: 263
+      value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 32 2c 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 2c 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 22 3a 7b 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 49 64 22 3a 31 2c 22 73 74 61 63 6b 4c 65 76 65 6c 22 3a 30 2c 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 50 75 72 70 6f 73 65 22 3a 22 54 78 50 72 6f 66 69 6c 65 22 2c 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 4b 69 6e 64 22 3a 22 52 65 6c 61 74 69 76 65 22 2c 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 22 3a 7b 22 63 68 61 72 67 69 6e 67 52 61 74 65 55 6e 69 74 22 3a 22 41 22 2c 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 50 65 72 69 6f 64 22 3a 5b 7b 22 73 74 61 72 74 50 65 72 69 6f 64 22 3a 30 2c 22 6c 69 6d 69 74 22 3a 31 36 7d 5d 7d 7d 7d"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, the fourth element, as sent"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      offset: 58
+      length: 1
+      value: 2
+      source: "OCPP 1.6 section 6.33: RemoteStartTransaction.req's connectorId, the payload's top-level integer"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      offset: 69
+      length: 8
+      value: "42 34 46 36 32 43 45 46"
+      text: "B4F62CEF"
+      source: "OCPP 1.6 section 6.33: RemoteStartTransaction.req's idTag, the payload's top-level member"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+      offset: 299
+      length: 2
+      value: 160
+      source: "OCPP 1.6 sections 6.33, 7.8, 7.13, 7.14: chargingProfile.chargingSchedule.chargingSchedulePeriod[0].limit, 16, in tenths (src/ocpp_example_impl.c)"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+      offset: 245
+      length: 1
+      value: "41"
+      text: "A"
+      source: "OCPP 1.6 sections 7.12 and 7.13: chargingProfile.chargingSchedule.chargingRateUnit, A (Amperes)"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 307
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

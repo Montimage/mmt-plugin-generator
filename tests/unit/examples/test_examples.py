@@ -1,4 +1,5 @@
-"""The examples (plan T5.1, #28; the WebSocket example, #40), without an SDK.
+"""The examples (plan T5.1, #28; the WebSocket example, #40; the OCPP 1.6-J
+example, #41), without an SDK.
 
 Every example model of the corpus (``kind: example`` in
 ``tests/corpus/index.yaml``: the Java tool's ``plugins/<name>_plugin``, removed
@@ -49,7 +50,7 @@ def _example_models() -> list[str]:
 #: The ports: the example models of the corpus.
 PORTS = _example_models()
 #: The examples that are not ports (no corpus model): written with mmt-plugin init.
-NEW = ["websocket"]
+NEW = ["ocpp", "websocket"]
 #: Every example.
 NAMES = sorted(PORTS + NEW)
 

@@ -2,9 +2,10 @@
 
 The 16 example models of the Java tool (`plugins/*_plugin`), ported to
 mmt-plugin projects (plan task T5.1, `docs/design/workflow-redesign.md`),
-and a WebSocket (RFC 6455) plugin written with the tool (#40, below,
-"WebSocket"). Each one builds with `mmt-plugin build` and passes its packet
-tests with `mmt-plugin test` against mmt-dpi 1.10.2, with gcc and clang, so
+and two plugins written with the tool: WebSocket (RFC 6455, #40, below,
+"WebSocket") and OCPP 1.6-J (#41, below, "OCPP 1.6-J"). Each one builds
+with `mmt-plugin build` and passes its packet tests with `mmt-plugin test`
+against mmt-dpi 1.10.2, with gcc and clang, so
 no example is left out. The Java tool was retired (T5.4, #31) and `plugins/` removed
 (#78): the test corpus keeps the models, and these projects replace the
 hand-written C (below, "The Java tool's C sources").
@@ -15,14 +16,15 @@ Each directory is a project:
   (`tests/corpus/models/<name>/model.pdl`, the Java tool's
   `plugins/<name>_plugin` byte for byte); the table below lists what
   changed after that. Its first line still names `plugins/<name>_plugin`.
-  The WebSocket example's was written from RFC 6455, after `mmt-plugin
-  init`.
+  The WebSocket and OCPP examples' were written from their
+  specifications, after `mmt-plugin init`.
 - `plugin.lock` and `generated/`: written by `mmt-plugin generate`, and
   committed, so that `generate --check` shows when they are stale.
 - `src/<label>_impl.c`: the hooks that the generated header declares.
 - `tests/*.yaml`: the packet tests, ported from the corpus fixtures in
   `tests/corpus/models/<name>/packets/`, same bytes (the WebSocket
-  example's are RFC 6455's examples). Their expected values
+  example's are RFC 6455's examples, the OCPP example's OCPP-J 1.6
+  messages). Their expected values
   come from the protocol specifications, by the rules of
   `tests/corpus/README.md`; each one names its source. In an example with a
   parent, one of them also runs through it (`through`, below).
@@ -39,7 +41,8 @@ uv run mmt-plugin -C examples/dns test --sdk <dir>/opt/mmt --cc gcc --sanitize
 `generate --check`, the packet tests' bytes) and, with `MMT_GOLDEN_SDK`, runs
 `validate`, `build` and `test --sanitize` on each one, then breaks each
 parent's classification and checks that only the run through the parent
-fails, and replays the WebSocket example's TCP sessions; CI runs both.
+fails, and replays the WebSocket and OCPP examples' TCP sessions, the two
+plugins also side by side; CI runs both.
 
 ## The ports
 
@@ -73,8 +76,8 @@ hook file that includes `tcpip/mmt_tcpip.h` would not compile.
 
 A parent with a fixed header (Ethernet, UDP) is attached by the generated
 code (`parents[].classify`). TCP and IPv4 have a header of variable length,
-so the `tcp`, `tpkt`, `mongodb` and `websocket` examples attach theirs in
-`<label>_hook_register_parents`. The UDP parents match the destination port
+so the `tcp`, `tpkt`, `mongodb`, `websocket` and `ocpp` examples attach
+theirs in `<label>_hook_register_parents`. The UDP parents match the destination port
 only, so they classify requests, not the answers.
 
 ## Hooks
@@ -85,6 +88,8 @@ only, so they classify requests, not the answers.
 - `tcp`, `tpkt`, `mongodb`: the parent registration, as above.
 - `websocket`: every attribute, the parent registration and the session
   data, which follow the TCP session (below, "WebSocket").
+- `ocpp`: the same, with its own WebSocket framing and the CALLs waiting
+  for their answers (below, "OCPP 1.6-J").
 - `dns`, `ndn`, `ip`: the model sets `session_context`, `session` or
   `context`, so these have the session and context hooks, which keep no
   data. Write your analysis there.
@@ -115,6 +120,7 @@ that parent, where the layers end, with the same values.
 | `ip` | `udp-df` | `ethernet:ethertype=0x0800` |
 | `mongodb` | `op-msg-ping` | `tcp:dport=27017` |
 | `ndn` | `interest` | `ethernet:ethertype=0x8624` |
+| `ocpp` | `call-boot-notification` | `tcp:dport=80` (one segment, its own session, no handshake: the OCPP-J array shape claims it; 80 is a `ws` URI's default port, RFC 6455 section 3) |
 | `quic` | `initial-prefix` | `udp:dport=443` |
 | `radius` | `access-request` | `udp:dport=1812` |
 | `tcp` | `syn-ack-options` | `ip:proto=6` |
@@ -166,8 +172,7 @@ an earlier segment), which no `plugin.yaml` expression can read.
   header ends in the segment) and `carried_len` (bytes at its start of a
   frame whose header ended earlier, 0 when it starts with a header). A
   header split across segments counts in the segment where it ends. On
-  frames, `subprotocol` is the one the 101 answer selected: what an OCPP
-  plugin (#41) reads. A pure ACK, a retransmission, client data before the
+  frames, `subprotocol` is the one the 101 answer selected. A pure ACK, a retransmission, client data before the
   answer and anything after a refused upgrade (a status other than 101)
   report nothing.
 - **State.** mmt-dpi has no TCP reassembly for plugins. Per direction, the
@@ -210,12 +215,15 @@ Not covered, or open:
   is reported, the payload is not inflated.
 - A refused upgrade keeps the session as `WEBSOCKET_EXAMPLE` with nothing
   to report: mmt-dpi 1.10.2 has no way for a plugin to give a session back.
-- A child protocol (OCPP, #41) can attach with
+- A child protocol can attach with
   `register_classification_function_with_parent_protocol(PROTO_WEBSOCKET_EXAMPLE, ...)`,
   but mmt-dpi 1.10.2 does not process a layer that a plugin classified
   above TCP (above, "Through the parent"), so it is not classified there
-  until mmt-dpi changes; read `payload` and `subprotocol` from this
-  layer meanwhile.
+  until mmt-dpi changes. The OCPP example (below, "OCPP 1.6-J") sits
+  directly above TCP instead and parses the WebSocket framing itself; with
+  both installed, a session whose handshake offers `ocpp1.6` is
+  `tcp.ocpp_example`, with no WebSocket layer, and the other WebSocket
+  sessions stay here.
 - When mmt-dpi's HTTP claims a session first (an Upgrade request after
   other HTTP requests in the same session), or another plugin does (a
   weight below 5), the session is not WebSocket here: once a session is
@@ -223,6 +231,114 @@ Not covered, or open:
   session from HTTP to a plugin needs an mmt-dpi change.
 - Checking it against real captures (the Zenodo datasets of #40) is a
   manual run, not CI.
+
+## OCPP 1.6-J
+
+Not a port either: `mmt-plugin init ocpp_example --id 993 --parent tcp`
+made the project; then `plugin.yaml` got the attributes and
+`session_context`, and `src/ocpp_example_impl.c` its hooks. OCPP 1.6-J is
+OCPP 1.6 over WebSocket: the OCPP-J 1.6 specification (Open Charge
+Alliance) gives the handshake (section 3) and the messages, JSON arrays
+in text frames (section 4); OCPP 1.6 gives their payloads (section 6) and
+types (section 7). The packet tests are messages of those sections in
+WebSocket frames (`tests/*.yaml`, each value with its section).
+
+| example | label | id | parent | what it reports |
+|---|---|---|---|---|
+| `ocpp` | `ocpp_example` | 993 | `tcp`, any port, from an opening handshake offering `ocpp1.6` (hook) | per segment, the first OCPP-J message: its type, UniqueId, action (on an answer, its CALL's), error code and description, payload, typed fields; the number of messages |
+
+mmt-dpi 1.10.2 does not classify a protocol above `websocket_example`
+(above, "WebSocket", "Not covered, or open"), so `ocpp_example` is not
+its child: it sits directly above TCP, at weight 4 (before
+`websocket_example`'s 5 and mmt-dpi's HTTP's 20), and parses the WebSocket
+framing itself, with `websocket_example`'s code for it (the handshake, the
+frame header, the unmasking, the TCP state), trimmed.
+
+- **Classification.** A session is claimed on the client's opening
+  handshake, a GET with `Upgrade: websocket` whose
+  `Sec-WebSocket-Protocol` offers the token `ocpp1.6` (OCPP-J 1.6 section
+  3.1.2; case-sensitive), on any port; any other request is left to
+  `websocket_example` and mmt-dpi's HTTP. mmt-dpi's HTTP claims a session
+  on its request line, so the decision cannot wait for the answer. A 101
+  answer that selects `ocpp1.6` claims a capture without the request, and
+  a segment that starts with an unfragmented text frame holding an OCPP-J
+  message (`[`, then 2, 3 or 4, then `,`, then a complete string, with
+  JSON whitespace around them) one that starts after the handshake.
+- **Attributes.** A segment reports the first OCPP-J message whose frame
+  header ends in it, parsed from the frame's bytes in the segment,
+  unmasked: `message_type_id` (2 CALL, 3 CALLRESULT, 4 CALLERROR),
+  `unique_id`, `action` (a CALL's Action; on a CALLRESULT or CALLERROR,
+  the Action of the CALL it answers, absent when that CALL was not seen),
+  `error_code` and `error_description` (CALLERROR), `payload` (the Payload,
+  or a CALLERROR's errorDetails, as sent), and `message_count`, the OCPP-J
+  messages whose frame header ends in the segment. The typed fields come
+  from a CALL's payload, at their place in it, never from a key found
+  anywhere: `connector_id`, the top-level `connectorId`; `id_tag`, the
+  top-level `idTag` of Authorize, StartTransaction and
+  RemoteStartTransaction; `charging_limit_x10` and `charging_rate_unit`,
+  the first `chargingSchedulePeriod`'s `limit` and the
+  `chargingRateUnit` (`A` or `W`) of SetChargingProfile's
+  `csChargingProfiles.chargingSchedule` or RemoteStartTransaction's
+  `chargingProfile.chargingSchedule`. A limit has at most one fractional
+  digit (OCPP 1.6 section 7.14), so it is in tenths of the unit: 110005
+  for 11000.5 W; more digits are cut (rounded toward zero), and a
+  negative limit or one with an exponent is not reported. Strings are the
+  bytes between the quotes as sent (escapes not decoded), at most the
+  first 63 (`MMT_STRING_DATA`); `payload` at most the first 1024
+  (`MMT_BINARY_VAR_DATA`). The handshake, a pure ACK, a retransmission and
+  a frame that is not an OCPP-J message (a ping, `[5,...`, `[2,3]`)
+  report nothing.
+- **Links.** Per session, the CALLs not answered yet, by direction and
+  UniqueId (OCPP-J 1.6 section 4.1.4), at most 16, the oldest dropped
+  first: a CALLRESULT or CALLERROR takes the action of the CALL sent the
+  other way with its UniqueId, and removes it. Both sides may use the
+  same UniqueId at once. A UniqueId over 36 bytes, the specification's
+  maximum, is not kept, so its answer has no action. Without a session
+  (the harness's packets), nothing is linked, so the packet tests'
+  answers have no action; the session replay checks the links.
+- **State and where it runs** are `websocket_example`'s (above): the TCP
+  sequence numbers per direction, a frame over segments, a split header,
+  the segment's end at the IP length, and mmt-dpi 1.10.2 calling the
+  classification function, then after 40 packets the session data hooks.
+
+`tests/unit/examples/test_sdk.py` replays TCP sessions through it (on
+port 9000) and checks every attribute of every packet: CALL then
+CALLRESULT and CALLERROR with their action, an answer seen twice, from
+the CALL's own side or for an unknown UniqueId, the same UniqueId sent by
+both sides, two messages in a segment, the typed fields, a decoy
+`connectorId` in a string and a nested object, an escaped quote in a
+UniqueId, UniqueIds of 36 and 40 bytes, a frame over two segments, a
+ping, more than 40 packets, more than 16 CALLs waiting, an answer
+selecting `ocpp2.0.1`, a refused upgrade, a chat WebSocket session, an
+`OCPP1.6` offer and plain HTTP (none of them claimed), a capture that
+starts after the handshake or at the answer, and an answer's header block
+over two segments; with and without the sanitizers, then corrupted and
+cut short. A second test loads `mmtp_ocpp_example.so` and
+`mmtp_websocket_example.so` in one plugin directory: the `ocpp1.6`
+session is `OCPP_EXAMPLE`, the chat session `WEBSOCKET_EXAMPLE`, both
+directly above TCP.
+
+Not covered, or open:
+
+- Not a child of `websocket_example` until mmt-dpi processes a layer above
+  a plugin above TCP (above, "WebSocket", "Not covered, or open").
+- A request whose `Sec-WebSocket-Protocol` line is in its second TCP
+  segment is not claimed (only the first segment of the request is read,
+  as for `websocket_example`); neither is one after other HTTP requests in
+  the session, which mmt-dpi's HTTP has claimed.
+- A 101 answer that selects another subprotocol (or none), or a refused
+  upgrade, keeps the session as `OCPP_EXAMPLE` with nothing to report:
+  mmt-dpi 1.10.2 has no way for a plugin to give a session back.
+- One message is described per segment (`message_count` counts the
+  others, which are linked too). A message is read from its first frame,
+  in the segment where that frame's header ends: continuation frames and
+  the bytes of a frame in later segments are not reassembled, so a field
+  after them is not reported. Compressed frames (`permessage-deflate`,
+  RSV1) are not read.
+- Checking per-action CALL counts and links against real captures (the
+  Zenodo record 14887131 of #41, against tshark) is a manual run, not CI,
+  reported on #39; the mmt-security rule on these attributes is in that
+  repository, not here.
 
 ## What the packet tests do not cover
 
@@ -267,7 +383,8 @@ them re-implement a protocol mmt-dpi has, and their parent classification
 runs first, so an installed `ip_example` takes the IPv4 traffic from
 mmt-dpi's IP: install the examples into a private prefix only, never next
 to an mmt-dpi in use (`websocket_example` takes every TCP session that
-upgrades to WebSocket, on any port). `ndn_example` has the id and the name
+upgrades to WebSocket, on any port, and `ocpp_example` every one whose
+handshake offers `ocpp1.6`). `ndn_example` has the id and the name
 of the NDN plugin in `ndn_src/`, so only one of the two can be installed.
 
 ## Regenerating

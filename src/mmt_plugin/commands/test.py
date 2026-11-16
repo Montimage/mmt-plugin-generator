@@ -1144,7 +1144,8 @@ class TestCommand:
                 return self._load_failed(reason, result.stderr, run), ran
             ran += last + 1
             frame = frames[last]
-            payload = data[last][start:]
+            # The TCP payload, without Ethernet padding (the IPv4 length is intact).
+            payload = data[last][start : 14 + int.from_bytes(data[last][16:18], "big")]
             crashes.append(
                 {
                     "test": test.id,

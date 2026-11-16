@@ -202,6 +202,90 @@ note: "..."                    # optional
     fixes the model. The validator checks the `spec` value against the bytes
     too.
 
+### Session files
+
+A session test (read by `mmt-plugin test`, #99; projects only, like
+`through`: no corpus fixture is one, and the validator does not accept
+one) is several packets of one TCP connection, run in order by one
+harness, so a plugin whose values depend on earlier packets (an opening
+handshake, a message over two segments, an answer linked to its request)
+is tested with its session state. It has `session` and `packets` instead
+of `through`, `bytes` and `expect`:
+
+```yaml
+schema: 1
+id: "chat/session-login"       # <model>/<file stem>
+model: "chat"
+summary: "..."
+source: "..."                  # where the packets and values come from
+session:
+  through: "tcp:dport=6667"    # tcp, the server's port (dport or port), sport optional
+  protocol: "CHAT"
+  proto_id: 970
+  attributes:                  # optional: checked on every packet of the plugin's
+    - name: "command"
+      type: "MMT_STRING_DATA"
+    - name: "user"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true                 # SYN, SYN/ACK, ACK
+  - from: "client"
+    bytes:
+      - "55 53 45 52 20 61 6c 69 63 65 0d 0a"
+    expect:
+      attributes:
+        - name: "command"
+          value: "55 53 45 52"
+        - name: "user"
+          value: "61 6c 69 63 65"
+  - from: "server"             # a pure ACK: no bytes
+    expect: "none"
+  - from: "server"
+    bytes:
+      - "4f 4b 0d 0a"
+    expect:
+      attributes:
+        - name: "user"         # from the client's segment, the session's state
+          value: "61 6c 69 63 65"
+  - idle: 70                   # 70 s of other traffic
+  - from: "server"
+    retransmit: true
+    bytes:
+      - "4f 4b 0d 0a"
+```
+
+- `session.through`: the connection, with `init --parent`'s syntax, `tcp`
+  only: `dport` (or `port`) is the server's port and is required, `sport`
+  the client's (default 49152). The client is 198.18.0.1, the server
+  192.0.2.1; every IPv4 and TCP checksum is right, and a frame shorter
+  than 60 bytes gets Ethernet padding.
+- `session.protocol`, `session.proto_id`: the plugin's, as `expect`'s.
+- `session.attributes` (optional): `name` and `type` of attributes every
+  packet of the plugin's checks. One a packet does not list must be
+  absent there.
+- `packets`: the steps, in order, each a mapping:
+  - `open: true`: the three-way handshake;
+  - `idle: N`: `N` seconds (1 to 3600) of other TCP traffic, one pure ACK
+    of another connection a second (the harness's packets are one second
+    apart), to let mmt-dpi's timers run;
+  - `from: client` or `from: server`: one segment of that side, with the
+    sequence and acknowledgment numbers of a connection without loss.
+    `bytes` is its TCP payload (none: a pure ACK). `retransmit: true` sends
+    it at the sequence number of that side's previous segment with data;
+    `lost: N` loses that side's next `N` bytes before it (the capture never
+    had them). `expect` is `"none"` (not the plugin's packet) or a mapping
+    with `attributes`, as a packet file's `expect.attributes`, except that
+    `offset` and `length` are optional (a value can come from an earlier
+    packet) and so is `type` for an attribute `session.attributes` lists.
+    Without `expect`, the packet is the plugin's, with every attribute of
+    `session.attributes` absent. `text` and `note` are comments.
+
+  The packets of `open` and `idle` steps must not be the plugin's.
+- Every packet of the plugin's must be classified directly above TCP, where
+  the TCP header ends (`<parent>`), through mmt-dpi's stack and the
+  plugin's own parent classification; its next protocol is not checked.
+  A failure names the step it is in (`packet` in `result.packets[].failures`).
+
 ### Value kinds
 
 | types | `value` |

@@ -24,7 +24,7 @@ also on a usage error, and nothing else. The skill reads these keys:
 | `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project inside it, absolute outside it (a `build.cc` error or note in an SDK header); `line` and `column` are 1-based and may be `null` (a whole file). Edit there, unless `file` is outside the project. |
 | `diagnostics[].hint` | one line on how to fix it, or `null` | |
 | `diagnostics[].related[]` | other places (`"first defined here"`) | |
-| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`). |
+| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`). |
 
 Keys not listed here may be added; ignore them. Paths in the envelope are
 relative to the project (`-C`) when inside it, absolute otherwise.
@@ -49,7 +49,10 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   in the project before this session (stop and report instead). A failing
   entry with `through` ran through the plugin's parent: `<protocol>` there
   (not classified) or `<parent>` is fixed in `parents:` (its `classify`) or
-  in `<label>_hook_register_parents`.
+  in `<label>_hook_register_parents`. An entry with `session` is a session
+  test: each failure's `packet` is the index of its step in the file's
+  `packets`; a value that depends on earlier packets is fixed in the
+  session hooks of `src/<label>_impl.c`.
 - `build.missing-hook` is located at `src/<label>_impl.c`, without a line:
   add the function there, with the declaration of the hint.
 - A `build.cc` error at an absolute path is in a file outside the project,

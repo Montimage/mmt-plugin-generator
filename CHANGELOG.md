@@ -9,6 +9,18 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `mmt-plugin test` runs session tests (#99): a file in `tests/` with
+  `session` (a `tcp` selector, the protocol, its id, the attributes every
+  packet checks) and `packets` (the three-way handshake, idle time, and
+  client or server segments, with retransmissions and lost bytes) is one
+  TCP connection, whose frames `test` builds and runs in order in one
+  harness, so a plugin's session state is tested. It is one
+  `result.packets` entry with `session`, and each failure names its step
+  (`packet`); `--sanitize` also runs corrupted copies of the session.
+  `tests/corpus/README.md` ("Session files"), the user guide and the
+  skill's `drafting.md` describe it. The WebSocket and OCPP examples' TCP
+  session replays, which were Python in `tests/unit/examples/test_sdk.py`,
+  are now their session tests, `examples/*/tests/session-*.yaml`.
 - `examples/websocket/`: a WebSocket (RFC 6455) plugin, `websocket_example`
   (id 992), made with `mmt-plugin init` (#40). It claims a TCP session on
   any port from its opening handshake and follows it across segments: the

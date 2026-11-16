@@ -361,6 +361,86 @@ not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
 attached under its TCP or UDP. With `--sanitize`, its random packets run
 behind the same headers.
 
+### Session tests
+
+A packet test is one packet, with no session around it. When what your
+plugin reports depends on earlier packets of the connection (an opening
+handshake, a message over two segments, an answer linked to its
+request), write a session test: a file in `tests/` with `session` and
+`packets` instead of `bytes` and `expect`, the packets of one TCP
+connection, in order, each with what the plugin must report. `test`
+builds the frames for you (Ethernet, IPv4 and TCP, both directions, the
+sequence and acknowledgment numbers of a connection without loss) and
+runs them in one harness, through mmt-dpi's TCP and your plugin's parent
+classification, so the plugin keeps its session state from one packet to
+the next:
+
+```yaml
+schema: 1
+id: "chat/session-login"
+summary: "A login, then the server's answer, which reports the user of the session"
+session:
+  through: "tcp:dport=6667"
+  protocol: "CHAT"
+  proto_id: 970
+  attributes:
+    - name: "command"
+      type: "MMT_STRING_DATA"
+    - name: "user"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true
+  - from: "client"
+    bytes:
+      - "55 53 45 52 20 61 6c 69 63 65 0d 0a"
+    expect:
+      attributes:
+        - name: "command"
+          value: "55 53 45 52"
+        - name: "user"
+          value: "61 6c 69 63 65"
+  - from: "server"
+    expect: "none"
+  - from: "server"
+    bytes:
+      - "4f 4b 0d 0a"
+    expect:
+      attributes:
+        - name: "user"
+          value: "61 6c 69 63 65"
+```
+
+- `session.through` is the connection, `tcp` with the server's port
+  (`dport`) and optionally the client's (`sport`); `protocol` and
+  `proto_id` are the plugin's.
+- `session.attributes` lists attributes every packet of the plugin's
+  checks: one a packet does not list must be absent there.
+- Each step of `packets` is `open: true` (the three-way handshake),
+  `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
+  segment `from` the client or the server, its TCP payload in `bytes`
+  (none: a pure ACK), with `retransmit: true` to send it again at that
+  side's previous sequence number, or `lost: N` for bytes the capture
+  lost before it.
+- A segment's `expect` is `"none"` when it must not be your protocol's
+  packet, or the attributes it reports, as in a packet test (`offset`
+  and `length` are optional here, and so is `type` for an attribute the
+  session lists). Without `expect`, the segment is your protocol's with
+  every attribute of `session.attributes` absent. The packets of `open`
+  and `idle` steps must not be your protocol's.
+
+Every packet of your protocol's must be classified directly above TCP
+(`<parent>`). A session test is one entry of `result.packets`, with
+`session` (its packet count), and each failure names its step
+(`packet`, the index in `packets`). With `--sanitize`, `test` runs the
+session under the sanitizers as it is, then corrupted copies of it
+(payload bytes changed, segments cut short) until they make
+`--fuzz-count` packets; `--bench` measures the packet tests only. The
+format is in
+[`tests/corpus/README.md`](../tests/corpus/README.md#session-files);
+`examples/websocket/tests/session-*.yaml` and
+`examples/ocpp/tests/session-*.yaml` are session tests of the example
+projects.
+
 ## Install the plugin
 
 `install` copies `mmtp_demo.so` into `<prefix>/plugins/` and records it in

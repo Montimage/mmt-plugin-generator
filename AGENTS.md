@@ -46,11 +46,14 @@ protocol model. A Python rewrite is planned in
   says. Tests in `tests/unit/examples/`: `test_examples.py` (the models,
   `generate --check`, the ports' packet tests against the corpus, a source
   for every value of the others', one `through` test per example with a
-  parent) and `test_sdk.py` (`validate`, `build` and `test --sanitize` on
-  each one, then each parent's classification broken, which fails only the
-  run through it, and the WebSocket and OCPP examples' TCP sessions, built
-  by `tcpsession.py`, replayed through the harness `test` built, then the
-  OCPP one's next to the WebSocket plugin; needs `MMT_GOLDEN_SDK`).
+  parent, and a source for every session test, `tests/session-*.yaml`)
+  and `test_sdk.py` (`validate`, `build` and `test --sanitize` on each
+  one, then each parent's classification broken, which fails only the
+  run through it and the session tests; the WebSocket and OCPP examples'
+  session tests (#99), 8 and 12, under the sanitizers with corrupted
+  copies, and one without its CALL; then an OCPP session through the
+  harness `test` built, next to the WebSocket plugin; needs
+  `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
 - `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example
@@ -210,14 +213,27 @@ protocol model. A Python rewrite is planned in
   (with `through`), a `<parent>` failure when the plugin is not directly
   above that protocol where the layers end, `next` not checked (mmt-dpi
   1.10.2's TCP and UDP stop at a plugin's layer); the harness's records
-  are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A mismatch is
+  are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A
+  session test (#99, `session.py`: `session` and `packets` instead of
+  `bytes` and `expect`; `tests/corpus/README.md`, "Session files") is the
+  packets of one TCP connection (`open`, `idle` and client or server
+  segments, with `retransmit` and `lost`; sequence numbers, checksums and
+  padding built by `session.py`), run in order in a harness of its own,
+  each checked directly above TCP (`<parent>`), the attributes of
+  `session.attributes` it does not list absent: one `result.packets`
+  entry with `session` (its packet count), each failure with `packet` (its
+  step). A mismatch is
   `test.packet-failed`, a crash `test.crash` (exit 6), each failure with
   its attribute, expected and actual value. `--sanitize` builds
   `build/sanitize/` with ASan/UBSan and runs truncated and random packets
-  (`fuzz.py`, `--seed`, `--fuzz-count`); `--bench` compares packets per
-  second with an empty plugin (`templates/baseline.c.j2`) and never changes
-  the exit code. Tests in `tests/unit/packettest/`: `test_testing.py`,
-  `test_frames.py` and `test_command.py` (fake SDK, compiler and harness
+  (`fuzz.py`, `--seed`, `--fuzz-count`), and each session test as it is,
+  then corrupted copies of it (`mutate_frames`) until they make
+  `--fuzz-count` packets, each in a harness of its own (a crash has its
+  copy as `index` and its step as `packet`); `--bench` compares packets
+  per second over the packet tests with an empty plugin
+  (`templates/baseline.c.j2`) and never changes the exit code. Tests in
+  `tests/unit/packettest/`: `test_testing.py`, `test_frames.py`,
+  `test_session.py` and `test_command.py` (fake SDK, compiler and harness
   run), and `test_sdk.py`
   (every corpus model under the sanitizers, a broken model, against a real
   SDK; needs `MMT_GOLDEN_SDK`).
@@ -405,7 +421,7 @@ protocol model. A Python rewrite is planned in
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
   (`build` and `test` on every example, and the WebSocket and OCPP
-  session replays), `tests/unit/init/test_sdk.py` (`init` then `test`),
+  session tests), `tests/unit/init/test_sdk.py` (`init` then `test`),
   `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
   by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),

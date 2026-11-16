@@ -220,8 +220,18 @@ def test_only_the_run_through_the_parent_fails_when_its_classification_breaks(
     code, doc = _json(capsys, "test", "--sdk", sdk, "--cc", cc)
     assert code == 6, (doc["error"], doc["result"] and doc["result"]["packets"])
     assert doc["error"]["code"] == "test.packet-failed"
+    # The run through the parent fails; so do the session tests, which run
+    # through it too (#99), but none of the packets the harness attaches.
     failed = [p for p in doc["result"]["packets"] if p["status"] != "pass"]
-    assert [("through" in p) for p in failed] == [True], doc["result"]["packets"]
+    assert [p for p in failed if "session" not in p] == failed[:1], doc["result"]["packets"]
+    assert "through" in failed[0], doc["result"]["packets"]
+    sessions = [p for p in failed if "session" in p]
+    assert bool(sessions) == (project.name in ("websocket", "ocpp")), failed
+    for session in sessions:
+        # Its packets of the plugin's are not classified any more.
+        assert {(f["attribute"], f["actual"]) for f in session["failures"]} == {
+            ("<protocol>", "not classified")
+        }, session
     first = failed[0]["failures"][0]
     if how == "offset":
         assert first == {

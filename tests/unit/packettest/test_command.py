@@ -27,7 +27,8 @@ from mmt_plugin.diagnostics import CliError
 from mmt_plugin.sdk.resolve import resolve_profile
 from mmt_plugin.testing import harness
 from mmt_plugin.testing.frames import build_frame, parse_through
-from mmt_plugin.testing.fuzz import fuzz_packets
+from mmt_plugin.testing.fuzz import fuzz_packets, mutate_frames
+from mmt_plugin.testing.session import SessionTest, build_frames, load_test
 from mmt_plugin.ui.streams import ColorTier, StreamStyle
 
 MODEL = """Protocol {
@@ -231,7 +232,8 @@ class FakeHarness:
         return harness.HarnessRun(0, [*lines, f"end {len(packets)}"])
 
     def _payload(self, frame: bool, data: bytes) -> bytes | None:
-        """A packet's bytes, a frame's payload, or ``None``: not classified."""
+        """A packet's bytes, a frame's payload, or ``None``: not classified
+        (and a TCP segment without payload)."""
         if not frame:
             return data
         if self.frame_match is None:
@@ -239,6 +241,10 @@ class FakeHarness:
         at, match = self.frame_match
         if data[at : at + len(match)] != match:
             return None
+        if self.frame_offset == 54:
+            # TCP: the segment's payload, without Ethernet padding; none: not classified.
+            end = 14 + int.from_bytes(data[16:18], "big")
+            return data[54:end] or None
         return data[self.frame_offset :]
 
 
@@ -659,6 +665,188 @@ def test_a_bench_that_fails_never_changes_the_exit_code(
     code, doc = run("--bench")
     assert code == 0, doc["error"]
     assert _stages(doc)["bench"] == "failed"
+
+
+# --- session tests (#99) ----------------------------------------------------------------
+
+#: A session test: the client's segments to port 4433 are FAKEPROTO, the
+#: server's are not (the fake classifies frames to that port).
+SESSION = """schema: 1
+id: "fakeproto/session"
+session:
+  through: "tcp:dport=4433"
+  protocol: "FAKEPROTO"
+  proto_id: 991
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+packets:
+  - open: true
+  - from: "client"
+    bytes:
+      - "04 00 05"
+    expect:
+      attributes:
+        - name: "kind"
+          value: 4
+        - name: "size"
+          type: "MMT_U16_DATA"
+          value: 5
+  - from: "server"
+    bytes:
+      - "09"
+    expect: "none"
+  - from: "client"
+    bytes:
+      - "05 00 06"
+    expect:
+      attributes:
+        - name: "kind"
+          value: 5
+"""
+
+
+def _session(project: Path, text: str = SESSION) -> None:
+    (project / "tests" / "s.yaml").write_text(text)
+
+
+def test_a_session_test_runs_its_packets_in_one_harness(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _session(project)
+    fake.frame_match = DPORT_4433_TCP
+    fake.frame_offset, fake.frame_parent = 54, 354
+    code, doc = run()
+    assert code == 0, doc["error"]
+    packets = doc["result"]["packets"]
+    assert [(p["id"], p["status"], p["attributes"], p.get("session")) for p in packets] == [
+        ("fakeproto/a", "pass", 2, None),
+        ("fakeproto/b", "pass", 2, None),
+        ("fakeproto/c", "pass", 2, None),
+        ("fakeproto/session", "pass", 3, 6),
+    ]
+    assert doc["result"]["summary"]["total"] == 4
+    # The packet tests in one run, the session in a run of its own, in order.
+    assert fake.runs == [("check", 3, "build"), ("check", 6, "build")]
+    records = _read(project / "build" / "test" / "session.bin")
+    test = load_test(project / "tests" / "s.yaml", "s.yaml", {"MMT_U8_DATA", "MMT_U16_DATA"})
+    assert isinstance(test, SessionTest)
+    assert records == [(True, f.frame) for f in build_frames(test)]
+
+
+#: The fake's classification of a TCP segment to port 4433 (its destination port).
+DPORT_4433_TCP = (36, (4433).to_bytes(2, "big"))
+
+
+def test_a_session_failure_names_its_packet(project: Path, run: Run, fake: FakeHarness) -> None:
+    # The last client segment's size is not absent where the session lists only kind,
+    # but kind is 7 there; the server's segment is the plugin's where it must not be.
+    _session(project, SESSION.replace('"05 00 06"', '"07 00 06"'))
+    fake.frame_match = (34 + 0, b"")  # every frame: the server's too
+    fake.frame_offset, fake.frame_parent = 54, 354
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.packet-failed"
+    (session,) = [p for p in doc["result"]["packets"] if "session" in p]
+    assert session["status"] == "fail"
+    assert session["failures"] == [
+        {
+            "attribute": "<protocol>",
+            "expected": "not classified",
+            "actual": "FAKEPROTO (991)",
+            "packet": 2,
+        },
+        {"attribute": "kind", "expected": "5", "actual": "7", "packet": 3},
+    ]
+    failed = [d for d in doc["diagnostics"] if d["code"] == "test.packet-failed"]
+    assert [d["location"]["file"] for d in failed] == ["tests/s.yaml"]
+    assert failed[0]["message"] == (
+        "fakeproto/session: packets[2] <protocol>: expected not classified,"
+        " got FAKEPROTO (991) (+1 more)"
+    )
+
+
+def test_a_crash_in_a_session_names_its_packet_and_the_rest_still_run(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _session(project)
+    fake.frame_match = DPORT_4433_TCP
+    fake.frame_offset, fake.frame_parent = 54, 354
+    fake.check[5] = None  # the second client segment crashes the harness
+    code, doc = run()
+    assert code == 6 and doc["error"]["code"] == "test.crash"
+    session = doc["result"]["packets"][3]
+    assert session["status"] == "crash"
+    assert session["failures"][0] == {
+        "attribute": "<harness>",
+        "expected": "no crash",
+        "actual": "killed by SIGSEGV",
+        "packet": 3,
+    }
+    assert [p["status"] for p in doc["result"]["packets"][:3]] == ["pass"] * 3
+
+
+def test_fail_fast_skips_the_session_tests_after_a_failure(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _session(project)
+    fake.check[2] = (2, 9)
+    code, doc = run("--fail-fast")
+    assert code == 6
+    assert [p["status"] for p in doc["result"]["packets"]] == [
+        "pass",
+        "fail",
+        "skipped",
+        "skipped",
+    ]
+    assert fake.runs == [("check", 3, "build")]
+
+
+def test_sanitize_runs_a_session_then_corrupted_copies(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    for name in PACKETS:
+        (project / "tests" / f"{name}.yaml").unlink()
+    _session(project)
+    fake.frame_match = DPORT_4433_TCP
+    fake.frame_offset, fake.frame_parent = 54, 354
+    code, doc = run("--sanitize", "--fuzz-count", "20", "--seed", "5")
+    assert code == 0, doc["error"]
+    # 6 packets, then ceil(20 / 6) = 4 copies of them, each in a harness of its own.
+    assert doc["result"]["sanitize"] == {"seed": 5, "count": 30, "crashes": []}
+    assert [r for r in fake.runs if r[0] == "fuzz"] == [("fuzz", 6, "sanitize")] * 5
+    test = load_test(project / "tests" / "s.yaml", "s.yaml", {"MMT_U8_DATA", "MMT_U16_DATA"})
+    assert isinstance(test, SessionTest)
+    frames = [f.frame for f in build_frames(test)]
+    copy = mutate_frames(5, "fakeproto/session", 4, frames, 54)
+    assert _read(project / "build" / "test" / "fuzz-session.bin") == [(True, f) for f in copy]
+    # The session's own second client segment crashes: copy 0, packets[3].
+    fake.fuzz_crash = {bytes.fromhex("050006")}
+    code, doc = run("--sanitize", "--fuzz-count", "20", "--seed", "5")
+    assert code == 6 and doc["error"]["code"] == "test.crash"
+    crash = doc["result"]["sanitize"]["crashes"][0]
+    assert crash == {
+        "test": "fakeproto/session",
+        "index": 0,
+        "packet": 3,
+        "length": 3,
+        "reason": "AddressSanitizer: heap-buffer-overflow",
+        "bytes": "05 00 06",
+    }
+    messages = [d["message"] for d in doc["diagnostics"] if d["code"] == "test.crash"]
+    assert messages[0].startswith("fakeproto/session: the session, packets[3] (3 bytes, --seed 5)")
+
+
+def test_bench_skips_session_tests(project: Path, run: Run, fake: FakeHarness) -> None:
+    for name in PACKETS:
+        (project / "tests" / f"{name}.yaml").unlink()
+    _session(project)
+    fake.frame_match = DPORT_4433_TCP
+    fake.frame_offset, fake.frame_parent = 54, 354
+    code, doc = run("--bench")
+    assert code == 0, doc["error"]
+    assert _stages(doc)["bench"] == "failed" and doc["result"]["bench"] is None
+    assert "test.bench-failed" in _codes(doc)
+    assert [r[0] for r in fake.runs] == ["check"]
 
 
 # --- output ----------------------------------------------------------------------------

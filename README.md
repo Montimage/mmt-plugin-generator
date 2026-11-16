@@ -37,9 +37,11 @@ describes how a release is published.
 - [Releasing](docs/releasing.md): the release assets, the dry run and
   how a release is published; the [changelog](CHANGELOG.md) lists what
   each release changed.
-- [mmt-plugin-author](skills/mmt-plugin-author/SKILL.md): the agent skill
+- [mmt-plugin-generator](skills/mmt-plugin-generator/SKILL.md): the agent skill
   that writes a plugin from a spec, a capture or a PDL v1 model, or updates
-  an existing plugin project.
+  an existing plugin project, evaluates it on a capture of the protocol
+  (found, or generated when there is none), and keeps everything that made
+  it in a work folder.
 - [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the
   repository's layout and checks.
 

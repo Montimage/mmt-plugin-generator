@@ -165,7 +165,7 @@ Replace the 2015 Java generator with a maintained Python tool and a complete plu
 - **T4.1 `mmt-plugin scaffold --from-pcap`.** Depends on T2.4 and T3.1.
   - Slices the payloads of a pcap under a given parent (for example `udp:port=4433`) into packet tests and proposes a field skeleton.
   - Verify: tests on sample pcaps.
-- **T4.2 Agent skill `skills/mmt-plugin-author`.** Depends on T2.6, T3.2 and T4.1.
+- **T4.2 Agent skill `skills/mmt-plugin-author`** (renamed `skills/mmt-plugin-generator`). Depends on T2.6, T3.2 and T4.1.
   - Given a protocol spec or a pcap, an agent drafts `plugin.yaml`, then iterates validate, generate, build and test (with `--json`) until green.
   - Ships with evals, plus AGENTS.md guidance.
   - Verify: the evals pass.

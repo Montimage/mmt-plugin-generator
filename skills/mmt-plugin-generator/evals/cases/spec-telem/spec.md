@@ -1,6 +1,6 @@
 # TELEM: a sensor telemetry protocol
 
-An eval input of the mmt-plugin-author skill: the specification an agent
+An eval input of the mmt-plugin-generator skill: the specification an agent
 starts from. TELEM runs over UDP; a sensor sends to destination port 5684.
 
 ## Header

@@ -27,7 +27,7 @@ mmt-dpi has no WebSocket or OCPP dissector: on these captures, mmt-dpi
 | `build` | yes | `-Wall -Wextra -Werror`, against mmt-dpi 1.10.2. |
 | `test --sanitize --bench` | yes | 15 of 15 and 14 of 14 packet runs pass; 15 015 and 14 014 sanitizer runs without a crash; 734 046 and 786 669 packets per second against an empty plugin's 4 248 168 and 10 079 959 (one run on the host of this report). The session replays are not packet tests: they are Python in `tests/unit/examples/test_sdk.py` (#99). |
 | `install` | yes | Into private prefixes (`--prefix`), then the SDK's plugins linked next to them and `MMT_DPI_PLUGINS_DIR` set, as the [user guide](../user-guide.md#install-the-plugin) says. `doctor` passes with both installed. |
-| the agent skill | not recorded | PRs #94 and #95 do not say whether `skills/mmt-plugin-author` drafted the models. |
+| the agent skill | not recorded | PRs #94 and #95 do not say whether `skills/mmt-plugin-author` (now `skills/mmt-plugin-generator`) drafted the models. |
 | a run over a capture | no command | The counts below needed a C program written for the purpose (#103). |
 
 ## Results on the dataset captures

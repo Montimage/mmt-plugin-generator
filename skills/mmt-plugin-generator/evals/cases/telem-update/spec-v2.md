@@ -1,6 +1,6 @@
 # TELEM: a sensor telemetry protocol, revision 2
 
-An eval input of the mmt-plugin-author skill: the revised specification an
+An eval input of the mmt-plugin-generator skill: the revised specification an
 agent updates an existing plugin project to. `project/` is that project,
 written from revision 1 ([`../spec-telem/spec.md`](../spec-telem/spec.md)).
 Revision 2 adds one message type, the status report; everything revision 1

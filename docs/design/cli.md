@@ -50,7 +50,7 @@ The command line parses the same on every supported Python (3.10 to 3.14), whose
 
 - `--` ends the options of a command, so it comes after the command name: a `--` before it (`mmt-plugin -- validate`) is `usage.unknown-command`. Python 3.13+ argparse would skip it and run the command.
 - A flag takes no value: `--json=1` and `--json=` are `usage.invalid-value`, as is a cluster of short flags with a letter that is not a flag (`-vx`: `argument -v/--verbose: ignored explicit argument 'x'`, where Python 3.12+ argparse would report an unknown option `-x`). Clusters of flags (`-vv`, `-qv`) and a short option's value in the cluster (`-vCDIR`, `-vC DIR`) parse as usual.
-- `-h`/`--help` prints the help as soon as argparse reaches it, left to right, so a usage error before it wins (`-vx --help` is exit 2) and an unknown option after it does not (`--help --bogus` prints the help).
+- `-h`/`--help` prints the help as soon as argparse reaches it, left to right, so a usage error before it wins (`-vx --help` is exit 2) and nothing after it does: an unknown option (`--help --bogus`), a cluster with a letter that is not a flag (`--help -vx`, `validate --help -vx`) and a `--` (`--help --`) all print the help, exit 0 (#92). A help flag in a cluster counts (`-vh`); one given a value does not (`--help=1` and `-hx` are `usage.invalid-value`).
 - One difference is left to argparse: in a cluster, `-vC=DIR` gives the project `=DIR` on Python 3.10 and `DIR` on 3.12+. Write `-vCDIR`, `-C DIR` or `--project=DIR`.
 
 **Shared option groups** (only on the commands that use them; never accepted and ignored):

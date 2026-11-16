@@ -22,7 +22,8 @@ The command line parses the same on every supported Python (3.10 to 3.14),
 whose argparse versions differ in two corners that ``_prescan`` decides
 first: a ``--`` before the command, and a cluster of short flags with an
 unknown letter (``-vx``). Any usage error, an unknown option included, wins
-over ``--version``; ``--help`` prints as soon as argparse reaches it.
+over ``--version``; ``--help`` prints as soon as argparse reaches it, so an
+error after it, these two included, does not win.
 """
 
 from __future__ import annotations
@@ -331,6 +332,25 @@ def _check_option(parser: argparse.ArgumentParser, arg: str, following: str | No
     return 0
 
 
+def _is_help(parser: argparse.ArgumentParser, arg: str) -> bool:
+    """Whether argparse runs ``parser``'s help action on ``arg``: ``-h`` or
+    ``--help``, or a cluster of flags with ``h`` among them (``-vh``).
+
+    ``arg`` has passed ``_check_option``; ``--help=x`` and a cluster with a
+    letter that is not a flag are its errors, not help.
+    """
+    table = parser._option_string_actions
+    if arg.startswith("--"):
+        return isinstance(table.get(arg), argparse._HelpAction)
+    for letter in arg[1:]:
+        action = table.get("-" + letter)
+        if isinstance(action, argparse._HelpAction):
+            return True
+        if action is None or action.nargs != 0:
+            return False  # the rest of the cluster is a value
+    return False
+
+
 def _prescan(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
     """Raise the usage errors that argparse reports differently by Python
     version, before argparse sees ``argv``.
@@ -340,6 +360,10 @@ def _prescan(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
       ``usage.unknown-command``: the command comes before any ``--``.
     - A cluster of short flags with a letter that is not a flag
       (``_check_option``), before the command or after it.
+
+    It stops at a help option of the parser it is in (``_is_help``):
+    argparse prints the help there, whatever follows (``--help -vx``,
+    ``--help --``).
     """
     commands: dict[str, argparse.ArgumentParser] = {}
     for action in parser._actions:
@@ -358,7 +382,10 @@ def _prescan(parser: argparse.ArgumentParser, argv: Sequence[str]) -> None:
             return
         if _is_option(arg):
             following = argv[i + 1] if i + 1 < len(argv) else None
-            i += 1 + _check_option(current or parser, arg, following)
+            taken = _check_option(current or parser, arg, following)
+            if _is_help(current or parser, arg):
+                return
+            i += 1 + taken
             continue
         if current is None:
             current = commands.get(arg)

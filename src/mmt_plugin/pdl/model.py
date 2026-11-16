@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeAlias
+from typing import Literal, TypeAlias, TypeGuard, get_args
 
 from mmt_plugin.diagnostics import Location
 
@@ -34,6 +34,7 @@ __all__ = [
     "BinaryOperator",
     "ByteSwap",
     "CType",
+    "CTypeName",
     "Case",
     "ClassifyNext",
     "Conditional",
@@ -70,6 +71,7 @@ __all__ = [
     "StructType",
     "Switch",
     "ValueOf",
+    "is_c_type_word",
 ]
 
 
@@ -121,9 +123,10 @@ class IntLiteral:
     expressions (G:704-705). Elsewhere (a define value, a case label, a
     ``nextencaps`` value, a literal inside a non-simple expression) it copied
     the literal into the C as text, where a leading zero means octal: ``010``
-    is 8 and ``08`` does not compile. ``text`` keeps the spelling, sign
-    included, so nothing is lost; the semantic passes (T1.3, #12) diagnose
-    leading zeros. Ranges are not checked here.
+    is 8 and ``08`` does not compile. ``text`` keeps the digits as written
+    (``007`` stays ``007``) with the sign joined to them: ``- 5``, with a
+    space or a comment after the ``-``, is ``-5``. The semantic passes (T1.3,
+    #12) diagnose leading zeros. Ranges are not checked here.
     """
 
     value: int
@@ -174,17 +177,24 @@ MMT_TYPES: frozenset[str] = frozenset(t.value for t in DataType)
 # --- Element types (struct fields and sizeof) --------------------------------
 
 
+#: The base words of a C element type (G:862-865).
+CTypeName: TypeAlias = Literal[
+    "int", "long", "uint32_t", "short", "uint16_t", "char", "u_char", "uint8_t", "void"
+]
+
+
 @dataclass(frozen=True)
 class CType:
     """A C scalar or pointer element type (G:638-648).
 
-    ``name`` is the base word as written: ``int``, ``long``, ``uint32_t``,
-    ``short``, ``uint16_t``, ``char``, ``u_char``, ``uint8_t``, or ``void``
-    (pointers only). ``unsigned`` records the optional prefix, which changes
-    nothing: every struct integer is unsigned (corpus README, Struct layout).
+    ``name`` is the base word as written, one of ``CTypeName``: ``int``,
+    ``long``, ``uint32_t``, ``short``, ``uint16_t``, ``char``, ``u_char``,
+    ``uint8_t``, or ``void`` (pointers only). ``unsigned`` records the
+    optional prefix, which changes nothing: every struct integer is unsigned
+    (corpus README, Struct layout).
     """
 
-    name: str
+    name: CTypeName
     unsigned: bool
     pointer: bool
     span: Span
@@ -199,7 +209,7 @@ class CType:
 
 #: The C base words and their ``MMT_*`` type (G:862-864); ``void`` is only a
 #: pointer base (G:865).
-_C_TYPES: dict[str, DataType] = {
+_C_TYPES: dict[CTypeName, DataType] = {
     "int": DataType.MMT_U32_DATA,
     "long": DataType.MMT_U32_DATA,
     "uint32_t": DataType.MMT_U32_DATA,
@@ -211,7 +221,12 @@ _C_TYPES: dict[str, DataType] = {
 }
 
 #: Every word that starts a C element type.
-C_TYPE_WORDS: frozenset[str] = frozenset({*_C_TYPES, "void"})
+C_TYPE_WORDS: frozenset[str] = frozenset(get_args(CTypeName))
+
+
+def is_c_type_word(word: str) -> TypeGuard[CTypeName]:
+    """Whether ``word`` starts a C element type (one of ``C_TYPE_WORDS``)."""
+    return word in C_TYPE_WORDS
 
 
 @dataclass(frozen=True)

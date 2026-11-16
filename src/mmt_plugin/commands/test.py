@@ -859,8 +859,12 @@ class TestCommand:
                     break
                 pending = pending[crashed + 1 :]
             for packet in sessions:
-                if args.fail_fast and any(p.status in ("fail", "crash") for p in run.packets):
-                    break
+                # --fail-fast: a session test before the first failure (in
+                # file order) still runs; the ones after it are skipped.
+                at = run.packets.index(packet)
+                failed_before = any(p.status in ("fail", "crash") for p in run.packets[:at])
+                if args.fail_fast and failed_before:
+                    continue
                 error = self._session(ctx, tools, program, plugin, names, packet, aliases, run)
                 if error is not None:
                     return error

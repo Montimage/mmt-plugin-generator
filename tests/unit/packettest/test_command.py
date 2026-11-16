@@ -801,6 +801,26 @@ def test_fail_fast_skips_the_session_tests_after_a_failure(
     assert fake.runs == [("check", 3, "build")]
 
 
+def test_fail_fast_runs_a_session_test_before_the_first_failure(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    # "0.yaml" sorts before the packet tests: it runs, and passes, although c fails.
+    (project / "tests" / "0.yaml").write_text(SESSION.replace("fakeproto/session", "fakeproto/0"))
+    fake.frame_match = DPORT_4433_TCP
+    fake.frame_offset, fake.frame_parent = 54, 354
+    fake.check[3] = (3, 9)
+    code, doc = run("--fail-fast")
+    assert code == 6
+    statuses = [(p["id"], p["status"]) for p in doc["result"]["packets"]]
+    assert statuses == [
+        ("fakeproto/0", "pass"),
+        ("fakeproto/a", "pass"),
+        ("fakeproto/b", "pass"),
+        ("fakeproto/c", "fail"),
+    ]
+    assert fake.runs == [("check", 3, "build"), ("check", 6, "build")]
+
+
 def test_sanitize_runs_a_session_then_corrupted_copies(
     project: Path, run: Run, fake: FakeHarness
 ) -> None:

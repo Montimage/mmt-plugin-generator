@@ -33,8 +33,13 @@ protocol model. A Python rewrite is planned in
   `examples/websocket/` (#40), a WebSocket (RFC 6455) plugin made with
   `init`, not a port: every attribute is a hook, and its session state
   follows the TCP session (`src/websocket_example_impl.c` says where
-  mmt-dpi 1.10.2 runs it). Labels are `<protocol>_example`, ids 976-992,
-  profile 1.10.2 pinned. All 17 build and pass their packet tests against
+  mmt-dpi 1.10.2 runs it), and `examples/ocpp/` (#41), an OCPP 1.6-J
+  plugin made the same way: directly above TCP (mmt-dpi 1.10.2 does not
+  classify a layer above `websocket_example`), it claims a session whose
+  handshake offers `ocpp1.6`, parses the WebSocket framing itself and
+  links each answer to its CALL's action. Labels are `<protocol>_example`,
+  ids 976-993, profile 1.10.2 pinned. All 18 build and pass their packet
+  tests against
   mmt-dpi 1.10.2; `examples/README.md` lists each one's label, id,
   parent, model fixes and hooks. After a generator change (or a version
   bump: `plugin.lock` records it), regenerate them all, as the README
@@ -43,9 +48,9 @@ protocol model. A Python rewrite is planned in
   for every value of the others', one `through` test per example with a
   parent) and `test_sdk.py` (`validate`, `build` and `test --sanitize` on
   each one, then each parent's classification broken, which fails only the
-  run through it, and the WebSocket example's TCP sessions, built by
-  `tcpsession.py`, replayed through the harness `test` built; needs
-  `MMT_GOLDEN_SDK`).
+  run through it, and the WebSocket and OCPP examples' TCP sessions, built
+  by `tcpsession.py`, replayed through the harness `test` built, then the
+  OCPP one's next to the WebSocket plugin; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.
 - `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example
@@ -379,8 +384,8 @@ protocol model. A Python rewrite is planned in
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
-  (`build` and `test` on every example, and the WebSocket session
-  replay), `tests/unit/init/test_sdk.py` (`init` then `test`),
+  (`build` and `test` on every example, and the WebSocket and OCPP
+  session replays), `tests/unit/init/test_sdk.py` (`init` then `test`),
   `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
   by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),

@@ -27,8 +27,9 @@ describes how a release is published.
   JSON Schema.
 - [Migration guide](docs/migration.md): from the Java tool and PDL v1, and
   [what behaves differently](docs/behaviour-changes.md).
-- [Examples](examples/README.md): 17 complete plugin projects, the Java
-  tool's 16 examples ported and a WebSocket (RFC 6455) plugin.
+- [Examples](examples/README.md): 18 complete plugin projects, the Java
+  tool's 16 examples ported, a WebSocket (RFC 6455) plugin and an OCPP
+  1.6-J plugin.
 - [CLI design](docs/design/cli.md): the command contract in full.
 - [Releasing](docs/releasing.md): the release assets, the dry run and
   how a release is published; the [changelog](CHANGELOG.md) lists what

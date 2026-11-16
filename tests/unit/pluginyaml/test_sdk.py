@@ -12,7 +12,7 @@ in the SDK.
 A second project is classified above TCP by port, with a match on the
 payload (#100): its ``through`` packet test passes, then whole frames go
 through the harness that ``test`` built, with and without the sanitizers:
-the protocol starts after the TCP header's options, and a frame with
+the protocol starts after the TCP header's options, over IPv4 and IPv6, and a frame with
 another port, another first byte, too short a payload or only Ethernet
 padding after its TCP header is not classified.
 
@@ -271,21 +271,43 @@ def _checksum(data: bytes) -> int:
 
 
 def _frame(
-    n: int, sport: int, dport: int, payload: bytes, options: bytes = b"", padding: bytes = b""
+    n: int,
+    sport: int,
+    dport: int,
+    payload: bytes,
+    options: bytes = b"",
+    padding: bytes = b"",
+    *,
+    ipv6: bool = False,
+    offload: bool = False,
 ) -> bytes:
-    """Ethernet, IPv4 (source 198.18.0.n) and TCP (PSH and ACK) around
-    ``payload``, then ``padding`` after the IP packet: each ``n`` its own
-    session."""
-    source, destination = bytes([198, 18, 0, n]), bytes([192, 0, 2, 1])
+    """Ethernet, IPv4 (source 198.18.0.n; with ``ipv6``, IPv6 from
+    2001:db8::n) and TCP (PSH and ACK) around ``payload``, then ``padding``
+    after the IP packet: each ``n`` its own session. ``offload``: an IPv4
+    total length of 0, as a capture of a segmentation offload has."""
+    if ipv6:
+        source = bytes.fromhex("20010db8") + bytes(11) + bytes([n])
+        destination = bytes.fromhex("20010db8") + bytes(11) + bytes([1])
+    else:
+        source, destination = bytes([198, 18, 0, n]), bytes([192, 0, 2, 1])
     words = (20 + len(options)) // 4
     tcp = struct.pack("!HHIIBBHHH", sport, dport, 1, 1, words << 4, 0x18, 65535, 0, 0) + options
-    pseudo = source + destination + struct.pack("!BBH", 0, 6, len(tcp) + len(payload))
+    size = len(tcp) + len(payload)
+    if ipv6:
+        pseudo = source + destination + struct.pack("!IxxxB", size, 6)
+    else:
+        pseudo = source + destination + struct.pack("!BBH", 0, 6, size)
     check = _checksum(pseudo + tcp + payload)
     tcp = tcp[:16] + struct.pack("!H", check) + tcp[18:]
-    total = 20 + len(tcp) + len(payload)
-    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, total, n, 0x4000, 64, 6, 0, source, destination)
-    ip = ip[:10] + struct.pack("!H", _checksum(ip)) + ip[12:]
-    ethernet = bytes.fromhex("020000000002020000000001") + struct.pack("!H", 0x0800)
+    if ipv6:
+        ip = struct.pack("!IHBB16s16s", 6 << 28, size, 6, 64, source, destination)
+        ethertype = 0x86DD
+    else:
+        total = 0 if offload else 20 + size
+        ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, total, n, 0x4000, 64, 6, 0, source, destination)
+        ip = ip[:10] + struct.pack("!H", _checksum(ip)) + ip[12:]
+        ethertype = 0x0800
+    ethernet = bytes.fromhex("020000000002020000000001") + struct.pack("!H", ethertype)
     return ethernet + ip + tcp + payload + padding
 
 
@@ -317,6 +339,11 @@ def test_a_tcp_parent_classifies_by_port_after_the_header_options(
         # A pure ACK padded to 60 bytes, the padding what a match would see:
         # the IP length, not the capture, ends the segment.
         (_frame(6, 50000, 4840, b"", padding=b"HE\x07\0\0\0"), None, None),
+        # No IPv4 total length (an offload capture): the capture ends it.
+        (_frame(7, 50000, 4840, b"HE\x05", offload=True), 54, 5),
+        # IPv6: its payload length ends the segment; a 40-byte header.
+        (_frame(8, 50000, 4840, b"HE\x08", _OPTIONS, b"\0\0", ipv6=True), 86, 8),
+        (_frame(9, 50000, 4840, b"", _OPTIONS, b"HE\x07", ipv6=True), None, None),
     ]
     frames = [f for f, _, _ in cases]
     assert len(frames[5]) == 60
@@ -338,7 +365,7 @@ def test_a_tcp_parent_classifies_by_port_after_the_header_options(
             if offset is None:
                 assert observed.index is None, (i, observed)
                 continue
-            # Directly above TCP: meta, Ethernet, IPv4, TCP, then the plugin.
+            # Directly above TCP: meta, Ethernet, IPv4 or IPv6, TCP, the plugin.
             assert (observed.index, observed.offset) == (4, offset), (i, observed)
             assert observed.values["kind"].number == kind, (i, observed)
             assert observed.values["magic"].number == 0x4845, (i, observed)

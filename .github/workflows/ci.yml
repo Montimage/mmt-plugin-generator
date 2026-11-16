@@ -374,6 +374,10 @@ jobs:
           echo 'int main(void) { return 0; }' \
             | "$CC_NAME" -x c -fsanitize=address,undefined - -o "$probe"
           "$probe"
+          # The skill's capture evaluation (skills/mmt-plugin-generator/scripts/
+          # pcap_eval.c) reads captures with libpcap.
+          [ -f /usr/include/pcap.h ] \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcap-dev; }
           uv sync
       - name: Compile, build and load the generated C of every corpus model
         # tests/unit/generate/test_compile.py: -fsyntax-only -Wall -Wextra
@@ -453,12 +457,14 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
-      - name: Run the mmt-plugin-author skill's evals
+      - name: Run the mmt-plugin-generator skill's evals
         # tests/unit/skill/test_sdk.py: every case of
-        # skills/mmt-plugin-author/evals/ (#27), from a spec, a capture and
+        # skills/mmt-plugin-generator/evals/ (#27), from a spec, a capture and
         # a legacy PDL model, runs the skill's validate, generate, build and
         # test loop with --json until green; each command has no stdin data
         # and no terminal, and every envelope keeps the skill's contract.
+        # Then the spec-telem plugin is evaluated on a capture that
+        # scripts/make_pcap.py writes, with scripts/pcap_eval.py.
         env:
           MMT_GOLDEN_CC: ${{ matrix.cc }}
           MMT_REQUIRE_GOLDEN_COMPILE: '1'

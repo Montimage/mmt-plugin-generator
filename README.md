@@ -27,14 +27,21 @@ describes how a release is published.
   JSON Schema.
 - [Migration guide](docs/migration.md): from the Java tool and PDL v1, and
   [what behaves differently](docs/behaviour-changes.md).
-- [Examples](examples/README.md): 16 complete plugin projects.
+- [Examples](examples/README.md): 18 complete plugin projects, the Java
+  tool's 16 examples ported, a WebSocket (RFC 6455) plugin and an OCPP
+  1.6-J plugin.
+- [Use case: WebSocket and OCPP 1.6-J](docs/use-cases/websocket-ocpp.md):
+  the workflow on two real protocols, and the two plugins against tshark
+  on public OCPP captures.
 - [CLI design](docs/design/cli.md): the command contract in full.
 - [Releasing](docs/releasing.md): the release assets, the dry run and
   how a release is published; the [changelog](CHANGELOG.md) lists what
   each release changed.
-- [mmt-plugin-author](skills/mmt-plugin-author/SKILL.md): the agent skill
+- [mmt-plugin-generator](skills/mmt-plugin-generator/SKILL.md): the agent skill
   that writes a plugin from a spec, a capture or a PDL v1 model, or updates
-  an existing plugin project.
+  an existing plugin project, evaluates it on a capture of the protocol
+  (found, or generated when there is none), and keeps everything that made
+  it in a work folder.
 - [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the
   repository's layout and checks.
 

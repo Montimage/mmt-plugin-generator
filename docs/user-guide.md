@@ -487,7 +487,7 @@ python3 -c 'import json; d = json.load(open("validate.json")); print(d["exit_cod
 (`mmt_plugin/schemas/cli/v1/`); the design is in
 [`docs/design/cli.md`](design/cli.md#6-the---json-envelope-shared-by-every-command).
 To write plugins with an AI agent, or to update an existing project, see
-the [mmt-plugin-author skill](../skills/mmt-plugin-author/SKILL.md).
+the [mmt-plugin-generator skill](../skills/mmt-plugin-generator/SKILL.md).
 
 ## Settings and where they come from
 
@@ -509,9 +509,13 @@ has the details.
 
 ## The example projects
 
-[`examples/`](../examples/README.md) holds 16 complete projects, the models
-of the Java tool's examples ported to `plugin.yaml`, each with its hooks
-and packet tests. Their generated files are committed:
+[`examples/`](../examples/README.md) holds 18 complete projects, each with
+its hooks and packet tests: the models of the Java tool's 16 examples ported
+to `plugin.yaml`, and two plugins written with `init`, WebSocket (RFC 6455)
+and OCPP 1.6-J, whose hooks follow the TCP session
+([the use case](use-cases/websocket-ocpp.md) runs them over public OCPP
+captures and compares them with tshark). Their generated files are
+committed:
 
 <!-- doc:run no-sdk -->
 ```sh

@@ -1,0 +1,76 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-authorize"
+model: "ocpp"
+summary: "A CALL, Authorize, with its idTag (a masked client frame)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 af 37 fa 21 3d 6c c8 0d 1f 06 c3 13 0f 04 c8"
+  - "11 09 15 d6 03 7c 42 8e 49 52 45 93 5b 58 15 d6"
+  - "5a 1f 5e 9e 75 5c 50 d8 1b 1f 75 ce 67 0b 05 b9"
+  - "64 7b 15 87 7c"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL syntax, Action Authorize (OCPP 1.6 section 4.1; Authorize.req, section 6.1: idTag, an IdToken, CiString20Type), compact JSON, in one masked text frame (RFC 6455 section 5.2, the key of section 5.7)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 10
+      length: 8
+      value: "31 39 32 32 33 32 30 34"
+      text: "19223204"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 21
+      length: 9
+      value: "41 75 74 68 6f 72 69 7a 65"
+      text: "Authorize"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 32
+      length: 20
+      value: "7b 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 7d"
+      text: "{\"idTag\":\"B4F62CEF\"}"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, the fourth element, as sent; unmasked (RFC 6455 section 5.3)"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: the payload has no top-level connectorId (Authorize.req, section 6.1)"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      offset: 42
+      length: 8
+      value: "42 34 46 36 32 43 45 46"
+      text: "B4F62CEF"
+      source: "OCPP 1.6 section 6.1: Authorize.req's idTag, the payload's top-level member"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 7.8: no ChargingProfile in the payload"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 53
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

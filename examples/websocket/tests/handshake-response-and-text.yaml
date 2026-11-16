@@ -1,0 +1,96 @@
+# Packet test of examples/websocket, written from RFC 6455 (not a port: the
+# corpus has no WebSocket model). Format and rules: tests/corpus/README.md
+schema: 1
+id: "websocket/handshake-response-and-text"
+model: "websocket"
+summary: "The server's answer and its first text frame in one segment"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, after an HTTP Upgrade to websocket (any port)"
+  source: "RFC 6455 section 1.7 (over TCP) and section 4 (the opening handshake)"
+bytes:
+  - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+  - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+  - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+  - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+  - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+  - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+  - "20 73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59"
+  - "47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d 0d 0a 53"
+  - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72 6f"
+  - "74 6f 63 6f 6c 3a 20 63 68 61 74 0d 0a 0d 0a 81"
+  - "05 48 65 6c 6c 6f"
+bytes_source: "RFC 6455 section 1.2 (the answer) then section 5.7 (\"A single-frame unmasked text message\"): a server may send frames right after its answer (section 4.2.2, item 5)"
+expect:
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 8
+      value: 2
+      source: "RFC 6455 section 4.2.2: the segment starts with the server's answer"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+      offset: 9
+      length: 3
+      value: 101
+      source: "RFC 6455 section 4.2.2: 101 Switching Protocols"
+    - name: "subprotocol"
+      type: "MMT_STRING_DATA"
+      offset: 151
+      length: 4
+      value: "63 68 61 74"
+      text: "chat"
+      source: "RFC 6455 section 4.2.2: Sec-WebSocket-Protocol, the one the server selected"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+      offset: 159
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2 and 5.7: after the answer's blank line, a text frame (opcode 1)"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+      offset: 159
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2: FIN set, a single-frame message"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+      offset: 160
+      length: 1
+      value: 5
+      source: "RFC 6455 section 5.7: Payload length 5"
+    - name: "payload_offset"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 161
+      value: 161
+      source: "RFC 6455 section 4.2.2 and 5.2: the frame's 2-byte header follows the answer's header block"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 161
+      length: 5
+      value: "48 65 6c 6c 6f"
+      text: "Hello"
+      source: "RFC 6455 section 5.7: \"Hello\", unmasked"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+      offset: 159
+      length: 7
+      value: 1
+      source: "RFC 6455 section 5.2: one frame after the answer"
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+      offset: 159
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: the frames after the answer start with a header"

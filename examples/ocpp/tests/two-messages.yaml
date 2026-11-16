@@ -1,0 +1,61 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/two-messages"
+model: "ocpp"
+summary: "Two text frames in one segment: a CALLRESULT, then a CALL (unmasked server frames)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 44 5b 33 2c 22 31 39 32 32 33 32 30 35 22 2c"
+  - "7b 22 74 72 61 6e 73 61 63 74 69 6f 6e 49 64 22"
+  - "3a 37 2c 22 69 64 54 61 67 49 6e 66 6f 22 3a 7b"
+  - "22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74"
+  - "65 64 22 7d 7d 5d 81 26 5b 32 2c 22 31 39 32 32"
+  - "33 32 31 30 22 2c 22 52 65 73 65 74 22 2c 7b 22"
+  - "74 79 70 65 22 3a 22 53 6f 66 74 22 7d 5d"
+bytes_source: "OCPP-J 1.6 section 4.2.2 and 4.2.1: a StartTransaction.conf (OCPP 1.6 section 6.46: transactionId, idTagInfo) as a CALLRESULT, then a CALL, Action Reset (section 6.39: type Soft), each in its own unmasked text frame (RFC 6455 section 5.2), both in the segment"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 3
+      length: 1
+      value: 3
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 3, a CALLRESULT (a response), the first element of the array: the first message"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 6
+      length: 8
+      value: "31 39 32 32 33 32 30 35"
+      text: "19223205"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent: the first message's"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.2.2 and 4.2.3: an answer carries no Action; alone (no session), no CALL to link its UniqueId to (src/ocpp_example_impl.c)"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 16
+      length: 53
+      value: "7b 22 74 72 61 6e 73 61 63 74 69 6f 6e 49 64 22 3a 37 2c 22 69 64 54 61 67 49 6e 66 6f 22 3a 7b 22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74 65 64 22 7d 7d"
+      text: "{\"transactionId\":7,\"idTagInfo\":{\"status\":\"Accepted\"}}"
+      source: "OCPP-J 1.6 section 4.2.2: the first message's Payload, as sent"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 110
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: two text frames, one message each, in the segment"

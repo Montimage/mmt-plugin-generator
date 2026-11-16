@@ -7,15 +7,64 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ## [Unreleased]
 
+### Added
+
+- `examples/websocket/`: a WebSocket (RFC 6455) plugin, `websocket_example`
+  (id 992), made with `mmt-plugin init` (#40). It claims a TCP session on
+  any port from its opening handshake and follows it across segments: the
+  frame header fields, the unmasked payload, close codes, fragmented
+  messages, the handshake's key, accept and the negotiated subprotocol.
+  Its packet tests come from RFC 6455; `tests/unit/examples/test_sdk.py`
+  also replays TCP sessions through it.
+- `examples/ocpp/`: an OCPP 1.6-J plugin, `ocpp_example` (id 993), made
+  with `mmt-plugin init` (#41). Directly above TCP, it claims a session
+  whose WebSocket handshake offers `ocpp1.6` (or, mid-capture, a text frame
+  with the OCPP-J array shape), and reports per segment the message type,
+  UniqueId, action, error code and description, payload, `connectorId`,
+  `idTag` and the charging limit and unit of a CALL; a CALLRESULT or
+  CALLERROR reports the action of the CALL it answers, matched by UniqueId
+  and direction in the session. Its packet tests come from OCPP-J 1.6 and
+  OCPP 1.6; `tests/unit/examples/test_sdk.py` replays TCP sessions through
+  it, also next to `websocket_example`.
+- `docs/use-cases/websocket-ocpp.md`: the WebSocket and OCPP 1.6-J use
+  case of the workflow (#39): the steps used, both examples against tshark
+  on the four captures of Zenodo record 14887131, the answers to its open
+  questions and the gaps found, with the counter it was measured with.
+- The agent skill gets a capture of the protocol when the user gives none
+  (found in public sources, recorded from a real implementation, or
+  generated from the spec with the new `scripts/make_pcap.py` and marked
+  synthetic), evaluates the green plugin on it with the new
+  `scripts/pcap_eval.py` (mmt-dpi without and with the plugin: recall,
+  foreign frames, attribute values and, with tshark, field agreement), and
+  keeps a work folder with the request, the inputs and their sources, the
+  capture, each loop run's envelopes and notes, the evaluation and a
+  report, to review or resume the work later.
+
 ### Changed
 
+- The agent skill `skills/mmt-plugin-author/` is renamed
+  `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
+  folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
+  envelope; 6, the capture evaluation.
 - The build and test container (and so the release image) installs
   pkg-config, and its build fails unless pkg-config finds mmt-dpi at the
   package's version, with its headers where `mmt-dpi.pc` says. CI's
   runner-based NDN job is gone: the container job, `make test-container` on
   amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
-  `skills/` and the C templates in `src/`, and a unit test fails when a
+  `docs/`, `skills/` and the C templates in `src/`, and a unit test fails when a
   tracked C source or C template lies outside the directories it scans (#42).
+
+### Fixed
+
+- `examples/websocket/` and `examples/ocpp/` (#104): their sessions get
+  mmt-dpi's long session timeout (600 s, as its HTTP's), so a connection
+  idle for more than a minute keeps its state: `websocket_example` no
+  longer loses the rest of such a stream, and `ocpp_example` no longer
+  reports a CALL retransmitted after a long silence as a new one. After a
+  lost frame header, both start again at the first segment that starts
+  with a valid header, not inside a frame. `permessage-deflate` frames
+  stay unread (a documented limit). The use case's A1 and A4 counts are
+  measured again: A1 is within 31 frames and 5 messages of tshark.
 
 ## [0.1.0] - 2026-11-15
 
@@ -94,7 +143,8 @@ plugin, from a new project to a plugin that mmt-dpi loads:
 - A test corpus (`tests/corpus/`): every example model plus a model per
   construct, with packet fixtures.
 - The `mmt-plugin-author` agent skill
-  ([`skills/mmt-plugin-author/`](skills/mmt-plugin-author/SKILL.md)), which
+  (`skills/mmt-plugin-author/`, now
+  [`skills/mmt-plugin-generator/`](skills/mmt-plugin-generator/SKILL.md)), which
   drafts and iterates a plugin from a spec, a capture or a PDL v1 model,
   with scripted evals.
 - Documentation: the [user guide](docs/user-guide.md), the

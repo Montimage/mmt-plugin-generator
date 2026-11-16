@@ -29,17 +29,28 @@ protocol model. A Python rewrite is planned in
   mmt-plugin projects, `examples/<name>/` (`plugin.yaml` from `import`,
   then edited; the committed `plugin.lock` and `generated/`;
   `src/<label>_impl.c`; `tests/*.yaml`, the corpus packets of the model
-  with the port's name and id, same bytes, values from the specs). Labels
-  are `<protocol>_example`, ids 976-991, profile 1.10.2 pinned. All 16
-  build and pass their packet tests against mmt-dpi 1.10.2;
-  `examples/README.md` lists each one's label, id, parent, model fixes and
-  hooks. After a generator change (or a version bump: `plugin.lock`
-  records it), regenerate them all, as the README says. Tests in
-  `tests/unit/examples/`: `test_examples.py` (the models, `generate
-  --check`, the packet tests against the corpus, one `through` test per
-  example with a parent) and `test_sdk.py` (`validate`, `build` and `test
-  --sanitize` on each one, then each parent's classification broken, which
-  fails only the run through it; needs `MMT_GOLDEN_SDK`).
+  with the port's name and id, same bytes, values from the specs), and
+  `examples/websocket/` (#40), a WebSocket (RFC 6455) plugin made with
+  `init`, not a port: every attribute is a hook, and its session state
+  follows the TCP session (`src/websocket_example_impl.c` says where
+  mmt-dpi 1.10.2 runs it), and `examples/ocpp/` (#41), an OCPP 1.6-J
+  plugin made the same way: directly above TCP (mmt-dpi 1.10.2 does not
+  classify a layer above `websocket_example`), it claims a session whose
+  handshake offers `ocpp1.6`, parses the WebSocket framing itself and
+  links each answer to its CALL's action. Labels are `<protocol>_example`,
+  ids 976-993, profile 1.10.2 pinned. All 18 build and pass their packet
+  tests against
+  mmt-dpi 1.10.2; `examples/README.md` lists each one's label, id,
+  parent, model fixes and hooks. After a generator change (or a version
+  bump: `plugin.lock` records it), regenerate them all, as the README
+  says. Tests in `tests/unit/examples/`: `test_examples.py` (the models,
+  `generate --check`, the ports' packet tests against the corpus, a source
+  for every value of the others', one `through` test per example with a
+  parent) and `test_sdk.py` (`validate`, `build` and `test --sanitize` on
+  each one, then each parent's classification broken, which fails only the
+  run through it, and the WebSocket and OCPP examples' TCP sessions, built
+  by `tcpsession.py`, replayed through the harness `test` built, then the
+  OCPP one's next to the WebSocket plugin; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example, and scans
   the directories of its `SCAN_DIRS` for the macros mmt-dpi 1.10.0 made
@@ -318,10 +329,20 @@ protocol model. A Python rewrite is planned in
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).
-- `skills/mmt-plugin-author/` (T4.2): the agent skill that writes a plugin
+- `skills/mmt-plugin-generator/` (T4.2; `skills/mmt-plugin-author/` before
+  it was renamed): the agent skill that writes a plugin
   from a protocol spec, a capture or a legacy PDL v1 model, or updates an
   existing project (#89; changing a protocol mmt-dpi ships is out of
-  scope). `SKILL.md` gives the entry commands (`init`, then `import` or
+  scope). Every run keeps a work folder (`references/workfolder.md`: the
+  request, the inputs and their sources, the capture, each loop run's
+  envelopes and notes, the evaluation, `REPORT.md`, `manifest.json`), gets
+  a capture of the protocol when the user gave none
+  (`references/capture.md`: found, recorded, or generated with
+  `scripts/make_pcap.py`, stdlib only) and evaluates the green plugin on it
+  (`references/evaluation.md`: `scripts/pcap_eval.py` compiles
+  `scripts/pcap_eval.c` against the SDK and libpcap, runs the capture
+  through mmt-dpi without and with the plugin, and reports recall, foreign
+  frames and, with tshark, field agreement). `SKILL.md` gives the entry commands (`init`, then `import` or
   `scaffold --from-pcap`; for an existing project, `validate --no-sdk`, then
   the loop once before any edit, which must be green) and the loop
   (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
@@ -344,8 +365,11 @@ protocol model. A Python rewrite is planned in
   Without an SDK it stops after `generate`. Tests in `tests/unit/skill/`: `test_evals.py`
   (every case without an SDK, the envelopes against the JSON Schemas, the
   tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
-  fail) and `test_sdk.py` (every case green with a real SDK; needs
-  `MMT_GOLDEN_SDK`).
+  fail), `test_scripts.py` (`make_pcap.py`'s captures sliced back by
+  `mmt_plugin.pcap`, `pcap_eval.py`'s filters, comparisons and report) and
+  `test_sdk.py` (every case green with a real SDK, and `pcap_eval.py` on the
+  spec-telem plugin with and without tshark; needs `MMT_GOLDEN_SDK` and
+  `libpcap-dev`).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
@@ -369,6 +393,13 @@ protocol model. A Python rewrite is planned in
   `MMT_BASE` and `CC` from `MMT_GOLDEN_SDK` and `MMT_GOLDEN_CC`; `install`
   blocks (`uv tool install`, into the sandbox) run only with
   `MMT_DOCS_INSTALL=1`. When you change a command, update the docs' blocks.
+- `docs/use-cases/websocket-ocpp.md` (#39): the WebSocket and OCPP 1.6-J
+  use case: the workflow steps used, both examples against tshark on the
+  four captures of Zenodo record 14887131, the answers to the issue's open
+  questions and the gaps filed (#96 to #104). `docs/use-cases/websocket-ocpp/`
+  holds the two programs it was measured with, `count.c` (libpcap and
+  `libmmt_core`) and `tshark_count.py`; neither runs in CI, and the
+  captures are never committed.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator, the NDN
   check (the `container` job: `make test-container` on amd64 and arm64,
@@ -381,11 +412,12 @@ protocol model. A Python rewrite is planned in
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
-  (`build` and `test` on every ported example), `tests/unit/init/test_sdk.py` (`init`
-  then `test`), `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml`
-  project classified by its generated parent code), `tests/unit/scaffold/test_sdk.py`
+  (`build` and `test` on every example, and the WebSocket and OCPP
+  session replays), `tests/unit/init/test_sdk.py` (`init` then `test`),
+  `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
+  by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
-  `tests/unit/skill/test_sdk.py` (the mmt-plugin-author evals, green),
+  `tests/unit/skill/test_sdk.py` (the mmt-plugin-generator evals, green),
   `tests/unit/docs/test_commands.py` (every `doc:run` block of the user
   docs, with `MMT_DOCS_INSTALL=1`; the Python 3.12 job also runs the
   install blocks),
@@ -576,13 +608,13 @@ uv run mmt-plugin -C <project> scaffold --from-pcap capture.pcap --parent udp:po
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/scaffold/test_sdk.py
 ```
 
-Run the mmt-plugin-author skill's evals: without `--sdk`, each case's loop
+Run the mmt-plugin-generator skill's evals: without `--sdk`, each case's loop
 stops after `generate`; with it, every case must go green (`<dir>` as above).
 It prints one `PASS:`/`FAIL:` line per case and exits 1 on failure:
 
 ```
-uv run python skills/mmt-plugin-author/evals/run_evals.py
-uv run python skills/mmt-plugin-author/evals/run_evals.py --sdk <dir>/opt/mmt --cc gcc
+uv run python skills/mmt-plugin-generator/evals/run_evals.py
+uv run python skills/mmt-plugin-generator/evals/run_evals.py --sdk <dir>/opt/mmt --cc gcc
 MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/skill/test_sdk.py
 ```
 
@@ -627,12 +659,12 @@ make release-image
 
 ## Writing a plugin as an agent
 
-Follow `skills/mmt-plugin-author/SKILL.md`. In short:
+Follow `skills/mmt-plugin-generator/SKILL.md`. In short:
 
 - Pass `--json` to every `mmt-plugin` command and decide from the envelope
   (`schema_version` 1): `exit_code` and its class first, then `error.code`,
   then each error of `diagnostics` at its `location`. Never parse the
-  messages. `skills/mmt-plugin-author/references/contract.md` has the action
+  messages. `skills/mmt-plugin-generator/references/contract.md` has the action
   for every exit class and every code.
 - Never pass `-` (stdin); no command prompts. Never `--system`, `sudo` or
   `/opt/mmt`; use a private SDK prefix with `--sdk`.
@@ -645,6 +677,9 @@ Follow `skills/mmt-plugin-author/SKILL.md`. In short:
   (`-o <project>/plugin.imported.yaml`), never over it with `--force`.
 - Never delete a packet test written from the spec or by `scaffold`, or
   change its expected values to what the plugin outputs.
+- Keep a work folder with everything that made the plugin, get a capture
+  (found, recorded, or generated and marked synthetic) and evaluate the
+  green plugin on it with `scripts/pcap_eval.py`.
 - To update an existing project, check it (`validate --no-sdk`) and run the
   loop once before any edit; stop and report if it is not green. Keep its
   label, id, `sdk.profile` and `parents:` unless the request changes them,

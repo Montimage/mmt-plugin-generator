@@ -404,7 +404,52 @@ def _websocket_replay() -> tuple[list[bytes], dict[int, dict[str, int | bytes | 
         want[c.client(_masked(b"\x81\x85", _HELLO))] = _frame(
             opcode=1, payload=_HELLO, offset=6, masked=True, message=1
         )
+
+    # The capture loses a frame's header and its first payload bytes: the
+    # segment after the gap starts inside the frame, and reports no frame;
+    # the parse starts again at the next segment that starts with a valid
+    # header (#104).
+    g = Session(frames, 7, 49157, 8080)
+    want[g.client(_WS_REQUEST)] = dict(_WS_REQUESTED)
+    want[g.server(_WS_ANSWER)] = {
+        "handshake": 2,
+        "status_code": 101,
+        "accept": b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+        "subprotocol": b"chat",
+    }
+    want[g.server(b"\x81\x05" + _HELLO)] = _frame(opcode=1, payload=_HELLO, message=1)
+    g.skip_server(5)  # b"\x81\x0bHel" of b"\x81\x0bHello world"
+    want[g.server(b"lo world")] = {"handshake": 0, "subprotocol": b"chat"}
+    want[g.server(b"\x81\x05" + _HELLO)] = _frame(opcode=1, payload=_HELLO, message=1)
+
+    # A session idle for longer than mmt-dpi's default session timeout (60
+    # s; the harness's packets are 1 s apart): still the same session, its
+    # state kept (#104).
+    q = Session(frames, 8, 49158, 8080)
+    want[q.client(_WS_REQUEST)] = dict(_WS_REQUESTED)
+    want[q.server(_WS_ANSWER)] = {
+        "handshake": 2,
+        "status_code": 101,
+        "accept": b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+        "subprotocol": b"chat",
+    }
+    body = bytes(range(200))
+    want[q.server(b"\x82\x7e\x00\xc8" + body[:100])] = _frame(
+        opcode=2, payload=body[:100], length=200, offset=4, message=2
+    )
+    _idle(frames, want, 70)
+    want[q.server(body[100:] + b"\x81\x05" + _HELLO)] = _frame(
+        opcode=1, payload=_HELLO, offset=102, carried=100, message=1
+    )
     return frames, want
+
+
+def _idle(frames: list[bytes], want: dict[int, Any], seconds: int) -> None:
+    """``seconds`` packets of other TCP traffic (the harness's packets are
+    1 s apart), none of them the plugin's."""
+    other = Session(frames, 99, 40000, 7)
+    for _ in range(seconds):
+        want[other.client()] = None
 
 
 def _check_replay(
@@ -764,6 +809,35 @@ def _ocpp_replay() -> tuple[list[bytes], dict[int, _Want | None]]:
         want[c.server(answer[split:] + frame)] = (
             _called(b"p1", b"Heartbeat") if chosen == b"ocpp1.6" else {}
         )
+
+    # A CALL retransmitted after longer than mmt-dpi's default session
+    # timeout (60 s; the harness's packets are 1 s apart): the same session,
+    # so a retransmission, not a new message; its answer is still linked
+    # (#104).
+    t = Session(frames, 22, 49222, 9000)
+    want[t.client(_OCPP_REQUEST)] = {}
+    want[t.server(_OCPP_ANSWER)] = {}
+    first = t.server_seq
+    call = _text(_call(b"r1", b"RemoteStartTransaction", remote), masked=False)
+    want[t.server(call)] = _called(
+        b"r1", b"RemoteStartTransaction", remote, connector_id=1, id_tag=b"B4F62CEF"
+    )
+    _idle(frames, want, 70)
+    want[t.server(call, seq=first)] = {}
+    want[t.client(_text(_result(b"r1", _ACCEPTED), masked=True))] = _answered(
+        3, b"r1", b"RemoteStartTransaction", _ACCEPTED
+    )
+
+    # The capture loses a CALL's frame header: the segment after the gap
+    # starts inside the frame and reports nothing; the next frame is read
+    # (#104).
+    g = Session(frames, 23, 49223, 9000)
+    want[g.client(_OCPP_REQUEST)] = {}
+    want[g.server(_OCPP_ANSWER)] = {}
+    lost = _text(_call(b"l1", b"Heartbeat"), masked=False)
+    g.skip_server(6)  # the 2-byte header and '[2,"'
+    want[g.server(lost[6:])] = {}
+    want[g.server(_text(_call(b"l2", b"Heartbeat"), masked=False))] = _called(b"l2", b"Heartbeat")
     return frames, want
 
 

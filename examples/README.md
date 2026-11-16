@@ -180,10 +180,20 @@ an earlier segment), which no `plugin.yaml` expression can read.
   still owes, a split header and the message in progress. A retransmitted
   segment reports nothing (the new bytes after an overlap are parsed);
   after lost bytes the parse stays in step when they were the current
-  frame's payload, and restarts at the segment's first byte otherwise. The
-  segment ends where the IP length says, so Ethernet padding is not
-  parsed. Without a session (the harness's packets behind Ethernet), a
-  segment is parsed alone.
+  frame's payload; otherwise (a header was lost) it starts again at the
+  first segment that starts with a whole valid frame header (RSV2 and RSV3
+  0, a defined opcode, a control frame with FIN set and at most 125
+  bytes), and the segments before it, which start inside a frame, report
+  no frame (#104). The segment ends where the IP length says, so Ethernet
+  padding is not parsed. Without a session (the harness's packets behind
+  Ethernet), a segment is parsed alone.
+- **Session timeout.** The state lives as long as mmt-dpi's session, which
+  ends after a silence: 60 s by default, the long timeout (600 s, as
+  mmt-dpi's HTTP gives an HTTP session) for the sessions this plugin
+  claims (`set_session_timeout_delay()`). A WebSocket connection is often
+  idle for longer than a minute; after mmt-dpi ends a session, the next
+  segment opens a new one, mid-stream, which this plugin does not claim
+  (no handshake) (#104).
 - **Where it runs in mmt-dpi 1.10.2** (checked empirically, and kept by the
   session replay of `tests/unit/examples/test_sdk.py`): TCP stops a packet
   at a layer a plugin classified (above, "Through the parent"), so the
@@ -200,16 +210,16 @@ The replay builds whole TCP sessions (`tcpsession.py`: handshake, sequence
 numbers, checksums, Ethernet padding) on port 8080 and checks every
 attribute of every packet: the handshake, masked and unmasked frames, two
 frames in a segment, a fragmented message, a 16-bit frame over two
-segments, a split header, a retransmission, lost payload bytes, close
-frames, more than 40 packets, a refused upgrade, plain HTTP, a capture that
-starts at the answer, and an answer's header block over two segments; with
+segments, a split header, a retransmission, lost payload bytes, a lost
+frame header, close frames, more than 40 packets, a refused upgrade, plain
+HTTP, a capture that starts at the answer, an answer's header block over
+two segments, and a session idle for 70 s; with
 and without the sanitizers, then corrupted and cut short.
 
 Not covered, or open:
 
-- Out-of-order segments are not reordered: a segment after a gap restarts
-  the parse unless the gap was payload, and the late one is then a
-  retransmission. A header field line split across segments is lost; only
+- Out-of-order segments are not reordered: after a gap the parse goes on
+  as after lost bytes, and the late segment is then a retransmission. A header field line split across segments is lost; only
   the first segment of the request is read.
 - Extensions (RFC 6455 section 9, `permessage-deflate`, RFC 7692): `rsv1`
   is reported, the payload is not inflated.
@@ -230,8 +240,8 @@ Not covered, or open:
   classified, mmt-dpi 1.10.2 calls only its owner. Handing an Upgrade
   session from HTTP to a plugin needs an mmt-dpi change.
 - Checking it against real captures (the Zenodo datasets of #40) is a
-  manual run, not CI. The run of #39 (counts against tshark, and the
-  frames it misses after lost header bytes, #104) is in
+  manual run, not CI. The run of #39 (counts against tshark, measured
+  again after #104) is in
   [`docs/use-cases/websocket-ocpp.md`](../docs/use-cases/websocket-ocpp.md).
 
 ## OCPP 1.6-J
@@ -300,8 +310,11 @@ frame header, the unmasking, the TCP state), trimmed.
   answers have no action; the session replay checks the links.
 - **State and where it runs** are `websocket_example`'s (above): the TCP
   sequence numbers per direction, a frame over segments, a split header,
-  the segment's end at the IP length, and mmt-dpi 1.10.2 calling the
-  classification function, then after 40 packets the session data hooks.
+  the parse starting again after a lost header, the segment's end at the
+  IP length, mmt-dpi's long session timeout (so a CALL retransmitted after
+  minutes of silence is still a retransmission, #104), and mmt-dpi 1.10.2
+  calling the classification function, then after 40 packets the session
+  data hooks.
 
 `tests/unit/examples/test_sdk.py` replays TCP sessions through it (on
 port 9000) and checks every attribute of every packet: CALL then
@@ -313,9 +326,10 @@ UniqueId, UniqueIds of 36 and 40 bytes, a frame over two segments, a
 ping, more than 40 packets, more than 16 CALLs waiting, an answer
 selecting `ocpp2.0.1`, a refused upgrade, a chat WebSocket session, an
 `OCPP1.6` offer and plain HTTP (none of them claimed), a capture that
-starts after the handshake or at the answer, and an answer's header block
-over two segments; with and without the sanitizers, then corrupted and
-cut short. A second test loads `mmtp_ocpp_example.so` and
+starts after the handshake or at the answer, an answer's header block
+over two segments, a CALL retransmitted after 70 s of silence and a lost
+frame header; with and without the sanitizers, then corrupted and cut
+short. A second test loads `mmtp_ocpp_example.so` and
 `mmtp_websocket_example.so` in one plugin directory: the `ocpp1.6`
 session is `OCPP_EXAMPLE`, the chat session `WEBSOCKET_EXAMPLE`, both
 directly above TCP.
@@ -336,7 +350,8 @@ Not covered, or open:
   in the segment where that frame's header ends: continuation frames and
   the bytes of a frame in later segments are not reassembled, so a field
   after them is not reported. Compressed frames (`permessage-deflate`,
-  RSV1) are not read.
+  RSV1) are not read: inflating them needs a DEFLATE decoder in the
+  plugin, which links only `libmmt_core` (#104 kept this limit).
 - Checking per-action CALL counts and links against real captures (the
   Zenodo record 14887131 of #41, against tshark) is a manual run, not CI:
   the run of #39 is in

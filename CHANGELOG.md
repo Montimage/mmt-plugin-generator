@@ -87,7 +87,11 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 - PDL v1 (#48): an error inside a quoted value whose closing quote is
   missing is reported once. `offset="BAD scope="packet"` gave a second,
   spurious `model.syntax.unexpected-token` at `packet`; the parse now stops
-  at the first error (`docs/behaviour-changes.md`, row 40).
+  at the first error (`docs/behaviour-changes.md`, row 40). Branch
+  coverage, #48's optional N7, was decided against: it needs a new dev
+  dependency, a `uv.lock` change and CI changes, while the parser's
+  constructs are already enumerated by `@covers` and each syntax code has a
+  test. It can be added later, project-wide, as its own change.
 
 ## [0.1.0] - 2026-11-15
 

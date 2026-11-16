@@ -590,6 +590,19 @@ def test_an_equals_sign_inside_a_closed_value_is_recovered(value: str) -> None:
     ]
 
 
+def test_an_unclosed_later_value_after_an_error_is_not_reported() -> None:
+    # The cost of deciding by the quotes left on the line: a closed first
+    # value followed by an unclosed one leaves an even number, read as the
+    # first value's closing quote missing, so the parse stops at `BAD` and
+    # the `model.syntax.unterminated-string` of `scope` is not reported.
+    text = build(attr(ATTR + ' offset="BAD" scope="packet') + attr(ATTR + ' offset="B"'))
+    (d,) = errors_of(text)
+    assert d.code == "model.syntax.invalid-expression"
+    at = Case(text, "", "BAD", "")
+    assert d.location is not None
+    assert (d.location.line, d.location.column) == at.position()
+
+
 def test_diagnostics_carry_related_locations() -> None:
     (d,) = errors_of(build(properties='label = "p" id = "1" label = "q"'))
     assert [(r.message, r.location and r.location.line) for r in d.related] == [

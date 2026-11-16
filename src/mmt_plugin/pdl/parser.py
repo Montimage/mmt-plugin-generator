@@ -337,10 +337,10 @@ class _Parser:
 
         An error inside the value is recorded and parsing goes on after the
         value's closing quote, when that quote is on the same line; a missing
-        closing quote stops the parse. The quotes left on the line tell which:
-        an even number means the next one opens another value, so
-        ``offset="BAD scope="p"`` gives one diagnostic, at ``BAD``, not a
-        second one at ``p`` (#48).
+        closing quote stops the parse. The quotes left on the line decide
+        which (``skip_to_closing_quote``): with an even number the closing
+        quote is taken to be missing, so ``offset="BAD scope="p"`` gives one
+        diagnostic, at ``BAD``, not a second one at ``p`` (#48).
         """
         opening = self.expect(
             '"',
@@ -376,9 +376,14 @@ class _Parser:
     def skip_to_closing_quote(self, opening: Token) -> bool:
         """Move past the next ``"`` if it closes the value ``opening`` opened.
 
-        It does when it is on ``opening``'s line and an odd number of quotes
-        is left on that line: with an even number, the closing quote is
-        missing and the next one opens another value (``scope="p"``).
+        It is taken to when it is on ``opening``'s line and an odd number of
+        quotes is left on that line. An even number is read as the closing
+        quote missing, the next one opening another value (``scope="p"``),
+        and the parse stops at the first error. The count cannot tell that
+        from a closed value followed by an unclosed one (``offset="BAD"
+        scope="p``), which also stops there and loses the later
+        ``model.syntax.unterminated-string``: only the number of diagnostics
+        differs, never what is accepted.
         """
         quotes = []
         for ahead in range(len(self.tokens) - self.i):

@@ -337,9 +337,10 @@ class _Parser:
 
         An error inside the value is recorded and parsing goes on after the
         value's closing quote, when that quote is on the same line; a missing
-        closing quote stops the parse. A ``= "`` before the next quote is the
-        next key's, so the closing quote is missing: ``offset="BAD scope="p"``
-        gives one diagnostic, at ``BAD``, not a second one at ``p`` (#48).
+        closing quote stops the parse. The quotes left on the line tell which:
+        an even number means the next one opens another value, so
+        ``offset="BAD scope="p"`` gives one diagnostic, at ``BAD``, not a
+        second one at ``p`` (#48).
         """
         opening = self.expect(
             '"',
@@ -373,21 +374,23 @@ class _Parser:
         )
 
     def skip_to_closing_quote(self, opening: Token) -> bool:
-        """Move past the next ``"`` if it is on ``opening``'s line.
+        """Move past the next ``"`` if it closes the value ``opening`` opened.
 
-        Not when a ``=`` directly before a ``"`` comes first: that quote opens
-        the next key's value, and this value's closing quote is missing.
+        It does when it is on ``opening``'s line and an odd number of quotes
+        is left on that line: with an even number, the closing quote is
+        missing and the next one opens another value (``scope="p"``).
         """
+        quotes = []
         for ahead in range(len(self.tokens) - self.i):
             token = self.peek(ahead)
-            if token.span.line != opening.span.line:
-                return False
+            if token.span.line != opening.span.line or token.kind is Kind.EOF:
+                break
             if token.is_punct('"'):
-                self.i += ahead + 1
-                return True
-            if token.is_punct("=") and self.peek(ahead + 1).is_punct('"'):
-                return False
-        return False
+                quotes.append(ahead)
+        if len(quotes) % 2 == 0:
+            return False
+        self.i += quotes[0] + 1
+        return True
 
     def quoted_word(self, what: str, hint: str) -> Token:
         token = self.peek()

@@ -104,7 +104,7 @@ row and that every test named here exists.
 | 37 | Text after the closing `}` is an error (`model.syntax.trailing-input`); Java ignored it. | – (inventory, section 1) | `tests/unit/pdl/test_errors.py::test_syntax_error` |
 | 38 | Keywords are contextual, so a field or alias may be named `id`, `len`, `offset`, `val`, ... (the `ip` model's `uint16_t id;`). | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_keywords_are_contextual` |
 | 39 | `//` and `/* */` comments are allowed. | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_comments_are_whitespace` |
-| 40 | An error inside a quoted value whose closing quote is missing is reported once: the recovery does not resume at the next key's `= "`. Java resumed there and reported a second error (`offset="BAD scope="packet"` gave one at `packet` too). | – (#48) | `tests/unit/pdl/test_errors.py::test_an_error_before_a_missing_closing_quote_is_reported_once`, `tests/unit/pdl/test_errors.py::test_a_stray_equals_sign_inside_a_closed_value_is_recovered` |
+| 40 | An error inside a quoted value whose closing quote is missing is reported once: the recovery resumes after the next quote only when an odd number of quotes is left on the line. Java resumed there and reported a second error (`offset="BAD scope="packet"` gave one at `packet` too). | – (#48) | `tests/unit/pdl/test_errors.py::test_an_error_before_a_missing_closing_quote_is_reported_once`, `tests/unit/pdl/test_errors.py::test_an_equals_sign_inside_a_closed_value_is_recovered` |
 
 ### Command line
 

@@ -579,9 +579,10 @@ def test_an_error_before_a_missing_closing_quote_is_reported_once() -> None:
     assert (d.location.line, d.location.column) == at.position()
 
 
-def test_a_stray_equals_sign_inside_a_closed_value_is_recovered() -> None:
-    # Only `= "` (the next key's value) means the closing quote is missing.
-    text = build(attr(ATTR + ' offset="BAD = 2"') + attr(ATTR + ' offset="B"'))
+@pytest.mark.parametrize("value", ['"BAD = 2"', '"BAD =" scope="packet"'])
+def test_an_equals_sign_inside_a_closed_value_is_recovered(value: str) -> None:
+    # The quotes left on the line, not an `=`, tell whether the value is closed.
+    text = build(attr(ATTR + f" offset={value}") + attr(ATTR + ' offset="B"'))
     codes = [(d.code, d.location and d.location.line) for d in errors_of(text)]
     assert codes == [
         ("model.syntax.invalid-expression", 7),

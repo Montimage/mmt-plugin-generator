@@ -204,6 +204,84 @@ def test_a_classified_parent_must_be_in_the_profile_and_its_values_must_fit() ->
     ]
 
 
+def test_a_tcp_parent_classified_by_port() -> None:
+    text = (
+        HEAD + "parents:\n  - protocol: TCP\n    classify:\n"
+        "      port: 4840\n      sport: 0x10\n"
+        "      match:\n        - {offset: 1, length: 2, value: 0x454c}\n"
+        "attributes:\n  - name: a\n    type: MMT_U8_DATA\n    offset: 0\n"
+    )
+    model = _analyse(text)
+    (tcp,) = model.parents
+    assert (tcp.name, tcp.macro, tcp.offset) == ("TCP", "PROTO_TCP", None)
+    assert tcp.ports == (("port", 4840), ("sport", 16))
+    assert tcp.match is not None and [(m.offset, m.length, m.value) for m in tcp.match] == [
+        (1, 2, 0x454C)
+    ]
+    source = generate(model, profile()).file("p_mmt_plugin.c").text
+    function = source.split("static mmt_classify_verdict_t p_classify_after_tcp(", 2)[2]
+    function = function.split("\n}\n", 1)[0]
+    # The port is either one; every port must hold.
+    assert (
+        "if ((((uint64_t) p[0] << 8) | (uint64_t) p[1]) != 0x12e8u"
+        " && (((uint64_t) p[2] << 8) | (uint64_t) p[3]) != 0x12e8u) {"
+    ) in function
+    assert "if ((((uint64_t) p[0] << 8) | (uint64_t) p[1]) != 0x10u) {" in function
+    # The payload starts after the header's data offset, which the
+    # protocol's offset is; the segment ends with the IP packet.
+    assert "header = (int64_t) (p[12] >> 4) * 4;" in function
+    assert "if (header < 20 || header > caplen - start) {" in function
+    assert "length = (int64_t) ((unsigned) q[2] << 8 | q[3]);" in function
+    assert "if (end - start <= header || end - start - header < 3) {" in function
+    assert function.index("p += header;") < function.index(
+        "(uint64_t) p[1] << 8) | (uint64_t) p[2]"
+    )
+    assert "next.offset = (uint16_t) header;" in function
+    assert (
+        "register_classification_function_with_parent_protocol(354 /* PROTO_TCP */,"
+        " p_classify_after_tcp, 5)"
+    ) in source
+    assert dumps(model).endswith(
+        "parents:\n  - protocol: TCP\n    classify:\n      port: 4840\n      sport: 0x10\n"
+        "      match:\n        - offset: 1\n          length: 2\n          value: 0x454c\n"
+        + dumps(model).split("      value: 0x454c\n", 1)[1]
+    )
+    assert dumps(_analyse(dumps(model))) == dumps(model)
+
+
+def test_a_tcp_port_without_payload_matches() -> None:
+    text = (
+        HEAD + "parents:\n  - protocol: tcp\n    classify:\n      dport: 102\n"
+        "attributes:\n  - name: a\n    type: MMT_U8_DATA\n    offset: 0\n"
+    )
+    model = _analyse(text)
+    (tcp,) = model.parents
+    assert (tcp.ports, tcp.match) == ((("dport", 102),), ())
+    source = generate(model, profile()).file("p_mmt_plugin.c").text
+    assert "if ((((uint64_t) p[2] << 8) | (uint64_t) p[3]) != 0x66u) {" in source
+    assert "if (end - start <= header) {" in source
+    assert "p += header;" not in source
+    assert "    classify:\n      dport: 102\n" in dumps(model)
+    assert "match" not in dumps(model)
+
+
+@pytest.mark.parametrize("key", ["port", "sport", "dport"])
+def test_a_port_classifies_only_under_tcp(key: str) -> None:
+    text = (
+        HEAD + f"parents:\n  - protocol: udp\n    classify:\n      {key}: 53\n"
+        "  - protocol: nope\n    classify:\n      port: 1\n"
+    )
+    model = load(text, filename="plugin.yaml").model
+    analysed, diagnostics = analyse(model, profile=profile())
+    assert analysed is None
+    got = [
+        (d.code, d.location.line or 0, d.location.column or 0) for d in diagnostics if d.location
+    ]
+    # At the port's value; an unknown parent is that error only.
+    assert got == [("model.classify-port", 9, 9 + len(key)), ("model.unknown-parent", 10, 15)]
+    assert diagnostics[0].hint is not None and "protocol: tcp" in diagnostics[0].hint
+
+
 def test_a_parent_offset_must_fit_the_sdk_field() -> None:
     text = (
         HEAD + "parents:\n  - protocol: udp\n    classify:\n"

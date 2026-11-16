@@ -544,8 +544,8 @@ class Offsets(str, Enum):
 @dataclass(frozen=True)
 class ParentMatch:
     """One test of a parent classification: the ``length``-byte unsigned
-    integer at ``offset`` from the start of the parent, in network byte
-    order, equals ``value``."""
+    integer at ``offset`` from the start of the parent (of the TCP payload
+    in a classification by port), in network byte order, equals ``value``."""
 
     offset: IntLiteral
     length: IntLiteral
@@ -556,11 +556,24 @@ class ParentMatch:
 @dataclass(frozen=True)
 class ParentClassify:
     """The generated classification of a parent: every ``match`` holds, and
-    the protocol starts ``offset`` bytes after the start of the parent."""
+    the protocol starts ``offset`` bytes after the start of the parent.
+
+    A classification by TCP port (``port``, ``sport``, ``dport``; at least
+    one) has no ``offset``: the protocol starts with the TCP payload, and
+    ``match`` (possibly empty) tests the payload's bytes."""
 
     match: tuple[ParentMatch, ...]
-    offset: IntLiteral
+    offset: IntLiteral | None
     span: Span
+    port: IntLiteral | None = None
+    sport: IntLiteral | None = None
+    dport: IntLiteral | None = None
+
+    @property
+    def ports(self) -> tuple[tuple[str, IntLiteral], ...]:
+        """The ports given, as (key, value), in the order port, sport, dport."""
+        given = (("port", self.port), ("sport", self.sport), ("dport", self.dport))
+        return tuple((k, v) for k, v in given if v is not None)
 
 
 @dataclass(frozen=True)

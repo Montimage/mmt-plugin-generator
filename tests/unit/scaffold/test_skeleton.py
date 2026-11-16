@@ -124,7 +124,8 @@ def _generates(text: str) -> None:
         ),
         ("ethernet:ethertype=0x88b5", ["- {offset: 12, length: 2, value: 0x88b5}"]),
         ("ethernet", None),
-        ("tcp:dport=102", None),
+        ("tcp:dport=102", []),
+        ("tcp", None),
         ("ip:proto=17", None),
         ("ipv6", None),
     ],
@@ -143,6 +144,9 @@ def test_the_proposal_generates(selector: str, classify: list[str] | None) -> No
     else:
         assert got.classify is not None
         assert [m for m in lines if m.startswith("- {offset")] == classify
+        if parent.proto == "tcp":
+            assert [(k, v.value) for k, v in got.classify.ports] == list(parent.keys)
+            assert got.classify.offset is None
     names = [a.alias.text for a in model.attributes.elements if isinstance(a, Attribute)]
     assert names == [
         "field_0",

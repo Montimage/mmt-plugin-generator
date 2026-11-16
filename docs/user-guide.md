@@ -152,9 +152,11 @@ nothing; it never replaces a file with other content unless you pass
 written for, and declares the parent: `--parent udp:dport=4433` became a
 `classify` that attaches the protocol to UDP destination port 4433 in
 generated code. A parent that one match of its header identifies (an
-EtherType, a UDP source or destination port) gets one; any other
-(`tcp:port=102`, or `udp:port=4433`, which matches either port) is listed
-without `classify`, for your code to attach:
+EtherType, a UDP source or destination port) gets one, and so do TCP ports
+(`tcp:port=102` is a `classify` by port, the protocol starting after the
+TCP header and its options); any other (`udp:port=4433`, which matches
+either port, `ip:proto=17`) is listed without `classify`, for your code to
+attach:
 
 ```yaml
 # The DEMO protocol plugin's model, created by mmt-plugin init. Every
@@ -197,8 +199,8 @@ What goes in a model:
   an `offset` is extracted by a hook;
 - `classify_next`: which protocol comes next, and where;
 - `parents`: what this protocol runs on. A parent with `classify` (a fixed
-  header such as Ethernet or UDP) is attached by the generated code; one
-  without is attached by your code;
+  header such as Ethernet or UDP, or TCP ports) is attached by the
+  generated code; one without is attached by your code;
 - `sdk.profile`: the profile to generate for.
 
 [`plugin-yaml.md`](plugin-yaml.md) explains the format with a complete

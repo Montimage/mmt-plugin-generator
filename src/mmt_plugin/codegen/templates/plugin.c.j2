@@ -375,6 +375,79 @@ static {{ classify.declaration }}
 }
 {% endif %}
 {% for p in parents %}
+{% if p.tcp %}
+
+/*
+{% for line in p.summary %}
+ * {{ line }}
+{% endfor %}
+ */
+static {{ p.declaration }}
+{
+    {{ sdk.classified_proto_t }} next;
+    int64_t caplen = (int64_t) {{ p.packet }}->{{ sdk.ipacket_header }}->{{ sdk.caplen }};
+    int64_t start = (int64_t) {{ sdk.offset_at }}({{ p.packet }}, {{ p.index }});
+    int64_t end = caplen;
+    int64_t header;
+    const uint8_t *p;
+
+    /* The TCP header: the ports, and at byte 12 its length in 32-bit words. */
+    if (start < 0 || start > caplen - 20) {
+        return {{ sdk.skip }};
+    }
+    p = &{{ p.packet }}->{{ sdk.ipacket_data }}[start];
+    header = (int64_t) (p[12] >> 4) * 4;
+    if (header < 20 || header > caplen - start) {
+        return {{ sdk.skip }};
+    }
+{% for t in p.ports %}
+    if ({{ t }}) {
+        return {{ sdk.skip }};
+    }
+{% endfor %}
+    /* The segment ends with its IP packet, not with the capture: a short
+       frame has padding after it. */
+    if ({{ p.index }} > 0) {
+        int64_t ip = (int64_t) {{ sdk.offset_at }}({{ p.packet }}, {{ p.index }} - 1);
+        int64_t length = 0;
+
+        if (ip >= 0 && ip < start && ip <= caplen - 6) {
+            const uint8_t *q = &{{ p.packet }}->{{ sdk.ipacket_data }}[ip];
+
+            if ((q[0] >> 4) == 4) {
+                /* The IPv4 total length; 0 in a capture of a segmentation offload. */
+                length = (int64_t) ((unsigned) q[2] << 8 | q[3]);
+            } else if ((q[0] >> 4) == 6 && (q[4] != 0 || q[5] != 0)) {
+                /* The IPv6 header, then its payload length. */
+                length = 40 + (int64_t) ((unsigned) q[4] << 8 | q[5]);
+            }
+        }
+        if (length > 0 && ip + length < end) {
+            end = ip + length;
+        }
+    }
+    /* A segment without a payload (a SYN, an ACK) is not classified. */
+    if (end - start <= header{% if p.end %} || end - start - header < {{ p.end }}{% endif %}) {
+        return {{ sdk.skip }};
+    }
+{% if p.tests %}
+    p += header;
+{% for t in p.tests %}
+    if ({{ t }}) {
+        return {{ sdk.skip }};
+    }
+{% endfor %}
+{% endif %}
+    memset(&next, 0, sizeof(next));
+    next.{{ sdk.next_proto }} = {{ proto_macro }};
+    next.{{ sdk.next_offset }} = ({{ p.offset_type }}) header;
+    next.{{ sdk.next_status }} = {{ sdk.classified }};
+    if (!{{ sdk.set_classified_proto }}({{ p.packet }}, {{ p.index }} + 1, next)) {
+        return {{ sdk.skip }};
+    }
+    return {{ sdk.matched }};
+}
+{% else %}
 
 /*
  * Classifies {{ name }} after its parent {{ p.parent }} (plugin.yaml): when
@@ -406,6 +479,7 @@ static {{ p.declaration }}
     }
     return {{ sdk.matched }};
 }
+{% endif %}
 {% endfor %}
 {% if attributes %}
 

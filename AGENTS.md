@@ -252,8 +252,8 @@ protocol model. A Python rewrite is planned in
   header, the profile pinned in `sdk.profile`, `--parent` as its `parents`
   entry, #65), the scaffold `src/<label>_impl.c`, the packet test
   `tests/<label>-basic.yaml` and a `.gitignore` with `build/`. A parent the
-  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`)
-  gets a `classify`, the one `scaffold` proposes
+  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`,
+  `tcp:` with `port=`, `sport=` or `dport=`, #100) gets a `classify`, the one `scaffold` proposes
   (`pcap/skeleton.py:parent_yaml`), and the packet test also runs
   `through` it; any other is left to `<label>_hook_register_parents`.
   `--name` is only the label upper-cased (`plugin.yaml` has no other). `--id` defaults to the lowest id in 950-999
@@ -283,11 +283,17 @@ protocol model. A Python rewrite is planned in
   as `plugin.yaml`. Every command reads both formats; `sdk.profile` pins the
   profile below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE`. A parent with
   `classify` gets a generated classification function that the init
-  registers before calling `<label>_hook_register_parents`. Tests in
+  registers before calling `<label>_hook_register_parents`: matches at
+  fixed offsets of the parent (`classify_fixed`), or, under `tcp`, ports
+  (`port`, `sport`, `dport`) and matches on the payload, which starts after
+  the TCP header's data offset (`classify_tcp`, #100; a port under another
+  parent is `model.classify-port`). Tests in
   `tests/unit/pluginyaml/`: `test_nodes.py`, `test_schema.py`, `test_load.py`,
   `test_roundtrip.py` (every corpus model round-trips in both offset modes
   and generates the same C) and `test_sdk.py` (a packet test that passes
-  only through the generated parent classification; needs `MMT_GOLDEN_SDK`).
+  only through the generated parent classification, and frames with TCP
+  options, other ports and padding through the TCP one; needs
+  `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/import_pdl.py` (T3.2): `mmt-plugin import PDL`
   (`-` is stdin) converts a PDL v1 model to `plugin.yaml`
   (`pluginyaml/convert.py`): `-o FILE` (default `<project>/plugin.yaml`; `-o -`

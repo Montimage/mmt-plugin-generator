@@ -67,8 +67,11 @@ attributes:
   `src/<label>_impl.c`. `build` fails with `build.missing-hook` until you
   define it; its hint gives the declaration.
 - **Parents.** Use `classify` when the parent's header says it is this
-  protocol (a UDP or TCP port, an EtherType): the match reads the parent's
-  header, in network byte order. Without `classify`, attach the protocol
+  protocol (a UDP port, an EtherType): the match reads the parent's
+  header, in network byte order. Under `tcp`, `classify` names the port
+  instead (`port`, either one, `sport` or `dport`), with optional `match`es
+  whose offsets count from the start of the payload; the generated code
+  reads the TCP header's length. Without `classify`, attach the protocol
   yourself in `<label>_hook_register_parents`. `validate` checks that the
   parent exists.
 - **Next protocol**: `classify_next` with `protocol.encapsulation: true`.

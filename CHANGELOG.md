@@ -96,7 +96,8 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   macro of `mmt_core.h` outside its comments, so a `#define VERSION`
   inside a `/* */` or `//` comment before the real one is no longer taken
   for it. The header check strips comments the same way, leaving string
-  literals alone (`"/*"` starts no comment).
+  literals alone (`"/*"` starts no comment), after joining continued
+  lines, so a `//` comment ending in a backslash also hides the next line.
 - SDK profiles (#50, F7): the loader rejects a `$comment` that is not a
   string, and one below the top level, as the schema does, and the schema
   rejects an empty `c_std`, as the loader does. A test runs both on about
@@ -108,7 +109,8 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   one-line numbers: each must be an id, in `not_ids`, the `_ALIAS` of a
   listed id or a `PROTO_CLASS_*` macro. mmt-dpi 1.10.2's headers pass
   unchanged. `tests/check_headercheck_mutations.sh` also changes
-  `PROTO_MAX_IDENTIFIER`, `PROTO_META` and adds such definitions, and must
+  `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`, `PROTO_META` and adds such
+  definitions, and must
   see each fail.
 - SDK profile values (#50, F3): already done on `dev` before this change
   (#49, #51): the profile records, and the header check asserts, the value

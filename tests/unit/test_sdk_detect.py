@@ -293,6 +293,8 @@ def test_read_version_ignores_comments(tmp_path: Path, make_prefix: MakePrefix) 
         '#define VERSION "0.9"\n'
         "*/\n"
         '// #define VERSION "0.8"\n'
+        "// a line comment continued \\\n"
+        '#define VERSION "0.7"\n'
         '#define GREETING "/* not a comment"\n'
         '#define VERSION "1.10.2" ///< SDK version string\n'
     )

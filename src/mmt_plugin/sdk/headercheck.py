@@ -56,7 +56,13 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from mmt_plugin.diagnostics import CliError
-from mmt_plugin.sdk.detect import VERSION_HEADER, Sdk, require_sdk, strip_comments
+from mmt_plugin.sdk.detect import (
+    VERSION_HEADER,
+    Sdk,
+    join_continued_lines,
+    require_sdk,
+    strip_comments,
+)
 from mmt_plugin.sdk.profile import Profile, ProfileError, ProtocolHeader, get_bundled, load_profile
 from mmt_plugin.sdk.resolve import find_bundled
 
@@ -70,8 +76,6 @@ __all__ = [
     "unlisted_protocol_macros",
 ]
 
-#: A backslash-newline: the preprocessor joins the two lines.
-_CONTINUATION = re.compile(r"\\\n")
 #: A ``PROTO_*`` macro definition, whatever its value, in a header with its
 #: lines joined and its comments stripped.
 _PROTO_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)\b", re.MULTILINE)
@@ -299,7 +303,7 @@ def _read_header(path: str) -> str:
     """A header's text, its continued lines joined and its comments
     stripped (translation phases 2 and 3)."""
     with open(path, encoding="utf-8", errors="replace") as f:
-        return strip_comments(_CONTINUATION.sub("", f.read()))
+        return strip_comments(join_continued_lines(f.read()))
 
 
 def unlisted_protocol_macros(text: str, group: ProtocolHeader) -> list[str]:

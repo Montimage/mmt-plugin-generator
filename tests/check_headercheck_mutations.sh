@@ -9,8 +9,8 @@
 #   profile records;
 # - plugin-ids: dicom/dicom.h gives PROTO_DICOM another id and alias than the
 #   profile records;
-# - core-values: mmt_core.h and proto_meta.h give PROTO_MAX_IDENTIFIER and
-#   PROTO_META other values than the profile records;
+# - core-values: mmt_core.h and proto_meta.h give PROTO_MAX_IDENTIFIER,
+#   PROTO_UNKNOWN and PROTO_META other values than the profile records;
 # - unlisted-id: mobile/mmt_mobile.h defines a protocol id, PROTO_NEW_PLUGIN,
 #   that parents.ids does not list;
 # - unlisted-expression: mobile/mmt_mobile.h defines two protocol ids that
@@ -102,9 +102,12 @@ expect_failure plugin-ids \
     'parents.ids.PROTO_DICOM: PROTO_DICOM_ALIAS is "dicom2", not "dicom"'
 
 mutate core-values mmt_core.h 's/#define PROTO_MAX_IDENTIFIER    1000\b/#define PROTO_MAX_IDENTIFIER    999/'
-mutate core-values proto_meta.h 's/#define PROTO_META    1\b/#define PROTO_META    2/'
+mutate core-values proto_meta.h \
+    's/#define PROTO_UNKNOWN 0\b/#define PROTO_UNKNOWN 3/' \
+    's/#define PROTO_META    1\b/#define PROTO_META    2/'
 expect_failure core-values \
     'constants.PROTO_MAX_IDENTIFIER is not 1000' \
+    'constants.PROTO_UNKNOWN is not 0' \
     'constants.PROTO_META is not 1'
 
 mutate unlisted-id mobile/mmt_mobile.h \

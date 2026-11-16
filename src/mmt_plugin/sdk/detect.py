@@ -53,6 +53,7 @@ __all__ = [
     "default_pkg_config_dirs",
     "find_pc_file",
     "find_sdk",
+    "join_continued_lines",
     "parse_pc",
     "read_version",
     "require_sdk",
@@ -75,6 +76,8 @@ _VERSION_MACRO = re.compile(r'^[ \t]*#[ \t]*define[ \t]+VERSION[ \t]+"([^"\n]*)"
 _C_COMMENT_OR_LITERAL = re.compile(
     r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*.*?\*/|/\*.*|//[^\n]*', re.DOTALL
 )
+#: A backslash-newline: the preprocessor joins the two lines.
+_CONTINUATION = re.compile(r"\\\n")
 _PC_VARIABLE = re.compile(r"^([A-Za-z0-9_.]+)[ \t]*=(.*)$")
 _PC_FIELD = re.compile(r"^([A-Za-z0-9_.]+)[ \t]*:(.*)$")
 _PC_REFERENCE = re.compile(r"\$\{([A-Za-z0-9_.]+)\}")
@@ -192,6 +195,13 @@ def _blank(match: re.Match[str]) -> str:
     return " " + "\n" * text.count("\n")
 
 
+def join_continued_lines(text: str) -> str:
+    """C source ``text`` with each backslash-newline removed (translation
+    phase 2), so a continued line, and a ``//`` comment ending in ``\\``,
+    is one line."""
+    return _CONTINUATION.sub("", text)
+
+
 def strip_comments(text: str) -> str:
     """C source ``text`` with every ``/* */`` and ``//`` comment replaced by
     a space (and the newlines it held), string and character literals left
@@ -206,7 +216,8 @@ def read_version(prefix: str) -> str | None:
     if not os.path.isfile(path):
         return None
     try:
-        match = _VERSION_MACRO.search(strip_comments(_read_text(path)))
+        text = strip_comments(join_continued_lines(_read_text(path)))
+        match = _VERSION_MACRO.search(text)
     except OSError:
         return None
     if match is None:

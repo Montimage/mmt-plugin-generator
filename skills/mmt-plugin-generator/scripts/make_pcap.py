@@ -47,6 +47,16 @@ CLIENT_IP6 = bytes.fromhex("fd000000000000000000000000000001")
 SERVER_IP6 = bytes.fromhex("fd000000000000000000000000000002")
 CLIENT_PORT = 40000
 TCP_FIN, TCP_SYN, TCP_PSH, TCP_ACK = 0x01, 0x02, 0x08, 0x10
+SNAPLEN = 65535
+#: The headers before a payload, Ethernet's included: a frame fits the snap
+#: length (and an IPv4 packet its 16-bit total length).
+OVERHEAD = {
+    "ethernet": 14,
+    "ip": 14 + 20,
+    "ipv6": 14 + 40,
+    "udp": 14 + 20 + 8,
+    "tcp": 14 + 20 + 20,
+}
 
 
 class UsageError(Exception):
@@ -83,6 +93,10 @@ def parse_selector(text: str) -> tuple[str, dict[str, int]]:
         raise UsageError(f"--parent {text!r}: give ethertype=N")
     if proto in ("udp", "tcp") and not keys:
         raise UsageError(f"--parent {text!r}: give port=N, dport=N or sport=N")
+    for key, number in keys.items():
+        top = 0xFF if key == "proto" else 0xFFFF
+        if not 0 <= number <= top:
+            raise UsageError(f"--parent {text!r}: {key} must be from 0 to {top}")
     return proto, keys
 
 
@@ -224,7 +238,7 @@ def frames(proto: str, keys: dict[str, int], payloads: list[tuple[str, bytes]]) 
 
 def write_pcap(path: Path, packets: list[bytes], start: float) -> None:
     with path.open("wb") as f:
-        f.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1))
+        f.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, SNAPLEN, 1))
         for i, pkt in enumerate(packets):
             ts = start + i / 1000
             sec = int(ts)
@@ -257,6 +271,9 @@ def main(argv: list[str] | None = None) -> int:
             raise UsageError("--repeat must be at least 1")
         proto, keys = parse_selector(args.parent)
         payloads = [parse_payload(t) for t in texts] * args.repeat
+        limit = SNAPLEN - OVERHEAD[proto]
+        if any(len(data) > limit for _, data in payloads):
+            raise UsageError(f"a payload under {proto} has at most {limit} bytes")
         packets = frames(proto, keys, payloads)
     except (UsageError, OSError) as exc:
         print(f"make_pcap: {exc}", file=sys.stderr)

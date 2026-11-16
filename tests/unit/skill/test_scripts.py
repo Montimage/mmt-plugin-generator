@@ -107,6 +107,12 @@ def test_the_checksums_hold(tmp_path: Path) -> None:
         ["--parent", "udp:port=1", "--payload", "zz"],
         ["--parent", "udp:port=1"],
         ["--parent", "udp:port=1", "--payload", "01", "--repeat", "0"],
+        ["--parent", "udp:port=70000", "--payload", "01"],
+        ["--parent", "tcp:sport=-1", "--payload", "01"],
+        ["--parent", "ip:proto=256", "--payload", "01"],
+        ["--parent", "ethernet:ethertype=0x10000", "--payload", "01"],
+        ["--parent", "udp:port=1", "--payload", "00" * (65535 - 42 + 1)],
+        ["--parent", "ethernet:ethertype=0x88b5", "--payload", "00" * (65535 - 14 + 1)],
     ],
 )
 def test_a_bad_argument_is_exit_2(args: list[str], tmp_path: Path) -> None:
@@ -246,6 +252,38 @@ def test_the_runner_links_the_core_shared_object_of_an_extracted_package(
     with pytest.raises(pcap_eval.EvalExit) as exc:
         pcap_eval.core_library(tmp_path / "none")
     assert exc.value.code == pcap_eval.EXIT_ENV
+
+
+def test_the_largest_payload_fits_the_snap_length(tmp_path: Path) -> None:
+    out = tmp_path / "x.pcap"
+    args = ["--parent", "udp:port=1", "--payload", "00" * (65535 - 42), "--out", str(out)]
+    assert make_pcap.main(args) == 0
+    with out.open("rb") as f:
+        (frame,) = list(read_stream(f).frames())
+    assert len(frame.data) == 65535
+
+
+def test_the_plugin_directories_never_write_into_the_sdk(tmp_path: Path) -> None:
+    """An SDK whose plugins/ holds an installed copy of the plugin: the copy
+    of the new build goes into the run's directory, not through a link into
+    the SDK, and the baseline runs without either."""
+    sdk_plugins = tmp_path / "sdk" / "plugins"
+    sdk_plugins.mkdir(parents=True)
+    (sdk_plugins / "libmmt_tcpip.so").write_bytes(b"tcpip")
+    (sdk_plugins / "mmtp_telem.so").write_bytes(b"installed")
+    build = tmp_path / "build" / "mmtp_telem.so"
+    build.parent.mkdir()
+    build.write_bytes(b"new build")
+    sdk, out = tmp_path / "sdk", tmp_path / "out"
+    base = pcap_eval.plugins_dir(sdk, build, out / "baseline-plugins", with_plugin=False)
+    for _ in range(2):  # a second evaluation in the same --out
+        plugins = pcap_eval.plugins_dir(sdk, build, out / "plugins", with_plugin=True)
+    assert (sdk_plugins / "mmtp_telem.so").read_bytes() == b"installed"
+    assert sorted(p.name for p in base.iterdir()) == ["libmmt_tcpip.so"]
+    assert (base / "libmmt_tcpip.so").resolve() == (sdk_plugins / "libmmt_tcpip.so").resolve()
+    assert not (plugins / "mmtp_telem.so").is_symlink()
+    assert (plugins / "mmtp_telem.so").read_bytes() == b"new build"
+    assert sorted(p.name for p in plugins.iterdir()) == ["libmmt_tcpip.so", "mmtp_telem.so"]
 
 
 def test_eval_rejects_missing_inputs_before_running_anything(tmp_path: Path) -> None:

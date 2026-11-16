@@ -27,9 +27,12 @@ the protocol (``--decode-as`` passes ``-d`` to tshark, e.g.
 ``udp.port==5684,coap``).
 
 Writes in ``--out``: ``bin/pcap_eval`` (linked with the SDK's
-``libmmt_core.so.<version>``, whose soname ``lib/`` resolves), ``plugins/``
-(the SDK's plugins and a copy of the plugin), ``baseline.json``, ``plugin.json``, ``frames.jsonl``,
-``report.json`` and ``report.md``. Prints one summary line.
+``libmmt_core.so.<version>``, whose soname ``lib/`` resolves),
+``baseline-plugins/`` (links to the SDK's plugins), ``plugins/`` (the same
+and a copy of the plugin), ``baseline.json``, ``plugin.json``,
+``frames.jsonl``, ``report.json`` and ``report.md``. It never writes under
+``--sdk``: an SDK plugin with the plugin's file name (an installed copy) is
+left out of both runs. Prints one summary line.
 
 Exit codes: 0 PASS, 1 FAIL (the report says why), 2 usage, 3 environment
 (no compiler, the runner does not compile, the SDK is not a prefix, the
@@ -162,15 +165,21 @@ def compile_runner(sdk: Path, cc: str, out: Path) -> Path:
     return binary
 
 
-def plugins_dir(sdk: Path, plugin: Path, out: Path) -> Path:
-    """``out/plugins``: the SDK's plugins (links) and a copy of the plugin."""
-    target = out / "plugins"
-    if target.exists():
+def plugins_dir(sdk: Path, plugin: Path, target: Path, *, with_plugin: bool) -> Path:
+    """``target``: links to the SDK's plugins and, ``with_plugin``, a copy of
+    the plugin. An SDK plugin with the plugin's file name (an installed copy
+    of it) is left out: the baseline runs without the plugin, and the copy
+    never goes through a link into the SDK's ``plugins/``."""
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    elif target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
     for so in sorted((sdk / "plugins").glob("*.so")):
-        (target / so.name).symlink_to(so.resolve())
-    shutil.copy2(plugin, target / plugin.name)
+        if so.name != plugin.name:
+            (target / so.name).symlink_to(so.resolve())
+    if with_plugin:
+        shutil.copy2(plugin, target / plugin.name)
     return target
 
 
@@ -339,8 +348,11 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         raise EvalExit(EXIT_ENV, "--field needs tshark on PATH")
 
     binary = compile_runner(sdk, args.cc, out)
-    plugins = plugins_dir(sdk, args.plugin.resolve(), out)
-    baseline = run_runner(binary, args.capture, args.label, sdk / "plugins", None)
+    plugin_so = args.plugin.resolve()
+    installed = (sdk / "plugins" / plugin_so.name).exists()
+    base_dir = plugins_dir(sdk, plugin_so, out / "baseline-plugins", with_plugin=False)
+    plugins = plugins_dir(sdk, plugin_so, out / "plugins", with_plugin=True)
+    baseline = run_runner(binary, args.capture, args.label, base_dir, None)
     dump_path = out / "frames.jsonl"
     plugin = run_runner(binary, args.capture, args.label, plugins, dump_path)
     (out / "baseline.json").write_text(json.dumps(baseline, indent=2) + "\n", "utf-8")
@@ -431,6 +443,11 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             )
     if baseline.get("crashed"):
         warnings.append("mmt-dpi crashed without the plugin too: the SDK or the capture")
+    if installed:
+        warnings.append(
+            f"the SDK's plugins/ holds a {plugin_so.name} (an installed copy?):"
+            " left out of both runs"
+        )
     if args.synthetic:
         warnings.append(
             "synthetic capture: its bytes come from the spec as read by the drafter,"

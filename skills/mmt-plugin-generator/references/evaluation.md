@@ -36,9 +36,12 @@ python3 <skill>/scripts/pcap_eval.py --sdk <prefix> --cc <cc> \
   tshark.
 
 It compiles `scripts/pcap_eval.c` against the SDK (it needs the libpcap
-headers, `libpcap-dev`), puts the SDK's plugins and a copy of the plugin in
+headers, `libpcap-dev`), links the SDK's plugins into
+`<work>/eval/baseline-plugins/` and, with a copy of the plugin, into
 `<work>/eval/plugins/`, runs the capture once with the SDK's plugins alone
 and once with the plugin, and writes `report.md` and `report.json`. It
+never writes under `--sdk`: an SDK plugin with the plugin's file name (a
+copy installed there) is left out of both runs, with a warning. It
 prints one line and exits:
 
 | Exit | Meaning | What to do |

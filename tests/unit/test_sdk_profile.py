@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterator
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
+from mmt_plugin.capture.runner import LINKTYPE_DLT
 from mmt_plugin.sdk.profile import (
     SCHEMA_VERSION,
     Param,
@@ -273,6 +275,13 @@ SCHEMA_ERRORS: dict[str, tuple[Mutation, str]] = {
     "empty alias": (lambda d: _tcp(d).update(alias=""), "non-empty"),
     "quoted alias": (lambda d: _tcp(d).update(alias='t"cp'), "quote"),
     "not_ids not a name": (lambda d: _ids(d, 1).update(not_ids=["1x"]), "C identifier"),
+    # Only the top level has a $comment, and it is a string (#50, F7).
+    "comment not a string": (lambda d: d.update({"$comment": 1}), "expected a string"),
+    "nested comment": (
+        lambda d: d["logger"].update({"$comment": "x"}),
+        "unknown key '\\$comment'",
+    ),
+    "empty c_std": (lambda d: d.update(c_std=" "), "c_std: expected a non-empty string"),
 }
 
 #: Invalid profiles only the loader can see (cross-references).
@@ -332,8 +341,133 @@ def test_the_loader_checks_cross_references(name: str) -> None:
     mutate, message = LOADER_ERRORS[name]
     data = copy.deepcopy(_raw())
     mutate(data)
+    assert Draft202012Validator(load_schema()).is_valid(data)
     with pytest.raises(ProfileError, match=message):
         parse_profile(data)
+
+
+#: What only the loader checks: a name listed twice, or one entry naming
+#: another that the profile does not list (the cross-references).
+CROSS_REFERENCE = re.compile(
+    r"listed twice|are both [0-9]+|is not in headers|is not a callback role"
+    r"|is not a macro of |is not declared in "
+)
+#: The values each scalar is replaced with in turn.
+REPLACEMENTS: tuple[Any, ...] = (None, True, 0, -1, 1.5, "", " ", "x", [], {})
+
+
+def _small_profile() -> dict[str, Any]:
+    """The bundled profile with only the tcpip ids the profile names
+    elsewhere (its examples), so the sweep below stays fast."""
+    data = copy.deepcopy(_raw())
+    keep = {*data["parents"]["examples"]}
+    protocols = _ids(data)["protocols"]
+    _ids(data)["protocols"] = {k: v for k, v in protocols.items() if k in keep}
+    return data
+
+
+def _nodes(node: Any, path: tuple[Any, ...] = ()) -> Iterator[tuple[tuple[Any, ...], Any]]:
+    """Every node with its path; only the first two items of an array."""
+    yield path, node
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _nodes(value, (*path, key))
+    elif isinstance(node, list):
+        for i, value in enumerate(node[:2]):
+            yield from _nodes(value, (*path, i))
+
+
+def _at(data: Any, path: tuple[Any, ...]) -> Any:
+    for key in path:
+        data = data[key]
+    return data
+
+
+def _sweep(base: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
+    """The mutations of ``base``: each node replaced by each other kind of
+    value, each key removed, an unknown key and a ``$comment`` (a string,
+    then a number) added to each object, each array emptied and its first
+    item repeated."""
+    for path, node in _nodes(base):
+        if path:
+            for value in REPLACEMENTS:
+                if type(value) is not type(node) or value != node:
+                    data = copy.deepcopy(base)
+                    _at(data, path[:-1])[path[-1]] = value
+                    yield f"{path} = {value!r}", data
+        if isinstance(node, dict):
+            for key, value in (("$comment", "x"), ("$comment", 1), ("extra", 1)):
+                data = copy.deepcopy(base)
+                _at(data, path)[key] = value
+                yield f"{path} + {key}={value!r}", data
+            for key in node:
+                data = copy.deepcopy(base)
+                del _at(data, path)[key]
+                yield f"{path} - {key}", data
+        if isinstance(node, list) and node:
+            data = copy.deepcopy(base)
+            _at(data, path).clear()
+            yield f"{path} = []", data
+            data = copy.deepcopy(base)
+            _at(data, path).append(copy.deepcopy(node[0]))
+            yield f"{path} + its first", data
+
+
+def test_the_schema_and_the_loader_agree() -> None:
+    # The loader accepts exactly what the schema accepts, except what only
+    # the loader can see, the cross-references (#50, F7).
+    base = _small_profile()
+    schema = Draft202012Validator(load_schema())
+    assert schema.is_valid(base)
+    parse_profile(base)
+    disagreements = []
+    count = 0
+    for name, data in _sweep(base):
+        count += 1
+        valid = schema.is_valid(data)
+        try:
+            parse_profile(data)
+        except ProfileError as exc:
+            if valid and not CROSS_REFERENCE.search(str(exc)):
+                disagreements.append(f"{name}: only the loader rejects it: {exc}")
+        else:
+            if not valid:
+                disagreements.append(f"{name}: only the schema rejects it")
+    assert count > 2000
+    assert disagreements == []
+
+
+#: The constants whose value the tool uses as a number: the profile must
+#: record it, and headercheck then asserts it.
+_VALUE_READ = re.compile(r"""constant\(\s*"(\w+)"\s*\)\.value\b|_constant\(\s*"(\w+)"\s*\)""")
+
+
+def test_every_value_the_tool_relies_on_is_recorded() -> None:
+    # F3 (#50): a constant used as a number has its value in the profile, so
+    # the header check asserts it; the protocol_id constants are ids no
+    # plugin may take (semantics/analyse.py).
+    source = Path(__file__).resolve().parents[2] / "src" / "mmt_plugin"
+    read = {
+        name
+        for path in source.rglob("*.py")
+        for match in _VALUE_READ.finditer(path.read_text(encoding="utf-8"))
+        for name in match.groups()
+        if name
+    }
+    assert read == {"Max_Alias_Len", "PROTO_MAX_IDENTIFIER"}
+    for version in bundled_versions():
+        profile = get_bundled(version)
+        assert profile is not None
+        ids = {c.name for c in profile.constants if c.group == "protocol_id"}
+        assert ids == {"PROTO_UNKNOWN", "PROTO_META"}
+        valued = {c.name for c in profile.constants if c.value is not None}
+        assert valued == read | ids, version
+
+
+def test_the_capture_stacks_are_the_profile_ids(profile: Profile) -> None:
+    # capture/runner.py hands mmt-dpi a stack id per link type: Linux cooked
+    # capture is PROTO_SLL, whose id the header check asserts.
+    assert LINKTYPE_DLT[113] == profile.parents.id_of("PROTO_SLL")
 
 
 def test_parent_ids_are_optional() -> None:

@@ -26,10 +26,17 @@ One more unit includes ``parents.header`` and every header of
 The units are compiled with ``-std=<c_std> -Wall -Wextra -Werror
 -fsyntax-only``, so a deprecated function also fails. Separately, each entry's
 name must appear in its header with comments stripped, so the header recorded
-is the one that declares it, not one that includes it, and each header of
-``parents.ids`` must define no numeric ``PROTO_*`` macro (``PROTO_CLASS_*``
-excepted) and no ``PROTO_*_ALIAS`` that the profile does not list, so the
-list is complete.
+is the one that declares it, not one that includes it, and every
+``PROTO_*`` macro a header of ``parents.ids`` defines, whatever its value
+(``(PROTO_X + 1)``, a definition continued on the next line), must be
+listed: as an id, in ``not_ids``, as the ``PROTO_<X>_ALIAS`` of a listed id
+with an alias, or be a ``PROTO_CLASS_*`` macro, so the list is complete.
+
+Only the values the profile records are checked. The profile records the
+value of each constant that the generator, ``validate``, ``init`` or
+``doctor`` use as a number (the profile's ``$comment`` lists them) and of
+every protocol id of ``parents.ids``; generated code names every other
+constant, so the header supplies its value when the plugin is compiled.
 
     python -m mmt_plugin.sdk.headercheck --sdk PREFIX [--profile FILE] [--cc CC]
 
@@ -49,8 +56,8 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from mmt_plugin.diagnostics import CliError
-from mmt_plugin.sdk.detect import VERSION_HEADER, Sdk, require_sdk
-from mmt_plugin.sdk.profile import Profile, ProfileError, get_bundled, load_profile
+from mmt_plugin.sdk.detect import VERSION_HEADER, Sdk, require_sdk, strip_comments
+from mmt_plugin.sdk.profile import Profile, ProfileError, ProtocolHeader, get_bundled, load_profile
 from mmt_plugin.sdk.resolve import find_bundled
 
 __all__ = [
@@ -60,18 +67,14 @@ __all__ = [
     "main",
     "render_ids_unit",
     "render_unit",
+    "unlisted_protocol_macros",
 ]
 
-_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
-
-#: A numeric ``PROTO_*`` macro, in a header with comments stripped.
-_NUMERIC_PROTO = re.compile(
-    r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)[ \t]+\(?[ \t]*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*"
-    r"[ \t]*\)?[ \t]*$",
-    re.MULTILINE,
-)
-#: A ``PROTO_<X>_ALIAS`` macro, in a header with comments stripped.
-_ALIAS_PROTO = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)_ALIAS\b", re.MULTILINE)
+#: A backslash-newline: the preprocessor joins the two lines.
+_CONTINUATION = re.compile(r"\\\n")
+#: A ``PROTO_*`` macro definition, whatever its value, in a header with its
+#: lines joined and its comments stripped.
+_PROTO_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(PROTO_\w+)\b", re.MULTILINE)
 #: A line of the preprocessed alias unit: ``mmtp_alias_<n>: <expansion>``.
 _ALIAS_LINE = re.compile(r"^mmtp_alias_([0-9]+): (.*?)\s*$", re.MULTILINE)
 
@@ -293,8 +296,21 @@ def declared_names(profile: Profile) -> dict[str, list[str]]:
 
 
 def _read_header(path: str) -> str:
+    """A header's text, its continued lines joined and its comments
+    stripped (translation phases 2 and 3)."""
     with open(path, encoding="utf-8", errors="replace") as f:
-        return _COMMENTS.sub(" ", f.read())
+        return strip_comments(_CONTINUATION.sub("", f.read()))
+
+
+def unlisted_protocol_macros(text: str, group: ProtocolHeader) -> list[str]:
+    """The ``PROTO_*`` macros that ``text`` (a header of ``parents.ids``, as
+    ``_read_header`` returns it) defines and ``group`` does not list, in
+    order of definition."""
+    ids = {p.macro for p in group.protocols}
+    aliases = {f"{p.macro}_ALIAS" for p in group.protocols if p.alias is not None}
+    listed = ids | aliases | set(group.not_ids)
+    found = dict.fromkeys(_PROTO_DEFINE.findall(text))
+    return [n for n in found if n not in listed and not n.startswith("PROTO_CLASS_")]
 
 
 def _check_declared(profile: Profile, include_dir: str) -> Iterator[CheckResult]:
@@ -316,20 +332,14 @@ def _check_declared(profile: Profile, include_dir: str) -> Iterator[CheckResult]
 
 
 def _check_complete(profile: Profile, include_dir: str) -> Iterator[CheckResult]:
-    """Each header of ``parents.ids`` defines no protocol id or alias that
-    the profile does not list."""
+    """Each header of ``parents.ids`` defines no ``PROTO_*`` macro that the
+    profile does not list."""
     for group in profile.parents.ids:
         try:
             text = _read_header(os.path.join(include_dir, group.header))
         except OSError:
             continue  # _check_declared reports it
-        listed = {p.macro for p in group.protocols} | set(group.not_ids)
-        aliases = {p.macro for p in group.protocols if p.alias is not None}
-        missing = [
-            *(n for n in _NUMERIC_PROTO.findall(text) if not n.startswith("PROTO_CLASS_")),
-            *(f"{n}_ALIAS" for n in _ALIAS_PROTO.findall(text) if n not in aliases),
-        ]
-        missing = [n for n in dict.fromkeys(missing) if n not in listed]
+        missing = unlisted_protocol_macros(text, group)
         yield CheckResult(
             f"{group.header}: parents.ids lists all its protocols ({len(group.protocols)})",
             not missing,

@@ -22,6 +22,7 @@ from mmt_plugin.cli import main
 from mmt_plugin.commands.validate import ValidateCommand
 from mmt_plugin.sdk import registry as registry_module
 from mmt_plugin.sdk.detect import Sdk, SdkSource, find_sdk
+from mmt_plugin.sdk.profile import get_bundled
 from mmt_plugin.sdk.registry import (
     PLUGINS_DIR_ENV,
     RegisteredProtocol,
@@ -31,6 +32,7 @@ from mmt_plugin.sdk.registry import (
     plugin_dir,
     read_registry,
 )
+from mmt_plugin.sdk.resolve import find_bundled
 
 #: A stand-in probe: reports one protocol per plugin file it is given (the
 #: names of $MMT_DPI_PLUGINS_DIR), so the tests see what the real probe
@@ -187,6 +189,47 @@ def test_the_real_registry_has_the_sdk_protocols(real_sdk: Sdk) -> None:
     assert reg.by_name("TCP") == RegisteredProtocol(354, "tcp")
     assert reg.by_id(625) == RegisteredProtocol(625, "ndn")
     assert reg.by_id(980) is None
+
+
+def test_the_real_registry_is_the_profile(real_sdk: Sdk) -> None:
+    # The run-time cross-check of the profile's ids (#50): with every plugin
+    # of the package loaded, mmt-dpi registers exactly the ids of
+    # parents.ids and the protocol_id constants, each under its recorded
+    # alias. An id without an alias (no PROTO_<X>_ALIAS in its header, such
+    # as PROTO_INT) registers a name no listed alias takes. So not_ids, which
+    # the headers' completeness check trusts, hides no registered id.
+    version = find_bundled(real_sdk.version or "")
+    if version is None:
+        pytest.skip(f"no profile is bundled for mmt-dpi {real_sdk.version}")
+    profile = get_bundled(version)
+    assert profile is not None
+    max_id = profile.constant("PROTO_MAX_IDENTIFIER").value
+    assert max_id is not None
+    reg = read_registry(real_sdk, env=env(), max_id=max_id)
+    expected_plugins = {
+        "libmmt_business_app.so",
+        "libmmt_tcpip.so",
+        "libmmt_tdicom.so",
+        "libmmt_tmobile.so",
+    }
+    if not expected_plugins <= set(reg.plugins):
+        pytest.skip(f"this SDK has only {', '.join(reg.plugins)}")
+    listed = {p.id: p.alias for p in profile.parents.protocols()}
+    for c in profile.constants:
+        if c.group == "protocol_id" and c.value is not None:
+            listed[c.value] = None  # the core's pseudo-protocols
+    registered = {p.id: p.name for p in reg.protocols}
+    assert sorted(set(registered) - set(listed)) == [], "registered, not in the profile"
+    assert sorted(set(listed) - set(registered)) == [], "in the profile, not registered"
+    wrong = {
+        pid: (name, alias)
+        for pid, name in registered.items()
+        if (alias := listed[pid]) is not None and name.casefold() != alias.casefold()
+    }
+    assert wrong == {}
+    aliases = {a.casefold() for a in listed.values() if a is not None}
+    unaliased = {pid: registered[pid] for pid, alias in listed.items() if alias is None}
+    assert not {n.casefold() for n in unaliased.values()} & aliases, unaliased
 
 
 def test_the_real_registry_without_a_plugin(real_sdk: Sdk) -> None:

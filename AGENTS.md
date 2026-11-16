@@ -519,7 +519,10 @@ uv run python -m mmt_plugin.sdk.headercheck --sdk <dir>/opt/mmt --cc gcc
 ```
 
 Check that it fails on broken scratch copies of those headers (an
-unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
+unprototyped declaration, a wrong `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`
+or `PROTO_META`, a plugin id or alias changed, a protocol id that
+`parents.ids` does not list, also as an expression or on a continued line);
+same output and exit:
 
 ```
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc

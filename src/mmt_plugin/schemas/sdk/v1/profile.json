@@ -26,7 +26,7 @@
     "schema_version": {"const": 1},
     "profile": {"$ref": "#/$defs/version", "description": "The mmt-dpi version the profile describes; also the file name."},
     "sdk": {"const": "mmt-dpi"},
-    "c_std": {"type": "string", "description": "The -std the headers need (gnu11: data_defs.h uses u_char, which glibc's <sys/types.h> hides in strict -std=c11)."},
+    "c_std": {"$ref": "#/$defs/text", "description": "The -std the headers need (gnu11: data_defs.h uses u_char, which glibc's <sys/types.h> hides in strict -std=c11)."},
     "headers": {
       "type": "array",
       "minItems": 1,
@@ -195,7 +195,7 @@
               },
               "not_ids": {
                 "type": "array",
-                "description": "The header's other numeric PROTO_* macros, which are not protocol ids (PROTO_DICOM_HDRLEN).",
+                "description": "The header's other PROTO_* macros, whatever their value, which are neither protocol ids nor the PROTO_<X>_ALIAS of a listed id (PROTO_DICOM_HDRLEN); PROTO_CLASS_* macros need not be listed.",
                 "items": {"$ref": "#/$defs/ident"}
               }
             }

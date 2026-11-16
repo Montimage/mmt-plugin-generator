@@ -151,6 +151,15 @@ def test_a_pre_release_takes_the_profile_below_its_release() -> None:
     assert nearest_version("1.10.2-rc1", ["1.10.2"]) == "1.10.2"
 
 
+@pytest.mark.parametrize("suffixed", ["1.10.2.post1", "1.10.2+git", "1.10.2-1", "1.10.2~dev"])
+def test_every_suffix_ranks_below_its_release(suffixed: str) -> None:
+    # A post-release, a build or a Debian revision is a pre-release too
+    # (#50): the version comes from the VERSION macro, a plain number for a
+    # release, and a profile too old is the safe side.
+    assert nearest_version(suffixed, ["1.10.1", "1.10.2"]) == "1.10.1"
+    assert nearest_version(suffixed, ["1.10.1", "1.10.2", "1.10.3"]) == "1.10.1"
+
+
 def test_a_pre_release_of_the_bundled_profile_falls_back_with_a_warning() -> None:
     choice = resolve_profile(None, {}, None, _sdk("1.10.2-rc1"))
     _assert_choice(choice, "1.10.2", ProfileSource.SDK)

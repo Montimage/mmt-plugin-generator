@@ -23,8 +23,9 @@ that need one (``require_sdk``).
 
 The version is read from the SDK itself: the ``VERSION`` string macro of
 ``dpi/include/mmt_core.h`` (``#define VERSION "1.10.2"``), which every
-install method ships with the headers the compiler uses. It is ``None`` when
-the header has none.
+install method ships with the headers the compiler uses, its comments
+stripped first (``strip_comments``), so a commented-out definition is not
+it. It is ``None`` when the header has none.
 
 File access goes through ``os.path.isfile``/``os.path.isdir`` and ``open``,
 so the unit tests can prove that nothing outside their temporary prefixes is
@@ -55,6 +56,7 @@ __all__ = [
     "parse_pc",
     "read_version",
     "require_sdk",
+    "strip_comments",
 ]
 
 #: The last place looked at.
@@ -68,6 +70,11 @@ VERSION_HEADER = "dpi/include/mmt_core.h"
 
 _INCLUDE_SUFFIX = "/dpi/include"
 _VERSION_MACRO = re.compile(r'^[ \t]*#[ \t]*define[ \t]+VERSION[ \t]+"([^"\n]*)"', re.MULTILINE)
+#: A C string or character literal, in which a comment cannot start, or a
+#: comment (an unterminated ``/*`` runs to the end of the text).
+_C_COMMENT_OR_LITERAL = re.compile(
+    r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*.*?\*/|/\*.*|//[^\n]*', re.DOTALL
+)
 _PC_VARIABLE = re.compile(r"^([A-Za-z0-9_.]+)[ \t]*=(.*)$")
 _PC_FIELD = re.compile(r"^([A-Za-z0-9_.]+)[ \t]*:(.*)$")
 _PC_REFERENCE = re.compile(r"\$\{([A-Za-z0-9_.]+)\}")
@@ -176,13 +183,30 @@ def _read_text(path: str) -> str:
         return f.read()
 
 
+def _blank(match: re.Match[str]) -> str:
+    text = match.group(0)
+    if text[0] in "\"'":
+        return text
+    # A comment is one space (C11 5.1.1.2); its newlines are kept, so the
+    # lines after it stay lines.
+    return " " + "\n" * text.count("\n")
+
+
+def strip_comments(text: str) -> str:
+    """C source ``text`` with every ``/* */`` and ``//`` comment replaced by
+    a space (and the newlines it held), string and character literals left
+    as they are: ``"/*"`` starts no comment."""
+    return _C_COMMENT_OR_LITERAL.sub(_blank, text)
+
+
 def read_version(prefix: str) -> str | None:
-    """The ``VERSION`` macro of ``<prefix>/dpi/include/mmt_core.h``, or ``None``."""
+    """The ``VERSION`` macro of ``<prefix>/dpi/include/mmt_core.h``, outside
+    its comments, or ``None``."""
     path = os.path.join(prefix, VERSION_HEADER)
     if not os.path.isfile(path):
         return None
     try:
-        match = _VERSION_MACRO.search(_read_text(path))
+        match = _VERSION_MACRO.search(strip_comments(_read_text(path)))
     except OSError:
         return None
     if match is None:

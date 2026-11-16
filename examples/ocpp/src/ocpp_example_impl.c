@@ -119,7 +119,9 @@
  * otherwise, and a WebSocket connection is often idle longer (an OCPP
  * charge point's heartbeat interval, a retransmission timer backing off):
  * mmt-dpi would then end the session and start a new one at the next
- * segment, mid-stream, without this plugin's state.
+ * segment, mid-stream, without this plugin's state. A plugin cannot read
+ * the handler's own long timeout (set_long_session_timed_out()): the
+ * handler is opaque to it, so this is mmt-dpi's default.
  */
 #define OC_SESSION_TIMEOUT 600
 
@@ -1276,11 +1278,9 @@ static mmt_classify_verdict_t classify_after_tcp(ipacket_t *ipacket, unsigned pr
     if (!set_classified_proto(ipacket, previous_index + 1, next)) {
         return MMT_CLASSIFY_SKIP;
     }
-    if (ipacket->session != NULL) {
-        set_session_timeout_delay(ipacket->session, OC_SESSION_TIMEOUT);
-    }
     /* Without the state (no memory), each segment is parsed alone. */
     if (ipacket->session != NULL) {
+        set_session_timeout_delay(ipacket->session, OC_SESSION_TIMEOUT);
         s = calloc(1, sizeof(*s));
         if (s != NULL) {
             set_proto_session_data(ipacket->session, s, previous_index + 1);

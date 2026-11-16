@@ -18,6 +18,7 @@ machine-readable output.
 - [Packet tests](#packet-tests)
 - [Install the plugin](#install-the-plugin)
 - [Draft a model from a capture](#draft-a-model-from-a-capture)
+- [Run the plugin over a capture](#run-the-plugin-over-a-capture)
 - [Start from a PDL v1 model](#start-from-a-pdl-v1-model)
 - [Shell completion](#shell-completion)
 - [Scripts, CI and agents: `--json`](#scripts-ci-and-agents---json)
@@ -427,6 +428,51 @@ mmt-plugin -C capture validate --no-sdk --sdk-profile 1.10.2
 ```sh
 mmt-plugin -C capture test
 ```
+
+## Run the plugin over a capture
+
+`run` shows what the plugin does on real traffic. It builds the plugin when
+it is stale, then runs it over a pcap or pcapng capture through mmt-dpi's
+own stack, with the SDK's plugins (`<sdk>/plugins/*.so`): nothing attaches
+it, so your parent classification (the generated `classify`, or
+`<label>_hook_register_parents`) must find its packets. It reports the
+protocol paths mmt-dpi gave the packets, with their counts, and, for each
+attribute of the plugin's protocol, how many of its packets have it:
+
+<!-- doc:run sdk -->
+```sh
+mmt-plugin -C demo run tests/unit/scaffold/data/demo-tcpdump.pcap
+mmt-plugin -C demo --json run tests/unit/scaffold/data/demo-tcpdump.pcap --strict > run.json
+python3 -c 'import json; r = json.load(open("run.json"))["result"]; print(r["summary"]["classified"], [p["path"] for p in r["paths"]])'
+```
+
+- `--plugin FILE` loads another plugin too, such as the one your protocol
+  sits on (one with the name of an SDK plugin replaces it); `--protocol
+  NAME` also counts that protocol's attributes:
+  `mmt-plugin -C examples/ocpp run ocpp.pcap --plugin
+  examples/websocket/build/mmtp_websocket_example.so --protocol
+  websocket_example`.
+- `--max-packets N` stops after the first N frames; `--timeout SECONDS`
+  stops a run that takes longer (a crash, exit 6).
+- The capture is read one frame at a time and the counts are bounded (at
+  most 1024 paths, the packets of the others in `result.paths_other`), so a
+  capture of several gigabytes runs in the same memory as a small one.
+  Frames keep their time stamps, so mmt-dpi expires sessions as it would
+  on the wire.
+- mmt-dpi 1.10.2 reads Ethernet and Linux cooked captures (`tcpdump -i
+  any`); a capture whose first frame has another link type is
+  `model.unsupported-linktype` (exit 3). It reads one link type per run,
+  the first frame's: frames of another one are counted in
+  `summary.skipped` (`test.other-linktype`).
+- No packet of the plugin's protocol is the warning `test.no-match`; a
+  plugin that does not load is `test.load-failed`, and a crash or a
+  `--timeout` is `test.crash` (exit 6): a crash names its frame, and the
+  counts of a run that stopped are only the frames before; a capture broken after its header is
+  `model.bad-pcap` (exit 3), reported with the counts of the frames before.
+  `--strict` fails on a warning.
+
+The runner is generated into `<build-dir>/run/` and loads the plugins from
+a directory of its own (`MMT_DPI_PLUGINS_DIR`), never the host's.
 
 ## Start from a PDL v1 model
 

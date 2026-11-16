@@ -23,8 +23,11 @@ Classic pcap: the four magic numbers (microsecond and nanosecond time
 stamps, either byte order); the link type is the low 16 bits of the
 header's ``network`` field. pcapng: section header, interface description,
 enhanced, simple and (obsolete) packet blocks; other blocks are skipped,
-and a new section header starts a new list of interfaces. Time stamps are
-not read: nothing here needs them.
+and a new section header starts a new list of interfaces. Each frame's
+time stamp is in nanoseconds since the epoch: classic pcap's microseconds or
+nanoseconds (by its magic number); pcapng's in the units of its interface's
+``if_tsresol`` (microseconds by default), plus its ``if_tsoffset`` seconds; a
+simple packet block has none (0).
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ _PCAP_MAGIC = {
     b"\x4d\x3c\xb2\xa1": "<",  # nanoseconds
     b"\xa1\xb2\x3c\x4d": ">",
 }
+_PCAP_NANO = (b"\x4d\x3c\xb2\xa1", b"\xa1\xb2\x3c\x4d")
 _PCAP_HEADER = 24
 _PCAP_RECORD = 16
 
@@ -54,6 +58,13 @@ _PB = 0x00000002
 _SPB = 0x00000003
 _EPB = 0x00000006
 _BYTE_ORDER_MAGIC = 0x1A2B3C4D
+#: Interface description block options: the time stamp resolution and offset.
+_OPT_END = 0
+_IF_TSRESOL = 9
+_IF_TSOFFSET = 14
+#: Time stamp units per second without if_tsresol (microseconds).
+_DEFAULT_UNITS = 1_000_000
+_NANO = 1_000_000_000
 
 #: The largest single read from a stream.
 _CHUNK = 1 << 20
@@ -72,13 +83,16 @@ class PcapError(Exception):
 @dataclass(frozen=True)
 class Frame:
     """One packet record: ``number`` (1-based, in file order), ``linktype``
-    (a LINKTYPE_* value), the captured ``data`` and the ``original`` length
-    of the packet on the wire (``len(data)`` when it was not cut)."""
+    (a LINKTYPE_* value), the captured ``data``, the ``original`` length
+    of the packet on the wire (``len(data)`` when it was not cut) and its
+    ``timestamp`` in nanoseconds since the epoch (0 when the record has
+    none)."""
 
     number: int
     linktype: int
     data: bytes
     original: int
+    timestamp: int = 0
 
     @property
     def truncated(self) -> bool:
@@ -201,6 +215,7 @@ def read_stream(stream: Readable) -> Capture:
 def _pcap_frames(source: _Source, header: bytes) -> Iterator[Frame]:
     order = _PCAP_MAGIC[header[:4]]
     linktype = struct.unpack_from(order + "I", header, 20)[0] & 0xFFFF
+    fraction = 1 if header[:4] in _PCAP_NANO else 1000  # nanoseconds per unit
     number = 0
     while True:
         pos = source.pos
@@ -212,7 +227,7 @@ def _pcap_frames(source: _Source, header: bytes) -> Iterator[Frame]:
             raise PcapError(
                 f"a truncated record header ({short.left} of {_PCAP_RECORD} bytes)", pos
             ) from None
-        caplen, original = struct.unpack_from(order + "II", record, 8)
+        seconds, units, caplen, original = struct.unpack_from(order + "IIII", record, 0)
         try:
             data = source.take(caplen)
         except _Short as short:
@@ -220,7 +235,9 @@ def _pcap_frames(source: _Source, header: bytes) -> Iterator[Frame]:
                 f"a record of {caplen} bytes, but only {short.left} bytes are left", pos
             ) from None
         number += 1
-        yield Frame(number, linktype, data, max(original, caplen))
+        yield Frame(
+            number, linktype, data, max(original, caplen), seconds * _NANO + units * fraction
+        )
 
 
 def _section_header(source: _Source, head: bytes, pos: int) -> bytes:
@@ -244,8 +261,8 @@ def _section_order(head: bytes, pos: int) -> str:
 
 def _pcapng_frames(source: _Source, first: bytes) -> Iterator[Frame]:
     order = "<"
-    # Per interface: (link type, snap length); reset by each section header.
-    interfaces: list[tuple[int, int]] = []
+    # Per interface; reset by each section header.
+    interfaces: list[_Interface] = []
     number = 0
     pos, head = 0, first  # the section header that read_stream checked
     while True:
@@ -271,7 +288,8 @@ def _pcapng_frames(source: _Source, first: bytes) -> Iterator[Frame]:
             if len(body) < 8:
                 raise PcapError("a truncated pcapng interface description block", pos)
             linktype, _, snaplen = struct.unpack_from(order + "HHI", body, 0)
-            interfaces.append((linktype, snaplen))
+            units, offset = _time_options(body[8:], order)
+            interfaces.append(_Interface(linktype, snaplen, units, offset))
         elif kind in (_EPB, _PB, _SPB):
             number += 1
             yield _packet(kind, body, order, interfaces, number, pos)
@@ -302,8 +320,44 @@ def _bad_length(length: int, left: int | None) -> str:
     return f"a pcapng block of length {length} ({left} bytes are left)"
 
 
+@dataclass(frozen=True)
+class _Interface:
+    """A pcapng interface: its link type, snap length, time stamp units per
+    second and time stamp offset (seconds)."""
+
+    linktype: int
+    snaplen: int
+    units: int = _DEFAULT_UNITS
+    offset: int = 0
+
+    def nanoseconds(self, stamp: int) -> int:
+        """A time stamp of this interface, in nanoseconds since the epoch."""
+        return self.offset * _NANO + stamp * _NANO // self.units
+
+
+def _time_options(options: bytes, order: str) -> tuple[int, int]:
+    """``if_tsresol`` (as units per second) and ``if_tsoffset`` of an
+    interface description block's options; the defaults when absent. An
+    option list cut short ends there (the options are not needed to read
+    the packets)."""
+    units, offset = _DEFAULT_UNITS, 0
+    at = 0
+    while at + 4 <= len(options):
+        code, length = struct.unpack_from(order + "HH", options, at)
+        value = options[at + 4 : at + 4 + length]
+        if code == _OPT_END or len(value) < length:
+            break
+        if code == _IF_TSRESOL and length >= 1:
+            exponent = value[0] & 0x7F
+            units = 2**exponent if value[0] & 0x80 else 10**exponent
+        elif code == _IF_TSOFFSET and length >= 8:
+            offset = struct.unpack_from(order + "q", value, 0)[0]
+        at += 4 + (length + 3) // 4 * 4
+    return max(units, 1), offset
+
+
 def _packet(
-    kind: int, body: bytes, order: str, interfaces: list[tuple[int, int]], number: int, pos: int
+    kind: int, body: bytes, order: str, interfaces: list[_Interface], number: int, pos: int
 ) -> Frame:
     if kind == _SPB:
         if len(body) < 4:
@@ -313,7 +367,8 @@ def _packet(
         start = 4
         if not interfaces:
             raise PcapError("a simple packet block before any interface description", pos)
-        snaplen = interfaces[0][1]
+        snaplen = interfaces[0].snaplen
+        stamp = None
         caplen = min(original, len(body) - start)
         if snaplen:
             caplen = min(caplen, snaplen)
@@ -321,16 +376,24 @@ def _packet(
         if kind == _EPB:
             if len(body) < 20:
                 raise PcapError("a truncated pcapng enhanced packet block", pos)
-            iface, _, _, caplen, original = struct.unpack_from(order + "IIIII", body, 0)
+            iface, high, low, caplen, original = struct.unpack_from(order + "IIIII", body, 0)
         else:
             if len(body) < 20:
                 raise PcapError("a truncated pcapng packet block", pos)
-            iface, _, _, _, caplen, original = struct.unpack_from(order + "HHIIII", body, 0)
+            iface, _, high, low, caplen, original = struct.unpack_from(order + "HHIIII", body, 0)
         start = 20
+        stamp = high << 32 | low
         if iface >= len(interfaces):
             raise PcapError(f"a packet of interface {iface}, which no block describes", pos)
         if caplen > len(body) - start:
             raise PcapError(
                 f"a packet of {caplen} bytes in a block that holds {len(body) - start}", pos
             )
-    return Frame(number, interfaces[iface][0], body[start : start + caplen], max(original, caplen))
+    interface = interfaces[iface]
+    return Frame(
+        number,
+        interface.linktype,
+        body[start : start + caplen],
+        max(original, caplen),
+        0 if stamp is None else interface.nanoseconds(stamp),
+    )

@@ -15,8 +15,8 @@ later issue registers is checked without a new test:
 
 A command whose shortest successful run needs input files or values
 (``init`` an id, ``import``, ``generate`` and ``validate`` a model, ``build``, ``test``,
-``install`` and ``doctor`` also an SDK and a compiler, ``uninstall`` and
-``install`` a prefix, ``scaffold`` a model and a capture) gets them from
+``run``, ``install`` and ``doctor`` also an SDK and a compiler, ``run`` a capture,
+``uninstall`` and ``install`` a prefix, ``scaffold`` a model and a capture) gets them from
 ``SETUP``. ``result.stats`` holds the only timings
 (section 6), so the two runs are compared without it. With zero real commands the loop
 still runs: the built-ins and ``dummy``.
@@ -268,6 +268,18 @@ def _test_args(directory: Path) -> list[str]:
     return ["--model", "model.pdl", *_built_project(directory)]
 
 
+def _run_args(directory: Path) -> list[str]:
+    # A plugin built here and a capture of one frame, with --dry-run: run
+    # reads the capture's header, finds the plugin up to date and compiles
+    # and runs nothing, so a second run prints the same envelope.
+    frame = bytes(12) + b"\x88\xb5" + b"\x01\x02\x00\x04"
+    header = (0xA1B2C3D4).to_bytes(4, "little") + bytes([2, 0, 4, 0]) + bytes(8)
+    header += (65535).to_bytes(4, "little") + (1).to_bytes(4, "little")
+    record = bytes(8) + len(frame).to_bytes(4, "little") * 2 + frame
+    (directory / "run.pcap").write_bytes(header + record)
+    return ["run.pcap", "--model", "model.pdl", *_built_project(directory), "--dry-run"]
+
+
 def _install_args(directory: Path) -> list[str]:
     # A plugin built here, installed with --dry-run into a prefix here: the
     # run writes nothing, so a second run prints the same envelope.
@@ -321,6 +333,7 @@ SETUP: dict[str, Callable[[Path], list[str]]] = {
     "validate": _validate_args,
     "build": _build_args,
     "test": _test_args,
+    "run": _run_args,
     "install": _install_args,
     "uninstall": _uninstall_args,
     "doctor": _doctor_args,

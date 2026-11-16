@@ -9,6 +9,22 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `mmt-plugin run PCAP` runs the project's plugin, built when stale, over
+  a pcap or pcapng capture through mmt-dpi's stack, with the SDK's plugins
+  and any `--plugin`, and reports the protocol paths with their packet
+  counts and, per attribute of the plugin's protocol (and each
+  `--protocol`), how many packets have it, as text and in its `--json`
+  `result` (#103). The capture is streamed to a generated runner one frame
+  at a time, so a capture of several gigabytes runs in constant memory.
+  It reads Ethernet and Linux cooked (`tcpdump -i any`) captures; another
+  link type is the new error `model.unsupported-linktype`. New codes
+  `build.runner-failed`, and the warnings `test.no-match`,
+  `test.other-linktype` and `test.unknown-protocol`; `--max-packets`,
+  `--timeout`, `--dry-run`, `--strict`. The user guide and the
+  mmt-plugin-generator skill (Step 6) describe it.
+- The pcap reader gives each frame's time stamp (nanoseconds since the
+  epoch: pcap's microseconds or nanoseconds, pcapng's `if_tsresol` and
+  `if_tsoffset`), which `run` hands to mmt-dpi (#103).
 - `plugin.yaml`: a `tcp` parent's `classify` can name ports, `port` (the
   source or the destination port), `sport` and `dport`, with optional
   `match`es on the payload's first bytes (#100). The generated

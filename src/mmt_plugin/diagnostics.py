@@ -162,10 +162,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "build.harness-failed": "the generated test harness does not compile against the SDK",
         "test.packet-failed": "a packet test failed: the classification, the next protocol or "
         "an attribute value is not the one the test expects",
-        "test.crash": "the harness crashed, timed out or a sanitizer (ASan, UBSan) reported an "
-        "error on a packet",
-        "test.load-failed": "the harness cannot run the plugin: init_extraction() fails or the "
-        "protocol is not registered",
+        "test.crash": "the harness (test) or the capture runner (run) crashed or timed out, or a "
+        "sanitizer (ASan, UBSan) reported an error on a packet",
+        "test.load-failed": "the harness (test) or the capture runner (run) cannot run the "
+        "plugin: init_extraction() fails or the protocol is not registered",
         "test.no-packets": "warning: no packet test was found, so nothing was tested",
         "test.bench-failed": "warning: --bench could not measure (advisory: the exit code does "
         "not change)",
@@ -230,10 +230,21 @@ CODES: Mapping[str, str] = MappingProxyType(
         "state.output-differs": "import, scaffold: an output file exists with other content, or "
         "is not a regular file; they do not replace it without --force (a directory, never)",
         # `scaffold` (mmt_plugin.commands.scaffold, mmt_plugin.pcap, #26).
-        "model.bad-pcap": "scaffold: the --from-pcap file cannot be read, or is not a pcap or "
+        "model.bad-pcap": "scaffold, run: the capture file cannot be read, or is not a pcap or "
         "pcapng capture, or its structure is broken (a truncated record or block)",
         "model.no-payloads": "scaffold: no frame of the capture has a non-empty payload under "
         "--parent",
+        # `run` (mmt_plugin.commands.run, mmt_plugin.capture, #103).
+        "model.unsupported-linktype": "run: the capture's first frame has a link type mmt-dpi "
+        "reads no stack for (it reads Ethernet and Linux cooked capture)",
+        "build.runner-failed": "the generated capture runner of run does not compile against "
+        "the SDK",
+        "test.no-match": "warning: run: no packet of the capture has the plugin's protocol in "
+        "its path",
+        "test.other-linktype": "warning: run: frames of another link type than the capture's "
+        "first frame were not processed (mmt-dpi reads one link type per handler)",
+        "test.unknown-protocol": "warning: run: a --protocol that no loaded plugin registers; "
+        "it was not counted",
     }
 )
 

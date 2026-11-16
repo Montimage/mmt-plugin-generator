@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin run --json result, schema_version 1",
+  "description": "The result of run (#103): the plugin over a capture. Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the three, in order; a stage the run did not reach is skipped. The counts are those of the frames processed before the run stopped (a capture broken after its header stops it, model.bad-pcap). stats holds the only timings; everything else is the same on a re-run with the same inputs.",
+  "type": "object",
+  "required": ["model", "profile", "build_dir", "capture", "dry_run", "stages", "plugins", "summary", "protocols", "paths", "paths_other", "stats"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path."},
+    "profile": {"type": "string", "minLength": 1, "description": "The SDK profile the plugin is generated for."},
+    "build_dir": {"type": "string", "minLength": 1, "description": "The directory of mmtp_<label>.so; the runner is in its run/ subdirectory."},
+    "capture": {
+      "type": "object",
+      "required": ["path", "format", "linktype"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "format": {"description": "null when the capture was not opened.", "enum": ["pcap", "pcapng", null]},
+        "linktype": {"description": "The LINKTYPE_* of the first frame, which the handler reads; null when no frame was read.", "type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "dry_run": {"type": "boolean", "description": "--dry-run: the inputs were checked and whether the plugin is up to date; nothing was compiled or run."},
+    "stages": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"enum": ["build", "runner", "capture"]},
+          "status": {
+            "enum": ["ran", "up-to-date", "stale", "failed", "skipped"],
+            "description": "stale: build with --no-deps or --dry-run, when the plugin is not up to date."
+          }
+        }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "The file names of the plugin directory the runner loaded, in mmt-dpi's load order (C locale): the SDK's plugins, the plugin and each --plugin. Empty when the capture stage did not start."
+    },
+    "summary": {
+      "type": "object",
+      "required": ["frames", "processed", "skipped", "classified"],
+      "additionalProperties": false,
+      "properties": {
+        "frames": {"type": "integer", "minimum": 0, "description": "The frames read (up to --max-packets)."},
+        "processed": {"type": "integer", "minimum": 0, "description": "The frames mmt-dpi processed."},
+        "skipped": {"type": "integer", "minimum": 0, "description": "Frames of another link type than the first (test.other-linktype), and frames packet_process() refused."},
+        "classified": {"type": "integer", "minimum": 0, "description": "The packets whose protocol path has the plugin's protocol."}
+      }
+    },
+    "protocols": {
+      "type": "array",
+      "description": "The plugin's protocol, then each --protocol, in order.",
+      "items": {
+        "type": "object",
+        "required": ["name", "id", "packets", "attributes"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "description": "The registered name; for a --protocol no plugin registers, the name as given."},
+          "id": {"type": ["integer", "null"], "minimum": 0, "description": "null: no loaded plugin registers it (test.unknown-protocol)."},
+          "packets": {"type": "integer", "minimum": 0, "description": "The packets whose protocol path has it."},
+          "attributes": {
+            "type": "array",
+            "description": "Every attribute the protocol registers, by id.",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "type", "packets"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {"type": "integer", "minimum": 0},
+                "name": {"type": "string"},
+                "type": {"type": "string", "minLength": 1, "description": "The data type it registered with (MMT_U8_DATA, ...)."},
+                "packets": {"type": "integer", "minimum": 0, "description": "The packets in which mmt-dpi extracted it."}
+              }
+            }
+          }
+        }
+      }
+    },
+    "paths": {
+      "type": "array",
+      "description": "The protocol paths mmt-dpi gave the packets, the most packets first (then by path); at most 1024, the packets of the others in paths_other.",
+      "items": {
+        "type": "object",
+        "required": ["path", "ids", "packets"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "description": "The protocol names, dot-separated, e.g. ethernet.ip.tcp.http."},
+          "ids": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+          "packets": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "paths_other": {"type": "integer", "minimum": 0, "description": "The packets of paths beyond the 1024 kept."},
+    "stats": {
+      "type": "object",
+      "required": ["elapsed_ms", "frames_per_second"],
+      "additionalProperties": false,
+      "properties": {
+        "elapsed_ms": {"type": "integer", "minimum": 0},
+        "frames_per_second": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

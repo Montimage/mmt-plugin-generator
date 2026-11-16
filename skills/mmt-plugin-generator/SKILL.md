@@ -289,7 +289,20 @@ the run write `runs/run-<n>/notes.md`: the command that stopped, its
 
 ## Step 6: evaluate on the capture
 
-When a loop run is green, run the built plugin on the capture, as
+When a loop run is green, first look at what the plugin does on the
+capture with `run`: it runs the plugin through mmt-dpi's stack (its own
+parent classification) and reports the protocol paths with their packet
+counts and, per attribute, the packets that have it. A
+`test.no-match` warning, or an attribute in none of the plugin's packets,
+is a problem to fix before the evaluation:
+
+```sh
+mmt-plugin -C <project> --json run <work>/capture/capture.pcap --sdk <prefix> --cc <cc>
+```
+
+Read `result.summary.classified`, `result.paths[]` and
+`result.protocols[0].attributes[]`; keep the envelope in the loop run's
+folder. Then evaluate the built plugin on the capture, as
 [`references/evaluation.md`](references/evaluation.md) says:
 
 ```sh

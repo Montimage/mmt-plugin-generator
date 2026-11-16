@@ -235,6 +235,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.no-payloads": "scaffold: no frame of the capture has a non-empty payload under "
         "--parent",
         # `run` (mmt_plugin.commands.run, mmt_plugin.capture, #103).
+        "model.unsupported-linktype": "run: the capture's first frame has a link type mmt-dpi "
+        "reads no stack for (it reads Ethernet and Linux cooked capture)",
         "build.runner-failed": "the generated capture runner of run does not compile against "
         "the SDK",
         "test.no-match": "warning: run: no packet of the capture has the plugin's protocol in "

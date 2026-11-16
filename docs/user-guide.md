@@ -459,11 +459,15 @@ python3 -c 'import json; r = json.load(open("run.json"))["result"]; print(r["sum
   capture of several gigabytes runs in the same memory as a small one.
   Frames keep their time stamps, so mmt-dpi expires sessions as it would
   on the wire.
-- mmt-dpi reads one link type per run: the first frame's. Frames of
-  another one are counted in `summary.skipped` (`test.other-linktype`).
+- mmt-dpi 1.10.2 reads Ethernet and Linux cooked captures (`tcpdump -i
+  any`); a capture whose first frame has another link type is
+  `model.unsupported-linktype` (exit 3). It reads one link type per run,
+  the first frame's: frames of another one are counted in
+  `summary.skipped` (`test.other-linktype`).
 - No packet of the plugin's protocol is the warning `test.no-match`; a
-  plugin that does not load is `test.load-failed` and a crash `test.crash`,
-  which names the frame (exit 6); a capture broken after its header is
+  plugin that does not load is `test.load-failed`, and a crash or a
+  `--timeout` is `test.crash` (exit 6): a crash names its frame, and the
+  counts of a run that stopped are only the frames before; a capture broken after its header is
   `model.bad-pcap` (exit 3), reported with the counts of the frames before.
   `--strict` fails on a warning.
 

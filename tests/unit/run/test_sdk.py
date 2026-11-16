@@ -134,6 +134,23 @@ def test_the_dns_example_over_a_capture(
     assert again["result"]["paths"] == result["paths"]
 
 
+def test_a_linux_cooked_capture_runs_through_mmt_dpis_sll_stack(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = _example("dns", tmp_path)
+    # tcpdump -i any: a 16-byte Linux cooked header (protocol 0x0800) in
+    # place of the Ethernet header.
+    sll = struct.pack(">HHH8sH", 0, 1, 6, bytes(8), 0x0800)
+    frames = [sll + _dns(n)[14:] for n in range(4)] + [sll + _other(1)[14:]]
+    capture = tmp_path / "any.pcap"
+    capture.write_bytes(samples.pcap(frames, samples.SLL))
+    code, doc = _run(project, capture, "--strict", capsys=capsys)
+    assert code == 0, (doc["error"], doc["diagnostics"])
+    result = doc["result"]
+    assert result["capture"]["linktype"] == samples.SLL
+    assert result["summary"] == {"frames": 5, "processed": 5, "skipped": 0, "classified": 4}
+
+
 def test_another_plugin_loads_with_plugin_and_is_counted_with_protocol(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

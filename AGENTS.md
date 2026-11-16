@@ -347,6 +347,8 @@ protocol model. A Python rewrite is planned in
   classified), `paths` (protocol names and ids, packets; at most 1024, the
   rest in `paths_other`), `protocols` (the plugin's, then each
   `--protocol`: packets, and per attribute the packets that have it).
+  Ethernet and Linux cooked captures only (mmt-dpi's stacks 1 and 624;
+  another link type is `model.unsupported-linktype`, exit 3).
   Warnings `test.no-match`, `test.other-linktype`, `test.unknown-protocol`;
   `test.load-failed` and `test.crash` (the frame; `--timeout`) exit 6; a
   capture broken after its header `model.bad-pcap` (exit 3) with the

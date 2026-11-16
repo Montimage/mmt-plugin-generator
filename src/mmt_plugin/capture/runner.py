@@ -40,6 +40,7 @@ from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, Profile
 
 __all__ = [
     "LINKTYPE_DLT",
+    "MAX_PROTOCOLS",
     "SETUP_EXIT",
     "CaptureRun",
     "ProtocolReport",
@@ -52,6 +53,8 @@ __all__ = [
 
 #: The exit status of a runner whose setup failed (an ``error`` line).
 SETUP_EXIT = 3
+#: The runner counts at most this many protocols (``RUNNER_PROTOCOLS``).
+MAX_PROTOCOLS = 16
 #: The runner keeps at most this many protocol paths (``RUNNER_PATHS``).
 MAX_PATHS = 1024
 #: Bytes written to the runner's stdin at once.
@@ -59,9 +62,12 @@ BATCH = 1 << 20
 #: The stderr lines kept for a failure's message.
 STDERR_TAIL = 20
 
-#: A pcap LINKTYPE_* whose libpcap DLT_* value differs on Linux:
-#: LINKTYPE_RAW (101) is DLT_RAW (12). Every other one is the same number.
-LINKTYPE_DLT: Mapping[int, int] = {101: 12}
+#: The capture link types (LINKTYPE_*) mmt-dpi reads, and the stack its
+#: handler takes for each (``mmt_init_handler``): Ethernet is stack 1, Linux
+#: cooked capture (LINKTYPE_LINUX_SLL, ``tcpdump -i any``) mmt-dpi's
+#: PROTO_SLL, 624. mmt-dpi 1.10.2 registers no other stack (raw IP, SLL2,
+#: loopback, 802.11 are refused).
+LINKTYPE_DLT: Mapping[int, int] = {1: 1, 113: 624}
 
 _NANO = 1_000_000_000
 
@@ -83,9 +89,10 @@ def runner_source(profile: Profile) -> str:
     return _ENVIRONMENT.get_template("runner.c.j2").render(profile=profile.version, types=types)
 
 
-def dlt_of(linktype: int) -> int:
-    """The DLT_* value mmt-dpi's handler takes for a capture's LINKTYPE_*."""
-    return LINKTYPE_DLT.get(linktype, linktype)
+def dlt_of(linktype: int) -> int | None:
+    """The stack mmt-dpi's handler takes for a capture's LINKTYPE_*, or
+    ``None`` when mmt-dpi reads no such link type."""
+    return LINKTYPE_DLT.get(linktype)
 
 
 def record(frame: Frame) -> bytes:
@@ -259,7 +266,9 @@ def run(
     if error is not None and not isinstance(error, errors):
         raise error
     linktype = first.linktype if first is not None else None
-    dlt = dlt_of(linktype) if linktype is not None else dlt_of(1)
+    dlt = dlt_of(linktype) if linktype is not None else 1
+    if dlt is None:
+        raise ValueError(f"link type {linktype} is not one mmt-dpi reads")
     with tempfile.TemporaryDirectory(prefix="mmt-plugin-run-") as tmp:
         root = Path(tmp)
         plugin_dir = root / "plugins"
@@ -311,8 +320,9 @@ def run(
         timed_out = threading.Event()
 
         def expire() -> None:
-            timed_out.set()
-            _kill(proc)
+            if proc.poll() is None:
+                timed_out.set()
+                _kill(proc)
 
         timer = threading.Timer(timeout, expire) if timeout else None
         if timer is not None:
@@ -345,6 +355,8 @@ def run(
             with contextlib.suppress(BrokenPipeError, OSError):
                 proc.stdin.close()
             proc.wait()
+            if timer is not None:
+                timer.cancel()
             for reader in readers:
                 reader.join()
         except BaseException:

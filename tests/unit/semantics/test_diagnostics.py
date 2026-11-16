@@ -13,6 +13,7 @@ from mmt_plugin.codegen import DIAGNOSTIC_CODES as GENERATION_CODES
 from mmt_plugin.commands.generate import DIAGNOSTIC_CODES as GENERATE_CODES
 from mmt_plugin.commands.import_pdl import DIAGNOSTIC_CODES as IMPORT_CODES
 from mmt_plugin.commands.init import DIAGNOSTIC_CODES as INIT_CODES
+from mmt_plugin.commands.run import DIAGNOSTIC_CODES as RUN_CODES
 from mmt_plugin.commands.scaffold import DIAGNOSTIC_CODES as SCAFFOLD_CODES
 from mmt_plugin.commands.test import DIAGNOSTIC_CODES as TEST_CODES
 from mmt_plugin.commands.validate import DIAGNOSTIC_CODES as VALIDATE_CODES
@@ -244,6 +245,7 @@ LATER = {
     *PLUGIN_YAML_CODES,
     *IMPORT_CODES,
     *SCAFFOLD_CODES,
+    *RUN_CODES,
 } - set(HINTS)
 SEMANTIC = [
     c

@@ -241,7 +241,7 @@ def test_an_empty_capture_runs_and_has_no_match(project: Path, run: Run) -> None
 
 
 def test_frames_of_another_link_type_are_skipped_with_a_warning(project: Path, run: Run) -> None:
-    data = samples.pcapng([_dns(1), _dns(2)]) + samples.pcapng([b"\x45" + bytes(30)], 101)
+    data = samples.pcapng([_dns(1), _dns(2)]) + samples.pcapng([bytes(16) + _dns(3)[14:]], 113)
     (project / "two.pcapng").write_bytes(data)
     code, doc = run("two.pcapng")
     assert code == 0
@@ -278,6 +278,13 @@ def test_a_crash_is_exit_6_and_names_the_frame(
     assert doc["error"]["code"] == "test.crash"
     assert "frame 4" in doc["error"]["message"] and "SIGSEGV" in doc["error"]["message"]
     assert _stages(doc)["capture"] == "failed"
+    # Only the frames before the crash are known to be processed.
+    assert doc["result"]["summary"] == {
+        "frames": 3,
+        "processed": 3,
+        "skipped": 0,
+        "classified": 0,
+    }
 
 
 def test_a_timeout_is_a_crash(project: Path, run: Run, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -481,3 +488,40 @@ def test_plain_records_are_frames_paths_and_attributes(
         "attribute\tFAKEPROTO\tkind\t3",
         "attribute\tFAKEPROTO\tsize\t1",
     ]
+
+
+def test_a_linux_cooked_capture_is_read_as_mmt_dpis_sll_stack(
+    project: Path, run: Run, log: Path
+) -> None:
+    sll = [bytes(16) + _dns(n)[14:] for n in range(3)]
+    (project / "any.pcap").write_bytes(samples.pcap(sll, samples.SLL))
+    code, doc = run("any.pcap")
+    assert code == 0
+    assert doc["result"]["capture"]["linktype"] == samples.SLL
+    assert _logged(log)[0]["argv"][0] == "624"
+
+
+def test_a_link_type_mmt_dpi_does_not_read_is_exit_3_before_anything_is_built(
+    project: Path, run: Run
+) -> None:
+    (project / "raw.pcap").write_bytes(samples.pcap([_dns(1)[14:]], samples.RAW))
+    code, doc = run("raw.pcap")
+    assert code == 3
+    assert doc["error"]["code"] == "model.unsupported-linktype"
+    assert "link type, 101" in doc["error"]["message"]
+    assert not (project / "build").exists()
+
+
+def test_a_broken_first_record_is_exit_3_before_anything_is_built(project: Path, run: Run) -> None:
+    (project / "cut.pcap").write_bytes(samples.pcap([_dns(1)])[:-5])
+    code, doc = run("cut.pcap")
+    assert code == 3
+    assert doc["error"]["code"] == "model.bad-pcap"
+    assert not (project / "build").exists()
+
+
+def test_too_many_protocols_are_a_usage_error(project: Path, run: Run) -> None:
+    args = [x for n in range(16) for x in ("--protocol", f"p{n}")]
+    code, doc = run(*args)
+    assert code == 2
+    assert doc["error"]["code"] == "usage.invalid-value"

@@ -16,7 +16,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   `--protocol`), how many packets have it, as text and in its `--json`
   `result` (#103). The capture is streamed to a generated runner one frame
   at a time, so a capture of several gigabytes runs in constant memory.
-  New codes `build.runner-failed`, and the warnings `test.no-match`,
+  It reads Ethernet and Linux cooked (`tcpdump -i any`) captures; another
+  link type is the new error `model.unsupported-linktype`. New codes
+  `build.runner-failed`, and the warnings `test.no-match`,
   `test.other-linktype` and `test.unknown-protocol`; `--max-packets`,
   `--timeout`, `--dry-run`, `--strict`. The user guide and the
   mmt-plugin-generator skill (Step 6) describe it.

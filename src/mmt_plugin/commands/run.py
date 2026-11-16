@@ -43,11 +43,12 @@ plugin is up to date, and compiles and runs nothing.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -69,7 +70,7 @@ from mmt_plugin.commands.modelio import FORMATS, absolute, read_model, show_path
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, write_atomic
-from mmt_plugin.pcap.reader import Capture, PcapError, read_stream
+from mmt_plugin.pcap.reader import Capture, Frame, PcapError, read_stream
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.ui import style
@@ -80,6 +81,7 @@ __all__ = ["DIAGNOSTIC_CODES", "RUNNER_CFLAGS", "STAGES", "RunCommand"]
 #: The codes this command reports itself.
 DIAGNOSTIC_CODES = (
     "model.bad-pcap",
+    "model.unsupported-linktype",
     "build.runner-failed",
     "test.crash",
     "test.load-failed",
@@ -140,9 +142,8 @@ class _Run:
     build_up_to_date: bool = False
 
 
-def _limited(capture: Capture, limit: int | None) -> Any:
-    """The capture's frames, at most ``limit`` (``None``: all)."""
-    frames = capture.frames()
+def _limited(frames: Iterable[Frame], limit: int | None) -> Iterable[Frame]:
+    """``frames``, at most ``limit`` (``None``: all)."""
     if limit is None:
         return frames
     return (frame for _, frame in zip(range(limit), frames, strict=False))
@@ -504,10 +505,17 @@ class RunCommand:
                 context=context,
             )
 
+        if len(args.protocol) >= runner_mod.MAX_PROTOCOLS:
+            raise CliError(
+                "usage.invalid-value",
+                f"--protocol: at most {runner_mod.MAX_PROTOCOLS - 1} protocols",
+                "count fewer protocols in one run",
+            )
         extra, sdk_plugins = self._plugins(args, project, sdk, label)
         stream, capture = self._open(capture_path, shown)
         with stream:
             run.capture["format"] = capture.format
+            frames = self._first_frame(capture, shown, args.max_packets, run)
             warning = _first_warning(run)
             if args.strict and warning is not None:
                 return outcome(_strict(warning))
@@ -532,11 +540,41 @@ class RunCommand:
             plugins.update(extra)
             run.plugins = sorted(plugins, key=lambda n: n.encode("utf-8", "surrogateescape"))
             protocols = [str(generation.proto_id), *args.protocol]
-            error = self._capture(args, ctx, program, capture, plugins, protocols, shown, run)
+            error = self._capture(args, ctx, program, frames, plugins, protocols, shown, run)
         warning = _first_warning(run)
         if error is None and args.strict and warning is not None:
             error = _strict(warning)
         return outcome(error)
+
+    def _first_frame(
+        self, capture: Capture, shown: str, limit: int | None, run: _Run
+    ) -> Iterable[Frame]:
+        """The capture's frames (at most ``limit``), once the first one is
+        read: a broken first record is ``model.bad-pcap`` and a link type
+        mmt-dpi does not read ``model.unsupported-linktype``, before anything
+        is built."""
+        frames = capture.frames()
+        try:
+            first = next(frames, None) if limit != 0 else None
+        except PcapError as exc:
+            raise CliError(
+                "model.bad-pcap",
+                f"{shown} is not a readable capture: {exc}",
+                "pass a pcap or pcapng file (tcpdump -w, Wireshark, editcap -F pcap)",
+            ) from None
+        if first is None:
+            return []
+        run.capture["linktype"] = first.linktype
+        if runner_mod.dlt_of(first.linktype) is None:
+            supported = ", ".join(str(k) for k in runner_mod.LINKTYPE_DLT)
+            raise CliError(
+                "model.unsupported-linktype",
+                f"{shown}: its first frame's link type, {first.linktype}, is not one mmt-dpi"
+                f" reads (link types {supported}: Ethernet, Linux cooked capture)",
+                "convert the capture to Ethernet (e.g. editcap -T ether, or capture on one"
+                " interface rather than -i any with SLL2)",
+            )
+        return _limited(itertools.chain([first], frames), limit)
 
     # --- stage 3 ---
 
@@ -545,7 +583,7 @@ class RunCommand:
         args: argparse.Namespace,
         ctx: Context,
         program: Path,
-        capture: Capture,
+        frames: Iterable[Frame],
         plugins: Mapping[str, Path],
         protocols: Sequence[str],
         shown: str,
@@ -558,7 +596,7 @@ class RunCommand:
         with ctx.progress("frames") as progress:
             done = runner_mod.run(
                 program,
-                _limited(capture, args.max_packets),
+                frames,
                 plugins,
                 protocols,
                 timeout=args.timeout or None,
@@ -576,6 +614,10 @@ class RunCommand:
         if reason is not None and not report.ready:
             run.stages["capture"] = "failed"
             return _load_failed(reason, done.stderr, run)
+        if reason is not None and report.frames is None:
+            # The runner stopped before its counts: only the frames it
+            # reached are known (the batches sent are ahead of it).
+            report.frames = report.crash - 1 if report.crash is not None else report.progress
         _fill(run, report, done)
         if reason is not None:
             run.stages["capture"] = "failed"
@@ -583,7 +625,11 @@ class RunCommand:
             last = _last_line(done.stderr)
             if last:
                 run.diagnostics.append(Diagnostic(Severity.NOTE, "test.crash", last))
-            where = f" in frame {frame:,} of those sent" if report.crash is not None else ""
+            where = (
+                f" in frame {frame:,} of those sent"
+                if report.crash is not None
+                else f" after frame {report.progress:,}"
+            )
             return CliError(
                 "test.crash",
                 f"the runner stopped{where}: {reason}",
@@ -639,8 +685,10 @@ def _load_failed(reason: str, stderr: str, run: _Run) -> CliError:
 def _fill(run: _Run, report: runner_mod.Report, done: runner_mod.CaptureRun) -> None:
     """The result's counts from the runner's report."""
     frames = report.frames if report.frames is not None else done.sent
+    # A runner that stopped early (a crash) reached fewer frames than were sent.
+    read = done.sent if report.end is not None else frames
     run.summary = {
-        "frames": done.sent + done.other_linktype,
+        "frames": read + done.other_linktype,
         "processed": frames - report.unprocessed,
         "skipped": done.other_linktype + report.unprocessed,
         "classified": report.protocols[0].packets if report.protocols else 0,

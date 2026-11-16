@@ -138,6 +138,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.legacy-*` | Warnings from `import`: the converted model does what the spec says, not what the Java tool did. Check the attribute against the spec. |
 | `model.bad-packet-test` | The packet test file is not corpus schema 1 (`tests/corpus/README.md`, Packet files): fix it at the location. |
 | `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
+| `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
 | `build.cc` | One compiler message: fix the source at its location. |
 | `build.compile-failed` | Fix the `build.cc` errors in `src/<label>_impl.c`; an error in `generated/` comes from the model. A failure with no located `build.cc` error (a fatal compiler error, an object that is not ELF) is the toolchain or the SDK: check `--cc` and `--sdk`. |

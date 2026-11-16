@@ -71,10 +71,18 @@ def test_a_record_is_the_lengths_the_time_stamp_and_the_bytes() -> None:
     assert data[20:] == b"abc"
 
 
-def test_raw_ip_is_dlt_raw_and_other_link_types_are_their_own_number() -> None:
-    assert runner.dlt_of(101) == 12
+def test_ethernet_and_linux_cooked_captures_are_the_stacks_mmt_dpi_reads() -> None:
     assert runner.dlt_of(1) == 1
-    assert runner.dlt_of(113) == 113
+    assert runner.dlt_of(113) == 624  # mmt-dpi's PROTO_SLL
+    assert runner.dlt_of(101) is None  # raw IP: mmt-dpi 1.10.2 has no stack
+    assert runner.dlt_of(276) is None  # Linux cooked v2
+
+
+def test_a_first_frame_of_a_link_type_mmt_dpi_does_not_read_is_refused(
+    fake: Path, plugins: dict[str, Path]
+) -> None:
+    with pytest.raises(ValueError, match="link type 101"):
+        runner.run(fake, _frames([_dns(1)], linktype=101), plugins, ["991"])
 
 
 def test_the_report_reads_every_line() -> None:
@@ -159,10 +167,10 @@ def test_frames_of_another_link_type_than_the_first_are_not_sent(
 ) -> None:
     log = tmp_path / "log"
     monkeypatch.setenv("FAKE_RUNNER_LOG", str(log))
-    frames = _frames([_dns(1), _dns(2)], linktype=101) + _frames([_dns(3)])
+    frames = _frames([_dns(1), _dns(2)], linktype=113) + _frames([_dns(3)])
     done = runner.run(fake, frames, plugins, ["991"])
-    assert (done.sent, done.other_linktype, done.dlt, done.linktype) == (2, 1, 12, 101)
-    assert json.loads(log.read_text())["argv"][0] == "12"
+    assert (done.sent, done.other_linktype, done.dlt, done.linktype) == (2, 1, 624, 113)
+    assert json.loads(log.read_text())["argv"][0] == "624"
 
 
 def test_no_frame_still_runs_the_runner_with_ethernet(
@@ -278,3 +286,10 @@ def test_streaming_a_capture_takes_the_same_memory_whatever_its_size(
         assert done.crash_reason() is None and done.report.frames == n
     assert peaks[1] < 4 * runner.BATCH
     assert peaks[1] < peaks[0] + runner.BATCH
+
+
+def test_a_timeout_after_the_runner_ended_is_not_a_timeout(
+    fake: Path, plugins: dict[str, Path]
+) -> None:
+    done = runner.run(fake, _frames([_dns(1)]), plugins, ["991"], timeout=30)
+    assert not done.timed_out and done.crash_reason() is None

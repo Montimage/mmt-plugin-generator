@@ -14,6 +14,10 @@ selector, ``mmt_plugin.testing.frames``) runs the packet a second time,
 behind the lower layers it names, through mmt-dpi's stack and the plugin's
 own parent classification.
 
+``load_doc(doc, shown, data_types)`` does the same for a file already
+read (``mmt_plugin.testing.session.load_test`` reads a file once and
+tells a packet test from a session test).
+
 ``check(test, observed, plugin)`` compares one ``Observation`` with the test
 and returns its failures, each an attribute, the expected and the actual
 value as display strings. Values are compared in the corpus's value kinds:
@@ -32,10 +36,10 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from mmt_plugin.diagnostics import Diagnostic, Location, Severity
 from mmt_plugin.testing.frames import Through, parse_through
@@ -57,6 +61,8 @@ __all__ = [
     "display",
     "harness_lengths",
     "load",
+    "load_doc",
+    "read_doc",
 ]
 
 #: The pseudo attributes of a failure on the classification.
@@ -134,6 +140,11 @@ class PacketTest:
     attributes: tuple[ExpectedAttribute, ...]
     through: Through | None = None
 
+    @property
+    def named_attributes(self) -> Iterable[ExpectedAttribute]:
+        """Every attribute the test names (what the harness must read)."""
+        return self.attributes
+
 
 @dataclass(frozen=True)
 class ExpectedParent:
@@ -175,17 +186,28 @@ class Observation:
 
 @dataclass(frozen=True)
 class Failure:
-    """One mismatch, as ``result.packets[].failures`` reports it."""
+    """One mismatch, as ``result.packets[].failures`` reports it; ``packet``
+    is the index of the step of a session test it is in (``None``: a packet
+    test)."""
 
     attribute: str
     expected: str
     actual: str
+    packet: int | None = None
 
-    def to_json(self) -> dict[str, str]:
-        return {"attribute": self.attribute, "expected": self.expected, "actual": self.actual}
+    def to_json(self) -> dict[str, str | int]:
+        out: dict[str, str | int] = {
+            "attribute": self.attribute,
+            "expected": self.expected,
+            "actual": self.actual,
+        }
+        if self.packet is not None:
+            out["packet"] = self.packet
+        return out
 
 
-def _error(shown: str, message: str, line: int | None = None) -> PacketTestError:
+def error(shown: str, message: str, line: int | None = None) -> PacketTestError:
+    """A ``model.bad-packet-test`` error in the file ``shown``."""
     return PacketTestError(
         Diagnostic(
             Severity.ERROR,
@@ -197,12 +219,12 @@ def _error(shown: str, message: str, line: int | None = None) -> PacketTestError
     )
 
 
-def _need(shown: str, where: str, obj: Mapping[str, Any], key: str, kind: type) -> Any:
+def need(shown: str, where: str, obj: Mapping[str, Any], key: str, kind: type) -> Any:
     value = obj.get(key)
     if key not in obj:
-        raise _error(shown, f"{where}: missing key {key!r}")
+        raise error(shown, f"{where}: missing key {key!r}")
     if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
-        raise _error(shown, f"{where}: {key!r} must be {_kind_name(kind)}")
+        raise error(shown, f"{where}: {key!r} must be {_kind_name(kind)}")
     return value
 
 
@@ -212,9 +234,9 @@ def _kind_name(kind: type) -> str:
     )
 
 
-def _hex(shown: str, where: str, value: object) -> bytes:
+def hex_bytes(shown: str, where: str, value: object) -> bytes:
     if not isinstance(value, str) or not _HEX_BYTES.match(value):
-        raise _error(shown, f"{where}: must be lower-case hex pairs separated by one space")
+        raise error(shown, f"{where}: must be lower-case hex pairs separated by one space")
     return bytes.fromhex(value)
 
 
@@ -233,10 +255,10 @@ def _expected_value(shown: str, where: str, type_name: str, attr: Mapping[str, A
     value = attr.get("value")
     if type_name in INT_WIDTH or type_name == POINTER:
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise _error(shown, f"{where}: a {type_name} value is a non-negative integer")
+            raise error(shown, f"{where}: a {type_name} value is a non-negative integer")
         return value
     if not isinstance(value, str):
-        raise _error(shown, f"{where}: a {type_name} value is a string")
+        raise error(shown, f"{where}: a {type_name} value is a string")
     try:
         if type_name == "MMT_DATA_MAC_ADDR":
             parts = value.lower().split(":")
@@ -248,89 +270,119 @@ def _expected_value(shown: str, where: str, type_name: str, attr: Mapping[str, A
         if type_name == "MMT_DATA_IP6_ADDR":
             return str(ipaddress.IPv6Address(value))
     except ValueError:
-        raise _error(shown, f"{where}: {value!r} is not a {type_name} value") from None
-    return display(type_name, _hex(shown, f"{where} value", value))
+        raise error(shown, f"{where}: {value!r} is not a {type_name} value") from None
+    return display(type_name, hex_bytes(shown, f"{where} value", value))
 
 
-def _attribute(
-    shown: str, where: str, attr: object, data_types: Collection[str]
+def attribute(
+    shown: str,
+    where: str,
+    attr: object,
+    data_types: Collection[str],
+    known: Mapping[str, str] | None = None,
 ) -> ExpectedAttribute:
+    """One entry of ``expect.attributes``. With ``known`` (a session test's
+    attributes, name to type), ``offset`` and ``length`` are optional, and
+    so is ``type`` for a name ``known`` lists, which must agree with it."""
     if not isinstance(attr, dict):
-        raise _error(shown, f"{where}: must be a mapping")
-    name = _need(shown, where, attr, "name", str)
+        raise error(shown, f"{where}: must be a mapping")
+    name = need(shown, where, attr, "name", str)
     if not _NAME.match(name):
-        raise _error(shown, f"{where}: attribute name {name!r} is not a C identifier")
+        raise error(shown, f"{where}: attribute name {name!r} is not a C identifier")
     where = f"{where} ({name})"
-    type_name = _need(shown, where, attr, "type", str)
+    listed = None if known is None else known.get(name)
+    if listed is not None and "type" not in attr:
+        type_name = listed
+    else:
+        type_name = need(shown, where, attr, "type", str)
     if type_name not in data_types:
-        raise _error(shown, f"{where}: {type_name!r} is not a data type of the SDK profile")
+        raise error(shown, f"{where}: {type_name!r} is not a data type of the SDK profile")
+    if listed is not None and type_name != listed:
+        raise error(shown, f"{where}: type {type_name} but the session lists it as {listed}")
     status = attr.get("status", "value")
     if status not in _STATUSES:
-        raise _error(shown, f"{where}: status must be value, absent or undefined")
+        raise error(shown, f"{where}: status must be value, absent or undefined")
     if status != "value":
         return ExpectedAttribute(name, type_name, status, None, None)
-    offset = _need(shown, where, attr, "offset", int)
-    length = _need(shown, where, attr, "length", int)
+    if known is not None and "offset" not in attr and "length" not in attr:
+        if "value" not in attr:
+            raise error(shown, f"{where}: missing key 'value'")
+        value = _expected_value(shown, where, type_name, attr)
+        return ExpectedAttribute(name, type_name, status, value, None)
+    offset = need(shown, where, attr, "offset", int)
+    length = need(shown, where, attr, "length", int)
     if offset < 0 or length <= 0:
-        raise _error(shown, f"{where}: offset must be >= 0 and length > 0")
+        raise error(shown, f"{where}: offset must be >= 0 and length > 0")
     if "value" not in attr:
-        raise _error(shown, f"{where}: missing key 'value'")
+        raise error(shown, f"{where}: missing key 'value'")
     return ExpectedAttribute(
         name, type_name, status, _expected_value(shown, where, type_name, attr), length
     )
 
 
 def _next(shown: str, expect: Mapping[str, Any]) -> ExpectedNext:
-    nxt = _need(shown, "expect", expect, "next", dict)
+    nxt = need(shown, "expect", expect, "next", dict)
     kind = nxt.get("kind")
     if kind not in _NEXT_KINDS:
-        raise _error(shown, "expect.next: kind must be none, hook or proto")
+        raise error(shown, "expect.next: kind must be none, hook or proto")
     if kind != "proto":
         return ExpectedNext(kind)
-    proto_id = _need(shown, "expect.next", nxt, "proto_id", int)
-    offset = _need(shown, "expect.next", nxt, "offset", int)
+    proto_id = need(shown, "expect.next", nxt, "proto_id", int)
+    offset = need(shown, "expect.next", nxt, "offset", int)
     return ExpectedNext(kind, proto_id, offset)
+
+
+def read_doc(path: Path, shown: str) -> dict[str, Any]:
+    """The top-level mapping of the schema 1 file at ``path``."""
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise error(shown, f"cannot read {shown}: {exc.strerror or exc}") from None
+    try:
+        doc = loads(raw)
+    except LoadError as exc:
+        raise error(shown, exc.message, exc.line) from None
+    if not isinstance(doc, dict):
+        raise error(shown, "the top level must be a mapping")
+    if doc.get("schema") != 1:
+        raise error(shown, "schema must be 1")
+    return doc
 
 
 def load(path: Path, shown: str, data_types: Collection[str]) -> PacketTest:
     """Read the packet test at ``path`` (``shown`` names it in diagnostics);
     ``data_types`` are the SDK profile's data type names."""
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise _error(shown, f"cannot read {shown}: {exc.strerror or exc}") from None
-    try:
-        doc = loads(raw)
-    except LoadError as exc:
-        raise _error(shown, exc.message, exc.line) from None
-    if not isinstance(doc, dict):
-        raise _error(shown, "the top level must be a mapping")
-    if doc.get("schema") != 1:
-        raise _error(shown, "schema must be 1")
-    test_id = _need(shown, "the test", doc, "id", str)
-    chunks = _need(shown, "the test", doc, "bytes", list)
-    data = b"".join(_hex(shown, f"bytes[{i}]", c) for i, c in enumerate(chunks))
-    expect = _need(shown, "the test", doc, "expect", dict)
-    protocol = _need(shown, "expect", expect, "protocol", str)
-    proto_id = _need(shown, "expect", expect, "proto_id", int)
+    return load_doc(read_doc(path, shown), shown, data_types)
+
+
+def load_doc(doc: Mapping[str, Any], shown: str, data_types: Collection[str]) -> PacketTest:
+    """The packet test of ``doc``, a file ``read_doc`` read."""
+    if "session" in doc:
+        raise error(shown, "a session test (it has 'session'), not a packet test")
+    test_id = need(shown, "the test", doc, "id", str)
+    chunks = need(shown, "the test", doc, "bytes", list)
+    data = b"".join(hex_bytes(shown, f"bytes[{i}]", c) for i, c in enumerate(chunks))
+    expect = need(shown, "the test", doc, "expect", dict)
+    protocol = need(shown, "expect", expect, "protocol", str)
+    proto_id = need(shown, "expect", expect, "proto_id", int)
     nxt = _next(shown, expect)
     items = expect.get("attributes", [])
     if not isinstance(items, list):
-        raise _error(shown, "expect: 'attributes' must be a list")
+        raise error(shown, "expect: 'attributes' must be a list")
     attributes = tuple(
-        _attribute(shown, f"expect.attributes[{i}]", a, data_types) for i, a in enumerate(items)
+        attribute(shown, f"expect.attributes[{i}]", a, data_types) for i, a in enumerate(items)
     )
     names = [a.name for a in attributes]
     duplicate = next((n for n in names if names.count(n) > 1), None)
     if duplicate is not None:
-        raise _error(shown, f"expect.attributes: {duplicate!r} is listed twice")
+        raise error(shown, f"expect.attributes: {duplicate!r} is listed twice")
     through = None
     if "through" in doc:
-        text = _need(shown, "the test", doc, "through", str)
+        text = need(shown, "the test", doc, "through", str)
         try:
             through = parse_through(text)
         except ValueError as exc:
-            raise _error(shown, f"through: {exc}") from None
+            raise error(shown, f"through: {exc}") from None
     return PacketTest(test_id, shown, data, protocol, proto_id, nxt, attributes, through)
 
 
@@ -411,14 +463,21 @@ def _shown(attr: ExpectedAttribute) -> str:
     return "absent" if attr.status == "absent" else str(attr.value)
 
 
-def harness_lengths(tests: Sequence[PacketTest], sizes: Mapping[str, int]) -> dict[str, int]:
+class NamesAttributes(Protocol):
+    """A packet test or a session test: the attributes it names."""
+
+    @property
+    def named_attributes(self) -> Iterable[ExpectedAttribute]: ...
+
+
+def harness_lengths(tests: Sequence[NamesAttributes], sizes: Mapping[str, int]) -> dict[str, int]:
     """The bytes the harness prints for each attribute the tests name, for a
     type with no integer or binary form: the longest length the tests give,
     within the type's SDK size (``sizes``; 0 or unknown: not capped), else
     that size."""
     out: dict[str, int] = {}
     for test in tests:
-        for attr in test.attributes:
+        for attr in test.named_attributes:
             size = sizes.get(attr.type, 0)
             length = attr.length if attr.length is not None else size
             if size > 0:

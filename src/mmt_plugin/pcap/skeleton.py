@@ -201,12 +201,18 @@ def _comment(text: str) -> str:
 def _classify(parent: Parent, tagged: bool) -> list[str] | None:
     """The ``classify`` lines of a parent the generated code can attach
     exactly, or ``None``: an Ethernet type of untagged frames, a UDP source
-    or destination port. Every other selector (``port`` matches either, IP
-    and TCP headers have options, a tagged frame has 0x8100 at offset 12)
-    needs user code."""
+    or destination port, TCP ports (``port``, ``sport``, ``dport``: the
+    generated code reads the TCP header's length; not ``port`` with
+    ``dport``). Every other selector (UDP ``port`` matches either, IP
+    headers have options, a tagged frame has 0x8100 at offset 12) needs
+    user code."""
     keys = dict(parent.keys)
     if not keys or (parent.proto == "ethernet" and tagged):
         return None
+    if parent.proto == "tcp":
+        if "port" in keys and "dport" in keys:  # not a ``through`` selector
+            return None
+        return ["    classify:"] + [f"      {k}: {v}" for k, v in parent.keys]
     if parent.proto == "ethernet":
         matches, offset = [(12, 2, f"{keys['ethertype']:#06x}")], 14
     elif parent.proto == "udp" and "port" not in keys:

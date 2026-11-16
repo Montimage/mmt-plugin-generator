@@ -3,7 +3,7 @@
  *
  * Scaffolded by mmt-plugin from rfc1006_mmt_plugin.h, then edited (an eval
  * fixture of the mmt-plugin-generator skill): the parent tcp has no classify in
- * plugin.yaml, since the TCP header has no fixed length, so this hook
+ * plugin.yaml (a classify by port would generate the same), so this hook
  * attaches RFC 1006 to TCP port 102 (RFC 1006 section 5).
  */
 #include <stdbool.h>

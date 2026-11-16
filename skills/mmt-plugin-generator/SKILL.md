@@ -172,9 +172,10 @@ in `sdk.profile` and the parent declared under `parents:`),
 `src/<label>_impl.c` (your code: one function per hook),
 `tests/<label>-basic.yaml` (a packet test of the sample header) and
 `.gitignore`. A parent that one match of its header identifies (an
-EtherType, a UDP source or destination port) gets a `classify`, and the
-packet test also runs `through` it; any other parent (`tcp:port=102`,
-`udp:port=4433`) is left to `<label>_hook_register_parents`.
+EtherType, a UDP source or destination port) gets a `classify`, so do TCP
+ports (`tcp:port=102`: a `classify` by port), and the packet test also runs
+`through` it; any other parent (`udp:port=4433`, `ip:proto=17`) is left to
+`<label>_hook_register_parents`.
 
 `import` warns with `model.legacy-*` codes about constructs that relied on
 bugs of the old Java tool. Read each warning: it says what changed. Then
@@ -229,7 +230,7 @@ Follow [`references/drafting.md`](references/drafting.md):
   offset and with the type the spec gives. Keep the profile pinned,
   `sdk: {profile: "<profile>"}`, as `init` wrote it. Declare the parent
   with `classify` when one match of the parent's header identifies the
-  protocol.
+  protocol, or, under `tcp`, a port does.
 - From a capture, in a project `init` created in this session, start
   from `plugin.proposed.yaml`: rename its fields after the spec, delete
   those that are payload, copy it over `plugin.yaml`, pin the profile

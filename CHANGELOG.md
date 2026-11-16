@@ -9,6 +9,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `plugin.yaml`: a `tcp` parent's `classify` can name ports, `port` (the
+  source or the destination port), `sport` and `dport`, with optional
+  `match`es on the payload's first bytes (#100). The generated
+  classification finds the payload after the TCP header and its options
+  (the header's data offset), and classifies only a segment with a payload
+  (its end from the IP header, so Ethernet padding is not one). `init
+  --parent tcp:...` and `scaffold --parent tcp:...` write it, and `init`'s
+  packet test also runs `through` the selector. A port under another parent
+  is the new error `model.classify-port`. The model reference has the two
+  forms as `classify_fixed` and `classify_tcp`.
 - `examples/websocket/`: a WebSocket (RFC 6455) plugin, `websocket_example`
   (id 992), made with `mmt-plugin init` (#40). It claims a TCP session on
   any port from its opening handshake and follows it across segments: the

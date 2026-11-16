@@ -68,11 +68,13 @@ What else usually changes:
   `model.name-taken`). Third-party plugins use ids 950 to 999.
 - **The parents.** PDL v1 had no way to say what a protocol runs on, so the
   Java output attached nothing, or you attached it by hand. Declare them in
-  `parents:`: with `classify` the generated code attaches the protocol,
-  without it `<label>_hook_register_parents` does.
+  `parents:`: with `classify` the generated code attaches the protocol
+  (under `tcp`, by port: `classify: {port: 102}`), without it
+  `<label>_hook_register_parents` does.
 - **Hand edits to the generated C** move to the hooks of
   `src/<label>_impl.c`. Write the classification of a parent with a
-  variable-length header (TCP, IPv4), the extraction of an attribute
+  variable-length header that a port does not say (IPv4, TCP by content
+  alone), the extraction of an attribute
   without `offset`, and the session or context code there. `build` names
   each hook that is missing (`build.missing-hook`).
 - **Packet tests.** Write one or more `tests/*.yaml` with the values the

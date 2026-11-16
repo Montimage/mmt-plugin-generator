@@ -499,7 +499,8 @@ class AnalysedSwitch:
 @dataclass(frozen=True)
 class ParentMatch:
     """The ``length``-byte unsigned integer at ``offset`` from the start of
-    the parent, in network byte order, equals ``value``."""
+    the parent (of the TCP payload in a classification by port), in network
+    byte order, equals ``value``."""
 
     offset: int
     length: int
@@ -516,6 +517,11 @@ class AnalysedParent:
     protocol; otherwise the generated code classifies it under the parent
     when every test holds, starting ``offset`` bytes after the parent's
     start, with classification weight ``weight``.
+
+    A classification by TCP port has ``ports`` (key, value: ``port`` for the
+    source or the destination port, ``sport``, ``dport``; all must hold)
+    and no ``offset``: the protocol starts with the TCP payload, after the
+    header's data offset, and ``match`` (possibly empty) tests the payload.
     """
 
     name: str
@@ -525,6 +531,7 @@ class AnalysedParent:
     match: tuple[ParentMatch, ...] | None
     offset: int | None
     span: Span
+    ports: tuple[tuple[str, int], ...] = ()
 
 
 # --- The whole model ---------------------------------------------------------

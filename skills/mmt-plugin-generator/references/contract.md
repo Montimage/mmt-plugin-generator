@@ -131,6 +131,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.type-size` | The SDK registers this type only with length 0, or the length is too long: use another type. |
 | `model.default-byte-order` | Warning: set `protocol.encoding` (`network` for big-endian). |
 | `model.classifynext-without-encapsulation` | Warning: set `protocol.encapsulation: true` when `classify_next` is meant. |
+| `model.classify-port` | `port`, `sport` and `dport` classify only under `protocol: tcp`: under another parent, give `match` and `offset` from the start of the parent. |
 | `model.unknown-parent` | Name a parent the SDK profile or an installed plugin has (`ethernet`, `ip`, `udp`, `tcp`, ...). |
 | `model.load-order` | The label must make `mmtp_<label>.so` sort after `libmmt_tcpip.so`: choose another label. |
 | `model.no-parent` | Warning from `init`: add a parent to `plugin.yaml`. |

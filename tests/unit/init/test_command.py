@@ -264,7 +264,30 @@ def test_a_parent_the_generated_code_can_attach_gets_classify_and_a_through_test
 
 
 @pytest.mark.parametrize(
-    "selector", ["udp:port=4433", "tcp:port=102", "ip:proto=17", "ipv6", "ethernet", "sctp"]
+    ("selector", "ports"),
+    [
+        ("tcp:port=102", [("port", 102)]),
+        ("tcp:dport=0x1151", [("dport", 4433)]),
+        ("tcp:sport=1,port=2", [("port", 2), ("sport", 1)]),
+    ],
+)
+def test_a_tcp_parent_gets_classify_by_port_and_a_through_test(
+    init: Run, work: Path, selector: str, ports: list[tuple[str, int]]
+) -> None:
+    code, doc = init("demo", *PROFILE, "--id", "960", "--parent", selector)
+    assert code == 0, doc["error"]
+    assert _codes(doc) == []
+    (parent,) = _parents(work)
+    assert parent.protocol.text == "tcp"
+    assert parent.classify is not None
+    assert [(k, v.value) for k, v in parent.classify.ports] == ports
+    assert parent.classify.match == () and parent.classify.offset is None
+    assert _through(work) == selector
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["udp:port=4433", "tcp", "tcp:port=1,dport=2", "ip:proto=17", "ipv6", "ethernet", "sctp"],
 )
 def test_any_other_parent_is_left_to_the_hook(init: Run, work: Path, selector: str) -> None:
     code, doc = init("demo", *PROFILE, "--id", "960", "--parent", selector)

@@ -119,6 +119,8 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.yaml-syntax": "a plugin.yaml file is not in the YAML subset mmt-plugin reads",
         "model.schema": "a plugin.yaml file does not follow its JSON Schema "
         "(schemas/model/v1/plugin.json)",
+        "model.classify-port": "a parent's classify by port (port, sport, dport) under a parent "
+        "that is not tcp",
         "model.name-collision": "two names of the generated C are the same identifier, or a "
         "model define would replace a name the generated C uses",
         "model.hook-value": "val(), or len() computed per packet, of an attribute without an "

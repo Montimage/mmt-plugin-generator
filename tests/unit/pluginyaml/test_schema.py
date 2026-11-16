@@ -195,6 +195,36 @@ INVALID = [
         "above 8",
     ),
     (
+        MINIMAL + "parents:\n  - protocol: tcp\n    classify:\n      port: 70000\n",
+        8,
+        13,
+        "model.schema",
+        "above 65535",
+    ),
+    (
+        MINIMAL
+        + "parents:\n  - protocol: tcp\n    classify:\n      dport: 80\n      offset: 20\n",
+        9,
+        7,
+        "model.schema",
+        "unknown key `offset`",
+    ),
+    (
+        MINIMAL + "parents:\n  - protocol: tcp\n    classify:\n      sport: 80\n"
+        "      match:\n        - {offset: 0, length: 9, value: 1}\n",
+        10,
+        31,
+        "model.schema",
+        "above 8",
+    ),
+    (
+        MINIMAL + "parents:\n  - protocol: tcp\n    classify:\n      match: []\n",
+        8,
+        7,
+        "model.schema",
+        "missing key `offset`",
+    ),
+    (
         MINIMAL + "parents:\n  - protocol: ethernet\n    classify:\n      offset: 14\n"
         "      match:\n        - {offset:12, length: 2, value: 0x88b5}\n",
         10,
@@ -265,3 +295,19 @@ def test_a_pattern_must_match_the_whole_value(field: str) -> None:
     with pytest.raises(PluginYamlError) as info:
         load(text, filename="plugin.yaml")
     assert [d.code for d in info.value.diagnostics] == ["model.schema"]
+
+
+@pytest.mark.parametrize(
+    "classify",
+    [
+        "      port: 80\n",
+        "      sport: 1\n      dport: 2\n",
+        "      dport: 102\n      match:\n        - {offset: 0, length: 1, value: 3}\n",
+        "      match: []\n      port: 0\n",
+        "      match:\n        - {offset: 12, length: 2, value: 0x0800}\n      offset: 14\n",
+    ],
+)
+def test_both_forms_of_classify_are_valid(classify: str) -> None:
+    text = MINIMAL + "parents:\n  - protocol: tcp\n    classify:\n" + classify
+    load(text, filename="plugin.yaml")
+    assert VALIDATOR.is_valid(to_data(parse(text)))

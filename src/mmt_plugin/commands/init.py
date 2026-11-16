@@ -7,7 +7,7 @@ Creates a plugin project that builds and tests green out of the box, in
   command: a 4-byte header (``version``, ``kind``, ``length``), the profile
   the scaffold is written for pinned in ``sdk.profile``, and ``--parent`` as
   its ``parents`` entry (#65). A parent that the generated code can attach
-  exactly (an EtherType, a UDP source or destination port:
+  exactly (an EtherType, a UDP source or destination port, TCP ports:
   ``mmt_plugin.pcap.skeleton.parent_yaml``, which ``scaffold`` writes too)
   gets a ``classify``; any other is left to
   ``<label>_hook_register_parents``;

@@ -127,7 +127,7 @@ handshake), decoded with `-d tcp.port==80,websocket` on that session only.
 No CALLERROR appears in any capture, on either side.
 
 - A2 and A3 agree to within 3 messages, action by action.
-- A1 is 163 CALLs over, all but 4 of them SetChargingProfile. A1 is an
+- A1 is 163 CALLs over, all but 2 of them SetChargingProfile. A1 is an
   ARP-poisoning attack (the attacker rewrites SetChargingProfile on the
   way), and 1 289 segments carrying a SetChargingProfile are TCP
   retransmissions to tshark. With the segments tshark flags as
@@ -225,7 +225,8 @@ projects copied out of the repository:
 mmt-plugin -C websocket install --prefix "$PWD/plugins-ws"
 mmt-plugin -C websocket install --prefix "$PWD/plugins-both"
 mmt-plugin -C ocpp install --prefix "$PWD/plugins-both"
-ln -sf "$MMT_BASE"/plugins/*.so "$PWD/plugins-ws/plugins/" "$PWD/plugins-both/plugins/"
+ln -sf "$MMT_BASE"/plugins/*.so "$PWD/plugins-ws/plugins/"
+ln -sf "$MMT_BASE"/plugins/*.so "$PWD/plugins-both/plugins/"
 gcc -O2 -Wall -o count count.c -I"$MMT_BASE/dpi/include" \
     -L"$MMT_BASE/dpi/lib" -Wl,-rpath,"$MMT_BASE/dpi/lib" -lmmt_core -ldl -lpcap
 MMT_DPI_PLUGINS_DIR="$MMT_BASE/plugins" ./count A1.pcap        # mmt-dpi alone

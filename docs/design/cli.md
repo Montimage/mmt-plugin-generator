@@ -21,6 +21,7 @@ mmt-plugin [global options] <command> [command options] [args]
   generate    Write the generated C sources and plugin.lock              T1.5  #14 (incl. --check)
   build       Compile build/mmtp_<label>.so                              T2.3  #19
   test        Run the packet tests (tests/*.yaml) against the plugin     T2.4  #20
+  run         Run the plugin over a capture and count what it reports           #103
   install     Copy the plugin into a prefix and record a manifest        T2.5  #21
   uninstall   Remove an installed plugin by following its manifest       T2.5  #21
   doctor      Report toolchain, SDK, plugin directory, load order, clashes T2.5 #21
@@ -28,7 +29,7 @@ mmt-plugin [global options] <command> [command options] [args]
   completion  Print a shell completion script: bash, zsh or fish         T2.6  #22
 ```
 
-The workflow is the plan's: `init` (or `import`) → `validate` → `generate` → `build` → `test` → `install`. `completion` is the only command outside the plan's list (approved with the maintainer's answers, D9). A command that does not exist yet is not registered (no placeholder that exits 1): `--help` lists only what works.
+The workflow is the plan's: `init` (or `import`) → `validate` → `generate` → `build` → `test` → `install`. `completion` (approved with the maintainer's answers, D9) and `run` (#103, found by the use case of #39) are outside the plan's list. A command that does not exist yet is not registered (no placeholder that exits 1): `--help` lists only what works.
 
 ## 3. Global options
 
@@ -135,6 +136,20 @@ Flags: hardened (`-O2 -fPIC -shared -fstack-protector-strong -D_FORTIFY_SOURCE=2
 | `--sdk`, `--sdk-profile`, `--cc`, `--no-deps`, `--strict` | | | |
 
 The harness (#20) is generated into `<build-dir>/test/` and compiled against the SDK. It loads the plugin with `init_extraction()` from a temporary plugin directory that holds only the SDK's `libmmt_tcpip.so` and the plugin (its own `MMT_DPI_PLUGINS_DIR`), attaches the protocol to Ethernet itself (EtherType 0x88b5), so packets are tested without the user code's parent registration, and checks the classification, the next protocol and each attribute value of every packet; it restarts after a crash, so every packet is reported. A packet test with `through` (a selector with `init --parent`'s syntax, #74: `ethernet:ethertype=N`, `ip:proto=N`, `ipv6:proto=N`, `udp` or `tcp` with `dport`/`port` and `sport`) runs a second time, as a whole Ethernet frame whose lower layers `mmt_plugin.testing.frames` builds from it (IPv4 below UDP and TCP, a lone PSH/ACK segment, an ephemeral port where none is given, a source address of its own per frame), through mmt-dpi's stack: the plugin's own parent classification (the generated `classify` or `<label>_hook_register_parents`) must find it (the harness's 0x88b5 attachment skips these frames, so `ethernet:ethertype=0x88b5` tests the plugin's own too), directly above the selector's protocol and at the offset those layers end at (`<parent>`), with the same attribute values. That run is its own `result.packets` entry, with `through`; it does not check `next`, since mmt-dpi 1.10.2's TCP and UDP stop the packet at a layer a plugin classified above them (`tcp_post_classification_function`, `udp_post_classification_function`), so that layer's `classify_next` never runs there. `--sanitize` runs a `through` test's packet and random packets again behind its lower layers. `--sanitize` builds `<build-dir>/sanitize/mmtp_<label>.so`; a crash names its test, its index for the seed, and its bytes.
+
+### `run PCAP` (#103)
+| Arg/option | Type | Default | Help |
+|---|---|---|---|
+| `PCAP` | path | | A pcap or pcapng capture; not `-`. |
+| `--model MODEL` | path | `<project>/plugin.yaml` | As for `test`. |
+| `--model-format`, `--build-dir` | | | As for `build`. |
+| `--plugin FILE` | path, repeatable | | Another plugin to load (e.g. the one the protocol sits on); one named as an SDK plugin replaces it. |
+| `--protocol NAME` | str, repeatable | | Also count this protocol's attributes. |
+| `--max-packets N` | int | all | Stop after the first N frames. |
+| `--timeout SECONDS` | number | `0` (none) | Stop the runner after this long: `test.crash`. |
+| `--sdk`, `--sdk-profile`, `--cc`, `--no-deps`, `--dry-run`, `--strict` | | | `--dry-run` reads the model and the capture's header and checks whether the plugin is up to date; it compiles and runs nothing. |
+
+Stages `build` (as `test`), `runner` and `capture`. The runner (`mmt_plugin.capture`) is generated into `<build-dir>/run/` and compiled against the SDK (`build.runner-failed`, exit 5). It loads, from a plugin directory of its own (`MMT_DPI_PLUGINS_DIR`), every `*.so` of the SDK's `plugins/`, the plugin and each `--plugin`, opens a handler for the first frame's link type, and processes the frames through mmt-dpi's stack: nothing attaches the plugin, its own parent classification runs. The capture is read one record at a time (`mmt_plugin.pcap.reader`, with each frame's time stamp) and streamed to the runner's stdin, which keeps one frame buffer and bounded counts (at most 1024 paths), so memory does not grow with the capture. It reports the protocol paths with packet counts and, per attribute of the plugin's protocol (and each `--protocol`), the packets in which mmt-dpi extracted it. Frames of another link type are skipped (`test.other-linktype`); no packet of the protocol is `test.no-match`; a `--protocol` no plugin registers is `test.unknown-protocol` (warnings). A plugin that does not load is `test.load-failed`, a crash or timeout `test.crash` naming the frame (exit 6); a capture broken after its header is `model.bad-pcap` (exit 3), with the counts of the frames before.
 
 ### `install` / `uninstall [LABEL]`
 | Option | Type | Default | Help |
@@ -247,6 +262,7 @@ One JSON document on stdout, UTF-8, keys in schema order, ending in one newline.
 | generate | `profile`, `files: [{path, action, sha256}]` (`created`/`updated`/`unchanged`/`removed`/`would-*`), `lock`, `check`, `dry_run` |
 | build | `stages: [{name, status}]`, `artifact: {path, sha256}`, `cc: {path, version}`, `cflags`, `up_to_date` (#19 adds `model`, `profile`, `build_dir`, `ldflags`, `commands`, `dry_run`) |
 | test | `stages`, `summary: {total, passed, failed, skipped}`, `packets: [{id, file, status, failures: [{attribute, expected, actual}]}]`, `sanitize: {seed, count, crashes}` or `null`, `bench: {pps, baseline_pps, ratio, samples}` or `null`, `stats: {elapsed_ms}` (#20 adds `model`, `profile`, `build_dir`, `packets[].attributes`; `crashes` is a list of `{test, index, length, reason, bytes}`; #74 adds `through` to the entry of a run through the parent and to its crashes) |
+| run | `model`, `profile`, `build_dir`, `capture: {path, format, linktype}`, `dry_run`, `stages`, `plugins`, `summary: {frames, processed, skipped, classified}`, `protocols: [{name, id, packets, attributes: [{id, name, type, packets}]}]`, `paths: [{path, ids, packets}]`, `paths_other`, `stats: {elapsed_ms, frames_per_second}` (#103) |
 | install | `prefix`, `manifest`, `files: [{path, action, sha256}]` (#21 adds `model`, `label`, `protocol`, `build`, `dry_run`) |
 | uninstall | `prefix`, `removed`, `kept`, `missing` (#21 adds `label`, `manifest`, `dry_run`) |
 | doctor | `checks: [{id, status, detail}]`, `toolchain`, `plugin_dirs`, `load_order`, `clashes` |
@@ -476,6 +492,7 @@ The contract core is in #43; each command arrives with its own issue (section 2,
 | `plugin.yaml`: the YAML subset, the JSON Schema and its validator, reading it into the typed model, writing a model as `plugin.yaml` | `mmt_plugin.pluginyaml`, `mmt_plugin/schemas/model/v1/plugin.json`; the format in [`docs/plugin-yaml.md`](../plugin-yaml.md) | #24 |
 | `import`: converting PDL v1 to `plugin.yaml`, the `model.legacy-*` warnings | `mmt_plugin.commands.import_pdl`, `mmt_plugin.pluginyaml.convert` | #25 |
 | `scaffold --from-pcap`: reading pcap and pcapng, slicing payloads under a parent, the field skeleton | `mmt_plugin.commands.scaffold`, `mmt_plugin.pcap` (`reader`, `layers`, `skeleton`) | #26 |
+| `run PCAP`: the plugin over a capture, the generated runner, streaming the frames and counting paths and attributes | `mmt_plugin.commands.run`, `mmt_plugin.capture` (`runner`, `templates/runner.c.j2`), the time stamps of `mmt_plugin.pcap.reader` | #103 |
 | The agent skill that runs the loop of section 6 (validate → generate → build → test, `--json`), its contract tables and its evals | `skills/mmt-plugin-generator/` (`SKILL.md`, `references/contract.md`, `evals/run_evals.py`; the capture scripts `scripts/make_pcap.py` and `scripts/pcap_eval.py`); the tests `tests/unit/skill/` | #27 |
 | SDK profiles, prefix detection and profile choice (sections 6, 9), `--version`'s `sdk_profiles` | `mmt_plugin.sdk`, `mmt_plugin/sdk/profiles/<version>.json`, `mmt_plugin/schemas/sdk/v1/profile.json` | #13 |
 

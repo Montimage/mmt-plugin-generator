@@ -66,7 +66,7 @@
           "packets": {"type": "integer", "minimum": 0, "description": "The packets whose protocol path has it."},
           "attributes": {
             "type": "array",
-            "description": "Every attribute the protocol registers, in mmt-dpi's order.",
+            "description": "Every attribute the protocol registers, by id.",
             "items": {
               "type": "object",
               "required": ["id", "name", "type", "packets"],

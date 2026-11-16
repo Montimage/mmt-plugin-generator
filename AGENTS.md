@@ -95,8 +95,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and eleven commands, `init` (T2.7), `import`
-  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  envelope and its schema) and twelve commands, `init` (T2.7), `import`
+  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4),
+  `run` (#103), `install`,
   `uninstall` and `doctor` (T2.5), `scaffold` (T4.1) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
@@ -327,6 +328,33 @@ protocol model. A Python rewrite is planned in
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/run.py` (#103): `mmt-plugin run PCAP` runs the
+  plugin of `--model` (as `test`'s) over a pcap or pcapng capture through
+  mmt-dpi's stack and counts what it reports. Stages `build` (`build` when
+  stale; `--no-deps` exits 7 instead), `runner` and `capture`.
+  `src/mmt_plugin/capture/`: `runner.py` renders the C runner
+  (`templates/runner.c.j2`, into `<build-dir>/run/`, `build.runner-failed`
+  exit 5), which loads, from a plugin directory of its own
+  (`MMT_DPI_PLUGINS_DIR`), every `*.so` of the SDK's `plugins/`, the plugin
+  and each `--plugin` (one named as an SDK plugin replaces it), opens a
+  handler for the first frame's link type and processes the frames it
+  reads on stdin through mmt-dpi's stack (nothing attaches the plugin: its
+  own parent classification runs); `run` streams the capture's frames to
+  it (`mmt_plugin.pcap.reader`, record by record, with their time stamps,
+  which the reader now gives in nanoseconds) in batches while threads read
+  its report and the tail of its stderr: constant memory whatever the
+  capture's size. `result`: `summary` (frames, processed, skipped,
+  classified), `paths` (protocol names and ids, packets; at most 1024, the
+  rest in `paths_other`), `protocols` (the plugin's, then each
+  `--protocol`: packets, and per attribute the packets that have it).
+  Warnings `test.no-match`, `test.other-linktype`, `test.unknown-protocol`;
+  `test.load-failed` and `test.crash` (the frame; `--timeout`) exit 6; a
+  capture broken after its header `model.bad-pcap` (exit 3) with the
+  counts so far; `--max-packets`, `--dry-run`, `--strict`. Tests in
+  `tests/unit/run/`: `test_runner.py` and `test_command.py` (a fake runner,
+  `fakes.py`, with build's fakes) and `test_sdk.py` (a real runner against
+  a real SDK, including its memory on a small and a large capture; needs
+  `MMT_GOLDEN_SDK`).
 - `skills/mmt-plugin-generator/` (T4.2; `skills/mmt-plugin-author/` before
   it was renamed): the agent skill that writes a plugin
   from a protocol spec, a capture or a legacy PDL v1 model, or updates an

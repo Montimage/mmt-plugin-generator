@@ -365,7 +365,7 @@ class RunCommand:
         seen = {(d.code, d.message) for d in run.diagnostics}
         run.diagnostics += [d for d in outcome.diagnostics if (d.code, d.message) not in seen]
         if outcome.error is not None:
-            run.stages["build"] = "failed"
+            run.stages["build"] = "stale" if outcome.error.code == "state.stale" else "failed"
             return outcome.error
         run.build_up_to_date = bool(outcome.result["up_to_date"])
         if check_only and not run.build_up_to_date:
@@ -658,10 +658,13 @@ def _fill(run: _Run, report: runner_mod.Report, done: runner_mod.CaptureRun) -> 
             "name": p.name,
             "id": p.id,
             "packets": p.packets,
-            "attributes": [
-                {"id": aid, "name": name, "type": kind, "packets": count}
-                for (aid, kind, name), count in zip(p.attributes, p.counts, strict=True)
-            ],
+            "attributes": sorted(
+                (
+                    {"id": aid, "name": name, "type": kind, "packets": count}
+                    for (aid, kind, name), count in zip(p.attributes, p.counts, strict=True)
+                ),
+                key=lambda a: (a["id"], a["name"]),
+            ),
         }
         for p in report.protocols
     ]

@@ -31,6 +31,18 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   on the four captures of Zenodo record 14887131, the answers to its open
   questions and the gaps found, with the counter it was measured with.
 
+### Fixed
+
+- `examples/websocket/` and `examples/ocpp/` (#104): their sessions get
+  mmt-dpi's long session timeout (600 s, as its HTTP's), so a connection
+  idle for more than a minute keeps its state: `websocket_example` no
+  longer loses the rest of such a stream, and `ocpp_example` no longer
+  reports a CALL retransmitted after a long silence as a new one. After a
+  lost frame header, both start again at the first segment that starts
+  with a valid header, not inside a frame. `permessage-deflate` frames
+  stay unread (a documented limit). The use case's A1 and A4 counts are
+  measured again: A1 is within 31 frames and 5 messages of tshark.
+
 ## [0.1.0] - 2026-11-15
 
 The first release of the Python generator, `mmt-plugin`. It replaces the

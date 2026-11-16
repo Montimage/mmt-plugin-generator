@@ -39,9 +39,14 @@
  * owed to the current frame, a header split across segments and the opcode
  * of a fragmented message in progress. A retransmitted segment reports
  * nothing (its new bytes, past an overlap, are parsed); after a gap the
- * parse goes on when the lost bytes were payload of the current frame, and
- * restarts at the segment's first byte otherwise, as it does after a 64-bit
- * length whose most significant bit is set (section 5.2: not WebSocket).
+ * parse goes on when the lost bytes were payload of the current frame;
+ * otherwise (a header was lost), and after a 64-bit length whose most
+ * significant bit is set (section 5.2: not WebSocket), it starts again at
+ * the first segment whose first bytes are a whole valid frame header
+ * (ws_header_valid()), reporting nothing for the segments before it, which
+ * start inside a frame. The session's state lives as long as mmt-dpi's
+ * session: this plugin gives its sessions mmt-dpi's long timeout
+ * (WS_SESSION_TIMEOUT), so an idle connection keeps it.
  * The segment ends where its IP length says: Ethernet padding is not data.
  *
  * Without a session (mmt-plugin test's packets, which the harness puts
@@ -69,6 +74,7 @@
 #include <string.h>
 
 #include "data_defs.h"
+#include "mmt_core.h" /* set_session_timeout_delay */
 #include "plugin_defs.h"
 #include "tcpip/mmt_tcpip.h"
 
@@ -76,6 +82,19 @@
 
 #define WS_TEXT 63       /* the bytes of an MMT_STRING_DATA value, before its NUL */
 #define WS_HEADER_MAX 14 /* 2, 8 of extended length, 4 of masking key */
+
+/*
+ * The idle time, in seconds, after which mmt-dpi ends a session this plugin
+ * owns: mmt-dpi's long session timeout (CFG_LONG_SESSION_TIMEOUT, 600), the
+ * one its HTTP gives an HTTP session. A session keeps the 60-second default
+ * otherwise, and a WebSocket connection is often idle longer (an OCPP
+ * charge point's heartbeat interval, a retransmission timer backing off):
+ * mmt-dpi would then end the session and start a new one at the next
+ * segment, mid-stream, without this plugin's state. A plugin cannot read
+ * the handler's own long timeout (set_long_session_timed_out()): the
+ * handler is opaque to it, so this is mmt-dpi's default.
+ */
+#define WS_SESSION_TIMEOUT 600
 
 enum ws_kind { WS_KIND_NONE, WS_KIND_REQUEST, WS_KIND_ANSWER };
 enum ws_state { WS_REQUEST_SEEN = 1, WS_OPEN, WS_REJECTED };
@@ -116,6 +135,7 @@ struct ws_direction {
     uint8_t header[WS_HEADER_MAX]; /* a frame header split across segments */
     uint8_t header_len;
     uint8_t message_opcode; /* of the fragmented message in progress, 0: none */
+    uint8_t resync;         /* a header was lost: frames from a segment that starts with one */
     uint8_t in_http;        /* inside the answer's header block */
     uint8_t eol;            /* 1: after "\n", 2: after "\n\r" (the end of the block) */
 };
@@ -381,12 +401,43 @@ static unsigned ws_header_len(uint8_t b1)
 }
 
 /*
+ * Whether p[0..n) starts with a whole frame header that section 5.2 allows:
+ * RSV2 and RSV3 0 (no extension defines them; RSV1 is permessage-deflate's,
+ * RFC 7692), a defined opcode, a control frame with FIN set and at most 125
+ * bytes (section 5.5), a 64-bit length whose most significant bit is 0.
+ * Where the parse starts again after a lost header: the bytes inside a
+ * frame (text, most of all) seldom pass.
+ */
+static bool ws_header_valid(const uint8_t *p, unsigned n)
+{
+    unsigned opcode;
+
+    if (n < 2 || n < ws_header_len(p[1])) {
+        return false;
+    }
+    opcode = p[0] & 0x0f;
+    if ((p[0] & 0x30) != 0 || (opcode > 2 && opcode < 8) || opcode > 10) {
+        return false;
+    }
+    if (opcode >= 8 && (!(p[0] & 0x80) || (p[1] & 0x7f) > 125)) {
+        return false;
+    }
+    return (p[1] & 0x7f) != 127 || !(p[2] & 0x80);
+}
+
+/*
  * Parses frame data p[pos..n) of a segment with the direction's state;
  * missing is the payload's bytes past n that the capture does not have.
  */
 static void ws_frames(const uint8_t *p, unsigned n, unsigned pos, unsigned missing, struct ws_direction *d,
                       struct ws_view *view)
 {
+    if (d->resync) {
+        if (!ws_header_valid(p + pos, n - pos)) {
+            return; /* inside a frame still: wait for one that starts a segment */
+        }
+        d->resync = 0;
+    }
     view->frames = 1;
     if (d->owed > 0 && pos < n) {
         uint64_t take = d->owed < n - pos ? d->owed : n - pos;
@@ -426,6 +477,7 @@ static void ws_frames(const uint8_t *p, unsigned n, unsigned pos, unsigned missi
                 /* The most significant bit must be 0 (section 5.2): the stream
                    is not WebSocket from here; restart at the next segment. */
                 d->owed = 0;
+                d->resync = 1;
                 return;
             }
             len = ((uint64_t)ws_be32(h + 2) << 32) | ws_be32(h + 6);
@@ -475,6 +527,7 @@ static void ws_frames(const uint8_t *p, unsigned n, unsigned pos, unsigned missi
             /* A header was in the bytes the capture lost: restart. */
             d->owed = 0;
             d->header_len = 0;
+            d->resync = 1;
         }
     }
 }
@@ -614,6 +667,7 @@ static void ws_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
                 d->owed = 0;
                 d->header_len = 0;
                 d->in_http = 0;
+                d->resync = 1;
             }
         }
     }
@@ -729,6 +783,7 @@ static mmt_classify_verdict_t classify_after_tcp(ipacket_t *ipacket, unsigned pr
     }
     /* Without the state (no memory), each segment is parsed alone. */
     if (ipacket->session != NULL) {
+        set_session_timeout_delay(ipacket->session, WS_SESSION_TIMEOUT);
         s = calloc(1, sizeof(*s));
         if (s != NULL) {
             set_proto_session_data(ipacket->session, s, previous_index + 1);
@@ -750,6 +805,7 @@ void websocket_example_hook_session_data_init(ipacket_t *ipacket, unsigned index
     if (ipacket->session == NULL || get_proto_session_data_from_packet(ipacket, index) != NULL) {
         return;
     }
+    set_session_timeout_delay(ipacket->session, WS_SESSION_TIMEOUT);
     s = calloc(1, sizeof(*s));
     if (s != NULL) {
         s->state = WS_OPEN; /* joined after the handshake: frames from the next segment */

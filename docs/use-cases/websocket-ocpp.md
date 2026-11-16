@@ -44,24 +44,30 @@ session is OCPP). The reference is tshark 4.2.2 with its default TCP
 reassembly. How the counts were made, and how to repeat them, is under
 "Method" below.
 
+The counts are those of the examples as #104 left them: both plugins give
+their sessions mmt-dpi's long session timeout, and start again after a
+lost frame header only at a segment that starts with a valid one. A2 and
+A3 gave the same counts before and after #104; the A1 and A4 counts of the
+first run, and why they differed, are under "Before #104" below.
+
 ### Classification
 
 Packets of each protocol path above TCP (`ethernet[.8021q].ip.tcp.<x>`):
 
 | Capture | Packets | mmt-dpi alone: `http` | with `websocket_example`: `WEBSOCKET_EXAMPLE` / `http` | with both: `OCPP_EXAMPLE` / `http` |
 |---|---:|---:|---:|---:|
-| A1 Charging Profile Manipulation | 345 544 | 58 866 | 56 868 / 0 | 59 950 / 0 |
+| A1 Charging Profile Manipulation | 345 544 | 58 866 | 58 866 / 0 | 59 985 / 0 |
 | A2 Denial of Charge | 418 170 | 148 288 | 147 096 / 1 192 | 160 428 / 1 192 |
 | A3 Heartbeat flooding | 14 795 256 | 14 790 197 | 14 790 197 / 0 | 14 790 197 / 0 |
-| A4 Unauthorized access | 6 425 663 | 4 576 258 | 4 552 847 / 323 | 4 552 847 / 323 |
+| A4 Unauthorized access | 6 425 663 | 4 576 258 | 4 563 179 / 323 | 4 563 179 / 323 |
 
 These counts include every packet of a claimed session (the handshake,
 pure ACKs). `ocpp_example` also claims a session captured without its
 handshake when a segment starts with an OCPP-J text frame: in A1 and A2,
 one such session each, which mmt-dpi alone and `websocket_example` leave
 `tcp.unknown` (A2: 13 449 packets `tcp.unknown` without the plugin, 117
-with both). With `websocket_example` alone, A1 has 1 998 more packets
-`tcp.unknown` than mmt-dpi alone, and A4 23 088 more; these were not
+with both). With `websocket_example` alone, A1 has as many packets
+`tcp.unknown` as mmt-dpi alone, and A4 12 756 more; these were not
 investigated further.
 
 ### WebSocket frames
@@ -73,7 +79,7 @@ against tshark's frames):
 
 | Capture | Packets with frames: plugin / tshark | Frames: plugin / tshark | Opening handshakes (101): plugin / tshark |
 |---|---:|---:|---:|
-| A1 | 28 178 / 29 028 (97.1 %) | 28 269 / 29 575 (95.6 %) | 121 / 121 |
+| A1 | 29 017 / 29 028 | 29 544 / 29 575 | 121 / 121 |
 | A2 | 76 525 / 76 514 | 76 547 / 76 535 | 19 / 19 |
 | A3 | 8 258 815 / 8 258 815 | 8 258 824 / 8 258 815 (packets) | 100 / 100 |
 | A4 | 124 / 124 | 124 / 124 | 1 / 1 |
@@ -82,13 +88,10 @@ A4's 124 frames are the same on both sides by opcode (64 text, 30 ping, 30
 pong). The plugin's first-frame opcodes are a per-packet count, not a
 per-frame one, so they are not compared beyond that.
 
-A1 is short by 1 306 frames. Of the 1 336 tshark frames in packets where the
-plugin reports fewer, 1 184 are in two TCP streams (tshark's 94 and 342),
-each after a run of retransmissions; in stream 94 the capture lost a client
-segment (tshark: "previous segment not captured"). From there the plugin
-reports nothing for the rest of the stream, while tshark starts again at
-the next segment: `websocket_example` does not find a frame boundary again
-after lost header bytes (#104).
+A1 is short by 31 frames, all in four TCP streams (tshark's 94, 128, 146
+and 362) with retransmitted, reordered or lost segments: tshark
+reassembles the stream there, the plugin does not reorder segments, so a
+few frames are counted in another packet or not at all.
 
 ### OCPP-J messages
 
@@ -104,12 +107,12 @@ handshake), decoded with `-d tcp.port==80,websocket` on that session only.
 
 | Capture | Message | `ocpp_example` | tshark | tshark, no-handshake session | tshark, total |
 |---|---|---:|---:|---:|---:|
-| A1 | CALL | 9 948 | 9 618 | 167 | 9 785 |
-| | SetChargingProfile | 6 879 | 6 598 | 120 | 6 718 |
-| | Heartbeat | 2 435 | 2 390 | 43 | 2 433 |
+| A1 | CALL | 9 783 | 9 618 | 167 | 9 785 |
+| | SetChargingProfile | 6 713 | 6 598 | 120 | 6 718 |
+| | Heartbeat | 2 436 | 2 390 | 43 | 2 433 |
 | | StatusNotification | 621 | 617 | 4 | 621 |
 | | BootNotification | 13 | 13 | 0 | 13 |
-| | CALLRESULT | 9 506 | 9 337 | 167 | 9 504 |
+| | CALLRESULT | 9 505 | 9 337 | 167 | 9 504 |
 | A2 | CALL | 35 994 | 32 989 | 3 002 | 35 991 |
 | | MeterValues | 10 564 | 9 708 | 856 | 10 564 |
 | | StatusNotification | 10 268 | 9 408 | 860 | 10 268 |
@@ -126,24 +129,52 @@ handshake), decoded with `-d tcp.port==80,websocket` on that session only.
 
 No CALLERROR appears in any capture, on either side.
 
-- A2 and A3 agree to within 3 messages, action by action.
-- A1 is 163 CALLs over, all but 2 of them SetChargingProfile. A1 is an
+- A1, A2 and A3 agree to within 5 messages, action by action. A1 is an
   ARP-poisoning attack (the attacker rewrites SetChargingProfile on the
   way), and 1 289 segments carrying a SetChargingProfile are TCP
-  retransmissions to tshark. With the segments tshark flags as
-  retransmissions removed from the capture, `ocpp_example` gives 9 773
-  CALLs (6 708 SetChargingProfile) against 9 785 (6 718): the plugin
-  reports some retransmitted copies as new messages (#104).
+  retransmissions to tshark, some of them minutes apart; the plugin
+  reports none of them as a new message.
 - A4: the one accepted session negotiated `permessage-deflate` (its 101
   answer has `Sec-WebSocket-Extensions: permessage-deflate`), so its frames
-  are compressed; `ocpp_example` does not inflate them (a documented
-  limit), tshark does. The plugin reports no message there (#104).
+  are compressed; `ocpp_example` does not inflate them, tshark does. The
+  plugin reports no message there. This stays a documented limit
+  (`examples/README.md`): a plugin links only `libmmt_core`, so inflating
+  means a DEFLATE decoder of its own (#104).
 - The answers' `action` comes from the CALL they answer. In A1, 9 474 of
-  9 506 answers have it; in A3, 4 126 872 of 4 128 843 (1 971 answers come
+  9 505 answers have it; in A3, 4 126 872 of 4 128 843 (1 971 answers come
   after their CALL was evicted from the 16-entry table during the flood).
 
 The plugins' run time on A3 (14.8 M packets, one core): 12 s through
 mmt-dpi alone, 22 s with `websocket_example`, 23 s with both.
+
+### Before #104
+
+The first run (PRs #94 and #95) gave other counts on A1 and A4:
+`WEBSOCKET_EXAMPLE` 56 868 packets on A1 and 4 552 847 on A4, 28 178
+packets with 28 269 frames on A1 (95.6 % of tshark's), and 9 948 CALLs on A1
+(6 879 SetChargingProfile, 9 506 CALLRESULTs), 163 more than tshark. Both
+came from mmt-dpi's session timeout, not from the plugins' framing:
+
+- A session that mmt-dpi's HTTP claims gets mmt-dpi's long timeout (600
+  s); one that a plugin claims kept the default 60 s. After a longer
+  silence (102 s in tshark's stream 94, 68 s in stream 342, both after a run
+  of retransmissions), mmt-dpi ended the session and opened a new one at the
+  next segment, mid-stream and without the plugin's state.
+  `websocket_example` claims a session only on its handshake, so the rest
+  of each stream was `tcp.unknown`: 1 184 of the 1 336 tshark frames in
+  packets where it reported fewer.
+  Cut out of the capture alone, stream 94 gave 772 of tshark's 774 frames.
+- The SetChargingProfile copies that A1's attack retransmits about every
+  120 s each came in such a new session, which `ocpp_example` claims on a
+  segment that starts with an OCPP-J frame: each copy was a new message.
+  With the segments tshark flags as retransmissions removed from the
+  capture (`tshark -r A1.pcap -Y "not tcp.analysis.retransmission" -w
+  A1-noretrans.pcap`), it gave 9 773 CALLs against 9 785.
+
+Both plugins now give their sessions the long timeout. #104 also made them
+start again, after a lost frame header, at the first segment that starts
+with a valid header, instead of at the next segment's first byte, which
+may be inside a frame; that changed none of the four captures' counts.
 
 ## The open questions
 
@@ -154,7 +185,7 @@ mmt-dpi alone, 22 s with `websocket_example`, 23 s with both.
    that starts with an OCPP-J text frame. Not supported: an Upgrade after
    other HTTP requests in the session (HTTP has claimed it), a session
    another plugin claimed first, and giving a refused upgrade back to HTTP
-   (A4: 623 994 refused upgrades keep 4.55 M packets under the plugin).
+   (A4: 623 994 refused upgrades keep 4.56 M packets under the plugin).
    That needs an mmt-dpi change (#98).
 2. **Variable-length header.** Supported. The header is 2 bytes, plus 2 or
    8 for the 16-bit or 64-bit length, plus 4 for the masking key when the
@@ -175,9 +206,10 @@ mmt-dpi alone, 22 s with `websocket_example`, 23 s with both.
    describe the first frame whose header ends in the segment and
    `frame_count` counts them. A frame over several segments: `carried_len`.
    Fragmented messages: `message_opcode`; control frames inside a
-   fragmented message are kept out of it. Not supported: reordering
-   out-of-order segments, finding a frame boundary again after lost header
-   bytes (A1 above), `permessage-deflate` (A4 above). Only one frame (or
+   fragmented message are kept out of it. After a lost frame header, the
+   parse starts again at the first segment that starts with a valid one
+   (#104). Not supported: reordering out-of-order segments,
+   `permessage-deflate` (A4 above). Only one frame (or
    OCPP message) per segment is described: an mmt-dpi attribute has one
    value per packet.
 5. **Text / JSON payloads.** Supported for OCPP-J: a bounded JSON scanner
@@ -202,7 +234,7 @@ mmt-dpi alone, 22 s with `websocket_example`, 23 s with both.
 | #101 | `test` and `validate` assume the parents are mmt-dpi's: one plugin per test run, no `through` a plugin parent, no load-order check between plugins. |
 | #102 | `scaffold --from-pcap` does not follow a TCP stream and proposes no bit fields. |
 | #103 | No command runs a plugin over a capture and counts what it reports. |
-| #104 | The capture findings on the two examples: no resynchronisation after lost header bytes, retransmitted copies counted, `permessage-deflate` not read. |
+| #104 | The capture findings on the two examples: sessions ended by mmt-dpi's 60-second timeout (frames missed, retransmitted copies counted), no resynchronisation after lost header bytes, `permessage-deflate` not read (stays documented). |
 
 ## Method
 
@@ -243,6 +275,3 @@ opts="-E separator=/t -E occurrence=a -E aggregator=$(printf '\036')"
 tshark -r A1.pcap $fields $opts | python3 -I tshark_count.py --list-streams ws-streams
 tshark -r A1.pcap -d tcp.port==80,websocket $fields $opts | python3 -I tshark_count.py --without ws-streams
 ```
-
-The capture without retransmissions (A1, the OCPP comparison above) is
-`tshark -r A1.pcap -Y "not tcp.analysis.retransmission" -w A1-noretrans.pcap`.

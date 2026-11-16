@@ -1,0 +1,86 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-start-transaction"
+model: "ocpp"
+summary: "A CALL, StartTransaction, with its connectorId and idTag (a masked client frame)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 f8 37 fa 21 3d 6c c8 0d 1f 06 c3 13 0f 04 c8"
+  - "11 08 15 d6 03 6e 43 9b 53 49 63 88 40 53 44 9b"
+  - "42 49 5e 95 4f 1f 1b 81 03 5e 58 94 4f 58 54 8e"
+  - "4e 4f 7e 9e 03 07 06 d6 03 54 53 ae 40 5a 15 c0"
+  - "03 7f 03 bc 17 0f 74 bf 67 1f 1b d8 4c 58 43 9f"
+  - "53 6e 43 9b 53 49 15 c0 11 11 15 8e 48 50 52 89"
+  - "55 5c 5a 8a 03 07 15 c8 11 0c 04 d7 11 0f 1a ca"
+  - "10 69 06 cf 1b 0d 0e c0 10 05 6d d8 5c 60"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL syntax, Action StartTransaction (OCPP 1.6 section 4.8; StartTransaction.req, section 6.45: connectorId, idTag, meterStart, timestamp), compact JSON, in one masked text frame (RFC 6455 section 5.2, the key of section 5.7)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 10
+      length: 8
+      value: "31 39 32 32 33 32 30 35"
+      text: "19223205"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 21
+      length: 16
+      value: "53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+      text: "StartTransaction"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 39
+      length: 86
+      value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 31 2c 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 2c 22 6d 65 74 65 72 53 74 61 72 74 22 3a 30 2c 22 74 69 6d 65 73 74 61 6d 70 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 31 35 3a 30 39 3a 31 38 5a 22 7d"
+      text: "{\"connectorId\":1,\"idTag\":\"B4F62CEF\",\"meterStart\":0,\"timestamp\":\"2013-02-01T15:09:18Z\"}"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, the fourth element, as sent; unmasked (RFC 6455 section 5.3)"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      offset: 54
+      length: 1
+      value: 1
+      source: "OCPP 1.6 section 6.45: StartTransaction.req's connectorId, the payload's top-level integer"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      offset: 65
+      length: 8
+      value: "42 34 46 36 32 43 45 46"
+      text: "B4F62CEF"
+      source: "OCPP 1.6 section 6.45: StartTransaction.req's idTag, the payload's top-level member"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 7.8: no ChargingProfile in the payload"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 7.13: no ChargingSchedule in the payload"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 126
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

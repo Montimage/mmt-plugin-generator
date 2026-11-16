@@ -1,0 +1,112 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-set-charging-profile"
+model: "ocpp"
+summary: "A CALL, SetChargingProfile, pretty-printed JSON with a decimal limit in W (an unmasked server frame)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 7e 01 fd 5b 20 32 20 2c 20 22 31 39 32 32 33"
+  - "32 30 37 22 20 2c 0d 0a 20 22 53 65 74 43 68 61"
+  - "72 67 69 6e 67 50 72 6f 66 69 6c 65 22 2c 20 7b"
+  - "0a 20 20 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22"
+  - "3a 20 31 2c 0a 20 20 22 63 73 43 68 61 72 67 69"
+  - "6e 67 50 72 6f 66 69 6c 65 73 22 3a 20 7b 0a 20"
+  - "20 20 20 22 63 68 61 72 67 69 6e 67 50 72 6f 66"
+  - "69 6c 65 49 64 22 3a 20 32 2c 0a 20 20 20 20 22"
+  - "73 74 61 63 6b 4c 65 76 65 6c 22 3a 20 31 2c 0a"
+  - "20 20 20 20 22 63 68 61 72 67 69 6e 67 50 72 6f"
+  - "66 69 6c 65 50 75 72 70 6f 73 65 22 3a 20 22 54"
+  - "78 44 65 66 61 75 6c 74 50 72 6f 66 69 6c 65 22"
+  - "2c 0a 20 20 20 20 22 63 68 61 72 67 69 6e 67 50"
+  - "72 6f 66 69 6c 65 4b 69 6e 64 22 3a 20 22 52 65"
+  - "63 75 72 72 69 6e 67 22 2c 0a 20 20 20 20 22 72"
+  - "65 63 75 72 72 65 6e 63 79 4b 69 6e 64 22 3a 20"
+  - "22 44 61 69 6c 79 22 2c 0a 20 20 20 20 22 63 68"
+  - "61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 22 3a"
+  - "20 7b 0a 20 20 20 20 20 20 22 64 75 72 61 74 69"
+  - "6f 6e 22 3a 20 38 36 34 30 30 2c 0a 20 20 20 20"
+  - "20 20 22 63 68 61 72 67 69 6e 67 52 61 74 65 55"
+  - "6e 69 74 22 3a 20 22 57 22 2c 0a 20 20 20 20 20"
+  - "20 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75"
+  - "6c 65 50 65 72 69 6f 64 22 3a 20 5b 0a 20 20 20"
+  - "20 20 20 20 20 7b 22 73 74 61 72 74 50 65 72 69"
+  - "6f 64 22 3a 20 30 2c 20 22 6c 69 6d 69 74 22 3a"
+  - "20 31 31 30 30 30 2e 35 2c 20 22 6e 75 6d 62 65"
+  - "72 50 68 61 73 65 73 22 3a 20 33 7d 2c 0a 20 20"
+  - "20 20 20 20 20 20 7b 22 73 74 61 72 74 50 65 72"
+  - "69 6f 64 22 3a 20 32 38 38 30 30 2c 20 22 6c 69"
+  - "6d 69 74 22 3a 20 37 34 30 30 7d 0a 20 20 20 20"
+  - "20 20 5d 0a 20 20 20 20 7d 0a 20 20 7d 0a 7d 20"
+  - "5d"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL syntax, Action SetChargingProfile from the Central System (OCPP 1.6 section 5.16; SetChargingProfile.req, section 6.43: connectorId, csChargingProfiles, a ChargingProfile, section 7.8, of purpose TxDefaultProfile, whose chargingSchedule, section 7.13, in W has two periods, section 7.14, the first of 11000.5 W), JSON with insignificant whitespace (RFC 8259 section 2: spaces, CR LF, LF) between every token, in one unmasked text frame (RFC 6455 section 5.2, a 16-bit length)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 11
+      length: 8
+      value: "31 39 32 32 33 32 30 37"
+      text: "19223207"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 26
+      length: 18
+      value: "53 65 74 43 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65"
+      text: "SetChargingProfile"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 47
+      length: 464
+      value: "7b 0a 20 20 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 20 31 2c 0a 20 20 22 63 73 43 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 73 22 3a 20 7b 0a 20 20 20 20 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 49 64 22 3a 20 32 2c 0a 20 20 20 20 22 73 74 61 63 6b 4c 65 76 65 6c 22 3a 20 31 2c 0a 20 20 20 20 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 50 75 72 70 6f 73 65 22 3a 20 22 54 78 44 65 66 61 75 6c 74 50 72 6f 66 69 6c 65 22 2c 0a 20 20 20 20 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 4b 69 6e 64 22 3a 20 22 52 65 63 75 72 72 69 6e 67 22 2c 0a 20 20 20 20 22 72 65 63 75 72 72 65 6e 63 79 4b 69 6e 64 22 3a 20 22 44 61 69 6c 79 22 2c 0a 20 20 20 20 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 22 3a 20 7b 0a 20 20 20 20 20 20 22 64 75 72 61 74 69 6f 6e 22 3a 20 38 36 34 30 30 2c 0a 20 20 20 20 20 20 22 63 68 61 72 67 69 6e 67 52 61 74 65 55 6e 69 74 22 3a 20 22 57 22 2c 0a 20 20 20 20 20 20 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 50 65 72 69 6f 64 22 3a 20 5b 0a 20 20 20 20 20 20 20 20 7b 22 73 74 61 72 74 50 65 72 69 6f 64 22 3a 20 30 2c 20 22 6c 69 6d 69 74 22 3a 20 31 31 30 30 30 2e 35 2c 20 22 6e 75 6d 62 65 72 50 68 61 73 65 73 22 3a 20 33 7d 2c 0a 20 20 20 20 20 20 20 20 7b 22 73 74 61 72 74 50 65 72 69 6f 64 22 3a 20 32 38 38 30 30 2c 20 22 6c 69 6d 69 74 22 3a 20 37 34 30 30 7d 0a 20 20 20 20 20 20 5d 0a 20 20 20 20 7d 0a 20 20 7d 0a 7d"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, the fourth element, as sent, its whitespace included"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      offset: 66
+      length: 1
+      value: 1
+      source: "OCPP 1.6 section 6.43: SetChargingProfile.req's connectorId, the payload's top-level integer"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: only Authorize, StartTransaction and RemoteStartTransaction requests have the idTag read here"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+      offset: 417
+      length: 7
+      value: 110005
+      source: "OCPP 1.6 sections 6.43, 7.8, 7.13, 7.14: csChargingProfiles.chargingSchedule.chargingSchedulePeriod[0].limit, 11000.5 (one fractional digit at most), in tenths; not the second period's 7400"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+      offset: 343
+      length: 1
+      value: "57"
+      text: "W"
+      source: "OCPP 1.6 sections 7.12 and 7.13: csChargingProfiles.chargingSchedule.chargingRateUnit, W (Watts)"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 513
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

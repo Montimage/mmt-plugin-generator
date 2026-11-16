@@ -1,0 +1,37 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/not-ocpp-no-unique-id"
+model: "ocpp"
+summary: "A text frame [2,3]: no UniqueId string, not an OCPP-J message"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 05 5b 32 2c 33 5d"
+bytes_source: "OCPP-J 1.6 section 4.2.1's CALL syntax with a number where the UniqueId string goes, in one unmasked text frame (RFC 6455 section 5.2)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2.1: the second element is the UniqueId, a string; [2,3] has none, so nothing is reported"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2.1: the second element is the UniqueId, a string; [2,3] has none, so nothing is reported"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2.1: the second element is the UniqueId, a string; [2,3] has none, so nothing is reported"

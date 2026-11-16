@@ -16,6 +16,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   messages, the handshake's key, accept and the negotiated subprotocol.
   Its packet tests come from RFC 6455; `tests/unit/examples/test_sdk.py`
   also replays TCP sessions through it.
+- `examples/ocpp/`: an OCPP 1.6-J plugin, `ocpp_example` (id 993), made
+  with `mmt-plugin init` (#41). Directly above TCP, it claims a session
+  whose WebSocket handshake offers `ocpp1.6` (or, mid-capture, a text frame
+  with the OCPP-J array shape), and reports per segment the message type,
+  UniqueId, action, error code and description, payload, `connectorId`,
+  `idTag` and the charging limit and unit of a CALL; a CALLRESULT or
+  CALLERROR reports the action of the CALL it answers, matched by UniqueId
+  and direction in the session. Its packet tests come from OCPP-J 1.6 and
+  OCPP 1.6; `tests/unit/examples/test_sdk.py` replays TCP sessions through
+  it, also next to `websocket_example`.
 
 ## [0.1.0] - 2026-11-15
 

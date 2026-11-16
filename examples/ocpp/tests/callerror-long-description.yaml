@@ -1,0 +1,74 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/callerror-long-description"
+model: "ocpp"
+summary: "A CALLERROR, GenericError, whose errorDescription is longer than an MMT_STRING_DATA (63 bytes)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 7e 00 9c 5b 34 2c 22 31 39 32 32 33 32 30 33"
+  - "22 2c 22 47 65 6e 65 72 69 63 45 72 72 6f 72 22"
+  - "2c 22 41 6e 79 20 6f 74 68 65 72 20 65 72 72 6f"
+  - "72 20 6e 6f 74 20 63 6f 76 65 72 65 64 20 62 79"
+  - "20 74 68 65 20 70 72 65 76 69 6f 75 73 20 6f 6e"
+  - "65 73 3a 20 74 68 65 20 43 68 61 72 67 65 20 50"
+  - "6f 69 6e 74 20 63 6f 75 6c 64 20 6e 6f 74 20 70"
+  - "72 6f 63 65 73 73 20 74 68 65 20 72 65 71 75 65"
+  - "73 74 22 2c 7b 22 72 65 61 73 6f 6e 22 3a 22 69"
+  - "6e 74 65 72 6e 61 6c 20 73 74 61 74 65 22 7d 5d"
+bytes_source: "OCPP-J 1.6 section 4.2.3, the CALLERROR syntax, error code GenericError (the table of valid error codes), a 96-byte errorDescription starting with the table's description of GenericError, errorDetails with one member, compact JSON, in one unmasked text frame (RFC 6455 section 5.2)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 4
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 4, a CALLERROR (an error response), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 8
+      length: 8
+      value: "31 39 32 32 33 32 30 33"
+      text: "19223203"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+      offset: 19
+      length: 12
+      value: "47 65 6e 65 72 69 63 45 72 72 6f 72"
+      text: "GenericError"
+      source: "OCPP-J 1.6 section 4.2.3: the errorCode, the third element; GenericError is in the table of valid error codes"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+      offset: 34
+      length: 63
+      value: "41 6e 79 20 6f 74 68 65 72 20 65 72 72 6f 72 20 6e 6f 74 20 63 6f 76 65 72 65 64 20 62 79 20 74 68 65 20 70 72 65 76 69 6f 75 73 20 6f 6e 65 73 3a 20 74 68 65 20 43 68 61 72 67 65 20 50 6f"
+      text: "Any other error not covered by the previous ones: the Charge Po"
+      source: "OCPP-J 1.6 section 4.2.3: the errorDescription, its first 63 bytes: an MMT_STRING_DATA holds 63 and a NUL (SDK profile 1.10.2; src/ocpp_example_impl.c)"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 132
+      length: 27
+      value: "7b 22 72 65 61 73 6f 6e 22 3a 22 69 6e 74 65 72 6e 61 6c 20 73 74 61 74 65 22 7d"
+      text: "{\"reason\":\"internal state\"}"
+      source: "OCPP-J 1.6 section 4.2.3: the errorDetails, the fifth element, a JSON object, as sent"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 160
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

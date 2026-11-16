@@ -1,6 +1,6 @@
-"""The mmt-plugin-author skill and its evals, without an SDK (plan T4.2, #27).
+"""The mmt-plugin-generator skill and its evals, without an SDK (plan T4.2, #27).
 
-``skills/mmt-plugin-author/evals/run_evals.py`` runs the entry and loop
+``skills/mmt-plugin-generator/evals/run_evals.py`` runs the entry and loop
 commands of the skill's ``SKILL.md`` on each case; here every case runs its
 no-SDK leg (``validate --no-sdk`` and ``generate``), and each envelope is
 also validated against the package's JSON Schemas. The other tests keep the
@@ -160,7 +160,7 @@ def test_the_entry_commands_stop_at_the_first_failure() -> None:
 def test_the_exit_tables_are_exitcodes() -> None:
     want = {code.value: code.error_class for code in ExitCode}
     assert dict(CONTRACT.classes) == want
-    rows = run_evals._table(SKILL_TEXT, "Step 4: read the envelope and fix")
+    rows = run_evals._table(SKILL_TEXT, "Step 5: read the envelope and fix")
     assert {int(r[0]): r[1] for r in rows} == want
 
 

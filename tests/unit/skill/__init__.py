@@ -1,1 +1,1 @@
-"""Tests of the mmt-plugin-author skill and its evals (#27)."""
+"""Tests of the mmt-plugin-generator skill and its evals (#27)."""

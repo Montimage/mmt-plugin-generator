@@ -39,21 +39,27 @@ build-backend = "uv_build"
 exclude-newer = "2026-10-30T00:00:00Z"
 
 [tool.ruff]
-# Only the Python package, its tests and the skills' eval runners;
+# Only the Python package, its tests and the skills' eval runners and scripts;
 # tests/corpus/validate.py is a stdlib-only script with its own style. A
 # custom include replaces ruff's default, so stubs (*.pyi) are listed
 # explicitly.
 include = ["src/**/*.py", "src/**/*.pyi", "tests/unit/**/*.py", "skills/**/*.py"]
-src = ["src", "tests/unit", "skills/mmt-plugin-author/evals"]
+src = ["src", "tests/unit", "skills/mmt-plugin-generator/evals", "skills/mmt-plugin-generator/scripts"]
 line-length = 99
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.mypy]
-files = ["src/mmt_plugin", "tests/unit", "skills/mmt-plugin-author/evals"]
-# The skill's eval runner is a script (run_evals), which tests/unit/skill imports.
-mypy_path = "src:skills/mmt-plugin-author/evals"
+files = [
+    "src/mmt_plugin",
+    "tests/unit",
+    "skills/mmt-plugin-generator/evals",
+    "skills/mmt-plugin-generator/scripts",
+]
+# The skill's eval runner and capture scripts are scripts (run_evals,
+# make_pcap, pcap_eval), which tests/unit/skill imports.
+mypy_path = "src:skills/mmt-plugin-generator/evals:skills/mmt-plugin-generator/scripts"
 strict = true
 warn_unreachable = true
 

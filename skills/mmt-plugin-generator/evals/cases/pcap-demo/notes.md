@@ -1,6 +1,6 @@
 # DEMO: what is known besides the capture
 
-An eval input of the mmt-plugin-author skill. `capture.pcap` (written by
+An eval input of the mmt-plugin-generator skill. `capture.pcap` (written by
 tcpdump) holds DEMO messages sent to UDP port 4433, and two other frames.
 The protocol's author says:
 

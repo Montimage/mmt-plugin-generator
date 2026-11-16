@@ -1,4 +1,4 @@
-"""Scripted evals of the mmt-plugin-author skill (plan task T4.2, #27).
+"""Scripted evals of the mmt-plugin-generator skill (plan task T4.2, #27).
 
 No language model and no network: each case in ``cases/<id>/`` plays the
 agent's part with fixed drafts, and this runner plays the skill's. It runs the
@@ -70,8 +70,8 @@ What fails a case (each is one line of ``CaseResult.problems``):
 
 Run it from a checkout (``uv run`` puts ``mmt_plugin`` on the path)::
 
-    uv run python skills/mmt-plugin-author/evals/run_evals.py
-    uv run python skills/mmt-plugin-author/evals/run_evals.py --sdk <prefix> --cc gcc
+    uv run python skills/mmt-plugin-generator/evals/run_evals.py
+    uv run python skills/mmt-plugin-generator/evals/run_evals.py --sdk <prefix> --cc gcc
 
 It prints one ``PASS:``/``FAIL:`` line per case (and one line per problem)
 and exits 1 when a case fails. ``tests/unit/skill/`` runs it under pytest.

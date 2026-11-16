@@ -2,7 +2,7 @@
  * src/rfc1006_impl.c: your code for the rfc1006 protocol plugin.
  *
  * Scaffolded by mmt-plugin from rfc1006_mmt_plugin.h, then edited (an eval
- * fixture of the mmt-plugin-author skill): the parent tcp has no classify in
+ * fixture of the mmt-plugin-generator skill): the parent tcp has no classify in
  * plugin.yaml, since the TCP header has no fixed length, so this hook
  * attaches RFC 1006 to TCP port 102 (RFC 1006 section 5).
  */

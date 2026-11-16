@@ -30,6 +30,22 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   case of the workflow (#39): the steps used, both examples against tshark
   on the four captures of Zenodo record 14887131, the answers to its open
   questions and the gaps found, with the counter it was measured with.
+- The agent skill gets a capture of the protocol when the user gives none
+  (found in public sources, recorded from a real implementation, or
+  generated from the spec with the new `scripts/make_pcap.py` and marked
+  synthetic), evaluates the green plugin on it with the new
+  `scripts/pcap_eval.py` (mmt-dpi without and with the plugin: recall,
+  foreign frames, attribute values and, with tshark, field agreement), and
+  keeps a work folder with the request, the inputs and their sources, the
+  capture, each loop run's envelopes and notes, the evaluation and a
+  report, to review or resume the work later.
+
+### Changed
+
+- The agent skill `skills/mmt-plugin-author/` is renamed
+  `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
+  folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
+  envelope; 6, the capture evaluation.
 
 ### Fixed
 
@@ -120,7 +136,8 @@ plugin, from a new project to a plugin that mmt-dpi loads:
 - A test corpus (`tests/corpus/`): every example model plus a model per
   construct, with packet fixtures.
 - The `mmt-plugin-author` agent skill
-  ([`skills/mmt-plugin-author/`](skills/mmt-plugin-author/SKILL.md)), which
+  (`skills/mmt-plugin-author/`, now
+  [`skills/mmt-plugin-generator/`](skills/mmt-plugin-generator/SKILL.md)), which
   drafts and iterates a plugin from a spec, a capture or a PDL v1 model,
   with scripted evals.
 - Documentation: the [user guide](docs/user-guide.md), the

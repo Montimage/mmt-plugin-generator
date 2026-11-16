@@ -104,15 +104,16 @@ row and that every test named here exists.
 | 37 | Text after the closing `}` is an error (`model.syntax.trailing-input`); Java ignored it. | – (inventory, section 1) | `tests/unit/pdl/test_errors.py::test_syntax_error` |
 | 38 | Keywords are contextual, so a field or alias may be named `id`, `len`, `offset`, `val`, ... (the `ip` model's `uint16_t id;`). | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_keywords_are_contextual` |
 | 39 | `//` and `/* */` comments are allowed. | – (inventory, section 1) | `tests/unit/pdl/test_constructs.py::test_comments_are_whitespace` |
+| 40 | An error inside a quoted value whose closing quote is missing is reported once: the recovery does not resume at the next key's `= "`. Java resumed there and reported a second error (`offset="BAD scope="packet"` gave one at `packet` too). | – (#48) | `tests/unit/pdl/test_errors.py::test_an_error_before_a_missing_closing_quote_is_reported_once`, `tests/unit/pdl/test_errors.py::test_a_stray_equals_sign_inside_a_closed_value_is_recovered` |
 
 ### Command line
 
 | # | Difference | Java bug | Test |
 |---|---|---|---|
-| 40 | The exit code says what happened (`docs/design/cli.md`): 3 for a model error, 7 for a stale or hand-edited output, 0 only on success. Java always exited 0. | 24 | `tests/unit/generate/test_command.py::test_an_sdk_id_or_name_conflict_is_exit_3_with_no_output`, `tests/unit/generate/test_command.py::test_check_exits_0_when_up_to_date_and_7_when_stale` |
-| 41 | The output directory is created when missing, and defaults to `generated/` in a project; Java wrote to `./plugins` and printed `Error in writing to file` (exit 0) when the directory was missing. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_outside_a_project_the_files_and_lock_go_to_the_output_dir`, `tests/unit/generate/test_command.py::test_in_a_project_the_lock_is_at_the_root_and_output_defaults_to_generated` |
-| 42 | A hand-edited generated file is not overwritten without `--force`; `plugin.lock` records what was generated. Java overwrote every file silently. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_a_hand_edited_file_is_not_overwritten_without_force` |
-| 43 | Writes are atomic: an interrupted run leaves the previous files, never partial ones. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_an_interrupted_run_leaves_the_previous_state_recoverable` |
+| 41 | The exit code says what happened (`docs/design/cli.md`): 3 for a model error, 7 for a stale or hand-edited output, 0 only on success. Java always exited 0. | 24 | `tests/unit/generate/test_command.py::test_an_sdk_id_or_name_conflict_is_exit_3_with_no_output`, `tests/unit/generate/test_command.py::test_check_exits_0_when_up_to_date_and_7_when_stale` |
+| 42 | The output directory is created when missing, and defaults to `generated/` in a project; Java wrote to `./plugins` and printed `Error in writing to file` (exit 0) when the directory was missing. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_outside_a_project_the_files_and_lock_go_to_the_output_dir`, `tests/unit/generate/test_command.py::test_in_a_project_the_lock_is_at_the_root_and_output_defaults_to_generated` |
+| 43 | A hand-edited generated file is not overwritten without `--force`; `plugin.lock` records what was generated. Java overwrote every file silently. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_a_hand_edited_file_is_not_overwritten_without_force` |
+| 44 | Writes are atomic: an interrupted run leaves the previous files, never partial ones. | – (inventory, section 3) | `tests/unit/generate/test_command.py::test_an_interrupted_run_leaves_the_previous_state_recoverable` |
 
 ## Kept from Java
 

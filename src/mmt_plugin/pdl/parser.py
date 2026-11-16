@@ -74,6 +74,7 @@ from mmt_plugin.pdl.model import (
     StructType,
     Switch,
     ValueOf,
+    is_c_type_word,
 )
 
 __all__ = ["STDIN", "PdlSyntaxError", "parse", "parse_element_type", "parse_expression"]
@@ -336,7 +337,9 @@ class _Parser:
 
         An error inside the value is recorded and parsing goes on after the
         value's closing quote, when that quote is on the same line; a missing
-        closing quote stops the parse.
+        closing quote stops the parse. A ``= "`` before the next quote is the
+        next key's, so the closing quote is missing: ``offset="BAD scope="p"``
+        gives one diagnostic, at ``BAD``, not a second one at ``p`` (#48).
         """
         opening = self.expect(
             '"',
@@ -370,7 +373,11 @@ class _Parser:
         )
 
     def skip_to_closing_quote(self, opening: Token) -> bool:
-        """Move past the next ``"`` if it is on ``opening``'s line."""
+        """Move past the next ``"`` if it is on ``opening``'s line.
+
+        Not when a ``=`` directly before a ``"`` comes first: that quote opens
+        the next key's value, and this value's closing quote is missing.
+        """
         for ahead in range(len(self.tokens) - self.i):
             token = self.peek(ahead)
             if token.span.line != opening.span.line:
@@ -378,6 +385,8 @@ class _Parser:
             if token.is_punct('"'):
                 self.i += ahead + 1
                 return True
+            if token.is_punct("=") and self.peek(ahead + 1).is_punct('"'):
+                return False
         return False
 
     def quoted_word(self, what: str, hint: str) -> Token:
@@ -772,7 +781,8 @@ class _Parser:
                     base,
                 )
             self.advance()
-        if base.text not in C_TYPE_WORDS:
+        word = base.text
+        if not is_c_type_word(word):
             self.fail(
                 "model.syntax.unknown-type",
                 f"`{base.text}` is not a PDL type",
@@ -798,7 +808,7 @@ class _Parser:
                 base,
             )
         end = star if pointer else base
-        return CType(base.text, unsigned, pointer, start.span.to(end.span))
+        return CType(word, unsigned, pointer, start.span.to(end.span))
 
     # --- if / else (G:314-380) --------------------------------------------------
 

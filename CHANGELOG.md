@@ -84,6 +84,10 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   with a valid header, not inside a frame. `permessage-deflate` frames
   stay unread (a documented limit). The use case's A1 and A4 counts are
   measured again: A1 is within 31 frames and 5 messages of tshark.
+- PDL v1 (#48): an error inside a quoted value whose closing quote is
+  missing is reported once. `offset="BAD scope="packet"` gave a second,
+  spurious `model.syntax.unexpected-token` at `packet`; the parse now stops
+  at the first error (`docs/behaviour-changes.md`, row 40).
 
 ## [0.1.0] - 2026-11-15
 

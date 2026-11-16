@@ -230,7 +230,9 @@ Not covered, or open:
   classified, mmt-dpi 1.10.2 calls only its owner. Handing an Upgrade
   session from HTTP to a plugin needs an mmt-dpi change.
 - Checking it against real captures (the Zenodo datasets of #40) is a
-  manual run, not CI.
+  manual run, not CI. The run of #39 (counts against tshark, and the
+  frames it misses after lost header bytes, #104) is in
+  [`docs/use-cases/websocket-ocpp.md`](../docs/use-cases/websocket-ocpp.md).
 
 ## OCPP 1.6-J
 
@@ -336,9 +338,11 @@ Not covered, or open:
   after them is not reported. Compressed frames (`permessage-deflate`,
   RSV1) are not read.
 - Checking per-action CALL counts and links against real captures (the
-  Zenodo record 14887131 of #41, against tshark) is a manual run, not CI,
-  reported on #39; the mmt-security rule on these attributes is in that
-  repository, not here.
+  Zenodo record 14887131 of #41, against tshark) is a manual run, not CI:
+  the run of #39 is in
+  [`docs/use-cases/websocket-ocpp.md`](../docs/use-cases/websocket-ocpp.md)
+  (and its findings in #104); the mmt-security rule on these attributes
+  is in that repository, not here (#97).
 
 ## What the packet tests do not cover
 

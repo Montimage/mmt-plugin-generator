@@ -512,8 +512,10 @@ has the details.
 [`examples/`](../examples/README.md) holds 18 complete projects, each with
 its hooks and packet tests: the models of the Java tool's 16 examples ported
 to `plugin.yaml`, and two plugins written with `init`, WebSocket (RFC 6455)
-and OCPP 1.6-J, whose hooks follow the TCP session. Their generated files
-are committed:
+and OCPP 1.6-J, whose hooks follow the TCP session
+([the use case](use-cases/websocket-ocpp.md) runs them over public OCPP
+captures and compares them with tshark). Their generated files are
+committed:
 
 <!-- doc:run no-sdk -->
 ```sh

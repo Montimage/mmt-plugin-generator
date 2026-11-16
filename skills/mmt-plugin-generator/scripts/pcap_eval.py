@@ -26,8 +26,9 @@ frame, the plugin's value with tshark's first occurrence of the field
 the protocol (``--decode-as`` passes ``-d`` to tshark, e.g.
 ``udp.port==5684,coap``).
 
-Writes in ``--out``: ``bin/pcap_eval``, ``plugins/`` (the SDK's plugins and a
-copy of the plugin), ``baseline.json``, ``plugin.json``, ``frames.jsonl``,
+Writes in ``--out``: ``bin/pcap_eval`` (linked with the SDK's
+``libmmt_core.so.<version>``, whose soname ``lib/`` resolves), ``plugins/``
+(the SDK's plugins and a copy of the plugin), ``baseline.json``, ``plugin.json``, ``frames.jsonl``,
 ``report.json`` and ``report.md``. Prints one summary line.
 
 Exit codes: 0 PASS, 1 FAIL (the report says why), 2 usage, 3 environment
@@ -41,6 +42,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,6 +53,8 @@ HERE = Path(__file__).resolve().parent
 RUNNER_SRC = HERE / "pcap_eval.c"
 OWN_ATTRIBUTE_LIMIT = 4096  # ids from 4096 are mmt-dpi's generic attributes (p_data, stats, ...)
 EXIT_PASS, EXIT_FAIL, EXIT_USAGE, EXIT_ENV = 0, 1, 2, 3
+# libmmt_core.so.<major>.<minor>...: group 1 is its soname, libmmt_core.so.<major>.
+CORE_VERSIONED = re.compile(r"^(libmmt_core\.so\.[0-9]+)(\.[0-9]+)+$")
 
 
 class EvalExit(Exception):
@@ -89,23 +93,72 @@ def default_filters(selector: str) -> tuple[str, str | None]:
     )
 
 
+def core_library(sdk: Path) -> Path:
+    """The SDK's ``libmmt_core`` shared object: the newest regular file
+    ``dpi/lib/libmmt_core.so.<version>``, else ``dpi/lib/libmmt_core.so``
+    when it resolves. The package's own links point to absolute ``/opt/mmt``
+    paths, so they dangle in an extracted prefix, and ``-lmmt_core`` would
+    then link ``libmmt_core.a``: a private copy of the core that the SDK's
+    plugins cannot resolve their symbols against."""
+    lib = sdk / "dpi" / "lib"
+    found = [
+        p
+        for p in (lib.iterdir() if lib.is_dir() else [])
+        if CORE_VERSIONED.match(p.name) and p.is_file() and not p.is_symlink()
+    ]
+    if found:
+        return max(
+            found, key=lambda p: tuple(int(n) for n in p.name.split(".so.", 1)[1].split("."))
+        )
+    plain = lib / "libmmt_core.so"
+    if plain.is_file():
+        return plain
+    raise EvalExit(EXIT_ENV, f"--sdk {sdk}: dpi/lib has no libmmt_core shared object")
+
+
+def runtime_dir(core: Path, out: Path) -> Path:
+    """A directory where ``libmmt_core``'s soname resolves to ``core``:
+    ``out/lib``, with a link named after the soname."""
+    match = CORE_VERSIONED.match(core.name)
+    if match is None:
+        return core.parent
+    lib = out / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    link = lib / match.group(1)
+    if not (link.is_symlink() and os.readlink(link) == str(core)):
+        link.unlink(missing_ok=True)
+        link.symlink_to(core)
+    return lib
+
+
 def compile_runner(sdk: Path, cc: str, out: Path) -> Path:
     binary = out / "bin" / "pcap_eval"
-    if binary.exists() and binary.stat().st_mtime >= RUNNER_SRC.stat().st_mtime:
+    # The command the binary was built with: another --sdk or --cc rebuilds it.
+    stamp = out / "bin" / "pcap_eval.cmd"
+    core = core_library(sdk)
+    run_path = runtime_dir(core, out)
+    cmd = [
+        cc, "-O2", "-Wall", "-o", str(binary), str(RUNNER_SRC),
+        f"-I{sdk / 'dpi' / 'include'}", str(core),
+        f"-Wl,-rpath,{run_path}", "-ldl", "-lpcap",
+    ]  # fmt: skip
+    if (
+        binary.exists()
+        and binary.stat().st_mtime >= RUNNER_SRC.stat().st_mtime
+        and stamp.is_file()
+        and stamp.read_text("utf-8") == json.dumps(cmd)
+    ):
         return binary
     if not shutil.which(cc):
         raise EvalExit(EXIT_ENV, f"compiler {cc!r} not found: pass --cc gcc or --cc clang")
     binary.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        cc, "-O2", "-Wall", "-o", str(binary), str(RUNNER_SRC),
-        f"-I{sdk / 'dpi' / 'include'}", f"-L{sdk / 'dpi' / 'lib'}",
-        f"-Wl,-rpath,{sdk / 'dpi' / 'lib'}", "-lmmt_core", "-ldl", "-lpcap",
-    ]  # fmt: skip
+    stamp.unlink(missing_ok=True)
     done = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         raise EvalExit(
             EXIT_ENV, f"the runner does not compile (is libpcap-dev installed?):\n{done.stderr}"
         )
+    stamp.write_text(json.dumps(cmd), "utf-8")
     return binary
 
 

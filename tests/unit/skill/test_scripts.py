@@ -213,6 +213,41 @@ def test_the_runner_source_is_shipped_next_to_the_script() -> None:
     assert pcap_eval.RUNNER_SRC.is_file()
 
 
+def test_the_runner_links_the_core_shared_object_of_an_extracted_package(
+    tmp_path: Path,
+) -> None:
+    """The package's links point to absolute /opt/mmt paths, which dangle in
+    an extracted prefix: the runner links the newest libmmt_core.so.<version>
+    file, never -lmmt_core (which would fall back to libmmt_core.a), and its
+    run path resolves the soname to that file."""
+    lib = tmp_path / "sdk" / "dpi" / "lib"
+    lib.mkdir(parents=True)
+    for name in ("libmmt_core.so.1.10.2", "libmmt_core.so.1.10.10", "libmmt_core.a"):
+        (lib / name).write_bytes(b"")
+    for name in ("libmmt_core.so", "libmmt_core.so.1"):
+        (lib / name).symlink_to("/nonexistent/opt/mmt/dpi/lib/libmmt_core.so.1.10.10")
+    core = pcap_eval.core_library(tmp_path / "sdk")
+    assert core == lib / "libmmt_core.so.1.10.10"
+    run_path = pcap_eval.runtime_dir(core, tmp_path / "out")
+    assert run_path == tmp_path / "out" / "lib"
+    assert (run_path / "libmmt_core.so.1").resolve() == core
+    # Idempotent, and the link follows another core.
+    assert pcap_eval.runtime_dir(core, tmp_path / "out") == run_path
+    other = lib / "libmmt_core.so.1.10.2"
+    pcap_eval.runtime_dir(other, tmp_path / "out")
+    assert (run_path / "libmmt_core.so.1").resolve() == other
+
+    plain = tmp_path / "plain" / "dpi" / "lib"
+    plain.mkdir(parents=True)
+    (plain / "libmmt_core.so").write_bytes(b"")
+    assert pcap_eval.core_library(tmp_path / "plain") == plain / "libmmt_core.so"
+    assert pcap_eval.runtime_dir(plain / "libmmt_core.so", tmp_path / "o2") == plain
+    (tmp_path / "none" / "dpi" / "lib").mkdir(parents=True)
+    with pytest.raises(pcap_eval.EvalExit) as exc:
+        pcap_eval.core_library(tmp_path / "none")
+    assert exc.value.code == pcap_eval.EXIT_ENV
+
+
 def test_eval_rejects_missing_inputs_before_running_anything(tmp_path: Path) -> None:
     sdk = tmp_path / "sdk"
     (sdk / "dpi" / "include").mkdir(parents=True)

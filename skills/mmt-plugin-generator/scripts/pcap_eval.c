@@ -5,7 +5,12 @@
  * Step 6: evaluate on the capture); scripts/pcap_eval.py builds and runs it.
  *
  *   cc -O2 -Wall -o pcap_eval pcap_eval.c -I"$SDK/dpi/include" \
- *      -L"$SDK/dpi/lib" -Wl,-rpath,"$SDK/dpi/lib" -lmmt_core -ldl -lpcap
+ *      "$SDK/dpi/lib/libmmt_core.so.<version>" -Wl,-rpath,<dir> -ldl -lpcap
+ *
+ * <dir> holds libmmt_core's soname (libmmt_core.so.<major>), a link to the
+ * same file: the package's own links are absolute /opt/mmt paths, and
+ * -lmmt_core would fall back to libmmt_core.a, a private core that the
+ * SDK's plugins cannot resolve their symbols against.
  *   MMT_DPI_PLUGINS_DIR=<dir> ./pcap_eval CAPTURE LABEL [DUMP]
  *
  * LABEL is the protocol's name (the plugin's label). With DUMP, it writes

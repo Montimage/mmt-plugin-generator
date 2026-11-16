@@ -110,8 +110,7 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   listed id or a `PROTO_CLASS_*` macro. mmt-dpi 1.10.2's headers pass
   unchanged. `tests/check_headercheck_mutations.sh` also changes
   `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`, `PROTO_META` and adds such
-  definitions, and must
-  see each fail.
+  definitions, and must see each fail.
 - SDK profile values (#50, F3): already done on `dev` before this change
   (#49, #51): the profile records, and the header check asserts, the value
   of `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`,

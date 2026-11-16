@@ -26,6 +26,10 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   and direction in the session. Its packet tests come from OCPP-J 1.6 and
   OCPP 1.6; `tests/unit/examples/test_sdk.py` replays TCP sessions through
   it, also next to `websocket_example`.
+- `docs/use-cases/websocket-ocpp.md`: the WebSocket and OCPP 1.6-J use
+  case of the workflow (#39): the steps used, both examples against tshark
+  on the four captures of Zenodo record 14887131, the answers to its open
+  questions and the gaps found, with the counter it was measured with.
 
 ## [0.1.0] - 2026-11-15
 

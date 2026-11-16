@@ -30,6 +30,9 @@ describes how a release is published.
 - [Examples](examples/README.md): 18 complete plugin projects, the Java
   tool's 16 examples ported, a WebSocket (RFC 6455) plugin and an OCPP
   1.6-J plugin.
+- [Use case: WebSocket and OCPP 1.6-J](docs/use-cases/websocket-ocpp.md):
+  the workflow on two real protocols, and the two plugins against tshark
+  on public OCPP captures.
 - [CLI design](docs/design/cli.md): the command contract in full.
 - [Releasing](docs/releasing.md): the release assets, the dry run and
   how a release is published; the [changelog](CHANGELOG.md) lists what

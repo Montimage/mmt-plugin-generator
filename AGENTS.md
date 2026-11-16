@@ -372,6 +372,13 @@ protocol model. A Python rewrite is planned in
   `MMT_BASE` and `CC` from `MMT_GOLDEN_SDK` and `MMT_GOLDEN_CC`; `install`
   blocks (`uv tool install`, into the sandbox) run only with
   `MMT_DOCS_INSTALL=1`. When you change a command, update the docs' blocks.
+- `docs/use-cases/websocket-ocpp.md` (#39): the WebSocket and OCPP 1.6-J
+  use case: the workflow steps used, both examples against tshark on the
+  four captures of Zenodo record 14887131, the answers to the issue's open
+  questions and the gaps filed (#96 to #104). `docs/use-cases/websocket-ocpp/`
+  holds the two programs it was measured with, `count.c` (libpcap and
+  `libmmt_core`) and `tshark_count.py`; neither runs in CI, and the
+  captures are never committed.
 - `.github/workflows/ci.yml`: CI on PRs to `dev`/`main` and pushes to `dev`.
   Runs shellcheck on every tracked `*.sh`, the corpus validator,
   `check_ndn_plugin.sh` against the mmt-dpi v1.10.2 ubuntu-24.04 `.deb`

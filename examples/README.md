@@ -428,7 +428,8 @@ frame header; and permessage-deflate (`tests/session-deflate-*.yaml`,
 #107): a compressed CALL and its CALLRESULT linked, its payload the plain
 text, two Heartbeats whose second refers to the first (context takeover),
 both `*_no_context_takeover` with window bits in the answer's second
-segment, an unknown parameter (nothing inflated), a lost message and lost
+segment, `server_no_context_takeover` alone (the server's messages only),
+an unknown parameter (nothing inflated), a lost message and lost
 bytes inside a frame then a message that refers to them (not reported)
 and a self-contained one (reported), a lost first fragment, a message over
 two segments (reported in the second), a segment with the end of one

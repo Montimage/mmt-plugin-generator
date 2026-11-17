@@ -50,10 +50,9 @@ again after a lost frame header only at a segment that starts with a valid
 one. A2 and A3 gave the same counts before and after #104; the A1 and A4
 counts of the first run, and why they differed, are under "Before #104"
 below. A4 was measured again for #107, which made both plugins inflate
-`permessage-deflate` (A1 to A3 negotiate no extension, so #107 does not
-change what the plugins read there; they were not run again); its tshark
-reference was computed again too, with the same commands, and gave the
-same counts.
+`permessage-deflate`; the A1, A2 and A3 rows are #104's and were not run
+again. A4's tshark reference was computed again too, with the same
+commands, and gave the same counts.
 
 ### Classification
 
@@ -73,7 +72,8 @@ one such session each, which mmt-dpi alone and `websocket_example` leave
 `tcp.unknown` (A2: 13 449 packets `tcp.unknown` without the plugin, 117
 with both). Since #107 a compressed text frame that inflates to an OCPP-J
 array claims one too: A4's TCP stream 1 (to tshark), open before the
-capture started, 14 packets, `tcp.unknown` without the plugin. With `websocket_example` alone, A1 has as many packets
+capture started: its 14 packets from the claiming frame on, which are
+`tcp.unknown` without the plugin. With `websocket_example` alone, A1 has as many packets
 `tcp.unknown` as mmt-dpi alone, and A4 12 756 more; these were not
 investigated further.
 
@@ -241,8 +241,10 @@ may be inside a frame; that changed none of the four captures' counts.
    CALLRESULT or CALLERROR gets its `action` from the CALL with the same
    UniqueId seen in the other direction (a 16-entry table per session).
    Strings are reported as sent (JSON escapes are not decoded), at most 63
-   bytes. A message is read from the bytes of its segment only:
-   continuation frames are not reassembled.
+   bytes. An uncompressed message is read from the bytes of its segment
+   only: continuation frames are not reassembled. A compressed one
+   (permessage-deflate, #107) is collected over its frames and segments,
+   inflated and read whole, in the segment where it ends.
 
 ## The gaps found
 

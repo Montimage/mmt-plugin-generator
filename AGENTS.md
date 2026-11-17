@@ -54,7 +54,7 @@ protocol model. A Python rewrite is planned in
   and `test_sdk.py` (`validate`, `build` and `test --sanitize` on each
   one, then each parent's classification broken, which fails only the
   run through it and the session tests; the WebSocket and OCPP examples'
-  session tests (#99, #107), 24 and 22, under the sanitizers with corrupted
+  session tests (#99, #107), 24 and 23, under the sanitizers with corrupted
   copies, and one without its CALL; then an OCPP session through the
   harness `test` built, next to the WebSocket plugin; needs
   `MMT_GOLDEN_SDK`).

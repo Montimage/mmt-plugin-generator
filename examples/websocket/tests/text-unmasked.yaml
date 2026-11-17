@@ -87,6 +87,12 @@ expect:
       value: "48 65 6c 6c 6f"
       text: "Hello"
       source: "RFC 6455 section 5.7: \"Hello\""
+    - name: "payload_inflated"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 7692 section 6: RSV1 is 0, the message is not compressed: payload is its bytes as sent (examples/README.md, WebSocket: 0)"
     - name: "frame_count"
       type: "MMT_U32_DATA"
       offset: 0

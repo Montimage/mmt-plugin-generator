@@ -344,7 +344,7 @@ def test_the_session_tests_follow_the_plugins_state(
     expected action comes from the session, not from the packet."""
     sdk, cc = str(_sdk()), _cc()
     sessions = _session_tests(project)
-    assert len(sessions) == {"websocket": 8, "ocpp": 12}[project.name]
+    assert len(sessions) == {"websocket": 24, "ocpp": 12}[project.name]
     code, doc = _json(
         capsys,
         "test",

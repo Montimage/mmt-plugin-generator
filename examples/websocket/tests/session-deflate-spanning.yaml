@@ -1,0 +1,157 @@
+# Session test of examples/websocket, written from RFC 6455 and RFC 7692
+# (permessage-deflate, #107): its packets run in order, one TCP connection.
+# Format and rules: tests/corpus/README.md, Session files
+schema: 1
+id: "websocket/session-deflate-spanning"
+model: "websocket"
+summary: "A compressed frame over two segments, from each side: the second segment has no frame header (no frame fields) and reports the message inflated"
+source: "RFC 6455 section 4 (the opening handshake) and 5 (framing); RFC 7692 section 7 (permessage-deflate), Python zlib's raw DEFLATE (wbits=-15) of the text; RFC 6455 section 5.3 (the masking key goes on over the payload); the WebSocket layer's session state, examples/README.md, WebSocket"
+session:
+  through: "tcp:dport=8080,sport=49180"
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  attributes:
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "payload_inflated"
+      type: "MMT_U8_DATA"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 63 68 61 74 20 48 54 54 50 2f 31"
+      - "2e 31 0d 0a 48 6f 73 74 3a 20 73 65 72 76 65 72"
+      - "2e 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a 55 70"
+      - "67 72 61 64 65 3a 20 77 65 62 73 6f 63 6b 65 74"
+      - "0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 55 70"
+      - "67 72 61 64 65 0d 0a 53 65 63 2d 57 65 62 53 6f"
+      - "63 6b 65 74 2d 4b 65 79 3a 20 64 47 68 6c 49 48"
+      - "4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51"
+      - "3d 3d 0d 0a 53 65 63 2d 57 65 62 53 6f 63 6b 65"
+      - "74 2d 45 78 74 65 6e 73 69 6f 6e 73 3a 20 70 65"
+      - "72 6d 65 73 73 61 67 65 2d 64 65 66 6c 61 74 65"
+      - "3b 20 63 6c 69 65 6e 74 5f 6d 61 78 5f 77 69 6e"
+      - "64 6f 77 5f 62 69 74 73 0d 0a 53 65 63 2d 57 65"
+      - "62 53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a"
+      - "20 31 33 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 1
+  - from: "server"
+    text: "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59"
+      - "47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 45 78 74"
+      - "65 6e 73 69 6f 6e 73 3a 20 70 65 72 6d 65 73 73"
+      - "61 67 65 2d 64 65 66 6c 61 74 65 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 2
+  - from: "server"
+    bytes:
+      - "c1 37 0a c9 48 55 28 2c cd"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "0a c9 48 55 28 2c cd"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 55
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    bytes:
+      - "4c ce 56 48 2a ca 2f cf 53 48 cb af 50 c8 2a cd"
+      - "2d 28 56 c8 2f 4b 2d 52 28 01 4a e7 24 56 55 2a"
+      - "a4 e4 a7 eb 80 79 e8 8a 13 d3 13 33 f3 f4 00 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 48
+        - name: "handshake"
+          value: 0
+        - name: "payload"
+          value: "54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 74 68 65 20 6c 61 7a 79 20 64 6f 67 2c 20 74 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 61 67 61 69 6e 2e"
+          text: "The quick brown fox jumps over the lazy dog, the quick brown fox again."
+        - name: "payload_inflated"
+          value: 1
+  - from: "client"
+    bytes:
+      - "c1 b7 37 fa 21 3d 3d 33 69 68 1f d6 ec"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "0a c9 48 55 28 2c cd"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 55
+        - name: "rsv1"
+          value: 1
+  - from: "client"
+    bytes:
+      - "71 f9 ac 69 17 fd d5 ee 6e 7f 31 8e 6d ff d0 ec"
+      - "10 1f ac e9 12 7c d7 73 15 36 b0 c6 19 61 af 0b"
+      - "99 d3 5d ca bd 4e 12 ab 2e e4 e9 12 ce c3 fa 21"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 48
+        - name: "handshake"
+          value: 0
+        - name: "payload"
+          value: "54 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 74 68 65 20 6c 61 7a 79 20 64 6f 67 2c 20 74 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 61 67 61 69 6e 2e"
+          text: "The quick brown fox jumps over the lazy dog, the quick brown fox again."
+        - name: "payload_inflated"
+          value: 1

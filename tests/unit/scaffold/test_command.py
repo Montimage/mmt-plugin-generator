@@ -377,7 +377,7 @@ def test_a_websocket_capture_under_tcp_after_its_handshake(scaffold: Run, work: 
     assert "  - struct: bits_1    # byte 1, cut into bit fields" in proposed
     # The server's first frame came in the segment of its 101 answer.
     first = (work / "tests/demo-pcap-001.yaml").read_text()
-    assert f"bytes {len(samples.WS_ANSWER)} on of the payload of frame 4 of ws.pcap" in first
+    assert f"the payload of frame 4 of ws.pcap, from byte {len(samples.WS_ANSWER)}" in first
     assert scaffold(*args)[1]["result"]["files"][0]["action"] == "unchanged"
 
 

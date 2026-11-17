@@ -41,7 +41,7 @@
             "truncated": {"type": "integer", "minimum": 0, "description": "The capture cut the frame."},
             "unsupported-link": {"type": "integer", "minimum": 0, "description": "A link type scaffold does not decode."},
             "retransmission": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment whose bytes its stream already gave."},
-            "gap": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment after bytes the capture lacks (more than 64 waiting in its direction, or still waiting at the end)."},
+            "gap": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment after bytes the capture lacks (more than 64 waiting in its direction, or still waiting when the capture ends)."},
             "skip-until": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment whose bytes all come before the end of the --skip-until pattern in its direction."}
           }
         }

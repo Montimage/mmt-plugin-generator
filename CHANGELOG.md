@@ -82,8 +82,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   it its own way (WebSocket's MASK, DNS's QR). On a WebSocket session it
   proposes FIN, RSV1-3, the opcode, MASK and the 7-bit length
   (`tests/unit/scaffold/test_command.py`, `test_sdk.py`). A byte left with
-  one varying group stays one field, so the proposals of the demo
-  captures are unchanged.
+  one varying group, or with fewer than 4 distinct values (too little
+  evidence), stays one field, so the proposals of the demo captures are
+  unchanged.
 
 ### Changed
 
@@ -95,7 +96,7 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   initial sequence number starts a new session. `result.packets.skipped`
   has three new reasons, `retransmission`, `gap` (more than 64 segments
   waiting in a direction, which is then given up until a new SYN, or
-  still waiting when the slicing ends) and `skip-until`. Before, each
+  still waiting when the capture ends) and `skip-until`. Before, each
   segment was a payload as captured, retransmissions and handshakes
   included. Decided, of what #102 lists: segments are not split into
   messages nor joined (several WebSocket frames in one segment stay one
@@ -108,7 +109,6 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   byte pattern only, not a number of payloads per session: a pattern also
   finds the end of a handshake whose last segment carries the first
   message, which a count cannot.
-
 - SDK profiles have an `entry_point` (#56, N12): the callback role, the
   symbol mmt-dpi looks up in a plugin (`init_proto`) and the macro of a
   plugin built into the core (`CORE`). The generator takes both names

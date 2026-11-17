@@ -15,7 +15,7 @@ never bytes sent twice:
   ``MAX_WAITING`` waiting in a direction gives it up: those segments, and
   every later one of the direction until a new SYN, are skipped as ``gap``
   (where a message starts after lost bytes is unknown), as are the ones
-  still waiting when the slicing ends;
+  still waiting when the capture ends;
 - a SYN with another initial sequence number starts a new session on the
   same addresses and ports (the old one's waiting segments are ``gap``);
 - with ``skip_until`` (a byte pattern), each direction's bytes of each

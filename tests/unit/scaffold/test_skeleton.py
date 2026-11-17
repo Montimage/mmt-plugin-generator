@@ -243,7 +243,23 @@ def test_a_byte_with_one_varying_run_stays_whole() -> None:
     assert _groups([0x45] * 3) is None  # constant
     assert _groups([0x81, 0x82, 0x88]) is None  # one opcode run under a constant 0x8_
     # Two runs that do not vary independently are one number: 1 and 8.
-    assert _groups([1, 8, 1, 8]) is None
+    assert _groups([1, 8, 1, 8, 0x21, 0x28]) is None
+    # Too few distinct values to tell: 0x81, 0x01, 0x80 would be FIN | opcode.
+    assert _groups([0x81, 0x01, 0x80]) is None
+    assert _groups([0x81, 0x01, 0x80, 0x00]) == [
+        (0, 1, "varies"),
+        (1, 6, "constant"),
+        (7, 1, "varies"),
+    ]
+
+
+def test_a_few_random_payloads_are_not_cut_into_bits() -> None:
+    import random
+
+    rng = random.Random(102)
+    for _ in range(500):
+        payloads = [rng.randbytes(16) for _ in range(3)]
+        assert all(f.bit_offset is None for f in propose(payloads).fields)
 
 
 def test_flags_and_a_number_that_vary_independently() -> None:
@@ -335,4 +351,4 @@ def test_the_bit_fields_proposal_generates_and_its_tests_expect_it(tmp_path: Pat
         "field_1_b1": 2,
     }
     assert "      bit_offset: 1" in test_text.splitlines()
-    assert 'bytes_source: "captured: bytes 3 on of the payload of frame 9 of ws.pcap"' in test_text
+    assert 'bytes_source: "captured: the payload of frame 9 of ws.pcap, from byte 3"' in test_text

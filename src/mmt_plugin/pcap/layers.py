@@ -382,11 +382,14 @@ def slice_payloads(
     are read only until there are ``limit`` of them (``PcapError`` from a
     broken capture propagates). Under a ``tcp`` parent the segments go
     through ``TcpStreams`` (``skip_until``: each direction's bytes up to the
-    end of that pattern are skipped); ``skip_until`` needs one."""
+    end of that pattern are skipped); ``skip_until`` needs one. Segments
+    still waiting are counted as ``gap`` only when the frames ran out, not
+    when reading stopped at ``limit``."""
     if skip_until is not None and parent.proto != "tcp":
         raise ValueError("skip_until needs a tcp parent")
     out = Slicing()
     streams = TcpStreams(out.skipped, skip_until) if parent.proto == "tcp" else None
+    ended = True
     for frame in frames:
         out.frames += 1
         reason, found = _reason(frame, parent)
@@ -399,7 +402,8 @@ def slice_payloads(
             ready = streams.segment(found.payload, found.fields["seq"], found.fields["flags"])
             out.payloads += ready[: limit - len(out.payloads)]
         if len(out.payloads) >= limit:
+            ended = False
             break
-    if streams is not None:
+    if streams is not None and ended:
         streams.finish()
     return out

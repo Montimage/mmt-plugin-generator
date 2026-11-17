@@ -11,7 +11,7 @@ shortest payload's length up to ``HEADER_LIMIT``, which every payload has:
    some of the header). It is named ``length``;
 2. a 4-byte word at an offset that is a multiple of 4 whose last byte
    differs between payloads is a 4-byte field (an identifier, a counter, a
-   sequence number, whose high bytes change less often);
+   sequence number, whose high bytes change less often).
    Before it, a byte whose bits vary independently is cut into bit fields
    (``bit_groups``, below);
 3. every other byte that is the same in every payload is a 1-byte field (a
@@ -35,9 +35,10 @@ role flag: WebSocket's MASK, set by clients only, DNS's QR). Two
 neighbouring varying groups (with the constant ones between them) are
 merged back unless they vary independently: one group's value is seen
 with two values of the other, and the other way round. A byte left with
-fewer than two varying groups is not cut: a type byte with 7 constant bits
-stays one field. The bytes after the
-header are not proposed: a comment says what is there. The packet tests
+fewer than two varying groups, or with fewer than 4 distinct values, is
+not cut: a type byte with 7 constant bits stays one field.
+
+The bytes after the header are not proposed: a comment says what is there. The packet tests
 expect what the proposed model extracts from each captured payload, so they
 pass once the proposal is the model; they are a draft for the protocol's
 specification to correct, not values taken from it.
@@ -70,6 +71,9 @@ HEADER_LIMIT = 16
 
 _TYPES = {1: "MMT_U8_DATA", 2: "MMT_U16_DATA", 4: "MMT_U32_DATA"}
 _BYTES_PER_LINE = 16
+#: The fewest distinct values of a byte cut into bit fields: fewer are too
+#: little evidence (a few random bytes have constant bits by chance).
+_BIT_VALUES = 4
 
 
 @dataclass(frozen=True)
@@ -211,7 +215,7 @@ def bit_groups(
     each payload's direction, or ``None``), as (bit offset from the most
     significant bit, width, kind), kind ``varies``, ``role`` or
     ``constant``; ``None`` when the byte stays whole (module docstring)."""
-    if len(set(values)) < 2:
+    if len(set(values)) < _BIT_VALUES:
         return None
     varies = [len({_bit(v, b) for v in values}) > 1 for b in range(8)]
     varies = [varies[b] or (0 < b < 7 and varies[b - 1] and varies[b + 1]) for b in range(8)]
@@ -461,8 +465,11 @@ def packet_test(
     ``payload``, expecting the skeleton's values."""
     where = f"frame {payload.frame} of {pcap}"
     data = payload.data
-    cut = f"bytes {payload.cut} on of the payload of frame" if payload.cut else "frame"
-    captured = f"captured: {cut} {payload.frame} of {pcap}"
+    captured = f"captured: frame {payload.frame} of {pcap}"
+    if payload.cut:
+        captured = (
+            f"captured: the payload of frame {payload.frame} of {pcap}, from byte {payload.cut}"
+        )
     hexed = [f"{b:02x}" for b in data]
     lines = [
         f"# Packet test {_comment(test_id)}, drafted by mmt-plugin scaffold from"

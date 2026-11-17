@@ -24,7 +24,7 @@ import pytest
 
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Related, Severity
 from mmt_plugin.ui import render, style
-from mmt_plugin.ui.streams import ColorTier, StreamStyle
+from mmt_plugin.ui.streams import MAX_WIDTH, ColorTier, StreamStyle
 from mmt_plugin.ui.style import Level, Role, Section
 
 RunCli = Callable[..., subprocess.CompletedProcess[bytes]]
@@ -224,6 +224,18 @@ def test_paint_escapes_user_text_but_not_styled_text() -> None:
 # --- glyphs and widths -------------------------------------------------------
 
 
+#: Emoji sequences a terminal draws in 2 cells (all in Unicode 12, so in the
+#: ``unicodedata`` of every supported Python), by kind (#54, N1).
+EMOJI_SEQUENCES = {
+    "zwj": "\U0001f468\u200d\U0001f469\u200d\U0001f467",  # family: man, woman, girl
+    "flag": "\U0001f1eb\U0001f1f7",  # regional indicators F, R
+    "skin-tone": "\U0001f44d\U0001f3fd",  # thumbs up, medium skin tone
+    "vs16": "\u2764\ufe0f",  # heavy black heart, emoji presentation
+    "keycap": "1\ufe0f\u20e3",
+    "zwj-vs16": "\U0001f3f3\ufe0f\u200d\U0001f308",  # rainbow flag
+}
+
+
 @pytest.mark.parametrize(
     ("text", "width"),
     [
@@ -236,10 +248,44 @@ def test_paint_escapes_user_text_but_not_styled_text() -> None:
         ("각", 2),  # Hangul jamo: leading consonant + medial + final
         ("😀", 2),
         ("", 0),
+        *((seq, 2) for seq in EMOJI_SEQUENCES.values()),
+        ("\U0001f1eb", 1),  # a lone regional indicator
+        ("\U0001f1eb\U0001f1f7\U0001f1e9\U0001f1ea", 4),  # two flags
+        ("\U0001f468\u200d\U0001f469x", 3),  # a ZWJ sequence, then a letter
+        ("\u0915\u094d\u200d\u0937", 2),  # Devanagari: a ZWJ between letters joins nothing
     ],
 )
 def test_cell_width(text: str, width: int) -> None:
     assert style.cell_width(text) == width
+
+
+@pytest.mark.parametrize("kind", EMOJI_SEQUENCES)
+def test_a_box_around_an_emoji_sequence_lines_up(kind: str) -> None:
+    # Styled text is placed as it is; user text has its ZWJ escaped (a format
+    # character, ui.render.escape), and lines up as well.
+    seq = style.Styled(EMOJI_SEQUENCES[kind])
+    st = mode(width=20)
+    out = style.box(
+        style.Styled(f"t{seq}"), [style.Styled(f"a{seq}b"), style.Styled(seq * 3)], style=st
+    )
+    lines = out.splitlines()
+    assert {style.visible_width(line) for line in lines} == {20}
+    # The padding is what is left of the 16 inner cells: the sequence counts 2.
+    assert lines[0] == f"╭─┐t{seq}┌" + "─" * 12 + "╮"
+    assert lines[1] == f"│ a{seq}b" + " " * 12 + " │"
+    assert lines[2] == "│ " + seq * 3 + " " * 10 + " │"
+    plain = style.box(f"t{seq}", [f"a{seq}b", seq * 3], style=st, footer=str(seq))
+    assert {style.visible_width(line) for line in plain.splitlines()} == {20}
+
+
+@pytest.mark.parametrize("kind", EMOJI_SEQUENCES)
+def test_fit_never_splits_an_emoji_sequence(kind: str) -> None:
+    seq = EMOJI_SEQUENCES[kind]
+    st = mode()
+    text = style.Styled(f"ab{seq}cd")
+    # 2 + 2 + 2 cells: the cut before the ellipsis lands on the sequence.
+    assert style.fit(text, 4, st) == "ab…"
+    assert style.fit(text, 5, st) == f"ab{seq}…"
 
 
 def test_visible_width_ignores_sgr() -> None:
@@ -320,6 +366,18 @@ def test_table_narrows_the_widest_column_to_fit() -> None:
     assert rows == ["id  a long …"]
 
 
+@pytest.mark.parametrize("width", [0, 1, 4, 6])
+def test_a_table_narrower_than_its_minimum_is_cut_to_the_width(width: int) -> None:
+    # Three columns need 3 cells and two gaps of 2: 7 cells at least (#54, N2).
+    st = mode(ColorTier.ANSI16)
+    rows = style.table(["aaa", "bbb", "ccc"], [["1", "2", "3"]], style=st, width=width)
+    assert [style.visible_width(r) for r in rows] == [max(1, width)] * 2
+    assert all(style.strip_sgr(r).endswith("…") for r in rows)
+    assert style.strip_sgr(style.table(None, [["1", "2", "3"]], style=st, width=7)[0]) == (
+        "1  2  3"
+    )
+
+
 def test_table_cells_of_wide_characters_line_up() -> None:
     rows = style.table(None, [["日本", "x"], ["ab", "y"]], style=mode(), width=20)
     assert rows == ["日本  x", "ab    y"]
@@ -343,6 +401,20 @@ def test_meter_fills_cell_i_when_value_reaches_its_share(value: int, filled: int
     out = style.meter(value, style=mode(), width=10)
     assert out[:10] == "■" * filled + "·" * (10 - filled)
     assert out[10:] == f"{min(value, 100):>3}%"
+
+
+@pytest.mark.parametrize("tier", TIERS)
+def test_meter_of_nan_is_empty_and_unknown(tier: ColorTier) -> None:
+    # NaN is not 100% (#54, N3): every cell empty, " n/a" in the 4 cells.
+    out = style.meter(float("nan"), style=mode(tier), width=10)
+    assert style.strip_sgr(out).endswith(" n/a")
+    assert style.visible_width(out) == style.visible_width(style.meter(5, style=mode(tier)))
+    assert style.meter(float("nan"), style=mode(), width=10) == "·" * 10 + " n/a"
+
+
+def test_meter_clamps_infinities() -> None:
+    assert style.meter(float("inf"), style=mode(), width=10) == "■" * 10 + "100%"
+    assert style.meter(float("-inf"), style=mode(), width=10) == "·" * 10 + "  0%"
 
 
 def test_meter_empty_cells_are_dim_squares_with_color() -> None:
@@ -372,6 +444,27 @@ def test_sparkline_all_zero_and_ascii_and_empty() -> None:
     assert style.sparkline([0, 0, 0], style=mode()) == "  " + "  min 0  max 0  last 0"
     assert style.sparkline([1.5, 3], style=mode(unicode=False)) == "min 1.5  max 3  last 3"
     assert style.sparkline([], style=mode()) == "no samples"
+
+
+@pytest.mark.parametrize("tier", TIERS)
+def test_sparkline_takes_nan_and_infinities(tier: ColorTier) -> None:
+    # A NaN is a gap, an infinity clamps; never an exception (#54, N4).
+    nan, inf = float("nan"), float("inf")
+    out = style.sparkline([1, nan, inf, -inf, 3], style=mode(tier))
+    assert style.strip_sgr(out) == "⡀⡇⣿  min 1  max 3  last 3"
+    out = style.sparkline([nan, 50, inf], style=mode(tier), ceiling=100)
+    assert style.strip_sgr(out) == "⢠⣿  min 50  max 50  last inf"
+    out = style.sparkline([nan, nan], style=mode(tier))
+    assert style.strip_sgr(out) == "   min n/a  max n/a  last nan"
+    for ceiling in (nan, inf, -inf):
+        out = style.sparkline([1, 2], style=mode(tier), ceiling=ceiling)
+        assert style.strip_sgr(out) == "   min 1  max 2  last 2"
+    assert style.sparkline([nan, inf], style=mode(unicode=False)) == "min n/a  max n/a  last inf"
+
+
+@pytest.mark.parametrize("percent", [float("nan"), float("inf"), float("-inf"), 1e308])
+def test_gradient_takes_any_float(percent: float) -> None:
+    assert style.gradient_rgb(percent) in (style.gradient_rgb(0), style.gradient_rgb(100))
 
 
 def test_sparkline_cells_take_the_gradient_of_their_larger_sample() -> None:
@@ -548,6 +641,14 @@ def test_the_view_is_sized_to_columns(run_cli: RunCli, clean_env: CleanEnv) -> N
     lines = proc.stdout.decode().splitlines()
     assert len(lines) > 3
     assert {style.visible_width(line) for line in lines} == {44}
+
+
+def test_a_huge_columns_is_clamped(run_cli: RunCli, clean_env: CleanEnv) -> None:
+    proc = run_cli(["dummy", "--box"], env=clean_env(FORCE_COLOR="1", COLUMNS="100000"))
+    assert proc.returncode == 0
+    lines = proc.stdout.decode().splitlines()
+    assert len(lines) > 3
+    assert {style.visible_width(line) for line in lines} == {MAX_WIDTH}
 
 
 def test_quiet_prints_no_view(run_cli: RunCli, clean_env: CleanEnv) -> None:

@@ -11,7 +11,7 @@ import termios
 
 import pytest
 
-from mmt_plugin.ui.streams import ColorTier, StreamStyle, decide
+from mmt_plugin.ui.streams import MAX_WIDTH, ColorTier, StreamStyle, decide
 
 
 class FakeStream(io.TextIOWrapper):
@@ -96,11 +96,20 @@ def test_a_stream_without_isatty_is_plain() -> None:
         ("\u00b2", 80),  # superscript two
         ("\u2462", 80),  # circled digit three
         ("4\u00b2", 80),
+        # At most MAX_WIDTH (#54, N5).
+        ("500", MAX_WIDTH),
+        ("501", MAX_WIDTH),
+        ("100000", MAX_WIDTH),
+        ("9" * 4300, MAX_WIDTH),
     ],
 )
 def test_width_comes_from_columns_else_80(columns: str, width: int) -> None:
     assert decide(PIPE, env={**TERM, "COLUMNS": columns}).width == width
     assert decide(PIPE, env=TERM).width == 80
+
+
+def test_the_width_limit_is_the_documented_one() -> None:
+    assert MAX_WIDTH == 500  # docs/design/cli.md, section 10
 
 
 def test_a_terminal_reports_its_own_width_and_is_a_tty() -> None:
@@ -112,6 +121,9 @@ def test_a_terminal_reports_its_own_width_and_is_a_tty() -> None:
             assert (style.tty, style.width) == (True, 101)
             assert decide(stream, env={**TERM, "COLUMNS": "50"}).width == 50
             assert decide(stream, env={**TERM, "COLUMNS": "\u00b2"}).width == 101
+        fcntl.ioctl(follower, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 9999, 0, 0))
+        with open(follower, "w", encoding="utf-8", closefd=False) as stream:
+            assert decide(stream, env=TERM).width == MAX_WIDTH
         assert decide(PIPE, env=TERM).tty is False
     finally:
         os.close(leader)

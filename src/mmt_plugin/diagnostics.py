@@ -240,6 +240,14 @@ CODES: Mapping[str, str] = MappingProxyType(
         "pcapng capture, or its structure is broken (a truncated record or block)",
         "model.no-payloads": "scaffold: no frame of the capture has a non-empty payload under "
         "--parent",
+        # `scaffold --tshark` (mmt_plugin.pcap.tshark, #125).
+        "sdk.tshark-not-found": "scaffold --tshark: tshark is not on PATH",
+        "sdk.tshark-failed": "scaffold --tshark: tshark does not run, fails (a bad --decode-as "
+        "rule, a capture it cannot read), or its PDML output does not parse",
+        "model.no-dissector": "scaffold --tshark: tshark dissects no protocol (only data) at "
+        "the start of the payloads under --parent, or not the --protocol asked for",
+        "model.no-fields": "scaffold --tshark: no field of the protocol tshark dissects maps to "
+        "an attribute (in every payload, at one offset, with a type the tool can extract)",
         # `run` (mmt_plugin.commands.run, mmt_plugin.capture, #103).
         "model.unsupported-linktype": "run: the capture's first frame has a link type mmt-dpi "
         "reads no stack for (it reads Ethernet and Linux cooked capture)",

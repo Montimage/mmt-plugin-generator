@@ -9,6 +9,17 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `mmt-plugin scaffold --tshark` drafts a plugin from tshark's dissection
+  of a capture (#125): the protocol tshark dissects at the start of the
+  payloads under `--parent` (`--protocol NAME` when it dissects several,
+  `--decode-as RULE` for a port it does not know), each of its fields that
+  every payload has at one offset as an attribute named after it (unsigned
+  integers, bit fields of 1-, 2- and 4-byte units, IPv4, IPv6 and MAC
+  addresses, bytes), and packet tests that expect the values tshark
+  decodes. `plugin.proposed.yaml` names each field not proposed and why,
+  and so does `result.tshark`. Without tshark on `PATH` it is
+  `sdk.tshark-not-found` (exit 4), without a dissector for the payloads
+  `model.no-dissector` (exit 3), and nothing is written.
 - The mmt-plugin-generator skill checks a plugin for drift against tshark
   (#123): `scripts/pcap_eval.py` reports each difference from tshark on
   the capture (a `--field` attribute whose value differs, expected frames

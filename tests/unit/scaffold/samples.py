@@ -246,3 +246,50 @@ def websocket_capture() -> bytes:
         if i < len(server_segments):
             frames.append(server_segments[i])
     return pcap(frames)
+
+
+DNS_NAME = b"\x07example\x03com\x00"
+
+
+def dns_query(ident: int) -> bytes:
+    """A DNS query (RFC 1035, 4.1) for example.com, type A, class IN."""
+    return struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0) + DNS_NAME + struct.pack(">HH", 1, 1)
+
+
+def dns_response(ident: int) -> bytes:
+    """Its answer: one A record, 93.184.216.34, TTL 300."""
+    question = DNS_NAME + struct.pack(">HH", 1, 1)
+    answer = b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 300, 4) + bytes([93, 184, 216, 34])
+    return struct.pack(">HHHHHH", ident, 0x8180, 1, 1, 0, 0) + question + answer
+
+
+def dns_capture() -> bytes:
+    """Two DNS queries over UDP port 53 and their answers, as a pcap
+    (``data/tshark/dns.pdml`` is tshark's dissection of it)."""
+    frames = []
+    for i in range(2):
+        query = udp(40000 + i, 53, dns_query(0x1000 + i))
+        answer = udp(53, 40000 + i, dns_response(0x1000 + i))
+        frames.append(ethernet(0x0800, ipv4(17, query)))
+        frames.append(ethernet(0x0800, ipv4(17, answer, reply=True)))
+    return pcap(frames)
+
+
+def arp(op: int, sender: tuple[bytes, bytes], target: tuple[bytes, bytes]) -> bytes:
+    """An Ethernet/IPv4 ARP packet (RFC 826): (MAC, IPv4 address) pairs."""
+    return (
+        struct.pack(">HHBBH", 1, 0x0800, 6, 4, op) + sender[0] + sender[1] + target[0] + target[1]
+    )
+
+
+def arp_capture() -> bytes:
+    """Two ARP requests and an answer, as a pcap."""
+    a, b = (_MAC_SRC, bytes([192, 0, 2, 1])), (_MAC_DST, bytes([192, 0, 2, 2]))
+    unknown = bytes(6)
+    return pcap(
+        [
+            ethernet(0x0806, arp(1, a, (unknown, b[1]))),
+            ethernet(0x0806, arp(1, a, (unknown, bytes([192, 0, 2, 3])))),
+            ethernet(0x0806, arp(2, b, a)),
+        ]
+    )

@@ -51,6 +51,7 @@ specification to correct, not values taken from it.
 
 from __future__ import annotations
 
+import ipaddress
 import itertools
 import json
 from collections.abc import Sequence
@@ -74,7 +75,9 @@ __all__ = [
 #: The most header bytes proposed as fields.
 HEADER_LIMIT = 16
 
-_TYPES = {1: "MMT_U8_DATA", 2: "MMT_U16_DATA", 4: "MMT_U32_DATA"}
+_TYPES = {1: "MMT_U8_DATA", 2: "MMT_U16_DATA", 4: "MMT_U32_DATA", 8: "MMT_U64_DATA"}
+#: A struct's bit field unit, by its length.
+_UNITS = {1: "uint8_t", 2: "uint16_t", 4: "uint32_t"}
 _BYTES_PER_LINE = 16
 #: Each payload's direction (``Payload.flow``), or ``None``.
 Flows = Sequence[Flow | None] | None
@@ -87,9 +90,12 @@ _BIT_VALUES = 4
 @dataclass(frozen=True)
 class Field:
     """A proposed attribute: ``constant`` when every payload has the same
-    value; ``note`` says what was seen. A bit field (of a 1-byte field) has
-    ``bit_offset``, from the byte's most significant bit, and
-    ``bit_width``."""
+    value; ``note`` says what was seen. A bit field (of the 1-, 2- or
+    4-byte unit at ``offset``) has ``bit_offset``, from the unit's most
+    significant bit, and ``bit_width``. ``mmt_type`` is its type when it is
+    not the unsigned integer of its length (``scaffold --tshark``: an
+    address, bytes), ``source`` the tshark field it comes from, and
+    ``expect`` whether the packet tests check it."""
 
     name: str
     offset: int
@@ -98,10 +104,13 @@ class Field:
     note: str
     bit_offset: int | None = None
     bit_width: int | None = None
+    mmt_type: str | None = None
+    source: str | None = None
+    expect: bool = True
 
     @property
     def type(self) -> str:
-        return _TYPES[self.length]
+        return self.mmt_type or _TYPES[self.length]
 
     def value(self, data: bytes) -> int:
         """Its value in ``data`` (network byte order)."""
@@ -110,6 +119,20 @@ class Field:
             return whole
         shift = self.length * 8 - self.bit_offset - self.bit_width
         return (whole >> shift) & ((1 << self.bit_width) - 1)
+
+    def expected(self, data: bytes) -> str:
+        """Its value in ``data`` as a packet test writes it
+        (``tests/corpus/README.md``, Value kinds)."""
+        raw = data[self.offset : self.offset + self.length]
+        if self.type == "MMT_DATA_IP_ADDR":
+            return _quote(str(ipaddress.IPv4Address(raw)))
+        if self.type == "MMT_DATA_IP6_ADDR":
+            return _quote(str(ipaddress.IPv6Address(raw)))
+        if self.type == "MMT_DATA_MAC_ADDR":
+            return _quote(":".join(f"{b:02x}" for b in raw))
+        if self.type == "MMT_BINARY_DATA":
+            return _quote(" ".join(f"{b:02x}" for b in raw))
+        return str(self.value(data))
 
     def to_json(self) -> dict[str, object]:
         out: dict[str, object] = {
@@ -122,6 +145,8 @@ class Field:
         if self.bit_offset is not None:
             out["bit_offset"] = self.bit_offset
             out["bit_width"] = self.bit_width
+        if self.source is not None:
+            out["tshark_field"] = self.source
         return out
 
 
@@ -424,18 +449,36 @@ def proposed_yaml(
     count: int,
     *,
     tagged: bool = False,
+    tshark: str | None = None,
+    skipped: Sequence[tuple[str, str]] = (),
 ) -> str:
     """``plugin.proposed.yaml``: the protocol of the project's model, the
     parent, and the skeleton's attributes. ``tagged``: a payload came
-    through an 802.1Q/802.1ad tag."""
+    through an 802.1Q/802.1ad tag. ``tshark``: the protocol whose tshark
+    fields the skeleton maps (``scaffold --tshark``), and ``skipped`` the
+    fields it does not, with the reason."""
+    plural = "s" if count != 1 else ""
+    where = f"under {_comment(parent.text)} in {_comment(pcap)}"
+    if tshark is None:
+        head = [
+            f"# The fields mmt-plugin scaffold proposes for {label.upper()}, from {count}"
+            f" payload{plural}",
+            f"# {where}. A draft: rename the fields and check them",
+            "# against the protocol's specification, then copy what you keep into",
+            "# plugin.yaml (scaffold never edits it). The packet tests it wrote expect",
+            "# what this model extracts.",
+        ]
+    else:
+        head = [
+            f"# The fields mmt-plugin scaffold proposes for {label.upper()}: tshark's"
+            f" {_comment(tshark)} fields",
+            f"# in {count} payload{plural} {where}. A draft: check the fields against",
+            "# the protocol's specification, then copy what you keep into plugin.yaml",
+            "# (scaffold never edits it). The packet tests it wrote expect the values",
+            "# tshark decodes, which this model extracts.",
+        ]
     lines = [
-        f"# The fields mmt-plugin scaffold proposes for {label.upper()}, from {count}"
-        f" payload{'s' if count != 1 else ''}",
-        f"# under {_comment(parent.text)} in {_comment(pcap)}. A draft: rename the fields and"
-        " check them",
-        "# against the protocol's specification, then copy what you keep into",
-        "# plugin.yaml (scaffold never edits it). The packet tests it wrote expect",
-        "# what this model extracts.",
+        *head,
         "schema: 1",
         "protocol:",
         f"  label: {_quote(label)}",
@@ -448,24 +491,34 @@ def proposed_yaml(
     for field in skeleton.fields:
         if field.bit_offset is not None:
             if field.bit_offset == 0:
+                if field.length == 1:
+                    struct, what = f"bits_{field.offset}", f"byte {field.offset}"
+                else:
+                    struct = f"bits_{field.offset}_{field.length * 8}"
+                    what = f"bytes {field.offset}-{field.offset + field.length - 1}"
                 lines += [
-                    f"  - struct: bits_{field.offset}"
-                    f"    # byte {field.offset}, cut into bit fields",
+                    f"  - struct: {struct}    # {what}, cut into bit fields",
                     f"    offset: {field.offset}",
                     "    fields:",
-                    "      - type: uint8_t",
+                    f"      - type: {_UNITS[field.length]}",
                     "        bits:",
                 ]
             lines.append(
-                f"          - {{name: {field.name}, width: {field.bit_width}}}    # {field.note}"
+                f"          - {{name: {field.name}, width: {field.bit_width}}}"
+                f"    # {_comment(field.note)}"
             )
             continue
         lines += [
-            f"  - name: {field.name}    # {field.note}",
+            f"  - name: {field.name}    # {_comment(field.note)}",
             f"    type: {field.type}",
             f"    offset: {field.offset}",
         ]
-    if skeleton.longest > skeleton.header_length:
+        if field.type == "MMT_BINARY_DATA":
+            lines.append(f"    length: {field.length}")
+    if tshark is not None:
+        for abbrev, why in skipped:
+            lines.append(f"# Not proposed: {_comment(abbrev)}: {_comment(why)}.")
+    elif skeleton.longest > skeleton.header_length:
         low = skeleton.shortest - skeleton.header_length
         high = skeleton.longest - skeleton.header_length
         size = str(high) if low == high else f"{low} to {high}"
@@ -483,9 +536,12 @@ def packet_test(
     skeleton: Skeleton,
     pcap: str,
     parent: Parent,
+    *,
+    tshark: str | None = None,
 ) -> str:
     """One packet test (corpus schema 1, ``tests/corpus/README.md``) of
-    ``payload``, expecting the skeleton's values."""
+    ``payload``, expecting the skeleton's values (``tshark``: the values
+    tshark decodes for that protocol's fields, the same)."""
     where = f"frame {payload.frame} of {pcap}"
     data = payload.data
     captured = f"captured: frame {payload.frame} of {pcap}"
@@ -497,9 +553,19 @@ def packet_test(
     lines = [
         f"# Packet test {_comment(test_id)}, drafted by mmt-plugin scaffold from"
         f" {_comment(where)}.",
-        "# Format: corpus schema 1 (tests/corpus/README.md). The values are what",
-        "# plugin.proposed.yaml extracts from the captured bytes: check them against",
-        "# the protocol's specification.",
+        *(
+            [
+                "# Format: corpus schema 1 (tests/corpus/README.md). The values are what",
+                "# plugin.proposed.yaml extracts from the captured bytes: check them against",
+                "# the protocol's specification.",
+            ]
+            if tshark is None
+            else [
+                "# Format: corpus schema 1 (tests/corpus/README.md). The values are what",
+                f"# tshark decodes for its {_comment(tshark)} fields, which plugin.proposed.yaml",
+                "# extracts: check them against the protocol's specification.",
+            ]
+        ),
         "schema: 1",
         f"id: {_quote(test_id)}",
         f"summary: {_quote(f'{len(data)} bytes under {parent.text} in {where}')}",
@@ -522,12 +588,14 @@ def packet_test(
         "  attributes:",
     ]
     for field in skeleton.fields:
+        if not field.expect:
+            continue
         lines += [
             f"    - name: {_quote(field.name)}",
             f"      type: {_quote(field.type)}",
             f"      offset: {field.offset}",
             f"      length: {field.length}",
-            f"      value: {field.value(data)}",
+            f"      value: {field.expected(data)}",
         ]
         if field.bit_offset is not None:
             lines += [

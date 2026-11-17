@@ -147,3 +147,49 @@ def test_the_proposal_passes_the_tests_scaffold_wrote(
     )  # fmt: skip
     assert code == 0, doc["error"]
     assert {f["action"] for f in doc["result"]["files"]} == {"unchanged"}
+
+
+@pytest.mark.parametrize(
+    ("pcap", "parent", "extra", "protocol", "dissected"),
+    [
+        ("dns.pcap", "udp:port=53", (), "dns", 4),
+        ("arp.pcap", "ethernet:ethertype=0x0806", (), "arp", 3),
+        # tshark dissects http, then websocket, at the payloads' start.
+        ("ws.pcap", "tcp:port=80", ("--protocol", "websocket"), "websocket", 12),
+    ],
+)
+def test_the_tshark_draft_passes_the_tests_scaffold_wrote(
+    work: Path,
+    capsys: pytest.CaptureFixture[str],
+    pcap: str,
+    parent: str,
+    extra: tuple[str, ...],
+    protocol: str,
+    dissected: int,
+) -> None:
+    """``scaffold --tshark`` (#125) with the real tshark: the fields it
+    maps (16-bit bit fields, bytes, MAC and IPv4 addresses) read, through
+    the generated plugin, the values tshark decodes. tshark is not in CI's
+    images: without it the test skips, even with
+    ``MMT_REQUIRE_GOLDEN_COMPILE=1``."""
+    if shutil.which("tshark") is None:
+        pytest.skip("tshark is not installed")
+    (work / "dns.pcap").write_bytes(samples.dns_capture())
+    (work / "arp.pcap").write_bytes(samples.arp_capture())
+    code, doc = _json(capsys, "init", "demo", "--id", "977", "--parent", parent)
+    assert code == 0, doc["error"]
+    project = work / "demo"
+    argv = ["-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent, "--tshark"]
+    code, doc = _json(capsys, *argv, *extra)
+    assert code == 0, doc["error"]
+    assert doc["result"]["tshark"]["protocol"] == protocol
+    assert doc["result"]["tshark"]["dissected"] == dissected
+    tests = [f["path"] for f in doc["result"]["files"] if f["path"].startswith("tests/")]
+    assert len(tests) == dissected
+
+    shutil.copy(project / "plugin.proposed.yaml", project / "plugin.yaml")
+    argv = ["-C", "demo", "test", "--model", "demo/plugin.yaml"]
+    argv += [str(project / t) for t in tests]
+    code, doc = _json(capsys, *argv)
+    assert code == 0, doc["error"] or doc["result"]["packets"]
+    assert doc["result"]["summary"]["passed"] == dissected

@@ -15,17 +15,24 @@ run with its class's exit code:
    in its stream's order, ``mmt_plugin.pcap.streams``): one that is not a capture, or is
    broken before the payloads are found, is ``model.bad-pcap`` (exit 3);
    one with no payload under the parent is ``model.no-payloads`` (exit 3);
-4. propose the skeleton from the first ``--max-packets`` payloads, render
+4. with ``--tshark``, find tshark (``sdk.tshark-not-found``, exit 4, checked
+   before the capture is read), dissect the frames read with it and draft
+   the skeleton from the fields of the protocol it dissects at the start
+   of the payloads (``--protocol`` when there are several;
+   ``mmt_plugin.pcap.tshark``): none is ``model.no-dissector``, no field
+   that maps to an attribute ``model.no-fields`` (exit 3); only the
+   payloads tshark dissects get a packet test;
+5. propose the skeleton from the first ``--max-packets`` payloads, render
    ``<project>/plugin.proposed.yaml`` and one packet test per payload,
    ``<tests-dir>/<label>-pcap-<n>.yaml``, and generate the proposal as
    ``build`` will (``make_generation``): a proposal that does not generate
    is exit 3, nothing written;
-5. plan the writes: a file with the same content is ``unchanged``; one with
+6. plan the writes: a file with the same content is ``unchanged``; one with
    other content, or a symbolic link, is ``state.output-differs`` (exit 7,
    nothing written) unless ``--force``; a directory, or a file where a
    directory goes, is exit 7 even with ``--force``. The model is never
    written (``usage.conflicting-options``), nor ``plugin.yaml``;
-6. write each file atomically (``mmt_plugin.fsio``). Re-running on the same
+7. write each file atomically (``mmt_plugin.fsio``). Re-running on the same
    inputs is a no-op.
 
 ``--dry-run`` writes nothing and reports ``would-*`` actions.
@@ -35,6 +42,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +73,7 @@ from mmt_plugin.pcap import (
     read_stream,
     slice_payloads,
 )
+from mmt_plugin.pcap import tshark as ts
 from mmt_plugin.pdl import PdlSyntaxError
 from mmt_plugin.sdk.profile import bundled_versions, get_bundled
 from mmt_plugin.sdk.resolve import ProfileChoice, ProfileSource, sdk_context
@@ -73,7 +83,15 @@ from mmt_plugin.ui.streams import StreamStyle
 __all__ = ["DEFAULT_MAX_PACKETS", "DIAGNOSTIC_CODES", "PROPOSED_FILE", "ScaffoldCommand"]
 
 #: The codes this command reports itself (besides the model's).
-DIAGNOSTIC_CODES = ("model.bad-pcap", "model.no-payloads", "state.output-differs")
+DIAGNOSTIC_CODES = (
+    "model.bad-pcap",
+    "model.no-payloads",
+    "model.no-dissector",
+    "model.no-fields",
+    "sdk.tshark-not-found",
+    "sdk.tshark-failed",
+    "state.output-differs",
+)
 
 #: The proposed model, next to plugin.yaml.
 PROPOSED_FILE = "plugin.proposed.yaml"
@@ -120,6 +138,30 @@ def _pattern(text: str) -> bytes:
     return pattern
 
 
+_PROTOCOL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+
+
+def _protocol(text: str) -> str:
+    """``--protocol``: a tshark protocol name (``tshark -G protocols``)."""
+    if not _PROTOCOL.fullmatch(text):
+        raise argparse.ArgumentTypeError("must be a tshark protocol name, e.g. dns")
+    return text
+
+
+def _decode_as(text: str) -> str:
+    """``--decode-as``: a tshark ``-d`` rule, ``<layer>==<value>,<protocol>``."""
+    if text.startswith("-") or "==" not in text or "," not in text:
+        raise argparse.ArgumentTypeError("must be a tshark -d rule, e.g. udp.port==4433,dns")
+    return text
+
+
+def _max_name(choice: ProfileChoice) -> int | None:
+    try:
+        return choice.profile.constant("Max_Alias_Len").value
+    except KeyError:
+        return None
+
+
 def _choice() -> ProfileChoice:
     """The newest bundled profile: scaffold pins none, and the profile only
     checks that the proposal generates."""
@@ -141,7 +183,7 @@ class ScaffoldCommand:
     """``mmt-plugin scaffold --from-pcap PCAP --parent SELECTOR``."""
 
     name = "scaffold"
-    exit_codes: tuple[ExitCode, ...] = (ExitCode.MODEL, ExitCode.STATE)
+    exit_codes: tuple[ExitCode, ...] = (ExitCode.MODEL, ExitCode.SDK, ExitCode.STATE)
 
     def register(self, subparsers: Subparsers) -> argparse.ArgumentParser:
         parser = subparsers.add_parser(
@@ -152,7 +194,9 @@ class ScaffoldCommand:
                 "tests (<tests-dir>/<label>-pcap-<n>.yaml) and propose a field skeleton,\n"
                 "plugin.proposed.yaml, whose values the tests expect. plugin.yaml is never\n"
                 "edited. Parents: " + ", ".join(PARENTS) + ". Under tcp, each payload is a\n"
-                "segment's new bytes in its stream's order. Re-running is a no-op;\n"
+                "segment's new bytes in its stream's order. With --tshark, the fields are\n"
+                "tshark's dissection of the protocol at the start of the payloads, and the\n"
+                "tests expect the values tshark decodes. Re-running is a no-op;\n"
                 "a file with other content is not replaced without --force."
             ),
             epilog=(
@@ -163,7 +207,10 @@ class ScaffoldCommand:
                 "  mmt-plugin scaffold --from-pcap capture.pcap --parent tcp:dport=102"
                 " --max-packets 5 --dry-run\n"
                 "  mmt-plugin scaffold --from-pcap ws.pcap --parent tcp:port=80"
-                " --skip-until 0d0a0d0a"
+                " --skip-until 0d0a0d0a\n"
+                "  mmt-plugin scaffold --from-pcap dns.pcap --parent udp:port=53 --tshark\n"
+                "  mmt-plugin scaffold --from-pcap capture.pcap --parent udp:port=4433 --tshark"
+                " --protocol dns --decode-as udp.port==4433,dns"
             ),
         )
         parser.add_argument(
@@ -205,6 +252,26 @@ class ScaffoldCommand:
             " end of this byte pattern, e.g. 0d0a0d0a after an HTTP handshake",
         )
         parser.add_argument(
+            "--tshark",
+            action="store_true",
+            help="draft the fields from tshark's dissection of the payloads (tshark on PATH)",
+        )
+        parser.add_argument(
+            "--protocol",
+            type=_protocol,
+            metavar="NAME",
+            help="with --tshark, the tshark protocol to draft, e.g. dns (default: the only one"
+            " tshark dissects at the start of the payloads)",
+        )
+        parser.add_argument(
+            "--decode-as",
+            type=_decode_as,
+            action="append",
+            default=[],
+            metavar="RULE",
+            help="with --tshark, a tshark -d rule, e.g. udp.port==4433,dns (repeatable)",
+        )
+        parser.add_argument(
             "--tests-dir",
             metavar="DIR",
             help="where to write the packet tests (default: <project>/tests/)",
@@ -227,6 +294,28 @@ class ScaffoldCommand:
                 f"--skip-until follows TCP streams: --parent {parent.text!r} is not tcp",
                 "drop --skip-until, or pass a tcp parent, e.g. --parent tcp:port=80",
             )
+        if not args.tshark and (args.protocol is not None or args.decode_as):
+            raise CliError(
+                "usage.conflicting-options",
+                "--protocol and --decode-as tell tshark what to dissect: they need --tshark",
+                "add --tshark, or drop them",
+            )
+        if args.tshark and args.skip_until is not None:
+            raise CliError(
+                "usage.conflicting-options",
+                "--skip-until cuts the payloads where tshark does not: not with --tshark",
+                "drop --skip-until; tshark finds the protocol's start itself",
+            )
+        tshark = None
+        if args.tshark:
+            tshark = shutil.which("tshark")
+            if tshark is None:
+                raise CliError(
+                    "sdk.tshark-not-found",
+                    "--tshark needs tshark, and there is none on PATH: nothing drafted",
+                    "install tshark (Wireshark's command line: apt install tshark, brew install"
+                    " wireshark), or drop --tshark",
+                )
         choice = _choice()
         context = {"sdk": sdk_context(None, choice)}
 
@@ -279,15 +368,47 @@ class ScaffoldCommand:
                 f"no payload under {parent.text} in {pcap} ({slicing.frames} frames: {why})",
                 "check the --parent selector against the capture (tshark -r PCAP)",
             )
-        skeleton = propose([p.data for p in slicing.payloads], [p.flow for p in slicing.payloads])
+        payloads = slicing.payloads
+        protocol: str | None = None
+        drafted: ts.Draft | None = None
+        if tshark is not None:
+            dissection = ts.dissect(
+                tshark, pcap_path, slicing.frames, slicing.payloads, args.decode_as
+            )
+            protocol, dissected = ts.choose(
+                dissection, slicing.payloads, args.protocol, parent.text
+            )
+            ctx.log(f"tshark: {protocol} in {len(dissected)} of {len(slicing.payloads)} payloads")
+            infos = ts.fields_of(tshark, protocol)
+            drafted = ts.draft(protocol, infos, dissected, max_name=_max_name(choice))
+            if not drafted.skeleton.fields:
+                raise CliError(
+                    "model.no-fields",
+                    f"no field of tshark's {protocol} maps to an attribute"
+                    f" ({_plural(len(drafted.skipped), 'field')} not proposed): nothing drafted",
+                    "check the protocol (--protocol), or drop --tshark for scaffold's own"
+                    " proposal",
+                )
+            skeleton = drafted.skeleton
+            payloads = list(drafted.payloads)
+        else:
+            skeleton = propose([p.data for p in payloads], [p.flow for p in payloads])
 
         proposed_path = project / PROPOSED_FILE
         proposed_shown = show_path(proposed_path, project)
         # The files name the capture by its file name only, so they do not
         # depend on where it is.
-        tagged = any("8021q" in p.path for p in slicing.payloads)
+        tagged = any("8021q" in p.path for p in payloads)
         proposed = proposed_yaml(
-            label, pid, parent, skeleton, pcap_path.name, len(slicing.payloads), tagged=tagged
+            label,
+            pid,
+            parent,
+            skeleton,
+            pcap_path.name,
+            len(payloads),
+            tagged=tagged,
+            tshark=protocol,
+            skipped=() if drafted is None else drafted.skipped,
         )
         generation, model_diagnostics, model_error = make_generation(
             proposed_shown, proposed.encode("utf-8"), choice, "yaml"
@@ -302,12 +423,19 @@ class ScaffoldCommand:
             return Outcome(diagnostics=model_diagnostics, error=stop, context=context)
 
         tests_dir = absolute(args.tests_dir) if args.tests_dir is not None else project / "tests"
-        width = max(3, len(str(len(slicing.payloads))))
+        width = max(3, len(str(len(payloads))))
         files: list[tuple[Path, bytes]] = [(proposed_path, proposed.encode("utf-8"))]
-        for n, payload in enumerate(slicing.payloads, 1):
+        for n, payload in enumerate(payloads, 1):
             stem = f"pcap-{n:0{width}d}"
             text = packet_test(
-                label, pid, f"{label.lower()}/{stem}", payload, skeleton, pcap_path.name, parent
+                label,
+                pid,
+                f"{label.lower()}/{stem}",
+                payload,
+                skeleton,
+                pcap_path.name,
+                parent,
+                tshark=protocol,
             )
             files.append((tests_dir / f"{label.lower()}-{stem}.yaml", text.encode("utf-8")))
 
@@ -354,6 +482,14 @@ class ScaffoldCommand:
                 "skipped": slicing.skipped,
             },
             "skeleton": skeleton.to_json(),
+            "tshark": None
+            if drafted is None
+            else {
+                "protocol": protocol,
+                "decode_as": list(args.decode_as),
+                "dissected": len(payloads),
+                "skipped": [{"field": a, "reason": why} for a, why in drafted.skipped],
+            },
             "proposed": proposed_shown,
             "tests_dir": show_path(tests_dir, project),
             "files": files_out,
@@ -361,7 +497,8 @@ class ScaffoldCommand:
         }
         records = [(f["action"], f["path"]) for f in files_out]
         footer = [
-            _plural(len(slicing.payloads), "payload"),
+            *([] if protocol is None else [f"tshark {protocol}"]),
+            _plural(len(payloads), "payload"),
             _plural(len(skeleton.fields), "field"),
             f"header {skeleton.header_length} bytes",
         ]

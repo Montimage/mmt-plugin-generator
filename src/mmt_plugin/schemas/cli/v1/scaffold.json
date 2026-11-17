@@ -3,7 +3,7 @@
   "title": "mmt-plugin scaffold --json result, schema_version 1",
   "description": "The result of scaffold --from-pcap (docs/design/cli.md, section 6). Paths are relative to the project (-C) when inside it (POSIX separators), absolute otherwise. With --dry-run, or when an output is in the way, nothing is written and the actions are would-*; an unchanged file is not rewritten.",
   "type": "object",
-  "required": ["pcap", "format", "parent", "skip_until", "model", "protocol", "packets", "skeleton", "proposed", "tests_dir", "files", "dry_run"],
+  "required": ["pcap", "format", "parent", "skip_until", "model", "protocol", "packets", "skeleton", "tshark", "proposed", "tests_dir", "files", "dry_run"],
   "additionalProperties": false,
   "properties": {
     "pcap": {"type": "string", "minLength": 1, "description": "The capture read (--from-pcap)."},
@@ -27,7 +27,7 @@
       "additionalProperties": false,
       "properties": {
         "frames": {"type": "integer", "minimum": 1, "description": "The frames read: until --max-packets payloads were found, else all of them."},
-        "payloads": {"type": "integer", "minimum": 1, "description": "The payloads sliced, one packet test each."},
+        "payloads": {"type": "integer", "minimum": 1, "description": "The payloads sliced: one packet test each, or, with --tshark, each one tshark dissects (tshark.dissected)."},
         "skipped": {
           "type": "object",
           "description": "The frames read that gave no payload, by reason.",
@@ -52,7 +52,7 @@
       "required": ["header_length", "fields", "length_field", "payload_lengths"],
       "additionalProperties": false,
       "properties": {
-        "header_length": {"type": "integer", "minimum": 1, "description": "The bytes proposed as fields: the shortest payload, at most 16."},
+        "header_length": {"type": "integer", "minimum": 1, "description": "The bytes proposed as fields: the shortest payload, at most 16; with --tshark, up to the end of the last field."},
         "fields": {
           "type": "array",
           "minItems": 1,
@@ -62,12 +62,13 @@
             "additionalProperties": false,
             "properties": {
               "name": {"type": "string", "minLength": 1},
-              "type": {"enum": ["MMT_U8_DATA", "MMT_U16_DATA", "MMT_U32_DATA"]},
+              "type": {"enum": ["MMT_U8_DATA", "MMT_U16_DATA", "MMT_U32_DATA", "MMT_U64_DATA", "MMT_DATA_IP_ADDR", "MMT_DATA_IP6_ADDR", "MMT_DATA_MAC_ADDR", "MMT_BINARY_DATA"], "description": "The integer of its length; with --tshark also an address, or bytes (MMT_BINARY_DATA)."},
               "offset": {"type": "integer", "minimum": 0},
-              "length": {"enum": [1, 2, 4]},
+              "length": {"type": "integer", "minimum": 1, "maximum": 64, "description": "1, 2 or 4 bytes; with --tshark also 8 (MMT_U64_DATA), an address's, or 1 to 64 (MMT_BINARY_DATA)."},
               "constant": {"type": "boolean", "description": "Every payload has the same value."},
-              "bit_offset": {"type": "integer", "minimum": 0, "maximum": 7, "description": "A bit field of the 1-byte field at offset: its first bit, from the most significant."},
-              "bit_width": {"type": "integer", "minimum": 1, "maximum": 8, "description": "A bit field's width in bits."}
+              "bit_offset": {"type": "integer", "minimum": 0, "maximum": 31, "description": "A bit field of the 1-byte field at offset (with --tshark, of the 2- or 4-byte unit there): its first bit, from the most significant."},
+              "bit_width": {"type": "integer", "minimum": 1, "maximum": 32, "description": "A bit field's width in bits: of a 1-byte unit, or, with --tshark, of a 2- or 4-byte one."},
+              "tshark_field": {"type": "string", "minLength": 1, "description": "With --tshark, the tshark field it maps (dns.flags.response); absent for bits no field covers."}
             },
             "dependentRequired": {"bit_offset": ["bit_width"], "bit_width": ["bit_offset"]}
           }
@@ -97,6 +98,35 @@
           }
         }
       }
+    },
+    "tshark": {
+      "description": "With --tshark, what tshark dissected; null without it.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["protocol", "decode_as", "dissected", "skipped"],
+          "additionalProperties": false,
+          "properties": {
+            "protocol": {"type": "string", "minLength": 1, "description": "The tshark protocol drafted: --protocol, or the only one tshark dissects at the start of the payloads."},
+            "decode_as": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "The --decode-as rules, passed to tshark as -d."},
+            "dissected": {"type": "integer", "minimum": 1, "description": "The payloads tshark dissects the protocol from: one packet test each."},
+            "skipped": {
+              "type": "array",
+              "description": "The protocol's fields not proposed, in the order tshark first gives them, each with why.",
+              "items": {
+                "type": "object",
+                "required": ["field", "reason"],
+                "additionalProperties": false,
+                "properties": {
+                  "field": {"type": "string", "minLength": 1},
+                  "reason": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "proposed": {"type": "string", "minLength": 1, "description": "The proposed model, <project>/plugin.proposed.yaml."},
     "tests_dir": {"type": "string", "minLength": 1, "description": "Where the packet tests go (--tests-dir, default <project>/tests)."},

@@ -188,6 +188,24 @@ def test_payloads_under_each_parent_and_link(
     assert got_path == path
     # Under ip, the payload is the UDP datagram; everywhere else PAYLOAD.
     assert payload == (samples.udp(1, 4433, PAYLOAD) if path[-1] == "ip" else PAYLOAD)
+    # Payload.start is where it starts in the frame (scaffold --tshark
+    # matches it with tshark's protocol position, #125).
+    (found,) = slice_payloads([_frame(data, linktype)], _parent(text), 20).payloads
+    assert found.cut == 0
+    assert data[found.start : found.start + len(found.data)] == found.data
+    assert found.start == len(data) - len(found.data)
+
+
+def test_payload_start_under_tcp_counts_the_bytes_cut() -> None:
+    """A segment whose first bytes its stream already gave starts ``cut``
+    bytes after the TCP payload's start."""
+    first = samples.tcp4(1, 80, b"abcd", seq=100)
+    again = samples.tcp4(1, 80, b"cdef", seq=102)
+    frames = [_frame(first), Frame(2, samples.ETHERNET, again, len(again))]
+    payloads = slice_payloads(frames, _parent("tcp:port=80"), 20).payloads
+    assert [(p.data, p.cut) for p in payloads] == [(b"abcd", 0), (b"ef", 2)]
+    second = payloads[1]
+    assert again[second.start + second.cut :] == b"ef"
 
 
 def test_the_ip_and_udp_lengths_cut_the_ethernet_padding() -> None:

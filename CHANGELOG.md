@@ -102,7 +102,12 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   after), and removes it after the lock. The next run, with the old model
   or the new one, accepts a file whose sha256 the lock or the journal
   lists, so it no longer reports `state.modified` for files nobody edited
-  and needs no `--force`; `--check` reports `state.stale`. Decided: fix
+  and needs no `--force`; `--check` reports `state.stale`. A run keeps the
+  entries of the journal it finds (two interruptions in a row), journals a
+  file `--force` overwrites only as it writes it (an interrupted `--force`
+  run does not adopt the hand edit), counts a leftover journal as drift
+  for `--check`, and refuses a directory in its place
+  (`state.invalid-lock`). Decided: fix
   the code rather than correct `docs/design/cli.md` section 8 to the old
   guarantee; a journal that cannot be read is ignored (the run is then as
   strict as before); `init`'s `.gitignore` does not list the journal,
@@ -125,7 +130,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   `state.file-differs` and `import`'s `state.output-differs` already do.
 - `generate -o DIR` from inside a project with a `DIR` outside it (#56,
   N10) writes its own `plugin.lock` in `DIR` and no longer rewrites the
-  project's.
+  project's. An output is the project's when its path or its real path is
+  inside the project, so a `generated/` linked elsewhere keeps the
+  project's lock.
 - `generate --force` with `--check`, `--dry-run` or a refused run (#56,
   N11) says `would be overwritten (--force)` or `would be removed
   (--force)`; the warning of an invalid lock that `--force` ignores no

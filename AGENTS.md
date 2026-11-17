@@ -134,7 +134,10 @@ protocol model. A Python rewrite is planned in
   run-time dependency) into the plugin header and source, in memory; every
   SDK name comes from the profile. `mmt-plugin generate`
   (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
-  `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
+  `schemas/lock/v1/plugin-lock.json`; in the output directory when that is
+  outside the project), with its journal `plugin.lock.pending` written
+  first and removed last, so an interrupted run recovers without `--force`
+  (#56). Tests in `tests/unit/generate/`, with
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).

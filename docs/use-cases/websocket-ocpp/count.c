@@ -10,6 +10,10 @@
  *
  * With DUMP=<file>, it also writes "<packet id> <frame_count>" for each
  * packet in which websocket_example reports a frame.
+ *
+ * ws_payload_inflated_N counts the packets whose payload_inflated is N
+ * (permessage-deflate, #107: 1 a message inflated, 0 a plain frame's bytes,
+ * 2 compressed bytes not inflated).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +26,7 @@
 static struct { char path[256]; uint64_t n; } paths[MAXP];
 static int npaths;
 static uint64_t pkts, http_pkts, ws_pkts, ws_frames, ws_op[16], ws_hs[3], ws_101, ws_mask;
-static uint64_t ws_pkts_fr, oc_pkts_msg;
+static uint64_t ws_pkts_fr, oc_pkts_msg, ws_inflated[3];
 static uint64_t oc_pkts, oc_msgs, oc_type[8];
 #define MAXA 64
 static struct { char a[64]; uint64_t n; } acts[MAXA], answers[MAXA];
@@ -55,12 +59,14 @@ static int cb(const ipacket_t *p, void *u) {
         uint8_t *hs = get_attribute_extracted_data_by_name(p, "websocket_example", "handshake");
         uint8_t *mk = get_attribute_extracted_data_by_name(p, "websocket_example", "mask");
         uint16_t *sc = get_attribute_extracted_data_by_name(p, "websocket_example", "status_code");
+        uint8_t *pi = get_attribute_extracted_data_by_name(p, "websocket_example", "payload_inflated");
         if (fc) ws_frames += *fc;
         if (fc && *fc) { ws_pkts_fr++; if (dump) fprintf(dump, "%llu %u\n", (unsigned long long)p->packet_id, *fc); }
         if (op && fc && *fc) ws_op[*op & 15]++;
         if (mk && fc && *fc && *mk) ws_mask++;
         if (hs && *hs < 3) ws_hs[*hs]++;
         if (sc && *sc == 101) ws_101++;
+        if (pi && *pi < 3) ws_inflated[*pi]++;
     }
     if (OC && get_protocol_index_by_id(p, OC) != MMT_NO_PROTO_INDEX) {
         oc_pkts++;
@@ -91,9 +97,9 @@ int main(int argc, char **argv) {
     if (!pc) { fprintf(stderr, "%s\n", err); return 1; }
     mmt_handler_t *h = mmt_init_handler(pcap_datalink(pc), 0, err);
     if (!h) { fprintf(stderr, "mmt_init_handler: %s\n", err); return 1; }
-    static const char *wsa[] = {"frame_count","opcode","handshake","mask","status_code"};
+    static const char *wsa[] = {"frame_count","opcode","handshake","mask","status_code","payload_inflated"};
     static const char *oca[] = {"message_count","message_type_id","action"};
-    if (WS) for (unsigned i = 0; i < 5; i++) register_extraction_attribute_by_name(h, "websocket_example", wsa[i]);
+    if (WS) for (unsigned i = 0; i < 6; i++) register_extraction_attribute_by_name(h, "websocket_example", wsa[i]);
     if (OC) for (unsigned i = 0; i < 3; i++) register_extraction_attribute_by_name(h, "ocpp_example", oca[i]);
     register_packet_handler(h, 1, cb, NULL);
     struct pcap_pkthdr *ph; const u_char *d; int r;
@@ -110,6 +116,7 @@ int main(int argc, char **argv) {
         (unsigned long long)ws_pkts, (unsigned long long)ws_frames, (unsigned long long)ws_hs[1],
         (unsigned long long)ws_hs[2], (unsigned long long)ws_101, (unsigned long long)ws_mask);
     for (int i = 0; i < 16; i++) if (ws_op[i]) printf("ws_first_opcode_%d %llu\n", i, (unsigned long long)ws_op[i]);
+    for (int i = 0; i < 3; i++) printf("ws_payload_inflated_%d %llu\n", i, (unsigned long long)ws_inflated[i]);
     printf("ws_packets_with_frames %llu\nocpp_packets_with_messages %llu\n", (unsigned long long)ws_pkts_fr, (unsigned long long)oc_pkts_msg);
     printf("ocpp_packets %llu\nocpp_messages_sum %llu\n", (unsigned long long)oc_pkts, (unsigned long long)oc_msgs);
     for (int i = 2; i < 5; i++) printf("ocpp_first_type_%d %llu\n", i, (unsigned long long)oc_type[i]);

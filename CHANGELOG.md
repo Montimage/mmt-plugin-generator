@@ -9,6 +9,26 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- The WebSocket and OCPP 1.6-J examples read permessage-deflate (RFC 7692,
+  #107): both parse the 101 answer's `Sec-WebSocket-Extensions`
+  (`*_no_context_takeover`, `*_max_window_bits` 8 to 15; any other
+  extension or parameter turns inflation off), collect each compressed
+  message over its frames and segments (up to 64 KiB) and inflate it at
+  its last frame (up to 1 MiB) through a per-direction 32 KiB window, with
+  one RFC 1951 decoder of their own, `src/ws_inflate.c`, the same file in
+  both projects. `websocket_example` gains the attribute
+  `payload_inflated` (1 the message inflated, 0 a plain frame's bytes, 2
+  compressed bytes not inflated); `ocpp_example` reports a compressed
+  OCPP-J message in the segment where it ends, linked to its CALL like an
+  uncompressed one, and also claims a session captured without its
+  handshake on a compressed text frame whose start inflates to an OCPP-J
+  array. A message with a byte or the history it refers to not seen is
+  not reported, never reported wrong. On capture A4 of the use case, which
+  negotiated permessage-deflate, `ocpp_example` now reports tshark's 32
+  CALLs and 32 CALLRESULTs of that session, and the two of each of a
+  session captured without its handshake
+  (`docs/use-cases/websocket-ocpp.md`).
+
 - `mmt-plugin scaffold --tshark` drafts a plugin from tshark's dissection
   of a capture (#125): the protocol tshark dissects at the start of the
   payloads under `--parent` (`--protocol NAME` when it dissects several,

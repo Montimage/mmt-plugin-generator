@@ -39,7 +39,8 @@ enum websocket_example_attributes {
     WEBSOCKET_EXAMPLE_SUBPROTOCOL = 17,
     WEBSOCKET_EXAMPLE_KEY = 18,
     WEBSOCKET_EXAMPLE_ACCEPT = 19,
-    WEBSOCKET_EXAMPLE_ATTRIBUTES_NB = 19
+    WEBSOCKET_EXAMPLE_PAYLOAD_INFLATED = 20,
+    WEBSOCKET_EXAMPLE_ATTRIBUTES_NB = 20
 };
 
 /* Attribute names, as registered. */
@@ -62,6 +63,7 @@ enum websocket_example_attributes {
 #define WEBSOCKET_EXAMPLE_SUBPROTOCOL_ALIAS "subprotocol"
 #define WEBSOCKET_EXAMPLE_KEY_ALIAS "key"
 #define WEBSOCKET_EXAMPLE_ACCEPT_ALIAS "accept"
+#define WEBSOCKET_EXAMPLE_PAYLOAD_INFLATED_ALIAS "payload_inflated"
 
 /*
  * Hooks: define each one in src/websocket_example_impl.c. A hook that is missing fails
@@ -124,6 +126,9 @@ int websocket_example_hook_extract_key(const ipacket_t *packet, mmt_proto_index_
 
 /* Extracts attribute accept, which has no offset in the model, into extracted_data->data; returns 1 when extracted, 0 when absent. */
 int websocket_example_hook_extract_accept(const ipacket_t *packet, mmt_proto_index_t proto_index, attribute_t *extracted_data);
+
+/* Extracts attribute payload_inflated, which has no offset in the model, into extracted_data->data; returns 1 when extracted, 0 when absent. */
+int websocket_example_hook_extract_payload_inflated(const ipacket_t *packet, mmt_proto_index_t proto_index, attribute_t *extracted_data);
 
 /* Creates the session data of a new session (session_context = "true"). */
 void websocket_example_hook_session_data_init(ipacket_t *ipacket, unsigned index);

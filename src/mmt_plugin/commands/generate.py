@@ -297,10 +297,11 @@ class GenerateCommand:
                         "pick an output directory (-o DIR), or move the file out of the way",
                     )
                 break
-        # The project's plugin.lock records the project's own output; a
-        # one-off output elsewhere gets its own lock (#56).
+        # The project's plugin.lock records the project's own output (by its
+        # path or its real path: a generated/ linked elsewhere is still the
+        # project's); a one-off output elsewhere gets its own lock (#56).
         real_project = Path(os.path.realpath(project))
-        in_project = inside(output, project) and inside(real_out, real_project)
+        in_project = inside(output, project) or inside(real_out, real_project)
         lock_dir = project if in_project and (project / PROJECT_FILE).is_file() else output
         return _Paths(project, output, lock_dir, user_dir)
 
@@ -470,6 +471,13 @@ class GenerateCommand:
         diagnostics += lock_notes
         lock_path = paths.lock_dir / LOCK_NAME
         pending_path = paths.lock_dir / PENDING_NAME
+        if _special(pending_path):
+            shown = paths.show(pending_path)
+            raise CliError(
+                "state.invalid-lock",
+                f"{shown}: is a directory or another special file, not generate's journal",
+                f"move or delete {shown}, then re-run generate",
+            )
         pending = read_pending(pending_path)
         planned, plan_notes = self._plan(generation, paths, old, pending, args.force)
         diagnostics += plan_notes
@@ -494,7 +502,12 @@ class GenerateCommand:
         else:
             lock_action = "updated"
         refused = [p for p in planned if p.refused]
-        drift = [p for p in planned if p.action != "unchanged"] or lock_action != "unchanged"
+        # A journal left by an interrupted run is drift too: generate removes it.
+        drift = (
+            [p for p in planned if p.action != "unchanged"]
+            or lock_action != "unchanged"
+            or os.path.lexists(pending_path)
+        )
 
         error = None
         if refused:
@@ -525,10 +538,14 @@ class GenerateCommand:
             if changes:
                 # The journal: each file as it is, and as this run leaves it,
                 # so an interrupted run is not taken for a hand edit (#56).
-                journal: dict[str, set[str]] = {}
+                # It keeps the entries of an earlier interrupted run, whose
+                # files this run may leave as they are. A file --force
+                # overwrites keeps its hand edit out: interrupted before
+                # its write, it is still refused without --force.
+                journal: dict[str, set[str]] = {k: set(v) for k, v in pending.items()}
                 for p in changes:
                     hashes = journal.setdefault(paths.in_lock(p.path), set())
-                    if p.before is not None:
+                    if p.before is not None and not p.forced:
                         hashes.add(p.before)
                     if p.data is not None:
                         hashes.add(p.sha256)

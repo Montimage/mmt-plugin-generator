@@ -643,6 +643,13 @@ def test_the_template_policy() -> None:
         ENVIRONMENT.get_template(TEMPLATES["header"]).render()
 
 
+def _member_accesses(template_text: str) -> set[str]:
+    """The names a template writes after ``->`` or ``.`` in its C text (its
+    Jinja expressions and statements left out)."""
+    c_text = re.sub(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}", "X", template_text, flags=re.S)
+    return set(re.findall(r"(?:->|\.)\s*([A-Za-z_]\w*)", c_text))
+
+
 def test_no_sdk_name_is_written_in_the_templates() -> None:
     p = profile()
     names = {
@@ -669,15 +676,14 @@ def test_no_sdk_name_is_written_in_the_templates() -> None:
         )
         words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", text))
         assert not names & words, (template, sorted(names & words))
-        c_text = re.sub(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}", "X", text, flags=re.S)
-        members = set(re.findall(r"(?:->|\.)\s*([A-Za-z_]\w*)", c_text))
+        members = _member_accesses(text)
         assert not fields & members, (template, sorted(fields & members))
 
 
 def test_the_template_check_sees_a_hard_coded_member_access() -> None:
     # The check above, on a line that writes an SDK field itself.
-    c_text = re.sub(r"\{\{.*?\}\}", "X", "n = {{ packet }}->p_hdr->caplen;")
-    assert set(re.findall(r"(?:->|\.)\s*([A-Za-z_]\w*)", c_text)) == {"p_hdr", "caplen"}
+    text = "n = {{ packet }}->p_hdr->caplen; {% if x.y %}{{ sdk.caplen }}{% endif %}"
+    assert _member_accesses(text) == {"p_hdr", "caplen"}
 
 
 def test_the_includes_are_profile_headers() -> None:

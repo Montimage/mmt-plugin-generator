@@ -319,6 +319,19 @@ def test_an_output_outside_the_project_gets_its_own_lock(
     assert code == 0 and codes(doc) == []
 
 
+def test_a_generated_dir_linked_outside_keeps_the_project_lock(
+    tmp_path: Path, project: Path, run: Run
+) -> None:
+    (project / "plugin.yaml").write_text("# a project\n")
+    target = tmp_path.parent / (tmp_path.name + "-gen")
+    target.mkdir()
+    (project / "generated").symlink_to(target)
+    code, doc = run("model.pdl", *PROFILE)
+    assert code == 0, doc["error"]
+    assert doc["result"]["lock"]["path"] == "plugin.lock"
+    assert not (target / "plugin.lock").exists()
+
+
 # --- what is in the way ------------------------------------------------------
 
 
@@ -514,6 +527,50 @@ def test_runs_interrupted_twice_then_a_third_model_need_no_force(
     assert code == 0 and codes(doc) == []
 
 
+def test_a_rerun_interrupted_again_keeps_the_first_journal(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The first run writes the .c and stops before the .h; the second, of
+    # the same model, leaves the .c as it is and stops before the .h too:
+    # its journal must still list the .c the first run wrote, for the
+    # previous model's run.
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    # A new alias changes both files.
+    (project / "model.pdl").write_text(source_text(MODEL).replace('"tail"', '"tailx"'))
+    out = project / "out"
+    for _ in range(2):
+        calls = _interrupt_at(monkeypatch, 3)
+        assert run("model.pdl", "-o", "out", *PROFILE)[0] == 130
+        assert calls == [out / "plugin.lock.pending", out / C, out / H]
+        _resume(monkeypatch)
+    (project / "model.pdl").write_text(source_text(MODEL))
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 0 and codes(doc) == []
+
+
+def test_an_interrupted_force_run_does_not_adopt_the_hand_edit(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    edited = project / "out" / C
+    edited.write_text("/* mine */\n")
+    _interrupt_at(monkeypatch, 2)  # right after the journal
+    assert run("model.pdl", "-o", "out", *PROFILE, "--force")[0] == 130
+    _resume(monkeypatch)
+    assert edited.read_text() == "/* mine */\n"
+    (project / "model.pdl").write_text(_moved("8"))
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 7 and doc["error"]["code"] == "state.modified"
+    assert edited.read_text() == "/* mine */\n"
+
+
+def test_a_directory_in_place_of_the_journal_is_exit_7(project: Path, run: Run) -> None:
+    (project / "out" / "plugin.lock.pending").mkdir(parents=True)
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 7 and doc["error"]["code"] == "state.invalid-lock"
+    assert "move or delete out/plugin.lock.pending" in doc["error"]["hint"]
+
+
 def test_a_run_interrupted_while_removing_needs_no_force(
     project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -539,8 +596,10 @@ def test_a_run_interrupted_while_removing_needs_no_force(
 def test_an_unreadable_journal_is_ignored(project: Path, run: Run) -> None:
     assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
     (project / "out" / "plugin.lock.pending").write_text("{not json")
+    # A leftover journal is drift: generate would remove it.
     code, doc = run("model.pdl", "-o", "out", *PROFILE, "--check")
-    assert code == 0, doc["error"]
+    assert code == 7 and doc["error"]["code"] == "state.stale"
+    assert codes(doc) == []
     code, doc = run("model.pdl", "-o", "out", *PROFILE)
     assert code == 0 and not (project / "out" / "plugin.lock.pending").exists()
 

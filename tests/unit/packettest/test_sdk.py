@@ -174,11 +174,11 @@ _BIG_VAL_MODEL = """Protocol {
     }
     if (val(big) > 0) {
       attribute {
-        alias="pos" data_type="MMT_U8_DATA" data_len="1" offset="8" scope="SCOPE_PACKET"
+        alias="pos" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
       }
     } else {
       attribute {
-        alias="nonpos" data_type="MMT_U8_DATA" data_len="1" offset="8" scope="SCOPE_PACKET"
+        alias="nonpos" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
       }
     }
   }
@@ -186,6 +186,8 @@ _BIG_VAL_MODEL = """Protocol {
 """
 
 
+# PDL v1 offsets run: pos and nonpos, at offset 0 after the 8 constant
+# bytes of big, are at byte 8.
 def _big_val_test(name: str, first: str, big: int, branch: str | None) -> str:
     """A packet test of ``_BIG_VAL_MODEL``: 8 bytes ``first`` x 8, then 0x2a;
     ``branch`` is the attribute present, or None when both are absent."""

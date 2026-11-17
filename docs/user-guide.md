@@ -625,8 +625,8 @@ wrong, it is a defect: write the frame's bytes as a packet test with the
 spec's values and fix the model. When tshark is wrong, or describes the
 field otherwise (another unit, a masked value), accept it with
 `--accept <key>=<reason>` (`<key>` an attribute, `missed` or `foreign`):
-it stays in the report, with the reason. The script exits 1 (FAIL) while
-a drift is not accepted, 0 when every one is.
+it stays in the report, with the reason. The script exits 1 (FAIL) on any
+problem, a drift not accepted among them, and 0 when there is none.
 
 tshark is the only reference tool supported. Without it the evaluation
 still runs, but the drift is not checked: the report says so, and

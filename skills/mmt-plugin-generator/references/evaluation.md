@@ -120,7 +120,9 @@ which side is easier to change:
   the report, accepted, with the reason. Write the reason in `notes.md` of
   the run.
 
-`--accept` takes a `--field` attribute, `missed` or `foreign`; any other
+`foreign` needs a scope filter: with `--expect-filter` but no
+`--scope-filter` it is not checked (a warning). `--accept` takes a
+`--field` attribute, `missed` or `foreign`; any other
 key, an empty reason or a key given twice is exit 2. An accepted key with
 no drift on the capture is a warning: drop it.
 

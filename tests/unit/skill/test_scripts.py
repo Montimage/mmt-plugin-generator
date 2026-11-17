@@ -526,6 +526,7 @@ def test_without_tshark_the_drift_is_not_checked(
 ) -> None:
     args = _fake_eval(tmp_path, monkeypatch, tshark=False, plugin_length="20")
     assert pcap_eval.main([*args, "--field", "length=x.len"]) == 3
+    assert pcap_eval.main([*args, "--field", "missed=x.len"]) == 2
     assert pcap_eval.main([*args, "--accept", "missed=why"]) == 0
     report = _read(tmp_path)
     assert report["verdict"] == "PASS"

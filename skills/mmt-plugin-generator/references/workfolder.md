@@ -125,8 +125,9 @@ Short, and written last:
 1. One line: the protocol, the label, and whether the plugin is green and
    the evaluation passed.
 2. "Re-run": the loop commands with this folder's paths, then the
-   `pcap_eval.py` command, copied from `eval/report.json` and the runs,
-   with each `--accept` of the last evaluation.
+   `pcap_eval.py` command of the last evaluation run, with its `--accept`
+   flags (each accepted item of `drift.items` in `eval/report.json`: its
+   key and reason).
 3. "Resume": what is left (a failing step, an open question, a drift that
    is still a defect, a warning of the evaluation that was not explained),
    or "nothing".

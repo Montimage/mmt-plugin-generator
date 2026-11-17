@@ -449,6 +449,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         attr, sep, tsf = item.partition("=")
         if not sep or not attr or not tsf:
             raise EvalExit(EXIT_USAGE, f"--field {item!r}: write <attribute>=<tshark field>")
+        if attr in CLASSIFICATION_KEYS:
+            raise EvalExit(EXIT_USAGE, f"--field {item!r}: {attr!r} is a drift key, not a field")
         fields[attr] = tsf
     accepted = parse_accept(args.accept, fields)
     out: Path = args.out.resolve()
@@ -544,6 +546,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 warnings.append(
                     f"field {attr}: tshark's {rep['tshark_field']} is in no expected frame"
                 )
+        if have_tshark and scope is None:
+            warnings.append("no --scope-filter: the drift foreign is not checked")
         seen = {d["key"] for d in drifts}
         for key in accepted:
             if have_tshark and key not in seen:

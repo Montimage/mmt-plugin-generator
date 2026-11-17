@@ -47,7 +47,8 @@ attributes:
 """
 
 FAKE = """#!{python}
-import os, sys
+import os, signal, sys, time
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # as tshark: killed when its reader goes
 log = os.environ["FAKE_TSHARK_LOG"]
 with open(log, "a") as f:
     f.write(" ".join(sys.argv[1:]) + "\\n")
@@ -58,6 +59,9 @@ if os.environ.get("FAKE_TSHARK_FAIL"):
 name = os.environ["FAKE_TSHARK_FIELDS" if "-G" in sys.argv else "FAKE_TSHARK_PDML"]
 with open(name, "rb") as f:
     sys.stdout.buffer.write(f.read())
+if os.environ.get("FAKE_TSHARK_HANG"):
+    sys.stdout.buffer.flush()
+    time.sleep(60)
 """
 
 
@@ -364,6 +368,7 @@ def fake_tshark(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("FAKE_TSHARK_PDML", str(DATA / "dns.pdml"))
     monkeypatch.setenv("FAKE_TSHARK_FIELDS", str(DATA / "dns-fields.tsv"))
     monkeypatch.delenv("FAKE_TSHARK_FAIL", raising=False)
+    monkeypatch.delenv("FAKE_TSHARK_HANG", raising=False)
     return log
 
 
@@ -559,6 +564,44 @@ def test_pdml_that_does_not_parse_is_reported_as_such(
         ts.dissect("tshark", work / "dns.pcap", 4, _payloads())
     assert caught.value.code == "sdk.tshark-failed"
     assert "does not parse" in str(caught.value)
+
+
+def test_pdml_that_does_not_parse_early_is_reported_as_such(
+    work: Path, fake_tshark: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tshark is still writing when the parse fails: closing its output
+    # kills it (SIGPIPE), which is not the timer.
+    bad = tmp_path / "bad.pdml"
+    bad.write_bytes(b"<pdml></x>" + b"x" * 1_000_000)
+    monkeypatch.setenv("FAKE_TSHARK_PDML", str(bad))
+    with pytest.raises(CliError) as caught:
+        ts.dissect("tshark", work / "dns.pcap", 4, _payloads())
+    assert caught.value.code == "sdk.tshark-failed"
+    assert "does not parse" in str(caught.value)
+
+
+@pytest.mark.parametrize("parses", [False, True], ids=["truncated", "complete"])
+def test_a_tshark_that_hangs_is_a_timeout(
+    scaffold: Run,
+    work: Path,
+    fake_tshark: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    parses: bool,
+) -> None:
+    # The timer kills tshark whether the PDML it printed so far parses
+    # (all of it) or not (cut in the middle of a packet).
+    pdml = tmp_path / "hang.pdml"
+    pdml.write_bytes(PDML if parses else PDML[: len(PDML) // 2])
+    monkeypatch.setenv("FAKE_TSHARK_PDML", str(pdml))
+    monkeypatch.setenv("FAKE_TSHARK_HANG", "1")
+    monkeypatch.setattr(ts, "TIMEOUT", 2)
+    code, doc = scaffold(*ARGS)
+    assert code == 4
+    assert doc["error"]["code"] == "sdk.tshark-failed"
+    assert doc["error"]["message"] == "tshark did not finish dissecting dns.pcap in 2 seconds"
+    assert doc["error"]["hint"] == "lower --max-packets, or cut the capture (editcap -r)"
+    assert _written(work) == ["plugin.yaml"]
 
 
 def test_tshark_runs_without_the_users_profile(

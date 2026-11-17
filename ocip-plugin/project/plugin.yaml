@@ -1,0 +1,30 @@
+# Cisco BroadWorks OCI-P (Open Client Interface - Provisioning) over TCP,
+# cleartext, port 2208. Created with mmt-plugin init for mmt-security rule 231
+# (CVE-2026-20320, XXE in the OCI-P XML parser). Each OCI-P message is one XML
+# document, <?xml ...?><BroadsoftDocument protocol="OCI" ...><sessionId>..
+# </sessionId><command xsi:type="X">..</command></BroadsoftDocument>, ended by
+# a newline, and may span TCP segments (wire format: lukebeer/broadworks-ocip,
+# Builder.php and TCPTransport.php). Every attribute is extracted by a hook:
+# src/ocip_impl.c scans each direction of a session as a byte stream, with its
+# own state (mmt-dpi gives a plugin no TCP reassembly), as examples/ocpp does.
+schema: 1
+protocol:
+  label: "ocip"
+  id: 960
+  session_context: true   # the session data hooks keep the per-direction state
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: tcp    # port 2208, either side: ocip_hook_register_parents
+attributes:
+  - name: has_dtd
+    type: MMT_U8_DATA       # 1: a <!DOCTYPE completes in the segment (ASCII or UTF-16); 0: none
+  - name: dtd
+    type: MMT_STRING_DATA   # the first DOCTYPE declaration that ends in the segment, decoded, at most 63 bytes
+  - name: command_type
+    type: MMT_STRING_DATA   # the xsi:type of the first <command> whose value ends in the segment
+  - name: session_id
+    type: MMT_STRING_DATA   # the text of the first <sessionId> that ends in the segment
+  - name: is_request
+    type: MMT_U8_DATA       # 1: client to server (TCP destination port 2208); 0: server to client

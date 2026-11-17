@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "init",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": ".",
+    "sdk": {
+      "prefix": "/sdk/mmt",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "--sdk-profile"
+    }
+  },
+  "result": {
+    "project": "ocip-plugin/project",
+    "protocol": {
+      "label": "ocip",
+      "name": "OCIP",
+      "id": 960
+    },
+    "parent": "tcp:port=2208",
+    "profile": "1.10.2",
+    "model": "ocip-plugin/project/plugin.yaml",
+    "files": [
+      {
+        "path": "ocip-plugin/project/.gitignore",
+        "action": "created",
+        "sha256": "181314065df2f2fdaf920b1a8b5311daa216a2d6489a06ada5b49cc514d89417"
+      },
+      {
+        "path": "ocip-plugin/project/plugin.yaml",
+        "action": "created",
+        "sha256": "3e49f81e344c1ded72a81ba062c1f405d9525d176538d7f8b1bc1cf07c658cf1"
+      },
+      {
+        "path": "ocip-plugin/project/src/ocip_impl.c",
+        "action": "created",
+        "sha256": "f86e2230141eb3deb2b98715f03dd38467bbcbecc957937f61b1c34259c7dcf7"
+      },
+      {
+        "path": "ocip-plugin/project/tests/ocip-basic.yaml",
+        "action": "created",
+        "sha256": "c25864d55d7a68c020593bef89614c08b4559bc6283d9fca3502aff67df2a289"
+      }
+    ],
+    "next": [
+      "mmt-plugin",
+      "-C",
+      "ocip-plugin/project",
+      "test",
+      "--sdk",
+      "/sdk/mmt"
+    ],
+    "dry_run": false
+  }
+}

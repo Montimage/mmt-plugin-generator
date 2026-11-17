@@ -1,0 +1,94 @@
+# Packet test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format,
+# not from the plugin's output. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ocip/xxe-utf16be-nobom"
+model: "ocip"
+summary: "The same document in UTF-16BE without a byte order mark"
+through: "tcp:dport=2208"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 2208 (OCI-P, cleartext)"
+  source: "OCI-P wire format: lukebeer/broadworks-ocip Builder.php (XML_HEAD + BroadsoftDocument, sessionId, command xsi:type) and TCPTransport.php (one document per message, newline-terminated, TCP 2208)"
+bytes:
+  - "00 3c 00 3f 00 78 00 6d 00 6c 00 20 00 76 00 65"
+  - "00 72 00 73 00 69 00 6f 00 6e 00 3d 00 22 00 31"
+  - "00 2e 00 30 00 22 00 20 00 65 00 6e 00 63 00 6f"
+  - "00 64 00 69 00 6e 00 67 00 3d 00 22 00 55 00 54"
+  - "00 46 00 2d 00 31 00 36 00 22 00 3f 00 3e 00 3c"
+  - "00 21 00 44 00 4f 00 43 00 54 00 59 00 50 00 45"
+  - "00 20 00 42 00 72 00 6f 00 61 00 64 00 73 00 6f"
+  - "00 66 00 74 00 44 00 6f 00 63 00 75 00 6d 00 65"
+  - "00 6e 00 74 00 20 00 53 00 59 00 53 00 54 00 45"
+  - "00 4d 00 20 00 22 00 68 00 74 00 74 00 70 00 3a"
+  - "00 2f 00 2f 00 32 00 30 00 33 00 2e 00 30 00 2e"
+  - "00 31 00 31 00 33 00 2e 00 35 00 30 00 2f 00 6f"
+  - "00 63 00 69 00 2e 00 64 00 74 00 64 00 22 00 3e"
+  - "00 3c 00 42 00 72 00 6f 00 61 00 64 00 73 00 6f"
+  - "00 66 00 74 00 44 00 6f 00 63 00 75 00 6d 00 65"
+  - "00 6e 00 74 00 20 00 70 00 72 00 6f 00 74 00 6f"
+  - "00 63 00 6f 00 6c 00 3d 00 22 00 4f 00 43 00 49"
+  - "00 22 00 20 00 78 00 6d 00 6c 00 6e 00 73 00 3d"
+  - "00 22 00 43 00 22 00 3e 00 3c 00 73 00 65 00 73"
+  - "00 73 00 69 00 6f 00 6e 00 49 00 64 00 20 00 78"
+  - "00 6d 00 6c 00 6e 00 73 00 3d 00 22 00 22 00 3e"
+  - "00 73 00 31 00 3c 00 2f 00 73 00 65 00 73 00 73"
+  - "00 69 00 6f 00 6e 00 49 00 64 00 3e 00 3c 00 63"
+  - "00 6f 00 6d 00 6d 00 61 00 6e 00 64 00 20 00 78"
+  - "00 73 00 69 00 3a 00 74 00 79 00 70 00 65 00 3d"
+  - "00 22 00 41 00 75 00 74 00 68 00 65 00 6e 00 74"
+  - "00 69 00 63 00 61 00 74 00 69 00 6f 00 6e 00 52"
+  - "00 65 00 71 00 75 00 65 00 73 00 74 00 22 00 20"
+  - "00 78 00 6d 00 6c 00 6e 00 73 00 3d 00 22 00 22"
+  - "00 20 00 78 00 6d 00 6c 00 6e 00 73 00 3a 00 78"
+  - "00 73 00 69 00 3d 00 22 00 68 00 74 00 74 00 70"
+  - "00 3a 00 2f 00 2f 00 77 00 77 00 77 00 2e 00 77"
+  - "00 33 00 2e 00 6f 00 72 00 67 00 2f 00 32 00 30"
+  - "00 30 00 31 00 2f 00 58 00 4d 00 4c 00 53 00 63"
+  - "00 68 00 65 00 6d 00 61 00 2d 00 69 00 6e 00 73"
+  - "00 74 00 61 00 6e 00 63 00 65 00 22 00 3e 00 3c"
+  - "00 75 00 73 00 65 00 72 00 49 00 64 00 3e 00 61"
+  - "00 64 00 6d 00 69 00 6e 00 3c 00 2f 00 75 00 73"
+  - "00 65 00 72 00 49 00 64 00 3e 00 3c 00 2f 00 63"
+  - "00 6f 00 6d 00 6d 00 61 00 6e 00 64 00 3e 00 3c"
+  - "00 2f 00 42 00 72 00 6f 00 61 00 64 00 73 00 6f"
+  - "00 66 00 74 00 44 00 6f 00 63 00 75 00 6d 00 65"
+  - "00 6e 00 74 00 3e 00 0a"
+bytes_source: "attack_v6_utf16's document encoded utf-16-be, no mark"
+expect:
+  protocol: "OCIP"
+  proto_id: 960
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "has_dtd"
+      type: "MMT_U8_DATA"
+      offset: 78
+      length: 18
+      value: 1
+      source: "a UTF-16 <!DOCTYPE in the message"
+    - name: "dtd"
+      type: "MMT_STRING_DATA"
+      offset: 78
+      length: 130
+      value: "3c 21 44 4f 43 54 59 50 45 20 42 72 6f 61 64 73 6f 66 74 44 6f 63 75 6d 65 6e 74 20 53 59 53 54 45 4d 20 22 68 74 74 70 3a 2f 2f 32 30 33 2e 30 2e 31 31 33 2e 35 30 2f 6f 63 69 2e 64 74 64"
+      text: "<!DOCTYPE BroadsoftDocument SYSTEM \"http://203.0.113.50/oci.dtd"
+      source: "the declaration decoded to ASCII, its first 63 bytes"
+    - name: "session_id"
+      type: "MMT_STRING_DATA"
+      offset: 336
+      length: 4
+      value: "73 31"
+      text: "s1"
+      source: "the <sessionId> text, decoded"
+    - name: "command_type"
+      type: "MMT_STRING_DATA"
+      offset: 402
+      length: 42
+      value: "41 75 74 68 65 6e 74 69 63 61 74 69 6f 6e 52 65 71 75 65 73 74"
+      text: "AuthenticationRequest"
+      source: "the <command>'s xsi:type, decoded"

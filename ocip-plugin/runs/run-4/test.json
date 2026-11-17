@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "test",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "ocip-plugin/project",
+    "sdk": {
+      "prefix": "/sdk/mmt",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "profile": "1.10.2",
+    "build_dir": "build",
+    "stages": [
+      {
+        "name": "build",
+        "status": "up-to-date"
+      },
+      {
+        "name": "harness",
+        "status": "up-to-date"
+      },
+      {
+        "name": "packets",
+        "status": "ran"
+      },
+      {
+        "name": "sanitize",
+        "status": "skipped"
+      },
+      {
+        "name": "bench",
+        "status": "skipped"
+      }
+    ],
+    "summary": {
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0
+    },
+    "packets": [
+      {
+        "id": "ocip/auth-request",
+        "file": "tests/auth-request.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/auth-request",
+        "file": "tests/auth-request.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/comment-mentions-doctype",
+        "file": "tests/comment-mentions-doctype.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/comment-mentions-doctype",
+        "file": "tests/comment-mentions-doctype.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/error-response",
+        "file": "tests/error-response.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/error-response",
+        "file": "tests/error-response.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/not-xml",
+        "file": "tests/not-xml.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/not-xml",
+        "file": "tests/not-xml.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/session-after-gap",
+        "file": "tests/session-after-gap.yaml",
+        "status": "pass",
+        "attributes": 10,
+        "failures": [],
+        "session": 5
+      },
+      {
+        "id": "ocip/session-benign",
+        "file": "tests/session-benign.yaml",
+        "status": "pass",
+        "attributes": 30,
+        "failures": [],
+        "session": 9
+      },
+      {
+        "id": "ocip/session-long-split-doctype",
+        "file": "tests/session-long-split-doctype.yaml",
+        "status": "pass",
+        "attributes": 265,
+        "failures": [],
+        "session": 126
+      },
+      {
+        "id": "ocip/session-second-message",
+        "file": "tests/session-second-message.yaml",
+        "status": "pass",
+        "attributes": 20,
+        "failures": [],
+        "session": 7
+      },
+      {
+        "id": "ocip/session-server-doctype",
+        "file": "tests/session-server-doctype.yaml",
+        "status": "pass",
+        "attributes": 10,
+        "failures": [],
+        "session": 5
+      },
+      {
+        "id": "ocip/session-split-doctype",
+        "file": "tests/session-split-doctype.yaml",
+        "status": "pass",
+        "attributes": 15,
+        "failures": [],
+        "session": 6
+      },
+      {
+        "id": "ocip/session-two-in-one-segment",
+        "file": "tests/session-two-in-one-segment.yaml",
+        "status": "pass",
+        "attributes": 5,
+        "failures": [],
+        "session": 4
+      },
+      {
+        "id": "ocip/session-utf16-split",
+        "file": "tests/session-utf16-split.yaml",
+        "status": "pass",
+        "attributes": 15,
+        "failures": [],
+        "session": 6
+      },
+      {
+        "id": "ocip/xxe-file-entity",
+        "file": "tests/xxe-file-entity.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-file-entity",
+        "file": "tests/xxe-file-entity.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/xxe-lowercase-doctype",
+        "file": "tests/xxe-lowercase-doctype.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-lowercase-doctype",
+        "file": "tests/xxe-lowercase-doctype.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/xxe-oob-parameter-entity",
+        "file": "tests/xxe-oob-parameter-entity.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-oob-parameter-entity",
+        "file": "tests/xxe-oob-parameter-entity.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/xxe-public-whitespace",
+        "file": "tests/xxe-public-whitespace.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-public-whitespace",
+        "file": "tests/xxe-public-whitespace.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/xxe-utf16be-nobom",
+        "file": "tests/xxe-utf16be-nobom.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-utf16be-nobom",
+        "file": "tests/xxe-utf16be-nobom.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      },
+      {
+        "id": "ocip/xxe-utf16le-bom",
+        "file": "tests/xxe-utf16le-bom.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": []
+      },
+      {
+        "id": "ocip/xxe-utf16le-bom",
+        "file": "tests/xxe-utf16le-bom.yaml",
+        "status": "pass",
+        "attributes": 4,
+        "failures": [],
+        "through": "tcp:dport=2208"
+      }
+    ],
+    "sanitize": null,
+    "bench": null,
+    "stats": {
+      "elapsed_ms": 326
+    }
+  }
+}

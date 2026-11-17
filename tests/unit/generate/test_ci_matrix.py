@@ -20,11 +20,11 @@ WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 JOB = "generated-code"
 
 
-def _job() -> str:
+def _job(job: str = JOB) -> str:
     """The text of the job, up to the next job (or the end)."""
     text = WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(rf"^  {JOB}:\n(.*?)(?=^  [\w-]+:\n|\Z)", text, re.MULTILINE | re.DOTALL)
-    assert match is not None, f"no {JOB} job in {WORKFLOW}"
+    match = re.search(rf"^  {job}:\n(.*?)(?=^  [\w-]+:\n|\Z)", text, re.MULTILINE | re.DOTALL)
+    assert match is not None, f"no {job} job in {WORKFLOW}"
     return match.group(1)
 
 
@@ -44,20 +44,20 @@ def test_the_matrix_covers_gcc_and_clang() -> None:
     assert {c.strip() for c in cc.group(1).split(",")} == {"gcc", "clang"}
 
 
-def _commands() -> str:
+def _commands(job: str = JOB) -> str:
     """The job without its comment lines: a step's comment naming a test
     file must not stand in for the command that runs it."""
-    return "\n".join(line for line in _job().splitlines() if not line.lstrip().startswith("#"))
+    return "\n".join(line for line in _job(job).splitlines() if not line.lstrip().startswith("#"))
 
 
-def _step(name: str) -> str:
+def _step(name: str, job: str = JOB) -> str:
     """The text of the job's step ``name`` (comments excluded), up to the next step."""
     match = re.search(
         rf"^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)",
-        _commands(),
+        _commands(job),
         re.MULTILINE | re.DOTALL,
     )
-    assert match is not None, f"no step {name!r} in the {JOB} job"
+    assert match is not None, f"no step {name!r} in the {job} job"
     return match.group(1)
 
 
@@ -73,6 +73,7 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
     assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-generator evals (#27)
     assert "tests/unit/docs/test_commands.py" in job  # the user docs' commands (#29)
+    assert "tests/unit/run/test_sdk.py" in job  # run over captures (#103, #115)
 
 
 def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
@@ -100,6 +101,39 @@ def test_the_docs_step_runs_every_doc_command_and_requires_the_sdk() -> None:
     lines = [line.strip() for line in step.splitlines()]
     assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/docs/test_commands.py" in lines
     assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_run_step_runs_its_sdk_tests_and_requires_them() -> None:
+    # #115: mmt-plugin run's real-SDK tests (#103) run on every leg of the
+    # matrix; without the variables they would skip instead of failing.
+    step = _step("Run plugins over captures with mmt-plugin run")
+    assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+    assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
+    assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+    lines = [line.strip() for line in step.splitlines()]
+    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/run/test_sdk.py" in lines
+    assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_sdk_profile_job_checks_the_run_time_registry() -> None:
+    # #115: the run-time cross-check of the profile's ids (#50) runs in the
+    # sdk-profile job, on both arches. The test skips on an SDK it cannot
+    # check, so the step fails unless pytest reports it PASSED.
+    test = "tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile"
+    step = _step("Check the profile's ids against the run-time registry", job="sdk-profile")
+    assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+    assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+    assert f"{test} \\" in [line.strip() for line in step.splitlines()]
+    assert f"grep -qx 'PASSED {test}'" in step
+    assert '[ "$status" -eq 0 ] || exit "$status"' in step
+    assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+    # It runs after the headers check, in a job with both arches.
+    job = _commands("sdk-profile")
+    assert job.index("name: Check the profile's ids") > job.index(
+        "name: Check that broken copies of the headers fail"
+    )
+    assert "arch: amd64" in job
+    assert "arch: arm64" in job
 
 
 def test_the_python_job_runs_the_docs_install_blocks() -> None:

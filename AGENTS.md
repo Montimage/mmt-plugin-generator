@@ -443,8 +443,10 @@ protocol model. A Python rewrite is planned in
   (amd64 and arm64), `make test-container` on both arches, the Python
   checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
   fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
-  instead of skipping), the SDK profile header check (amd64 and arm64), and
-  the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
+  instead of skipping), the SDK profile header check (amd64 and arm64; it
+  also runs `test_sdk_registry.py::test_the_real_registry_is_the_profile`,
+  the profile's ids against the run-time registry, and requires it to
+  pass), and the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
@@ -454,6 +456,7 @@ protocol model. A Python rewrite is planned in
   `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
   by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
+  `tests/unit/run/test_sdk.py` (`run` over captures the test writes),
   `tests/unit/skill/test_sdk.py` (the mmt-plugin-generator evals, green),
   `tests/unit/docs/test_commands.py` (every `doc:run` block of the user
   docs, with `MMT_DOCS_INSTALL=1`; the Python 3.12 job also runs the

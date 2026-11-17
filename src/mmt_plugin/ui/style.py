@@ -140,10 +140,11 @@ def _clusters(text: str) -> Iterator[tuple[str, int]]:
             continue
         if chars and joining and _pictographic(ch):
             chars.append(ch)
-            joining = False
+            width, joining = 2, False
             continue
         if chars and pictographic and _skin_tone(ch):
             chars.append(ch)
+            width = 2
             continue
         if chars and flag and _regional(ch):
             chars.append(ch)

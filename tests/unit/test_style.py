@@ -249,6 +249,8 @@ EMOJI_SEQUENCES = {
         ("😀", 2),
         ("", 0),
         *((seq, 2) for seq in EMOJI_SEQUENCES.values()),
+        ("\u261d\U0001f3fd", 2),  # a skin tone on a base of 1 cell
+        ("\u2764\u200d\U0001f525", 2),  # a ZWJ sequence on a base of 1 cell
         ("\U0001f1eb", 1),  # a lone regional indicator
         ("\U0001f1eb\U0001f1f7\U0001f1e9\U0001f1ea", 4),  # two flags
         ("\U0001f468\u200d\U0001f469x", 3),  # a ZWJ sequence, then a letter

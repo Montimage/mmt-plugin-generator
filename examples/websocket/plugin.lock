@@ -7,16 +7,16 @@
   "sdk_profile": "1.10.2",
   "model": {
     "format": "yaml",
-    "sha256": "4d0bd60216dddcb274b2bee3c99fb0add40b26ae887e3b2fce2469122a2a97e3"
+    "sha256": "ef4dcf2f9893d3dec8f9d1c5b8967bef09b3b022db3eadc8bf3c8a835428f4e4"
   },
   "files": [
     {
       "path": "generated/websocket_example_mmt_plugin.c",
-      "sha256": "cbd295b478586853d9da1ffd8dae22090ce67d0be8f424ef550019d7560d547d"
+      "sha256": "d1acffb90d0c66b3d371598bfbfc0ccd2e71b96a81bd5c93add467d294e1a8d2"
     },
     {
       "path": "generated/websocket_example_mmt_plugin.h",
-      "sha256": "1862cd37a464c14e8528c4ad0311b828e239c1e4c56fecb5961a7e77fcc511a6"
+      "sha256": "f33d539086addadf2bbe1e1de205113a645a8660c8f82578274ee54bbc024763"
     }
   ]
 }

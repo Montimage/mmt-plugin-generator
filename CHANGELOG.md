@@ -211,6 +211,12 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Fixed
 
+- The mmt-plugin-generator skill's `scripts/pcap_eval.py` (#130) compares
+  each `--field` with tshark once per evaluation instead of twice, and an
+  `--accept <key>=<reason>` whose reason has a `|` or a line break stays
+  in its cell of the "Drift against tshark" table of `report.md` (the `|`
+  escaped, each line break a space). `report.json` keeps the reason as
+  given.
 - `generate` after an interrupted run (#56, N2): it writes a journal,
   `plugin.lock.pending`, next to `plugin.lock` before its first write
   (each file it is about to write or remove, with its sha256 before and

@@ -324,8 +324,17 @@ def compare_fields(
     fields: dict[str, str],
     expected: set[int],
 ) -> dict[str, Any]:
-    out: dict[str, Any] = {}
     compared, rows = field_mismatches(dump, reference, fields, expected)
+    return summarize_fields(fields, compared, rows)
+
+
+def summarize_fields(
+    fields: dict[str, str],
+    compared: dict[str, int],
+    rows: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """``report.json``'s ``fields``, from what ``field_mismatches`` returns."""
+    out: dict[str, Any] = {}
     for attr in fields:
         n, bad = compared[attr], rows[attr]
         matched = n - len(bad)
@@ -500,8 +509,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     field_rows: dict[str, list[dict[str, Any]]] = {}
     if fields:
         reference = tshark_fields(args.capture, fields, args.decode_as)
-        field_report = compare_fields(dump, reference, fields, expected)
-        _, field_rows = field_mismatches(dump, reference, fields, expected)
+        compared, field_rows = field_mismatches(dump, reference, fields, expected)
+        field_report = summarize_fields(fields, compared, field_rows)
     drifts = drift_items(field_rows, fields, missed, foreign, accepted) if have_tshark else []
     drift_path = out / "drift.jsonl"
     if have_tshark:
@@ -631,6 +640,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def table_cell(text: str) -> str:
+    """``text`` in one cell of a Markdown table: each line break a space,
+    each ``|`` escaped."""
+    return " ".join(text.splitlines()).replace("|", "\\|")
+
+
 def markdown(r: dict[str, Any]) -> str:
     lines = [
         f"# Capture evaluation: {r['plugin']['label']} — {r['verdict']}",
@@ -680,7 +695,7 @@ def markdown(r: dict[str, Any]) -> str:
                 first = ", ".join(map(str, d["first_frames"]))
                 lines.append(
                     f"| {d['key']} | {d['kind']} | {d['frames']} | {first}"
-                    f" | {d['status']} | {d['reason'] or ''} |"
+                    f" | {d['status']} | {table_cell(d['reason'] or '')} |"
                 )
             lines.append("")
     lines += [

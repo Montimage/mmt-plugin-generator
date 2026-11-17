@@ -534,3 +534,58 @@ def test_without_tshark_the_drift_is_not_checked(
     assert any("drift against a reference tool not checked" in w for w in report["warnings"])
     assert any("(--accept ignored)" in w for w in report["warnings"])
     assert not (tmp_path / "out" / "drift.jsonl").exists()
+
+
+def test_each_field_is_compared_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _fake_eval(tmp_path, monkeypatch, tshark=True, plugin_length="20")
+    calls: list[set[str]] = []
+    real = pcap_eval.field_mismatches
+
+    def counted(
+        dump: list[dict[str, Any]],
+        reference: dict[int, dict[str, str]],
+        fields: dict[str, str],
+        expected: set[int],
+    ) -> tuple[dict[str, int], dict[str, list[dict[str, Any]]]]:
+        calls.append(set(fields))
+        return real(dump, reference, fields, expected)
+
+    monkeypatch.setattr(pcap_eval, "field_mismatches", counted)
+    assert pcap_eval.main([*args, "--field", "length=x.len"]) == 1
+    assert calls == [{"length"}]
+    report = _read(tmp_path)
+    assert report["fields"]["length"]["compared"] == 2
+    assert report["fields"]["length"]["mismatches"] == [
+        {"frame": 2, "tshark": "0x0c", "plugin": "20"}
+    ]
+    assert report["drift"]["items"][0]["first_frames"] == [2]
+
+
+@pytest.mark.parametrize(
+    ("text", "cell"),
+    [
+        ("plain", "plain"),
+        ("a | b", "a \\| b"),
+        ("one\ntwo\r\nthree\rfour", "one two three four"),
+        ("x|y\nz", "x\\|y z"),
+    ],
+)
+def test_a_table_cell_keeps_one_line_and_escapes_pipes(text: str, cell: str) -> None:
+    assert pcap_eval.table_cell(text) == cell
+
+
+def test_an_accepted_reason_with_a_pipe_or_a_newline_stays_in_its_cell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _fake_eval(tmp_path, monkeypatch, tshark=True, plugin_length="20")
+    reason = "x.len | the payload length\nthe attribute: the whole message"
+    args += ["--field", "length=x.len", "--accept", f"length={reason}"]
+    assert pcap_eval.main(args) == 0
+    assert _read(tmp_path)["drift"]["items"][0]["reason"] == reason
+    md = (tmp_path / "out" / "report.md").read_text("utf-8")
+    row = (
+        "| length | field | 1 | 2 | accepted"
+        " | x.len \\| the payload length the attribute: the whole message |"
+    )
+    assert row in md.splitlines()
+    assert "the payload length\n" not in md

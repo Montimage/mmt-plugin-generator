@@ -77,9 +77,10 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   (`docs/behaviour-changes.md`, rows 36 and 37). Decisions: the define
   check is an error, not a warning, since the C would silently use another
   protocol id; it is case-sensitive, as C is, so `define proto_ip` is
-  accepted, although the model's own expressions still find it first
-  where they name `PROTO_IP` (names are case-insensitive in PDL), a known
-  gap left for a later change. The width check is a warning, not an
+  accepted, and an expression that names `PROTO_IP` exactly now reads the
+  SDK's macro, not that define (PDL names are otherwise case-insensitive).
+  `MMT_DATA_POINTER` is not width-checked: it is stored as a pointer into
+  the packet whatever its length. The width check is a warning, not an
   error: a field narrower than its integer type (24 bits in
   `MMT_U32_DATA`) is read correctly from `data_len` bytes by the new
   generator, unlike Java's fixed-width reads, and a longer integer is

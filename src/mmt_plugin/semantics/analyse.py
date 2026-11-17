@@ -667,7 +667,11 @@ class _Analyser:
         """A define (case-insensitively) or an SDK protocol macro."""
         key = name.text.lower()
         define = self.defines.get(key)
-        if define is not None and key != self.defining.get("define"):
+        # An SDK macro named exactly wins over a define whose name differs
+        # only in case (#53): `define proto_ip = 15` must not change what
+        # PROTO_IP means.
+        exact_sdk = name.text in self.sdk_names and (define is None or define.name != name.text)
+        if define is not None and key != self.defining.get("define") and not exact_sdk:
             return define.value, define.name
         if name.text in self.sdk_names:
             return self.sdk_names[name.text], name.text
@@ -1047,8 +1051,14 @@ class _Analyser:
         data_len: an integer is read from data_len bytes (a longer one is
         ``model.integer-length`` at generation), a byte type is copied up to
         its width and zero-padded. A user hook (no offset) stores its value
-        itself, so its data_len is not checked."""
+        itself, so its data_len is not checked, and neither is an
+        MMT_DATA_POINTER, stored as a pointer into the packet whatever the
+        length (its 4 bytes are a ``T*`` struct field's wire width). A longer
+        integer is also ``model.integer-length`` at generation; the warning
+        still says so where ``validate`` stops after the semantics."""
         dt = el.data_type.type
+        if dt is DataType.MMT_DATA_POINTER:
+            return
         width = FIXED_WIDTHS.get(dt)
         value = length.value
         if width is None or value is None or value < 1 or value == width:

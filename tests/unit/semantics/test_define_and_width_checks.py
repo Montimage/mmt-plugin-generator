@@ -66,6 +66,20 @@ def test_the_check_is_case_sensitive_like_c() -> None:
     ok(build(u8("a", "0"), defines="\tdefine proto_ip = 15\n\tdefine Mmt_U8_Data = 1\n"))
 
 
+def test_a_define_differing_only_in_case_does_not_change_the_sdk_macro() -> None:
+    # PDL names are case-insensitive, but PROTO_IP named exactly is the
+    # SDK's, not the define proto_ip's.
+    text = build(
+        u8("k", "0"),
+        properties='label = "p"\n\t\tid = "960"\n\t\tencapsulation = "true"',
+        defines="\tdefine proto_ip = 15\n\tdefine NEXT_IP = PROTO_IP\n\tdefine OWN = PROTO_ip\n",
+    )
+    analysed = ok(text)
+    values = {d.name: (d.value, d.alias_of) for d in analysed.defines}
+    assert values["NEXT_IP"] == (178, "PROTO_IP")
+    assert values["OWN"] == (15, "proto_ip")
+
+
 def test_naming_the_sdk_macro_without_a_define_is_still_fine() -> None:
     text = build(
         u8("k", "0"),
@@ -133,6 +147,7 @@ def test_a_data_len_other_than_the_width_is_a_warning_naming_both(
         ("MMT_U64_DATA", "8"),
         ("MMT_DATA_MAC_ADDR", "6"),
         ("MMT_BINARY_DATA", "3"),
+        ("MMT_DATA_POINTER", "8"),
     ],
 )
 def test_the_types_width_or_a_type_without_one_is_fine(data_type: str, data_len: str) -> None:

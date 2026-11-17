@@ -324,6 +324,25 @@ jobs:
           for cc in gcc clang; do
             bash tests/check_headercheck_mutations.sh "$SDK_PREFIX" "$cc"
           done
+      - name: Check the profile's ids against the run-time registry
+        # tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile
+        # (#50, #115): with every plugin of the package loaded, mmt-dpi
+        # registers exactly the profile's ids, each under its alias. The test
+        # skips on an SDK without a bundled profile or without all four
+        # plugins, so the step also requires its PASSED line.
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          out="$RUNNER_TEMP/registry.txt"
+          status=0
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider \
+            tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile \
+            > "$out" || status=$?
+          cat "$out"
+          [ "$status" -eq 0 ] || exit "$status"
+          grep -qxF 'PASSED tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile' "$out" \
+            || { echo "the run-time registry check did not pass"; exit 1; }
 
   generated-code:
     # T1.7 (#16): the generated C of every corpus model that generate accepts
@@ -495,6 +514,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
+      - name: Run plugins over captures with mmt-plugin run
+        # tests/unit/run/test_sdk.py: mmt-plugin run (#103, #115) over
+        # captures written by the test: the DNS example's counts, a second
+        # plugin with --plugin and --protocol, a file that is not a plugin, a
+        # broken capture, and the same memory for a ten times larger capture.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/run/test_sdk.py
       - name: Run the mmt-plugin-generator skill's evals
         # tests/unit/skill/test_sdk.py: every case of
         # skills/mmt-plugin-generator/evals/ (#27), from a spec, a capture and

@@ -276,8 +276,8 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   review of #51): with all the package's plugins loaded, mmt-dpi registers
   exactly the profile's ids, under their aliases. It runs, with
   `MMT_GOLDEN_SDK`, in `tests/unit/test_sdk_registry.py`, which CI's SDK
-  jobs already run; it is not added to the `sdk-profile` CI job, whose
-  workflow this change does not edit.
+  jobs already run; the `sdk-profile` CI job also runs it and requires it
+  to pass (#115).
 - Profile choice (#50): decided to keep the order and document it: a
   detected version with any suffix after its number, also `1.10.2.post1`,
   `1.10.2+git` or a Debian revision `1.10.2-1`, ranks below its release,

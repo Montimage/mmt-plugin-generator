@@ -342,7 +342,16 @@ protocol model. A Python rewrite is planned in
   `--skip-until HEX` skips each direction's bytes of each session up to the
   end of that pattern (an HTTP upgrade's `0d0a0d0a`), #102. A byte whose
   bits vary independently is proposed as bit fields (a struct
-  `bits_<offset>`), with a role flag a direction sets its own way. A malformed pcap is `model.bad-pcap`, none under the parent
+  `bits_<offset>`), with a role flag a direction sets its own way.
+  `--tshark` (#125, `pcap/tshark.py`) drafts the fields from tshark's
+  dissection instead (`tshark -T pdml` on the frames read, `-G fields`
+  for types and bitmasks): the protocol at the payloads' start
+  (`Payload.start`; `--protocol` when several, `--decode-as` as `-d`),
+  each field every payload has at one offset as an attribute named after
+  it, the tests expecting tshark's values; no tshark is
+  `sdk.tshark-not-found`, tshark failing `sdk.tshark-failed` (exit 4), no
+  dissector `model.no-dissector`, no field `model.no-fields` (exit 3),
+  nothing written. A malformed pcap is `model.bad-pcap`, none under the parent
   `model.no-payloads` (exit 3); an output with other content is
   `state.output-differs` (exit 7) unless `--force`. `src/mmt_plugin/pcap/`:
   `reader.py` (pcap and pcapng, no dependency), `layers.py` (Ethernet,
@@ -351,8 +360,11 @@ protocol model. A Python rewrite is planned in
   rules, the bit groups, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
   `samples.py` builds captures (a WebSocket session among them), `test_streams.py`, `data/` holds two written by tcpdump and
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
-  `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
-  proposal passes `test`; needs `MMT_GOLDEN_SDK`).
+  `test_command.py`, `test_tshark.py` (a fake tshark on `PATH` printing
+  `data/tshark/`, what tshark 4.2.2 printed for `samples.dns_capture()`),
+  and `test_sdk.py` (`init`, `scaffold`, then the proposal passes `test`;
+  with `--tshark` too when tshark is installed, which CI's images are not;
+  needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/run.py` (#103): `mmt-plugin run PCAP` runs the
   plugin of `--model` (as `test`'s) over a pcap or pcapng capture through
   mmt-dpi's stack and counts what it reports. Stages `build` (`build` when

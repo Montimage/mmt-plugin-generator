@@ -142,13 +142,15 @@ class Payload:
     the parent (outermost first) and its bytes. Under UDP or TCP, ``flow``
     is its direction; ``cut`` counts the bytes of the frame's payload
     before ``data`` (a TCP segment's bytes delivered before, or before the
-    end of ``--skip-until``'s pattern)."""
+    end of ``--skip-until``'s pattern). ``start`` is where the frame's
+    payload starts in the frame, so ``data`` starts at ``start + cut``."""
 
     frame: int
     path: tuple[str, ...]
     data: bytes
     flow: Flow | None = None
     cut: int = 0
+    start: int = 0
 
 
 @dataclass
@@ -166,6 +168,7 @@ class _Layer:
     name: str
     fields: dict[str, int]
     payload: bytes
+    start: int = 0  # where ``payload`` starts in the frame
 
 
 class _Stop(Exception):
@@ -181,7 +184,7 @@ def _u16(data: bytes, offset: int) -> int:
     return value
 
 
-def _ethernet(data: bytes, layers: list[_Layer]) -> None:
+def _ethernet(data: bytes, layers: list[_Layer], base: int) -> None:
     if len(data) < 14:
         raise _Stop("malformed")
     pos = 12
@@ -192,19 +195,19 @@ def _ethernet(data: bytes, layers: list[_Layer]) -> None:
         pos += 4
         tags += 1
     ethertype = _u16(data, pos)
-    layers.append(_Layer("ethernet", {"ethertype": ethertype}, data[pos + 2 :]))
+    layers.append(_Layer("ethernet", {"ethertype": ethertype}, data[pos + 2 :], base + pos + 2))
     layers += [_Layer("8021q", {}, b"")] * tags
-    _network(ethertype, data[pos + 2 :], layers)
+    _network(ethertype, data[pos + 2 :], layers, base + pos + 2)
 
 
-def _network(ethertype: int, data: bytes, layers: list[_Layer]) -> None:
+def _network(ethertype: int, data: bytes, layers: list[_Layer], base: int) -> None:
     if ethertype == _IPV4:
-        _ipv4(data, layers)
+        _ipv4(data, layers, base)
     elif ethertype == _IPV6:
-        _ipv6(data, layers)
+        _ipv6(data, layers, base)
 
 
-def _ipv4(data: bytes, layers: list[_Layer]) -> None:
+def _ipv4(data: bytes, layers: list[_Layer], base: int) -> None:
     if len(data) < 20 or data[0] >> 4 != 4:
         raise _Stop("malformed")
     ihl = (data[0] & 0x0F) * 4
@@ -218,11 +221,11 @@ def _ipv4(data: bytes, layers: list[_Layer]) -> None:
         "src": int.from_bytes(data[12:16], "big"),
         "dst": int.from_bytes(data[16:20], "big"),
     }
-    layers.append(_Layer("ip", {"proto": proto, **addresses}, data[ihl:total]))
-    _transport(proto, data[ihl:total], layers)
+    layers.append(_Layer("ip", {"proto": proto, **addresses}, data[ihl:total], base + ihl))
+    _transport(proto, data[ihl:total], layers, base + ihl)
 
 
-def _ipv6(data: bytes, layers: list[_Layer]) -> None:
+def _ipv6(data: bytes, layers: list[_Layer], base: int) -> None:
     if len(data) < 40 or data[0] >> 4 != 6:
         raise _Stop("malformed")
     length = _u16(data, 4)
@@ -248,11 +251,12 @@ def _ipv6(data: bytes, layers: list[_Layer]) -> None:
         if size > len(rest):
             raise _Stop("malformed")
         proto, rest = rest[0], rest[size:]
-    layers.append(_Layer("ipv6", {"proto": proto, **addresses}, rest))
-    _transport(proto, rest, layers)
+    start = base + 40 + length - len(rest)
+    layers.append(_Layer("ipv6", {"proto": proto, **addresses}, rest, start))
+    _transport(proto, rest, layers, start)
 
 
-def _transport(proto: int, data: bytes, layers: list[_Layer]) -> None:
+def _transport(proto: int, data: bytes, layers: list[_Layer], base: int) -> None:
     if proto == _UDP:
         if len(data) < 8:
             raise _Stop("malformed")
@@ -260,7 +264,7 @@ def _transport(proto: int, data: bytes, layers: list[_Layer]) -> None:
         if length < 8 or length > len(data):
             raise _Stop("malformed")
         ports = {"sport": _u16(data, 0), "dport": _u16(data, 2)}
-        layers.append(_Layer("udp", ports, data[8:length]))
+        layers.append(_Layer("udp", ports, data[8:length], base + 8))
     elif proto == _TCP:
         if len(data) < 20:
             raise _Stop("malformed")
@@ -273,7 +277,7 @@ def _transport(proto: int, data: bytes, layers: list[_Layer]) -> None:
             "seq": struct.unpack_from(">I", data, 4)[0],
             "flags": data[13],
         }
-        layers.append(_Layer("tcp", fields, data[offset:]))
+        layers.append(_Layer("tcp", fields, data[offset:], base + offset))
 
 
 def _link(frame: Frame, layers: list[_Layer]) -> bool:
@@ -281,15 +285,15 @@ def _link(frame: Frame, layers: list[_Layer]) -> bool:
     not decode."""
     data = frame.data
     if frame.linktype == _ETHERNET:
-        _ethernet(data, layers)
+        _ethernet(data, layers, 0)
     elif frame.linktype == _SLL:
         if len(data) < 16:
             raise _Stop("malformed")
-        _network(_u16(data, 14), data[16:], layers)
+        _network(_u16(data, 14), data[16:], layers, 16)
     elif frame.linktype == _SLL2:
         if len(data) < 20:
             raise _Stop("malformed")
-        _network(_u16(data, 0), data[20:], layers)
+        _network(_u16(data, 0), data[20:], layers, 20)
     elif frame.linktype in (_NULL, _LOOP):
         if len(data) < 4:
             raise _Stop("malformed")
@@ -297,17 +301,17 @@ def _link(frame: Frame, layers: list[_Layer]) -> bool:
         # network order (LOOP): 2 is IPv4, 24, 28 and 30 are IPv6.
         family = {struct.unpack_from("<I", data)[0], struct.unpack_from(">I", data)[0]}
         if 2 in family:
-            _ipv4(data[4:], layers)
+            _ipv4(data[4:], layers, 4)
         elif family & {24, 28, 30}:
-            _ipv6(data[4:], layers)
+            _ipv6(data[4:], layers, 4)
     elif frame.linktype in _RAW:
         if not data:
             raise _Stop("malformed")
         version = data[0] >> 4
         if version == 4:
-            _ipv4(data, layers)
+            _ipv4(data, layers, 0)
         elif version == 6:
-            _ipv6(data, layers)
+            _ipv6(data, layers, 0)
         else:
             raise _Stop("malformed")
     else:
@@ -367,7 +371,8 @@ def _reason(frame: Frame, parent: Parent) -> tuple[str, _Found | None]:
                     net.fields["dst"],
                     layer.fields["dport"],
                 )
-            return "", _Found(Payload(frame.number, path, layer.payload, flow), layer.fields)
+            payload = Payload(frame.number, path, layer.payload, flow, start=layer.start)
+            return "", _Found(payload, layer.fields)
     if stopped is None:
         return "no-match", None
     if stopped == "malformed" and frame.truncated:

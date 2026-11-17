@@ -523,6 +523,42 @@ mmt-plugin init capture --id 961 --parent udp:dport=4433 --sdk-profile 1.10.2
 mmt-plugin -C capture scaffold --from-pcap tests/unit/scaffold/data/demo-tcpdump.pcap --parent udp:dport=4433
 ```
 
+### Draft from tshark's dissection
+
+When tshark (Wireshark's command line) knows the protocol, `--tshark`
+drafts the proposal from its dissection instead: `scaffold` runs tshark on
+the frames it read (`tshark -n -r PCAP -c N -T pdml`, TCP reassembly off,
+so each segment is dissected where it is), takes the protocol tshark
+dissects at the start of the payloads, and maps each of its fields that
+every payload has at the same offset to an attribute named after it
+(`dns.flags.response` is `flags_response`): an unsigned integer in network
+byte order (`MMT_U8_DATA` to `MMT_U64_DATA`), a bit field (a field with a
+bitmask, in a struct `bits_<offset>` of its 1-, 2- or 4-byte unit), an
+IPv4, IPv6 or MAC address, or bytes up to 64 (`MMT_BINARY_DATA`). A
+comment names each other field and why it is not proposed (in some
+payloads only, a length tshark computes, a signed or little-endian
+integer). The packet tests, one per payload tshark dissects, expect the
+values tshark decodes, and the proposal extracts them.
+
+When tshark dissects several protocols at the start of the payloads (an
+HTTP upgrade, then WebSocket), `scaffold` lists them and stops: choose one
+with `--protocol`. A protocol on a port tshark does not know needs a
+`--decode-as` rule, passed to tshark as `-d`: tshark runs without your
+Wireshark profile (preferences, decode-as entries, disabled protocols), so
+the draft is the same on every machine. Without tshark on `PATH`
+the command stops with `sdk.tshark-not-found` (exit 4), and without a
+dissector for the payloads with `model.no-dissector` (exit 3); nothing is
+written in either case.
+
+<!-- doc:skip needs tshark on PATH (CI's images have none) -->
+```sh
+mmt-plugin -C dns scaffold --from-pcap dns.pcap --parent udp:port=53 --tshark
+mmt-plugin -C ws scaffold --from-pcap websocket.pcap --parent tcp:port=80 --tshark --protocol websocket
+mmt-plugin -C demo scaffold --from-pcap capture.pcap --parent udp:port=4433 --tshark --decode-as udp.port==4433,dns
+```
+
+### Use the proposal
+
 The packet tests expect what the proposal extracts, so they pass against it.
 Rename the fields after the protocol's specification (in the model and in
 the tests), and copy what you keep into `plugin.yaml`. Here the proposal is

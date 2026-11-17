@@ -160,6 +160,10 @@ mmt-plugin --json init <label> --dir <project> --id <id> --parent <selector> --s
 mmt-plugin -C <project> --json scaffold --from-pcap <pcap> --parent <selector>
 ```
 
+When tshark is on `PATH` and dissects the protocol, add `--tshark` to that
+`scaffold`: the fields are tshark's and the tests expect tshark's values
+(`references/drafting.md`, "From a capture").
+
 From a legacy PDL v1 model, create the project, then convert the model
 next to `init`'s, into `<project>/plugin.imported.yaml`:
 

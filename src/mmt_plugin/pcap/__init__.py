@@ -7,7 +7,10 @@
 - ``streams``: under a ``tcp`` parent, each segment's new bytes in its
   stream's order (``TcpStreams``);
 - ``skeleton``: the proposed fields, ``plugin.proposed.yaml`` and the packet
-  tests (``propose``, ``proposed_yaml``, ``packet_test``).
+  tests (``propose``, ``proposed_yaml``, ``packet_test``);
+- ``tshark``: with ``scaffold --tshark`` (#125), the fields tshark dissects
+  in the payloads, mapped to the skeleton's attributes (imported as
+  ``mmt_plugin.pcap.tshark``: it runs tshark).
 """
 
 from mmt_plugin.pcap.layers import (

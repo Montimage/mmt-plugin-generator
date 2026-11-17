@@ -90,6 +90,8 @@ A row is a code, or a family ending in `*`. Codes are the
 | `sdk.profile-fallback` | Warning: no profile for the SDK's version; the nearest one is used. Pin one with `sdk.profile` if it matters. |
 | `sdk.profile-default` | Warning: no SDK and no pinned profile. Pin `sdk.profile` in `plugin.yaml`. |
 | `sdk.cc-not-found` | Pass `--cc gcc` or `--cc clang` (one program, no arguments). |
+| `sdk.tshark-not-found` | `scaffold --tshark` needs tshark on `PATH`: ask the user to install it (Wireshark's command line), or drop `--tshark` for `scaffold`'s own proposal. Nothing was written. |
+| `sdk.tshark-failed` | tshark failed or printed what does not parse: check each `--decode-as` rule against the message (a protocol tshark does not know), and that tshark reads the capture (`tshark -r`). Nothing was written. |
 | `sdk.registry-unavailable` | Warning: the installed plugins could not be listed, so the id and name were checked against the SDK headers only. Go on. |
 | `sdk.id-unchecked` | Warning from `init` without an SDK: `validate` with `--sdk` checks the id later. |
 | `sdk.prefix-not-writable` | Pass `--prefix` with a directory you own. Never `sudo`. |
@@ -145,6 +147,8 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
 | `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
+| `model.no-dissector` | `scaffold --tshark`: tshark has no dissector for the payloads (only `data`), or not the `--protocol` asked for; the message lists what it dissects there. Pass `--decode-as <layer>==<value>,<protocol>` for a protocol on a port tshark does not know, choose a listed `--protocol`, or drop `--tshark`. |
+| `model.no-fields` | `scaffold --tshark`: none of the protocol's fields maps to an attribute in every payload. Drop `--tshark` and draft from the spec, or use `scaffold`'s own proposal. |
 | `build.cc` | One compiler message: fix the source at its location. |
 | `build.compile-failed` | Fix the `build.cc` errors in `src/<label>_impl.c`; an error in `generated/` comes from the model. A failure with no located `build.cc` error (a fatal compiler error, an object that is not ELF) is the toolchain or the SDK: check `--cc` and `--sdk`. |
 | `build.link-failed` | An undefined symbol: user code may call `libmmt_core` functions only. |

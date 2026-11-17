@@ -142,7 +142,11 @@ values are what the proposal extracts. It never edits `plugin.yaml`.
 Under a `tcp` parent the payloads are each segment's new bytes in stream
 order; when each session starts with a text handshake (an HTTP upgrade),
 pass `--skip-until 0d0a0d0a` so that only the protocol's own bytes are
-sliced.
+sliced. When tshark is on `PATH` and dissects the protocol, `--tshark`
+drafts the fields from tshark's dissection instead, named after its fields
+(`--protocol` when it dissects several at the payloads' start,
+`--decode-as` for a port it does not know), and the tests expect the
+values tshark decodes: still a draft, to check against the spec.
 
 1. Read the proposal: each field has a comment with what was seen
    (constant, varies, the payload length). A byte cut into bit fields is a

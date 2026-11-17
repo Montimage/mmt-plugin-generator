@@ -19,6 +19,7 @@
     "macros",
     "logger",
     "class_provider",
+    "entry_point",
     "parents"
   ],
   "properties": {
@@ -156,6 +157,18 @@
         "struct": {"$ref": "#/$defs/ident"},
         "register": {"$ref": "#/$defs/ident"},
         "unknown": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "entry_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callback", "symbol", "core_macro", "doc"],
+      "description": "The function mmt-dpi looks up in a plugin it loads: its callback role (in callbacks) and symbol, and the macro defined when a plugin is built into the core, where the entry point is left out.",
+      "properties": {
+        "callback": {"$ref": "#/$defs/ident"},
+        "symbol": {"$ref": "#/$defs/ident"},
+        "core_macro": {"$ref": "#/$defs/ident"},
         "doc": {"$ref": "#/$defs/text"}
       }
     },

@@ -157,6 +157,12 @@ def _stub_data() -> dict[str, Any]:
             "unknown": "CP_UNKNOWN",
             "doc": "cp",
         },
+        "entry_point": {
+            "callback": "init",
+            "symbol": "init_proto",
+            "core_macro": "CORE",
+            "doc": "entry",
+        },
         "parents": {
             "header": "stub.h",
             "declared_in": "stub.h",

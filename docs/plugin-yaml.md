@@ -106,6 +106,17 @@ PDL v1 expression written as a string: numbers (decimal or `0x` hex),
 (`val(length) - 4`) is a **variable-length attribute**, of a byte type
 (`MMT_BINARY_DATA`, `MMT_BINARY_VAR_DATA`, `MMT_STRING_DATA`).
 
+The generated code computes expressions in signed 64-bit integers. An
+expression fails when it overflows, divides by zero, or reads a value it
+cannot represent: `val(x)` of an 8-byte integer (or a 64-bit bitfield) of
+2^63 or more, such as `ff ff ff ff ff ff ff ff`. The attribute `x` itself is
+still extracted with its full value; what fails is the expression that
+reads it. In a packet where an expression fails, an attribute whose
+`offset` or `length` uses it is absent, and so is every attribute under an
+`if` that uses it, in both its branches: a failed condition is neither true
+nor false. A failed `switch` (or case `offset`) classifies no next
+protocol.
+
 ### Offsets
 
 With `offsets: absolute` (the default), every offset counts from the start

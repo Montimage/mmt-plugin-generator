@@ -90,6 +90,10 @@ def test_what_the_generator_needs(profile: Profile) -> None:
     assert profile.logger.header == "mmt_log.h"
     assert profile.logger.debug_opt_in == "MMT_LOG_ENABLE_DEBUG"
     assert profile.class_provider.register == "mmt_register_class_provider"
+    # The plugin entry point and the built-in macro (#56, N12).
+    assert profile.entry_point.symbol == "init_proto"
+    assert profile.entry_point.core_macro == "CORE"
+    assert profile.callback(profile.entry_point.callback).typedef == "generic_init_proto"
     assert profile.parents.id_for("tcp") == "PROTO_TCP"
     # The ids that model checks compare a plugin's id and name with (#12).
     assert profile.constant("PROTO_MAX_IDENTIFIER").value == 1000
@@ -302,6 +306,10 @@ LOADER_ERRORS: dict[str, tuple[Mutation, str]] = {
     "class provider": (
         lambda d: d["class_provider"].update(unknown="Classified"),
         "class_provider.unknown",
+    ),
+    "entry point callback": (
+        lambda d: d["entry_point"].update(callback="nope"),
+        "entry_point.callback: 'nope' is not a callback role",
     ),
     "duplicate id": (
         lambda d: _ids(d)["protocols"].update(PROTO_NEW={"id": 354}),

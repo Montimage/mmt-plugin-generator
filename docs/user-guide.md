@@ -242,7 +242,12 @@ mmt-plugin -C demo generate --check
 ```
 
 Never edit `generated/`: `generate` refuses to overwrite a generated file
-that changed since it wrote it (exit 7) unless you pass `--force`.
+that changed since it wrote it (exit 7) unless you pass `--force`. An
+interrupted `generate` leaves its journal, `plugin.lock.pending`, next to
+`plugin.lock`: run `generate` again, with the old model or the new one, and
+it finishes without `--force` and removes the journal. `generate -o DIR`
+with a `DIR` outside the project writes its own `plugin.lock` in `DIR` and
+leaves the project's alone.
 
 ## Your code: the hooks
 

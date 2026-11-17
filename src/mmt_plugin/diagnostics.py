@@ -138,8 +138,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "state.stale": "generate --check: a generated file or plugin.lock is not what generate "
         "would write",
         "state.modified": "a generated file was edited since generate wrote it (its sha256 is "
-        "not plugin.lock's); it is not overwritten or removed without --force",
-        "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin knows",
+        "not plugin.lock's); it is not overwritten or removed without --force (a directory "
+        "where a generated file goes, never)",
+        "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin "
+        "knows; --force ignores it (a directory there, never)",
         "state.kept": "warning: a file generate no longer writes is kept, not removed",
         # `validate` (mmt_plugin.commands.validate, mmt_plugin.sdk.registry, #17).
         "model.unknown-parent": "a parent protocol of the model is not in the SDK profile and "

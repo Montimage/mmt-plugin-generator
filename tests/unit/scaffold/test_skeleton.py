@@ -6,6 +6,7 @@ the proposal's)."""
 from __future__ import annotations
 
 import os
+import random
 import struct
 from pathlib import Path
 
@@ -15,8 +16,10 @@ from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.commands.init import parse_selector
 from mmt_plugin.pcap import (
     HEADER_LIMIT,
+    Flow,
     Parent,
     Payload,
+    bit_groups,
     packet_test,
     parent_of,
     propose,
@@ -225,3 +228,185 @@ def test_a_file_name_that_is_not_utf8() -> None:
     text = proposed_yaml("demo", 960, _parent("udp"), propose([b"ab"]), name, 1)
     assert "cap\\xff.pcap" in text
     text.encode("utf-8")
+
+
+# Bit fields (#102).
+
+
+#: The two directions of a connection, and one of an unrelated flow.
+CLIENT = ("ip", 0x0A000001, 50000, 0x0A000002, 80)
+SERVER = ("ip", 0x0A000002, 80, 0x0A000001, 50000)
+OTHER = ("ip", 0x0A000003, 40000, 0x0A000002, 80)
+OTHER_BACK = ("ip", 0x0A000002, 80, 0x0A000003, 40000)
+_FLOWS = {1: CLIENT, 2: SERVER, 3: OTHER, 4: OTHER_BACK}
+
+
+def _groups(
+    values: list[int], flows: list[int] | None = None
+) -> list[tuple[int, int, str]] | None:
+    return bit_groups(values, None if flows is None else [_FLOWS[f] for f in flows])
+
+
+def test_a_byte_with_one_varying_run_stays_whole() -> None:
+    assert _groups([2, 3, 2]) is None  # the demo's kind: 7 constant bits
+    assert _groups(list(range(21))) is None  # a counter
+    assert _groups([0x45] * 3) is None  # constant
+    assert _groups([0x81, 0x82, 0x88]) is None  # one opcode run under a constant 0x8_
+    # Two runs that do not vary independently are one number: 1 and 8.
+    assert _groups([1, 8, 1, 8, 0x21, 0x28]) is None
+    # Too few distinct values to tell: 0x81, 0x01, 0x80 would be FIN | opcode.
+    assert _groups([0x81, 0x01, 0x80]) is None
+    assert _groups([0x81, 0x01, 0x80, 0x00]) == [
+        (0, 1, "varies"),
+        (1, 6, "constant"),
+        (7, 1, "varies"),
+    ]
+
+
+def test_a_few_random_payloads_are_not_cut_into_bits() -> None:
+    rng = random.Random(102)
+    for _ in range(500):
+        payloads = [rng.randbytes(16) for _ in range(3)]
+        assert all(f.bit_offset is None for f in propose(payloads).fields)
+
+
+def test_flags_and_a_number_that_vary_independently() -> None:
+    # FIN, RSV1-3 and the opcode of WebSocket frames; opcode bit 2 (4) never
+    # set, so it is a constant bit between varying ones.
+    values = [0x81, 0x01, 0x80, 0x89, 0x88, 0x8A, 0x82]
+    assert _groups(values) == [(0, 1, "varies"), (1, 3, "constant"), (4, 4, "varies")]
+
+
+def test_a_role_flag_is_cut_from_its_run() -> None:
+    # MASK, set by the client (flow 1) only, then the 7-bit length.
+    lengths = [5, 3, 0, 100, 126, 125, 2]
+    values = [0x80 | n for n in lengths] + list(lengths)
+    flows = [1] * len(lengths) + [2] * len(lengths)
+    assert _groups(values, flows) == [(0, 1, "role"), (1, 7, "varies")]
+    # Without directions, or with a direction of both values, it is one number.
+    assert _groups(values) is None
+    assert _groups(values, [1] * len(values)) is None
+    # Two directions that are not the same connection's are not roles.
+    assert _groups(values, [1] * len(lengths) + [3] * len(lengths)) is None
+    # Nor is a bit both directions of another connection set.
+    masked = [0x80 | n for n in lengths]
+    other = [3] * len(lengths) + [4] * len(lengths)
+    assert _groups(values + masked + masked, flows + other) is None
+    assert _groups(values + values, flows + other) == [(0, 1, "role"), (1, 7, "varies")]
+    # A direction with one payload does not show the other value.
+    assert _groups([0x85, 0xFA, 0x05], [1, 1, 2]) is None
+    assert _groups([0x85, 0xFA, 0x05, 0x7A], [1, 1, 2, 2]) == [(0, 1, "role"), (1, 7, "varies")]
+
+
+def test_a_byte_constant_within_each_direction_is_not_a_role_flag() -> None:
+    # Per-flow identifiers: each direction its own constant byte, both top
+    # bits.
+    values = [0x8D, 0x8D, 0x13, 0x13, 0xC4, 0xC4, 0x2A, 0x2A]
+    assert _groups(values, [1, 1, 2, 2, 3, 3, 4, 4]) is None
+
+
+def _rtp_like(
+    rng: random.Random, flows: int = 4, per_flow: int = 5
+) -> tuple[list[bytes], list[Flow | None]]:
+    payloads: list[bytes] = []
+    flow_of: list[Flow | None] = []
+    for n in range(flows):
+        flow = ("ip", 0x0A000001 + n, 5004 + 2 * n, 0x0A0000FF, 5004)
+        ssrc = rng.randbytes(4)
+        seq = rng.randrange(1 << 16)
+        stamp = rng.randrange(1 << 32)
+        for n in range(per_flow):
+            header = struct.pack(
+                "!BBHI", 0x80, 0x60, (seq + n) & 0xFFFF, (stamp + 160 * n) & 0xFFFFFFFF
+            )
+            payloads.append(header + ssrc + rng.randbytes(8))
+            flow_of.append(flow)
+    return payloads, flow_of
+
+
+def test_a_per_flow_identifier_stays_one_word() -> None:
+    # An RTP-like SSRC at offset 8, constant in each of 4 one-way UDP flows:
+    # neither it nor the timestamp before it is cut into role bits.
+    rng = random.Random(102)
+    whole = 0
+    for _ in range(200):
+        payloads, flows = _rtp_like(rng)
+        with_flows = propose(payloads, flows)
+        assert with_flows.fields == propose(payloads).fields
+        ssrc = [f for f in with_flows.fields if f.offset == 8]
+        if ssrc and (ssrc[0].name, ssrc[0].length, ssrc[0].bit_offset) == ("field_8", 4, None):
+            assert ssrc[0].to_json()["type"] == "MMT_U32_DATA"
+            whole += 1
+    # A few random timestamps' high bytes vary independently by chance,
+    # with or without the directions.
+    assert whole >= 190
+
+
+def test_websocket_frames_propose_fin_opcode_mask_and_length() -> None:
+    frames = samples.websocket_client_frames() + samples.websocket_server_frames()
+    skeleton = propose(frames, [CLIENT] * 7 + [SERVER] * 7)
+    assert skeleton.header_length == 2
+    assert [
+        (f.name, f.offset, f.bit_offset, f.bit_width, f.constant) for f in skeleton.fields
+    ] == [
+        ("field_0_b0", 0, 0, 1, False),  # FIN
+        ("field_0_b1", 0, 1, 3, True),  # RSV1-3
+        ("field_0_b4", 0, 4, 4, False),  # opcode
+        ("field_1_b0", 1, 0, 1, False),  # MASK
+        ("field_1_b1", 1, 1, 7, False),  # payload length (7 bits)
+    ]
+    close = samples.ws_frame(0x8, b"\x03\xe8", key=bytes(4))
+    assert [f.value(close) for f in skeleton.fields] == [1, 0, 8, 1, 2]
+    assert skeleton.fields[0].to_json() == {
+        "name": "field_0_b0",
+        "type": "MMT_U8_DATA",
+        "offset": 0,
+        "length": 1,
+        "constant": False,
+        "bit_offset": 0,
+        "bit_width": 1,
+    }
+    assert "one value per direction" in skeleton.fields[3].note
+
+
+def test_a_byte_cut_into_bits_ends_a_run_of_differing_bytes() -> None:
+    # Byte 1 has independent flag and number groups; bytes 0 and 2 vary.
+    values = [0x01, 0x02, 0x81, 0x82, 0x03]
+    payloads = [bytes([i, v, 10 + i]) for i, v in enumerate(values)]
+    fields = [(f.name, f.offset, f.length, f.bit_offset) for f in propose(payloads).fields]
+    assert fields == [
+        ("field_0", 0, 1, None),
+        ("field_1_b0", 1, 1, 0),
+        ("field_1_b1", 1, 1, 1),
+        ("field_1_b6", 1, 1, 6),
+        ("field_2", 2, 1, None),
+    ]
+
+
+def test_the_bit_fields_proposal_generates_and_its_tests_expect_it(tmp_path: Path) -> None:
+    frames = samples.websocket_client_frames() + samples.websocket_server_frames()
+    skeleton = propose(frames, [CLIENT] * 7 + [SERVER] * 7)
+    parent = _parent("tcp:port=80")
+    text = proposed_yaml("ws", 960, parent, skeleton, "ws.pcap", len(frames))
+    _generates(text)
+    lines = text.splitlines()
+    assert "  - struct: bits_0    # byte 0, cut into bit fields" in lines
+    assert "  - struct: bits_1    # byte 1, cut into bit fields" in lines
+    assert any(line.startswith("          - {name: field_1_b1, width: 7}") for line in lines)
+    model = load(text, filename="plugin.proposed.yaml").model
+    assert model.parents[0].protocol.text == "tcp"
+
+    payload = Payload(9, ("ethernet", "ip", "tcp"), frames[6], cut=3)
+    test_text = packet_test("ws", 960, "ws/pcap-001", payload, skeleton, "ws.pcap", parent)
+    path = tmp_path / "t.yaml"
+    path.write_text(test_text)
+    test = packets.load(path, path.name, TYPES)
+    assert {a.name: a.value for a in test.attributes} == {
+        "field_0_b0": 1,
+        "field_0_b1": 0,
+        "field_0_b4": 8,
+        "field_1_b0": 1,
+        "field_1_b1": 2,
+    }
+    assert "      bit_offset: 1" in test_text.splitlines()
+    assert 'bytes_source: "captured: the payload of frame 9 of ws.pcap, from byte 3"' in test_text

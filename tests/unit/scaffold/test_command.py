@@ -89,6 +89,7 @@ def test_scaffold_writes_the_proposal_and_one_test_per_payload(scaffold: Run, wo
     assert result["pcap"] == "capture.pcap"
     assert result["format"] == "pcap"
     assert result["parent"] == "udp:port=4433"
+    assert result["skip_until"] is None
     assert result["model"] == "plugin.yaml"
     assert result["protocol"] == {"label": "demo", "name": "DEMO", "id": 960}
     assert result["packets"] == {
@@ -101,6 +102,9 @@ def test_scaffold_writes_the_proposal_and_one_test_per_payload(scaffold: Run, wo
             "malformed": 0,
             "truncated": 0,
             "unsupported-link": 0,
+            "retransmission": 0,
+            "gap": 0,
+            "skip-until": 0,
         },
     }
     assert result["skeleton"]["header_length"] == 10
@@ -344,3 +348,57 @@ def test_tagged_frames_and_a_name_that_is_not_utf8(scaffold: Run, work: Path) ->
     text = (work / "plugin.proposed.yaml").read_text()
     assert "classify:" not in text
     assert "cap\\xff.pcap" in text
+
+
+def test_a_websocket_capture_under_tcp_after_its_handshake(scaffold: Run, work: Path) -> None:
+    (work / "ws.pcap").write_bytes(samples.websocket_capture())
+    args = ("--from-pcap", "ws.pcap", "--parent", "tcp:port=80", "--skip-until", "0d0a0d0a")
+    code, doc = scaffold(*args)
+    assert code == 0, doc["error"]
+    result = doc["result"]
+    assert result["skip_until"] == "0d0a0d0a"
+    assert result["packets"]["payloads"] == 14
+    assert {k: v for k, v in result["packets"]["skipped"].items() if v} == {
+        "empty": 2,
+        "retransmission": 1,
+        "skip-until": 1,
+    }
+    fields = [
+        (f["name"], f.get("bit_offset"), f.get("bit_width")) for f in result["skeleton"]["fields"]
+    ]
+    assert fields == [
+        ("field_0_b0", 0, 1),  # FIN
+        ("field_0_b1", 1, 3),  # RSV1-3
+        ("field_0_b4", 4, 4),  # opcode
+        ("field_1_b0", 0, 1),  # MASK
+        ("field_1_b1", 1, 7),  # the 7-bit payload length
+    ]
+    proposed = (work / "plugin.proposed.yaml").read_text()
+    assert "  - struct: bits_1    # byte 1, cut into bit fields" in proposed
+    # The server's first frame came in the segment of its 101 answer.
+    first = (work / "tests/demo-pcap-001.yaml").read_text()
+    assert f"the payload of frame 4 of ws.pcap, from byte {len(samples.WS_ANSWER)}" in first
+    assert scaffold(*args)[1]["result"]["files"][0]["action"] == "unchanged"
+
+
+@pytest.mark.parametrize("value", ["", "0x", "0d0", "zz", "0d 0a 0"])
+def test_skip_until_is_hex_bytes(scaffold: Run, value: str) -> None:
+    code, doc = scaffold("--from-pcap", "capture.pcap", "--parent", "tcp", "--skip-until", value)
+    assert code == 2
+    assert "--skip-until" in doc["error"]["message"]
+
+
+def test_skip_until_accepts_separators(scaffold: Run, work: Path) -> None:
+    (work / "ws.pcap").write_bytes(samples.websocket_capture())
+    code, doc = scaffold(
+        "--from-pcap", "ws.pcap", "--parent", "tcp", "--skip-until", "0x0D:0a 0d0a"
+    )
+    assert code == 0, doc["error"]
+    assert doc["result"]["skip_until"] == "0d0a0d0a"
+
+
+def test_skip_until_needs_a_tcp_parent(scaffold: Run, work: Path) -> None:
+    code, doc = scaffold(*ARGS, "--skip-until", "0d0a")
+    assert code == 2
+    assert doc["error"]["code"] == "usage.conflicting-options"
+    assert not (work / "tests").exists()

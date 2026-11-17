@@ -410,6 +410,32 @@ one packet test per payload (`tests/<label>-pcap-<n>.yaml`, at most
 that every payload has, named `field_<offset>` (a length field is named
 `length`), with a comment saying what it saw. It never edits `plugin.yaml`.
 
+A byte whose bits vary independently (a flag that is set with several
+values of the rest of the byte, or one that the two directions of a
+connection set to opposite values beside bits that vary within a
+direction, such as WebSocket's MASK) is proposed as bit fields, `field_<offset>_b<bit>` (bits
+counted from the most significant), in a struct `bits_<offset>`. A byte
+whose varying bits form one number stays one field, and so does a byte
+that is constant within each direction (a per-flow identifier such as
+RTP's SSRC).
+
+With a TCP parent (`tcp:port=80`), `scaffold` follows each direction of
+each connection as a stream: the payloads are the segments' bytes in
+sequence order, a retransmitted segment is skipped and only the new bytes of
+an overlapping one are kept, and a segment after bytes the capture lacks is
+skipped (`gap`). Each payload is still what one segment carries: several
+messages in one segment, or one message over several, are not split or
+joined. `--skip-until HEX` skips each direction's bytes up to the end of a
+byte pattern, in every session: after an HTTP upgrade (WebSocket),
+`0d0a0d0a` skips the request and the answer, and a frame in the answer's
+segment becomes a payload of its own. A direction that never sends the
+pattern gives no payload.
+
+<!-- doc:skip needs a capture of a WebSocket session -->
+```sh
+mmt-plugin -C ws scaffold --from-pcap websocket.pcap --parent tcp:port=80 --skip-until 0d0a0d0a
+```
+
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init capture --id 961 --parent udp:dport=4433 --sdk-profile 1.10.2

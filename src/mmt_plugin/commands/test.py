@@ -27,20 +27,29 @@ Stages, reported in ``result.stages`` (``ran``, ``up-to-date``, ``failed``,
    (``mmt_plugin.testing.frames``), through mmt-dpi's stack, so the plugin's
    own parent classification must find it, directly above the selector's
    protocol and at the offset those layers end at (``<parent>``); its next
-   protocol is not checked there. A mismatch is ``test.packet-failed``, a
-   crash or a timeout ``test.crash`` (exit 6); the harness restarts after a
-   crash, so every packet is reported. ``--fail-fast`` stops at the first
-   failing packet (the rest are ``skipped``);
+   protocol is not checked there. A session test
+   (``mmt_plugin.testing.session``) runs its packets, one TCP connection,
+   in order in a harness of its own, so the plugin keeps its session state
+   from one packet to the next: one ``result.packets`` entry, with
+   ``session`` (its packet count), each failure with the ``packet`` (the
+   step) it is in. A mismatch is ``test.packet-failed``, a crash or a
+   timeout ``test.crash`` (exit 6); the harness restarts after a crash, so
+   every packet is reported (a session test that crashes is not run
+   again). ``--fail-fast`` stops at the first failing packet (the rest are
+   ``skipped``);
 4. ``sanitize`` (``--sanitize``): the plugin is built again with ASan and
    UBSan into ``<build-dir>/sanitize/``, and a sanitized harness runs each
    packet, then its ``--fuzz-count`` truncated and random packets
    (``mmt_plugin.testing.fuzz``, seeded by ``--seed``); a test with
-   ``through`` runs them again behind its lower layers. Any sanitizer report,
-   crash or timeout is ``test.crash`` (exit 6);
+   ``through`` runs them again behind its lower layers. A session test runs
+   as it is, then in corrupted copies (``mutate_frames``), each in a
+   harness of its own, until they make ``--fuzz-count`` packets. Any
+   sanitizer report, crash or timeout is ``test.crash`` (exit 6);
 5. ``bench`` (``--bench``): packets per second of the plugin, and of an
-   empty plugin with the same id and name (the baseline), in samples.
-   Advisory: a bench that cannot run is the warning ``test.bench-failed``,
-   and the exit code never changes.
+   empty plugin with the same id and name (the baseline), in samples, over
+   the packet tests (not the session tests). Advisory: a bench that cannot
+   run is the warning ``test.bench-failed``, and the exit code never
+   changes.
 
 ``--strict`` fails on a warning of the model, the build or the tests (not
 the bench). Progress (a meter of the packets) shows only on a terminal.
@@ -82,7 +91,7 @@ from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, Profile
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.testing import harness as harness_mod
 from mmt_plugin.testing.frames import build_frame
-from mmt_plugin.testing.fuzz import fuzz_packets
+from mmt_plugin.testing.fuzz import fuzz_packets, mutate_frames
 from mmt_plugin.testing.packets import (
     ExpectedParent,
     Failure,
@@ -90,7 +99,12 @@ from mmt_plugin.testing.packets import (
     PacketTestError,
     check,
     harness_lengths,
-    load,
+)
+from mmt_plugin.testing.session import (
+    SessionTest,
+    build_frames,
+    check_frame,
+    load_test,
 )
 from mmt_plugin.ui import style
 from mmt_plugin.ui.streams import StreamStyle
@@ -216,26 +230,37 @@ def packet_paths(given: Sequence[str], project: Path) -> list[Path]:
     return unique
 
 
+#: A packet test or a session test.
+_Test = PacketTest | SessionTest
+
+
 @dataclass
 class _Packet:
     """One packet test's result: the harness's attachment, or the run
-    ``through`` the test's parent selector."""
+    ``through`` the test's parent selector; or one session test's
+    (``frames``: its packets)."""
 
-    test: PacketTest
+    test: _Test
     through: bool = False
     status: str = "skipped"
     checked: int = 0
     failures: list[Failure] = field(default_factory=list)
+    frames: int = 0
+
+    @property
+    def session(self) -> SessionTest | None:
+        return self.test if isinstance(self.test, SessionTest) else None
 
     @property
     def name(self) -> str:
         """The id, and the parent of the run through it."""
-        if self.through and self.test.through is not None:
+        if self.through and isinstance(self.test, PacketTest) and self.test.through is not None:
             return f"{self.test.id} through {self.test.through.text}"
         return self.test.id
 
     def record(self, n: int) -> bytes | harness_mod.Record:
         """The harness record of this run (``n``: its place in the file)."""
+        assert isinstance(self.test, PacketTest)
         return _record(self.test, self.through, self.test.data, n)
 
     def to_json(self) -> dict[str, Any]:
@@ -246,8 +271,10 @@ class _Packet:
             "attributes": self.checked,
             "failures": [f.to_json() for f in self.failures],
         }
-        if self.through and self.test.through is not None:
+        if self.through and isinstance(self.test, PacketTest) and self.test.through is not None:
             out["through"] = self.test.through.text
+        if self.session is not None:
+            out["session"] = self.frames
         return out
 
     def detail(self) -> str:
@@ -256,10 +283,11 @@ class _Packet:
         if not self.failures:
             return _plural(self.checked, "attribute")
         first = self.failures[0]
+        where = "" if first.packet is None else f"packets[{first.packet}] "
         if self.status == "crash":
-            text = f"crash: {first.actual}"
+            text = f"{where}crash: {first.actual}"
         else:
-            text = f"{first.attribute}: expected {first.expected}, got {first.actual}"
+            text = f"{where}{first.attribute}: expected {first.expected}, got {first.actual}"
         more = len(self.failures) - 1
         return f"{text} (+{more} more)" if more else text
 
@@ -272,20 +300,21 @@ def _record(test: PacketTest, through: bool, data: bytes, n: int) -> bytes | har
     return data
 
 
-def _entries(tests: Sequence[PacketTest]) -> list[_Packet]:
+def _entries(tests: Sequence[_Test]) -> list[_Packet]:
     """The runs of ``tests``: each one, then its run through its parent."""
     out: list[_Packet] = []
     for test in tests:
         out.append(_Packet(test))
-        if test.through is not None:
+        if isinstance(test, PacketTest) and test.through is not None:
             out.append(_Packet(test, through=True))
     return out
 
 
 def _expected_parent(profile: Profile, packet: _Packet) -> ExpectedParent | None:
-    """Where the run through the parent expects the plugin, or ``None``."""
+    """Where the run through the parent (or a session test's) expects the
+    plugin, or ``None``."""
     through = packet.test.through
-    if not packet.through or through is None:
+    if not (packet.through or packet.session is not None) or through is None:
         return None
     parents = profile.parents
     return ExpectedParent(
@@ -456,13 +485,13 @@ class TestCommand:
 
     def _load_tests(
         self, args: argparse.Namespace, project: Path, profile: Profile, run: _Run
-    ) -> tuple[list[PacketTest], CliError | None]:
+    ) -> tuple[list[_Test], CliError | None]:
         types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
-        tests: list[PacketTest] = []
+        tests: list[_Test] = []
         errors: list[Diagnostic] = []
         for path in packet_paths(args.packets, project):
             try:
-                tests.append(load(path, show_path(path, project), types))
+                tests.append(load_test(path, show_path(path, project), types))
             except PacketTestError as exc:
                 errors.append(exc.diagnostic)
         seen: dict[str, str] = {}
@@ -699,7 +728,7 @@ class TestCommand:
         tools: _Toolchain,
         generation: Generation,
         build_dir: Path,
-        tests: list[PacketTest],
+        tests: list[_Test],
         run: _Run,
         choice: ProfileChoice,
     ) -> CliError | None:
@@ -736,7 +765,13 @@ class TestCommand:
             if error is not None:
                 return error
         if args.bench:
-            self._bench(ctx, tools, generation, program, plugin, tests, run)
+            packet_tests = [t for t in tests if isinstance(t, PacketTest)]
+            if packet_tests:
+                self._bench(ctx, tools, generation, program, plugin, packet_tests, run)
+            else:
+                self._bench_failed(
+                    "it measures packet tests, and there are only session tests", run
+                )
         return None
 
     # --- stage 3 ---
@@ -751,11 +786,12 @@ class TestCommand:
         names: list[str],
         run: _Run,
     ) -> CliError | None:
-        pending = list(range(len(run.packets)))
-        records = [p.record(n) for n, p in enumerate(run.packets)]
+        pending = [n for n, p in enumerate(run.packets) if p.session is None]
+        records = {n: run.packets[n].record(k) for k, n in enumerate(pending)}
+        sessions = [p for p in run.packets if p.session is not None]
         aliases = {p.id: p.alias or p.macro for p in tools.profile.parents.protocols()}
         packets_file = tools.test_dir / "packets.bin"
-        with ctx.progress("packets", total=len(pending)) as progress:
+        with ctx.progress("packets", total=len(run.packets)) as progress:
             done = 0
 
             def seen(line: str) -> None:
@@ -789,6 +825,7 @@ class TestCommand:
                     )
                 for k, observation in parsed.observations.items():
                     packet = run.packets[pending[k]]
+                    assert isinstance(packet.test, PacketTest)
                     packet.failures, packet.checked = check(
                         packet.test,
                         observation,
@@ -821,6 +858,18 @@ class TestCommand:
                 if args.fail_fast:
                     break
                 pending = pending[crashed + 1 :]
+            for packet in sessions:
+                # --fail-fast: a session test before the first failure (in
+                # file order) still runs; the ones after it are skipped.
+                at = run.packets.index(packet)
+                failed_before = any(p.status in ("fail", "crash") for p in run.packets[:at])
+                if args.fail_fast and failed_before:
+                    continue
+                error = self._session(ctx, tools, program, plugin, names, packet, aliases, run)
+                if error is not None:
+                    return error
+                done += 1
+                progress.update(done)
         if args.fail_fast:
             first = next(
                 (n for n, p in enumerate(run.packets) if p.status in ("fail", "crash")), None
@@ -849,6 +898,71 @@ class TestCommand:
             "each failure names the attribute, the expected and the actual value",
         )
 
+    def _session(
+        self,
+        ctx: Context,
+        tools: _Toolchain,
+        program: Path,
+        plugin: Path,
+        names: list[str],
+        packet: _Packet,
+        aliases: Mapping[int, str],
+        run: _Run,
+    ) -> CliError | None:
+        """Run one session test's packets, in order, in a harness of its own
+        (its session state is the plugin's), and check each one; a
+        ``test.load-failed`` error, or ``None``."""
+        test = packet.session
+        assert test is not None
+        frames = build_frames(test)
+        packet.frames = len(frames)
+        packets_file = tools.test_dir / "session.bin"
+        harness_mod.write_packets(
+            packets_file, [harness_mod.Record(f.frame, frame=True) for f in frames]
+        )
+        result = harness_mod.run(
+            program,
+            ["check", str(packets_file)],
+            plugin,
+            tools.sdk_plugins,
+            timeout=TIMEOUT + TIMEOUT_PER_PACKET * len(frames),
+            log=ctx.log,
+        )
+        if result.stderr and ctx.verbose:
+            ctx.stderr.write(result.stderr)
+        parsed = harness_mod.parse_check(result.lines, names)
+        reason = harness_mod.crash_reason(result, len(frames))
+        if parsed.malformed is not None:
+            reason = reason or f"unreadable harness output: {parsed.malformed!r}"
+        if parsed.error is not None and reason is None:
+            return self._load_failed(parsed.error, result.stderr, run)
+        if parsed.plugin is None or (
+            reason is not None and parsed.unfinished is None and not parsed.observations
+        ):
+            return self._load_failed(
+                reason or "the harness printed no protocol", result.stderr, run
+            )
+        parent = _expected_parent(tools.profile, packet)
+        assert parent is not None
+        failures: list[Failure] = []
+        checked = 0
+        for k, observation in sorted(parsed.observations.items()):
+            found, count = check_frame(
+                test, frames[k], observation, parsed.plugin, parent, aliases
+            )
+            failures += found
+            checked += count
+        packet.failures, packet.checked = failures, checked
+        packet.status = "fail" if failures else "pass"
+        if reason is not None:
+            crashed = (
+                parsed.unfinished if parsed.unfinished is not None else len(parsed.observations)
+            )
+            step = frames[min(crashed, len(frames) - 1)].step
+            packet.status = "crash"
+            packet.failures = [Failure("<harness>", "no crash", reason, step), *failures]
+        return None
+
     def _load_failed(self, reason: str, stderr: str, run: _Run) -> CliError:
         last = next((x.strip() for x in reversed(stderr.splitlines()) if x.strip()), "")
         if last:
@@ -869,7 +983,7 @@ class TestCommand:
         source: str,
         build_dir: Path,
         label: str,
-        tests: list[PacketTest],
+        tests: list[_Test],
         run: _Run,
     ) -> CliError | None:
         program, _, found = self._compile_harness(
@@ -883,6 +997,8 @@ class TestCommand:
         # it runs through the test's parent, and its bytes (the payload).
         origin: list[tuple[PacketTest, int, bool, bytes]] = []
         for test in tests:
+            if not isinstance(test, PacketTest):
+                continue
             fuzzed = fuzz_packets(args.seed, test.id, test.data, args.fuzz_count)
             for through in (False, True) if test.through is not None else (False,):
                 for k, packet in enumerate([test.data, *fuzzed]):
@@ -957,6 +1073,17 @@ class TestCommand:
                 start = index + 1
                 if args.fail_fast:
                     break
+            for session in tests:
+                if not isinstance(session, SessionTest):
+                    continue
+                if len(crashes) >= MAX_CRASHES or (args.fail_fast and crashes):
+                    break
+                failed, count = self._sanitize_session(
+                    args, ctx, tools, program, plugin, session, crashes, run
+                )
+                if failed is not None:
+                    return failed
+                ran += count
         run.sanitize = {"seed": args.seed, "count": ran, "crashes": crashes}
         if crashes:
             return CliError(
@@ -966,6 +1093,89 @@ class TestCommand:
                 "each crash names its packet; the same --seed reproduces it",
             )
         return None
+
+    def _sanitize_session(
+        self,
+        args: argparse.Namespace,
+        ctx: Context,
+        tools: _Toolchain,
+        program: Path,
+        plugin: Path,
+        test: SessionTest,
+        crashes: list[dict[str, Any]],
+        run: _Run,
+    ) -> tuple[CliError | None, int]:
+        """Run a session test under the sanitizers, as it is (copy 0), then
+        in corrupted copies until they make ``--fuzz-count`` packets, each
+        in a harness of its own; its crashes go to ``crashes``. A
+        ``test.load-failed`` error, or ``None``, and the packets run."""
+        frames = build_frames(test)
+        start = test.through.offset
+        copies = 1 + math.ceil(args.fuzz_count / len(frames))
+        packets_file = tools.test_dir / "fuzz-session.bin"
+        ran = 0
+        for copy in range(copies):
+            if len(crashes) >= MAX_CRASHES:
+                break
+            data = (
+                [f.frame for f in frames]
+                if copy == 0
+                else mutate_frames(args.seed, test.id, copy, [f.frame for f in frames], start)
+            )
+            harness_mod.write_packets(
+                packets_file, [harness_mod.Record(d, frame=True) for d in data]
+            )
+            result = harness_mod.run(
+                program,
+                ["fuzz", str(packets_file)],
+                plugin,
+                tools.sdk_plugins,
+                timeout=TIMEOUT + TIMEOUT_PER_PACKET * len(data),
+                log=ctx.log,
+            )
+            reason = harness_mod.crash_reason(result, len(data))
+            error = next((x for x in result.lines if x.startswith("error ")), None)
+            if reason is None and error is not None:
+                return self._load_failed(error[6:], result.stderr, run), ran
+            indices = [harness_mod.at_index(x) for x in result.lines if x.startswith("at")]
+            if reason is None and any(i is None for i in indices):
+                reason = "unreadable harness output"
+            if reason is None:
+                ran += len(data)
+                continue
+            last = next((i for i in reversed(indices) if i is not None and i < len(data)), None)
+            if last is None:
+                return self._load_failed(reason, result.stderr, run), ran
+            ran += last + 1
+            frame = frames[last]
+            # The TCP payload, without Ethernet padding (the IPv4 length is intact).
+            payload = data[last][start : 14 + int.from_bytes(data[last][16:18], "big")]
+            crashes.append(
+                {
+                    "test": test.id,
+                    "index": copy,
+                    "packet": frame.step,
+                    "length": len(payload),
+                    "reason": reason,
+                    "bytes": payload.hex(" "),
+                }
+            )
+            which = "the session" if copy == 0 else f"corrupted copy {copy}"
+            run.diagnostics.append(
+                Diagnostic(
+                    Severity.ERROR,
+                    "test.crash",
+                    f"{test.id}: {which}, packets[{frame.step}]"
+                    f" ({_plural(len(payload), 'byte')}, --seed {args.seed}): {reason}",
+                    hint="mmt-plugin test --sanitize -v shows the sanitizer's report",
+                    location=Location(test.file),
+                )
+            )
+            if result.stderr and ctx.verbose:
+                ctx.stderr.write(result.stderr)
+            if args.fail_fast:
+                break
+        return None, ran
 
     # --- stage 5 ---
 

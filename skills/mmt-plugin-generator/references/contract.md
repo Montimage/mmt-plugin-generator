@@ -24,7 +24,7 @@ also on a usage error, and nothing else. The skill reads these keys:
 | `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project inside it, absolute outside it (a `build.cc` error or note in an SDK header); `line` and `column` are 1-based and may be `null` (a whole file). Edit there, unless `file` is outside the project. |
 | `diagnostics[].hint` | one line on how to fix it, or `null` | |
 | `diagnostics[].related[]` | other places (`"first defined here"`) | |
-| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
+| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
 
 Keys not listed here may be added; ignore them. Paths in the envelope are
 relative to the project (`-C`) when inside it, absolute otherwise.
@@ -49,7 +49,10 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   in the project before this session (stop and report instead). A failing
   entry with `through` ran through the plugin's parent: `<protocol>` there
   (not classified) or `<parent>` is fixed in `parents:` (its `classify`) or
-  in `<label>_hook_register_parents`.
+  in `<label>_hook_register_parents`. An entry with `session` is a session
+  test: each failure's `packet` is the index of its step in the file's
+  `packets`; a value that depends on earlier packets is fixed in the
+  session hooks of `src/<label>_impl.c`.
 - `build.missing-hook` is located at `src/<label>_impl.c`, without a line:
   add the function there, with the declaration of the hint.
 - A `build.cc` error at an absolute path is in a file outside the project,
@@ -125,6 +128,8 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.default-scope` | Warning (PDL v1 only): give the attribute a `scope`. |
 | `model.pointer-field` | Warning: a `T*` field is 4 bytes read as `MMT_DATA_POINTER`; check that the spec means a pointer. |
 | `model.branch-offset-mismatch` | Warning (running offsets): give the attribute after the `if` an explicit offset. |
+| `model.define-sdk-name` | A define has the name of an SDK macro, constant or type (`PROTO_IP`): rename it; to use the SDK's protocol id, name the SDK macro directly. |
+| `model.data-len-width` | Warning: the `length` is not the fixed-width type's width (the message names both): use the type's width, or keep it only when the spec's field is narrower than its type (a 24-bit integer in `MMT_U32_DATA`). |
 | `model.name-collision` | Two names become the same C identifier: rename one (the hint names both). |
 | `model.integer-length` | An integer's `length` must be 1 to 8 bytes and fit its type: fix the type or the length. |
 | `model.variable-length` | A per-packet length needs a byte type: use `MMT_BINARY_DATA`, `MMT_BINARY_VAR_DATA` or `MMT_STRING_DATA`. |

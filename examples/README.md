@@ -27,7 +27,10 @@ Each directory is a project:
   messages). Their expected values
   come from the protocol specifications, by the rules of
   `tests/corpus/README.md`; each one names its source. In an example with a
-  parent, one of them also runs through it (`through`, below).
+  parent, one of them also runs through it (`through`, below). The
+  WebSocket and OCPP examples also have session tests,
+  `tests/session-*.yaml` (#99): TCP sessions, packet by packet, written
+  from the same specifications.
 - `.gitignore`: `build/`.
 
 Build and test one, with an SDK in a private prefix (`AGENTS.md`, "A
@@ -41,8 +44,9 @@ uv run mmt-plugin -C examples/dns test --sdk <dir>/opt/mmt --cc gcc --sanitize
 `generate --check`, the packet tests' bytes) and, with `MMT_GOLDEN_SDK`, runs
 `validate`, `build` and `test --sanitize` on each one, then breaks each
 parent's classification and checks that only the run through the parent
-fails, and replays the WebSocket and OCPP examples' TCP sessions, the two
-plugins also side by side; CI runs both.
+fails (and the session tests, which run through it too), runs the
+WebSocket and OCPP examples' session tests under the sanitizers, and an
+OCPP session with the two plugins side by side; CI runs both.
 
 ## The ports
 
@@ -195,7 +199,7 @@ an earlier segment), which no `plugin.yaml` expression can read.
   segment opens a new one, mid-stream, which this plugin does not claim
   (no handshake) (#104).
 - **Where it runs in mmt-dpi 1.10.2** (checked empirically, and kept by the
-  session replay of `tests/unit/examples/test_sdk.py`): TCP stops a packet
+  session tests, `tests/session-*.yaml`): TCP stops a packet
   at a layer a plugin classified (above, "Through the parent"), so the
   layer's session data hooks do not run while TCP classifies the session.
   mmt-dpi then calls the session's owner, this classification function,
@@ -206,9 +210,9 @@ an earlier segment), which no `plugin.yaml` expression can read.
   reach the layer: `session_data_init` (which keeps the state) and
   `session_data_analysis` parse them then. Each packet is parsed once.
 
-The replay builds whole TCP sessions (`tcpsession.py`: handshake, sequence
-numbers, checksums, Ethernet padding) on port 8080 and checks every
-attribute of every packet: the handshake, masked and unmasked frames, two
+The session tests (`tests/session-*.yaml`, #99: `mmt-plugin test` builds
+the TCP frames, handshake, sequence numbers, checksums, Ethernet padding)
+run on port 8080 and check every attribute of every packet: the handshake, masked and unmasked frames, two
 frames in a segment, a fragmented message, a 16-bit frame over two
 segments, a split header, a retransmission, lost payload bytes, a lost
 frame header, close frames, more than 40 packets, a refused upgrade, plain
@@ -307,7 +311,7 @@ frame header, the unmasking, the TCP state), trimmed.
   same UniqueId at once. A UniqueId over 36 bytes, the specification's
   maximum, is not kept, so its answer has no action. Without a session
   (the harness's packets), nothing is linked, so the packet tests'
-  answers have no action; the session replay checks the links.
+  answers have no action; the session tests check the links.
 - **State and where it runs** are `websocket_example`'s (above): the TCP
   sequence numbers per direction, a frame over segments, a split header,
   the parse starting again after a lost header, the segment's end at the
@@ -316,8 +320,8 @@ frame header, the unmasking, the TCP state), trimmed.
   calling the classification function, then after 40 packets the session
   data hooks.
 
-`tests/unit/examples/test_sdk.py` replays TCP sessions through it (on
-port 9000) and checks every attribute of every packet: CALL then
+Its session tests (`tests/session-*.yaml`, #99) run TCP sessions through
+it (on port 9000) and check every attribute of every packet: CALL then
 CALLRESULT and CALLERROR with their action, an answer seen twice, from
 the CALL's own side or for an unknown UniqueId, the same UniqueId sent by
 both sides, two messages in a segment, the typed fields, a decoy
@@ -329,7 +333,7 @@ selecting `ocpp2.0.1`, a refused upgrade, a chat WebSocket session, an
 starts after the handshake or at the answer, an answer's header block
 over two segments, a CALL retransmitted after 70 s of silence and a lost
 frame header; with and without the sanitizers, then corrupted and cut
-short. A second test loads `mmtp_ocpp_example.so` and
+short. `tests/unit/examples/test_sdk.py` also loads `mmtp_ocpp_example.so` and
 `mmtp_websocket_example.so` in one plugin directory: the `ocpp1.6`
 session is `OCPP_EXAMPLE`, the chat session `WEBSOCKET_EXAMPLE`, both
 directly above TCP.

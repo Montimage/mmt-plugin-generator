@@ -120,6 +120,20 @@ classified) when the parent's classification does not match the packet and
 `parents:` (or the hook), not the selector, unless the selector contradicts
 the spec. That run does not check `next`.
 
+When a value depends on earlier packets of the connection (a handshake, a
+message over two segments, an answer linked to its request), write a
+session test, `tests/<label>-session-<case>.yaml`, from the spec's
+exchange: `session` (`through: "tcp:dport=N"`, the protocol, its id, and
+the `attributes` every packet of the plugin's checks, absent where a
+packet does not list them) and `packets`, the steps in order: `open: true`
+(the handshake), `from: client` or `from: server` with the segment's
+`bytes` and its `expect` (`"none"`, or its `attributes`, without
+`offset`/`length` when the value comes from an earlier packet),
+`retransmit: true`, `lost: N`, and `idle: N` seconds. `test` builds the
+TCP frames and runs them in one harness, through the plugin's parent;
+each failure names its step (`packet`). The format is in
+`tests/corpus/README.md`, "Session files".
+
 ## From a capture
 
 `scaffold --from-pcap` writes `<project>/plugin.proposed.yaml` and one

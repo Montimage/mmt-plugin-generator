@@ -169,8 +169,9 @@ jobs:
           path: ${{ runner.temp }}/release
       - name: Install the wheel and the sdist with uv tool install
         # Each one into its own tool directory, outside the checkout, then
-        # run: its version, and generate --check on every example, which
-        # fails when an examples/*/plugin.lock records another version.
+        # run: its version, and generate --check on every example and on
+        # the OCI-P project, which fails when an examples/*/plugin.lock or
+        # ocip-plugin/project/plugin.lock records another version.
         env:
           VERSION: ${{ needs.build.outputs.version }}
           PYTHON: ${{ matrix.python }}
@@ -186,8 +187,8 @@ jobs:
           assert r["python"].startswith(sys.argv[2] + "."), r
           print("version", r["version"], "on Python", r["python"])
           ' "$VERSION" "$PYTHON"
-            for d in examples/*/; do "$bin" -q -C "$d" generate --check; done
-            echo "generate --check: every example is up to date"
+            for d in examples/*/ ocip-plugin/project/; do "$bin" -q -C "$d" generate --check; done
+            echo "generate --check: every example and the OCI-P project are up to date"
           }
           cd "$RUNNER_TEMP/release"
           sha256sum -c SHA256SUMS

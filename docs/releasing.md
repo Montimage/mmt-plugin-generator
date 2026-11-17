@@ -135,19 +135,20 @@ No secret is needed: the workflow uses its `GITHUB_TOKEN` and OIDC.
 
 ### Cutting a release
 
-1. On a branch from `dev`, set the version and regenerate the examples,
-   whose `plugin.lock` records the generator version (`generate --check`
-   fails on every example otherwise; CI's Python job and the release's
-   `verify` job both check it):
+1. On a branch from `dev`, set the version and regenerate the examples
+   and the OCI-P project `ocip-plugin/project`, whose `plugin.lock`
+   records the generator version (`generate --check` fails on each one
+   otherwise; CI's Python job and the release's `verify` job both check
+   it):
 
    ```sh
    uv version 0.1.0
-   for d in examples/*/; do uv run mmt-plugin -C "$d" generate; done
+   for d in examples/*/ ocip-plugin/project/; do uv run mmt-plugin -C "$d" generate; done
    git diff --stat
    ```
 
-   `uv version` updates `pyproject.toml` and `uv.lock`; the examples change
-   only in `plugin.lock`. Run `uv version` with the uv that CI pins
+   `uv version` updates `pyproject.toml` and `uv.lock`; the examples and
+   the OCI-P project change only in `plugin.lock`. Run `uv version` with the uv that CI pins
    (`UV_VERSION` in `.github/workflows/release.yml`): a newer uv may also
    raise the `revision` of `uv.lock`. Add the release's section to
    [`CHANGELOG.md`](../CHANGELOG.md), then open the PR against `dev`.
@@ -164,7 +165,7 @@ No secret is needed: the workflow uses its `GITHUB_TOKEN` and OIDC.
 
 4. Approve the `pypi` deployment when the workflow asks.
 5. Set `dev` to the next development version (`uv version 0.2.0.dev0`,
-   then regenerate the examples again).
+   then regenerate the examples and the OCI-P project again).
 
 ### Verifying a release
 

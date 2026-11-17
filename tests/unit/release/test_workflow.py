@@ -215,6 +215,8 @@ def test_the_dry_run_builds_checks_installs_and_builds_the_image() -> None:
     assert "MMT_REQUIRE_RELEASE_DIST: '1'" in jobs["build"]
     assert "uv tool install" in jobs["verify"]
     assert "generate --check" in jobs["verify"]
+    # The OCI-P project's plugin.lock records the version too (#138).
+    assert "for d in examples/*/ ocip-plugin/project/; do" in jobs["verify"]
     assert "docker build --target release" in jobs["container"]
     # The release's own wheel, by its exact name.
     assert '--build-arg WHEEL="mmt_plugin-$VERSION-py3-none-any.whl"' in jobs["container"]

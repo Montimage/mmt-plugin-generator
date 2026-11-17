@@ -72,8 +72,52 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
   folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
   envelope; 6, the capture evaluation.
+- Styled output (#54, N5): the width that boxes and tables are drawn to is
+  at most 500 cells (`ui.streams.MAX_WIDTH`), whatever `COLUMNS` or the
+  terminal says; `COLUMNS=100000` draws a 500-cell box
+  (`docs/design/cli.md`, section 10).
+- zsh completion (#54, N8): `-h`, `--help` and `--version` are no longer
+  offered once another option is on the line, and an option of an argparse
+  mutually exclusive group no longer offers the group's other options.
+  Decided: `--version` is excluded after another option although
+  `mmt-plugin --json --version` is valid (it prints the version envelope);
+  typing it in full still works. bash and fish completion are unchanged:
+  the issue asked for zsh, whose `_arguments` has exclusion lists. No
+  built-in command has a mutually exclusive group yet; the test command
+  of `tests/unit/test_completion.py` has one.
 
 ### Fixed
+
+- Styled output (#54, N1): `cell_width`, and `fit`, `box` and `table`
+  with it, count an emoji sequence as the 2 cells a terminal draws: a ZWJ
+  sequence, a regional-indicator flag, an emoji with a skin-tone modifier,
+  a character with VS16, a keycap; `fit` never cuts one in the middle. It
+  uses `unicodedata` only, with an approximation of
+  Extended_Pictographic (the emoji blocks), so an emoji outside them is
+  not joined. Decided: user text keeps its ZWJ escaped as `\u200d`
+  (`ui.render.escape` escapes every format character, #46), so a ZWJ
+  sequence draws joined only in text a renderer wrote; a lone regional
+  indicator counts 1, as `unicodedata` says.
+- Styled output (#54, N2): a table given a width below its minimum (one
+  cell per column plus the gaps) cuts each line to that width with an
+  ellipsis, instead of drawing it wider. Decided against dropping columns
+  or gaps first: a cut line keeps the first columns readable and the
+  rule is the one `box` already applies to a long line.
+- Styled output (#54, N3, N4): `meter(nan)` draws every cell empty and
+  ` n/a` instead of 100%, and an infinity clamps to 0% or 100%.
+  `sparkline` no longer raises on a NaN or infinite sample: a NaN is a gap,
+  an infinity clamps, `min` and `max` are of the finite samples (`n/a`
+  when there is none) and a NaN, infinite or non-positive `ceiling` draws
+  every level 0. `gradient_rgb` takes any float the same way.
+- Tests (#54, N7): already done on `dev` before this change (#55, which
+  found completion by name); the contract test now also finds the dummy
+  command by name, and the completion tests derive the command list from
+  the registry, so registering a command breaks none of them. The zsh
+  completion test (#54, R1, R2) also has a file next to the directory, to
+  show `-C` and `--project=` complete directories only, clears an
+  exported `FPATH`, and gives each line 10 s inside an outer limit of
+  10 s per line plus 60 s, so a broken setup ends in a readable diff.
+  N6 (bidi controls) was #46, closed.
 
 - `examples/websocket/` and `examples/ocpp/` (#104): their sessions get
   mmt-dpi's long session timeout (600 s, as its HTTP's), so a connection

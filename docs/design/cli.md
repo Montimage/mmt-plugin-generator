@@ -317,7 +317,7 @@ No other config file (maintainer's answer). Machine-specific values (prefixes, c
 | Compiler | `--cc` | `CC` | — | `gcc` |
 | Install prefix | `--prefix` / `--system` | `MMT_PLUGIN_PREFIX` | — | `${XDG_DATA_HOME:-~/.local/share}/mmt` (D11) |
 | Color | `--no-color` | `NO_COLOR`, `FORCE_COLOR`, `TERM` | — | auto (section 10) |
-| Width | — | `COLUMNS` | — | terminal size, else 80 |
+| Width | — | `COLUMNS` | — | terminal size, else 80; at most 500 |
 | Strictness | `--strict` | — | — | off |
 
 Relative paths in `--sdk`/`MMT_BASE`/`--prefix` are resolved against the current directory and reported absolute in `context`. A prefix without `dpi/include/mmt_log.h` is `sdk.invalid-prefix` (exit 4) with a hint.
@@ -509,7 +509,7 @@ Details fixed by #43 where section 6 or 7 leaves a choice:
 Details fixed by #22 where sections 4, 5, 6 or 10 leave a choice:
 
 - Human output (`Outcome`): `records` print when stdout is plain, and by a command with no `view`; `view(style)` renders the styled output with `mmt_plugin.ui.style` and is called only when stdout is styled; `text` prints as is in every mode (the completion script). A view that raises is `internal.unexpected` (exit 1). A new command adds only its view: the CLI makes the stream decisions and picks the mode. A view combines pieces with `style.join` (styled parts kept, text escaped), never `+` or an f-string.
-- The stream decision also carries `width` (`COLUMNS` when a positive number, else the terminal's width, else 80) and `tty`. Boxes take the full width, at least 8 cells.
+- The stream decision also carries `width` (`COLUMNS` when a positive number, else the terminal's width, else 80, at most 500 cells) and `tty`. Boxes take the full width, at least 8 cells.
 - User text is escaped with `ui.render.escape` in styled output too, backslashes included (`\\`), so a value reads the same in both modes.
 - Statuses: `pass`/ok `●` (low), `warn` `▲` (mid), `fail` `✗` (high), and `skip` `○` in the dim role (ASCII `+ ! x -`). Footer items are joined by ` · ` (ASCII `, `). The meter prints its value right after the cells, three digits wide (`■■■■■····· 50%`, `■■■■■■■■■■100%`). A sparkline prints `min N  max N  last N`.
 - Styled stderr: `<location or mmt-plugin>: ✗ error: <message> [<code>]` (the symbol and word high and bold, the code dim), `▲ warning:` (mid), `note:` (dim), and a dim `hint:` line. A plain stderr keeps the compiler-style lines byte for byte. A usage error is styled from `--no-color`, `NO_COLOR` and the stream, decided before parsing.

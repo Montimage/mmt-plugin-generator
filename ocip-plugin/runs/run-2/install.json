@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "install",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "ocip-plugin/project",
+    "sdk": {
+      "prefix": "/sdk/mmt",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    },
+    "prefix": {
+      "path": "/src/ocip-plugin/project/build/prefix",
+      "source": "--prefix"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "label": "ocip",
+    "protocol": {
+      "id": 960,
+      "name": "OCIP"
+    },
+    "prefix": "/src/ocip-plugin/project/build/prefix",
+    "build": "up-to-date",
+    "manifest": {
+      "path": "build/prefix/plugins/.mmt-plugin/ocip.json",
+      "action": "created",
+      "sha256": "9e32e913329285c87b67f926f2f2a3cf25e46c2689a1ebcb4d5a00202a7c42ee"
+    },
+    "files": [
+      {
+        "path": "build/prefix/plugins/mmtp_ocip.so",
+        "action": "created",
+        "sha256": "91a02c5e33951d8dabcfa6dbf5484a87629109ab97a4a26413b136914c7bfa2c"
+      }
+    ],
+    "dry_run": false
+  }
+}

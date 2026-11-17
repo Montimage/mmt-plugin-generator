@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "run",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "ocip-plugin/project",
+    "sdk": {
+      "prefix": "/sdk/mmt",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "profile": "1.10.2",
+    "build_dir": "build",
+    "capture": {
+      "path": "/src/ocip-plugin/capture/capture.pcap",
+      "format": "pcap",
+      "linktype": 1
+    },
+    "dry_run": false,
+    "stages": [
+      {
+        "name": "build",
+        "status": "up-to-date"
+      },
+      {
+        "name": "runner",
+        "status": "up-to-date"
+      },
+      {
+        "name": "capture",
+        "status": "ran"
+      }
+    ],
+    "plugins": [
+      "libmmt_business_app.so",
+      "libmmt_tcpip.so",
+      "libmmt_tdicom.so",
+      "libmmt_tmobile.so",
+      "mmtp_ocip.so"
+    ],
+    "summary": {
+      "frames": 101,
+      "processed": 101,
+      "skipped": 0,
+      "classified": 50
+    },
+    "protocols": [
+      {
+        "name": "OCIP",
+        "id": 960,
+        "packets": 50,
+        "attributes": [
+          {
+            "id": 1,
+            "name": "has_dtd",
+            "type": "MMT_U8_DATA",
+            "packets": 23
+          },
+          {
+            "id": 2,
+            "name": "dtd",
+            "type": "MMT_STRING_DATA",
+            "packets": 8
+          },
+          {
+            "id": 3,
+            "name": "command_type",
+            "type": "MMT_STRING_DATA",
+            "packets": 22
+          },
+          {
+            "id": 4,
+            "name": "session_id",
+            "type": "MMT_STRING_DATA",
+            "packets": 22
+          },
+          {
+            "id": 5,
+            "name": "is_request",
+            "type": "MMT_U8_DATA",
+            "packets": 23
+          },
+          {
+            "id": 4096,
+            "name": "p_hdr",
+            "type": "MMT_DATA_POINTER",
+            "packets": 23
+          },
+          {
+            "id": 4097,
+            "name": "p_data",
+            "type": "MMT_DATA_POINTER",
+            "packets": 23
+          },
+          {
+            "id": 4098,
+            "name": "p_payload",
+            "type": "MMT_DATA_POINTER",
+            "packets": 23
+          },
+          {
+            "id": 4099,
+            "name": "packet_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4100,
+            "name": "data_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4101,
+            "name": "payload_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4102,
+            "name": "first_packet_time",
+            "type": "MMT_DATA_TIMEVAL",
+            "packets": 0
+          },
+          {
+            "id": 4103,
+            "name": "last_packet_time",
+            "type": "MMT_DATA_TIMEVAL",
+            "packets": 0
+          },
+          {
+            "id": 4104,
+            "name": "p_data_len",
+            "type": "MMT_U64_DATA",
+            "packets": 23
+          },
+          {
+            "id": 4105,
+            "name": "stats",
+            "type": "MMT_UNDEFINED_TYPE",
+            "packets": 0
+          }
+        ]
+      }
+    ],
+    "paths": [
+      {
+        "path": "meta.ethernet.ip.tcp.OCIP",
+        "ids": [
+          1,
+          99,
+          178,
+          354,
+          960
+        ],
+        "packets": 50
+      },
+      {
+        "path": "meta.ethernet.ip.tcp.unknown",
+        "ids": [
+          1,
+          99,
+          178,
+          354,
+          0
+        ],
+        "packets": 36
+      },
+      {
+        "path": "meta.ethernet.ip.tcp.http",
+        "ids": [
+          1,
+          99,
+          178,
+          354,
+          153
+        ],
+        "packets": 15
+      }
+    ],
+    "paths_other": 0,
+    "stats": {
+      "elapsed_ms": 70,
+      "frames_per_second": 1451
+    }
+  }
+}

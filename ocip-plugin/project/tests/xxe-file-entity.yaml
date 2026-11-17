@@ -1,0 +1,76 @@
+# Packet test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format,
+# not from the plugin's output. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ocip/xxe-file-entity"
+model: "ocip"
+summary: "XXE V1: an external general entity echoed in sessionId, as sent (not resolved)"
+through: "tcp:dport=2208"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 2208 (OCI-P, cleartext)"
+  source: "OCI-P wire format: lukebeer/broadworks-ocip Builder.php (XML_HEAD + BroadsoftDocument, sessionId, command xsi:type) and TCPTransport.php (one document per message, newline-terminated, TCP 2208)"
+bytes:
+  - "3c 3f 78 6d 6c 20 76 65 72 73 69 6f 6e 3d 22 31"
+  - "2e 30 22 20 65 6e 63 6f 64 69 6e 67 3d 22 55 54"
+  - "46 2d 38 22 3f 3e 3c 21 44 4f 43 54 59 50 45 20"
+  - "42 72 6f 61 64 73 6f 66 74 44 6f 63 75 6d 65 6e"
+  - "74 20 5b 3c 21 45 4e 54 49 54 59 20 78 78 65 20"
+  - "53 59 53 54 45 4d 20 22 66 69 6c 65 3a 2f 2f 2f"
+  - "75 73 72 2f 6c 6f 63 61 6c 2f 62 72 6f 61 64 77"
+  - "6f 72 6b 73 2f 62 77 5f 62 61 73 65 2f 63 6f 6e"
+  - "66 2f 42 72 6f 61 64 77 6f 72 6b 73 43 6f 6e 66"
+  - "69 67 2e 78 6d 6c 22 3e 5d 3e 3c 42 72 6f 61 64"
+  - "73 6f 66 74 44 6f 63 75 6d 65 6e 74 20 70 72 6f"
+  - "74 6f 63 6f 6c 3d 22 4f 43 49 22 20 78 6d 6c 6e"
+  - "73 3d 22 43 22 20 78 6d 6c 6e 73 3a 78 73 69 3d"
+  - "22 68 74 74 70 3a 2f 2f 77 77 77 2e 77 33 2e 6f"
+  - "72 67 2f 32 30 30 31 2f 58 4d 4c 53 63 68 65 6d"
+  - "61 2d 69 6e 73 74 61 6e 63 65 22 3e 3c 73 65 73"
+  - "73 69 6f 6e 49 64 20 78 6d 6c 6e 73 3d 22 22 3e"
+  - "26 78 78 65 3b 3c 2f 73 65 73 73 69 6f 6e 49 64"
+  - "3e 3c 63 6f 6d 6d 61 6e 64 20 78 73 69 3a 74 79"
+  - "70 65 3d 22 41 75 74 68 65 6e 74 69 63 61 74 69"
+  - "6f 6e 52 65 71 75 65 73 74 22 20 78 6d 6c 6e 73"
+  - "3d 22 22 3e 3c 75 73 65 72 49 64 3e 61 64 6d 69"
+  - "6e 3c 2f 75 73 65 72 49 64 3e 3c 2f 63 6f 6d 6d"
+  - "61 6e 64 3e 3c 2f 42 72 6f 61 64 73 6f 66 74 44"
+  - "6f 63 75 6d 65 6e 74 3e 0a"
+bytes_source: "gen_pcaps.py attack_v1_file_entity"
+expect:
+  protocol: "OCIP"
+  proto_id: 960
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "has_dtd"
+      type: "MMT_U8_DATA"
+      offset: 38
+      length: 9
+      value: 1
+      source: "a <!DOCTYPE in the message"
+    - name: "dtd"
+      type: "MMT_STRING_DATA"
+      offset: 38
+      length: 63
+      value: "3c 21 44 4f 43 54 59 50 45 20 42 72 6f 61 64 73 6f 66 74 44 6f 63 75 6d 65 6e 74 20 5b 3c 21 45 4e 54 49 54 59 20 78 78 65 20 53 59 53 54 45 4d 20 22 66 69 6c 65 3a 2f 2f 2f 75 73 72 2f 6c"
+      text: "<!DOCTYPE BroadsoftDocument [<!ENTITY xxe SYSTEM \"file:///usr/l"
+      source: "the declaration, its first 63 bytes"
+    - name: "session_id"
+      type: "MMT_STRING_DATA"
+      offset: 272
+      length: 5
+      value: "26 78 78 65 3b"
+      text: "&xxe;"
+      source: "the <sessionId> text as sent: the entity reference is never resolved"
+    - name: "command_type"
+      type: "MMT_STRING_DATA"
+      offset: 308
+      length: 21
+      value: "41 75 74 68 65 6e 74 69 63 61 74 69 6f 6e 52 65 71 75 65 73 74"
+      text: "AuthenticationRequest"
+      source: "the <command>'s xsi:type"

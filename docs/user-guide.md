@@ -543,7 +543,9 @@ values tshark decodes, and the proposal extracts them.
 When tshark dissects several protocols at the start of the payloads (an
 HTTP upgrade, then WebSocket), `scaffold` lists them and stops: choose one
 with `--protocol`. A protocol on a port tshark does not know needs a
-`--decode-as` rule, passed to tshark as `-d`. Without tshark on `PATH`
+`--decode-as` rule, passed to tshark as `-d`: tshark runs without your
+Wireshark profile (preferences, decode-as entries, disabled protocols), so
+the draft is the same on every machine. Without tshark on `PATH`
 the command stops with `sdk.tshark-not-found` (exit 4), and without a
 dissector for the payloads with `model.no-dissector` (exit 3); nothing is
 written in either case.

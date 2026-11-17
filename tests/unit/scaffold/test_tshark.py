@@ -540,3 +540,38 @@ def test_bad_tshark_option_values(scaffold: Run, work: Path, extra: tuple[str, .
     code, doc = scaffold(*ARGS, *extra)
     assert code == 2
     assert doc["error"]["class"] == "usage"
+
+
+def test_a_field_named_as_a_struct_is_renamed() -> None:
+    infos = [ts.FieldInfo("x.bits_0", "FT_UINT8", 0), ts.FieldInfo("x.f", "FT_BOOLEAN", 0x80)]
+    occs = {"x.bits_0": _occ(0, 1, "128", "80"), "x.f": _occ(0, 1, "True", "1", "80")}
+    draft = _draft(infos, [(b"\x80", occs)])
+    assert [f.name for f in draft.skeleton.fields] == ["bits_0_2", "f"]
+
+
+def test_pdml_that_does_not_parse_is_reported_as_such(
+    work: Path, fake_tshark: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bad = tmp_path / "bad.pdml"
+    bad.write_bytes(b"<pdml><packet>" + b"x" * 200000)
+    monkeypatch.setenv("FAKE_TSHARK_PDML", str(bad))
+    with pytest.raises(CliError) as caught:
+        ts.dissect("tshark", work / "dns.pcap", 4, _payloads())
+    assert caught.value.code == "sdk.tshark-failed"
+    assert "does not parse" in str(caught.value)
+
+
+def test_tshark_runs_without_the_users_profile(
+    work: Path, fake_tshark: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user"))
+    monkeypatch.setenv("WIRESHARK_CONFIG_DIR", str(tmp_path / "profile"))
+    script = tmp_path / "bin" / "tshark"
+    script.write_text(
+        script.read_text().replace(
+            "import os, sys\n",
+            "import os, sys\nassert os.environ['HOME'] == os.environ['XDG_CONFIG_HOME']\n"
+            "assert 'WIRESHARK_CONFIG_DIR' not in os.environ\n",
+        )
+    )
+    assert ts.dissect("tshark", work / "dns.pcap", 4, _payloads()).protocols == [["dns"]] * 4

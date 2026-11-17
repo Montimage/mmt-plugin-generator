@@ -40,9 +40,11 @@ replaced by ``_`` (``dns.flags.response`` is ``flags_response``).
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 import subprocess
 import tempfile
+import threading
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -153,11 +155,29 @@ class Draft:
     payloads: tuple[Payload, ...]
 
 
+def _clean_env(home: str) -> dict[str, str]:
+    """The environment tshark runs in: ``HOME`` and ``XDG_CONFIG_HOME`` an
+    empty directory, so that the user's Wireshark profile (preferences,
+    decode-as entries, disabled protocols, Lua plugins) does not change the
+    draft; ``--decode-as`` says what it must."""
+    env = dict(os.environ)
+    env["HOME"] = home
+    env["XDG_CONFIG_HOME"] = home
+    env.pop("WIRESHARK_CONFIG_DIR", None)
+    return env
+
+
 def _run(cmd: Sequence[str], what: str) -> subprocess.CompletedProcess[bytes]:
     try:
-        done = subprocess.run(
-            list(cmd), capture_output=True, stdin=subprocess.DEVNULL, timeout=TIMEOUT, check=False
-        )
+        with tempfile.TemporaryDirectory() as home:
+            done = subprocess.run(
+                list(cmd),
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=TIMEOUT,
+                check=False,
+                env=_clean_env(home),
+            )
     except OSError as exc:
         raise CliError(
             "sdk.tshark-failed",
@@ -290,10 +310,19 @@ def dissect(
     for rule in decode_as:
         cmd += ["-d", rule]
     what = f"dissecting {capture.name}"
-    with tempfile.TemporaryFile() as err:
+    timeout = CliError(
+        "sdk.tshark-failed",
+        f"tshark did not finish {what} in {TIMEOUT} seconds",
+        "lower --max-packets, or cut the capture (editcap -r)",
+    )
+    with tempfile.TemporaryFile() as err, tempfile.TemporaryDirectory() as home:
         try:
             proc = subprocess.Popen(
-                cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=err,
+                env=_clean_env(home),
             )
         except OSError as exc:
             raise CliError(
@@ -302,6 +331,9 @@ def dissect(
                 "check that tshark runs: tshark -v",
             ) from None
         assert proc.stdout is not None
+        # A tshark that hangs while it streams is killed: the PDML then ends.
+        timer = threading.Timer(TIMEOUT, proc.kill)
+        timer.start()
         problem: CliError | None = None
         try:
             dissection = parse_pdml(proc.stdout, payloads)
@@ -314,15 +346,16 @@ def dissect(
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
-                raise CliError(
-                    "sdk.tshark-failed",
-                    f"tshark did not finish {what} in {TIMEOUT} seconds",
-                    "lower --max-packets, or cut the capture (editcap -r)",
-                ) from None
-        if proc.returncode != 0:
+            timer.cancel()
+        if proc.returncode is not None and proc.returncode > 0:
             err.seek(0)
             _failed(proc.returncode, err.read(), what)
+        if proc.returncode is not None and proc.returncode < 0 and problem is None:
+            # Killed by the timer (or a signal) before its output ended.
+            raise timeout
     if problem is not None:
+        # Output that does not parse (tshark then dies of SIGPIPE when its
+        # stdout is closed): the parse error says why.
         raise problem
     return dissection
 
@@ -552,7 +585,8 @@ def draft(
         else:
             unit.append(m)
 
-    taken: set[str] = set()
+    # A struct's name is taken too: no attribute may have it.
+    taken: set[str] = {_struct(offset, length).lower() for offset, length in units}
 
     def unique(name: str) -> str:
         if max_name is not None:

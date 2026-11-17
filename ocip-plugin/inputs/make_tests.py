@@ -709,4 +709,20 @@ write_session(
     ],
     "gen_pcaps.py attack_v7_split's message, cut after its XML declaration, reversed",
 )
+
+# A documented limit (REPORT.md, "Not checked"; the header of src/ocip_impl.c):
+# a keyword split between two late segments is missed, even when each touches
+# an edge of the hole, since a late segment is searched only with the hole's
+# recorded edges, never with another late segment. This test pins the miss.
+write_session(
+    "session-reordered-two-late-halves",
+    "Limit, pinned: V7 cut in three at '<!DOC' and 'TYPE', sent in reverse order; "
+    "the keyword is split between the two late segments, so has_dtd is 0 on both",
+    [
+        step("client", v7[cut + 4 :], after_v7, lost=cut + 4, text="rest of the message (<!DOC and TYPE not yet seen)"),
+        step("client", v7[cut : cut + 4], [("has_dtd", 0), ("is_request", 1)], back=len(v7) - cut, text="TYPE, late"),
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], back=len(v7), text="...<!DOC, late"),
+    ],
+    "gen_pcaps.py attack_v7_split, cut in three at '<!DOC' and 'TYPE', in reverse order",
+)
 print("wrote", sorted(os.listdir(OUT)))

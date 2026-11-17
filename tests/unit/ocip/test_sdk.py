@@ -123,10 +123,10 @@ def test_the_project_validates_builds_and_passes_its_tests(
     assert code == 0, (doc["error"], doc["result"] and doc["result"]["packets"])
     result = doc["result"]
     runs, fuzzed = _runs(project, 100)
-    assert runs == 32
+    assert runs == 33
     assert result["summary"] == {"total": runs, "passed": runs, "failed": 0, "skipped": 0}
     sessions = [p for p in result["packets"] if "session" in p]
-    assert len(sessions) == 12, result["packets"]
+    assert len(sessions) == 13, result["packets"]
     assert len([p for p in result["packets"] if "through" in p]) == 10, result["packets"]
     assert result["sanitize"] == {"seed": 0, "count": fuzzed, "crashes": []}
     assert _stages(doc) == {

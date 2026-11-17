@@ -81,7 +81,7 @@ def test_the_tests_load_and_name_a_source() -> None:
     assert all((t.protocol, t.proto_id) == ("OCIP", 960) for t in tests)
     sessions = [t for t in tests if isinstance(t, SessionTest)]
     packets = [t for t in tests if isinstance(t, PacketTest)]
-    assert (len(packets), len(sessions)) == (10, 12)
+    assert (len(packets), len(sessions)) == (10, 13)
     # Every packet test also runs through TCP port 2208, the plugin's parent.
     assert all(t.through is not None and t.through.text == "tcp:dport=2208" for t in packets)
     for path in paths:

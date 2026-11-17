@@ -67,11 +67,14 @@
  * keeps) hides nothing. What stays unhandled: `dtd`, `session_id` and
  * `command_type` are not rebuilt across a reordering (the late segment
  * reports only `has_dtd` and `is_request`); only the latest hole of a
- * direction is kept; a keyword split across three or more late segments
- * none of which touches an edge of the hole is missed; and an in-order
- * filler that the server drops, followed by the real bytes at the same
- * sequence number, puts the scan out of step with the server's stream
- * (the real segment is a retransmission, searched alone).
+ * direction is kept; a keyword split between two or more late segments
+ * is missed, even when each touches an edge of the hole, since a late
+ * segment is searched with the hole's recorded edges, never with another
+ * late one (only a keyword whose bytes are on those edges and in a single
+ * late segment is found); and an in-order filler that the server drops,
+ * followed by the real bytes at the same sequence number, puts the scan
+ * out of step with the server's stream (the real segment is a
+ * retransmission, searched alone).
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
  * bytes are scanned alone, from an empty state, and `is_request` is absent.

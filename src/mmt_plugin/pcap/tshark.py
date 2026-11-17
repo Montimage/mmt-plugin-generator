@@ -331,8 +331,16 @@ def dissect(
                 "check that tshark runs: tshark -v",
             ) from None
         assert proc.stdout is not None
-        # A tshark that hangs while it streams is killed: the PDML then ends.
-        timer = threading.Timer(TIMEOUT, proc.kill)
+        # A tshark that hangs while it streams is killed: the PDML then ends,
+        # often in the middle of a packet. ``timed_out`` records that the
+        # timer killed it, whatever that truncated output then does.
+        timed_out = threading.Event()
+
+        def kill() -> None:
+            timed_out.set()
+            proc.kill()
+
+        timer = threading.Timer(TIMEOUT, kill)
         timer.start()
         problem: CliError | None = None
         try:
@@ -344,18 +352,22 @@ def dissect(
             try:
                 proc.wait(timeout=TIMEOUT)
             except subprocess.TimeoutExpired:
+                timed_out.set()
                 proc.kill()
                 proc.wait()
             timer.cancel()
+        if timed_out.is_set() and proc.returncode is not None and proc.returncode < 0:
+            # Killed by the timer: its output, parsed or not, is not why.
+            raise timeout
         if proc.returncode is not None and proc.returncode > 0:
             err.seek(0)
             _failed(proc.returncode, err.read(), what)
         if proc.returncode is not None and proc.returncode < 0 and problem is None:
-            # Killed by the timer (or a signal) before its output ended.
+            # Killed by another signal before its output ended.
             raise timeout
     if problem is not None:
         # Output that does not parse (tshark then dies of SIGPIPE when its
-        # stdout is closed): the parse error says why.
+        # stdout is closed, which is not the timer): the parse error says why.
         raise problem
     return dissection
 

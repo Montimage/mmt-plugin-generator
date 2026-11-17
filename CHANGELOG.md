@@ -211,6 +211,12 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Fixed
 
+- `mmt-plugin scaffold --tshark` (#129) reports a tshark that its timer
+  killed as a timeout ("tshark did not finish ... in N seconds", with its
+  hint), not as "tshark's PDML output does not parse" when the output the
+  kill cut short does not parse. Output that does not parse from a tshark
+  the timer did not kill is still a parse error. Both are
+  `sdk.tshark-failed` (exit 4), as before.
 - The mmt-plugin-generator skill's `scripts/pcap_eval.py` (#130) compares
   each `--field` with tshark once per evaluation instead of twice, and an
   `--accept <key>=<reason>` whose reason has a `|` or a line break stays

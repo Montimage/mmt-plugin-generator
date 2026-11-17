@@ -7,18 +7,25 @@ packets, each one of three kinds: random bytes of a random length (up to
 twice the packet, at least 64 bytes), the packet with one to four bytes
 replaced, and a prefix of the packet followed by random bytes.
 
-The generator is seeded from ``seed`` and the test id through SHA-256, and
-draws only ``random.Random.getrandbits``, whose output for an integer seed
-is the same on every Python version: the same seed gives the same packets,
-on every run and every machine.
+``mutate_frames(seed, test_id, copy, frames, start)`` returns a corrupted
+copy of a session test's frames: each byte from ``start`` (where the TCP
+payload starts) replaced with probability 1/8, and one frame in four, on
+average, cut short somewhere after ``start``.
+
+The generators are seeded from ``seed`` and the test id through SHA-256
+(and the copy's number, for a session), and draw only
+``random.Random.getrandbits``, whose output for an integer seed is the same
+on every Python version: the same seed gives the same packets, on every run
+and every machine.
 """
 
 from __future__ import annotations
 
 import hashlib
 import random
+from collections.abc import Sequence
 
-__all__ = ["fuzz_packets"]
+__all__ = ["fuzz_packets", "mutate_frames"]
 
 #: The longest random packet is at least this long.
 _MIN_RANDOM = 64
@@ -57,4 +64,22 @@ def fuzz_packets(seed: int, test_id: str, data: bytes, count: int) -> list[bytes
             out.append(data[:keep] + _random_bytes(rng, _below(rng, longest - keep + 1)))
         else:
             out.append(_random_bytes(rng, _below(rng, longest + 1)))
+    return out
+
+
+def mutate_frames(
+    seed: int, test_id: str, copy: int, frames: Sequence[bytes], start: int
+) -> list[bytes]:
+    """The ``copy``-th corrupted copy (from 1) of a session test's ``frames``."""
+    digest = hashlib.sha256(f"{seed}\0{test_id}\0session {copy}".encode()).digest()
+    rng = random.Random(int.from_bytes(digest[:8], "big"))
+    out = []
+    for frame in frames:
+        data = bytearray(frame)
+        for k in range(start, len(data)):
+            if _below(rng, 8) == 0:
+                data[k] = rng.getrandbits(8)
+        if len(data) > start + 1 and _below(rng, 4) == 0:
+            del data[start + _below(rng, len(data) - start) :]
+        out.append(bytes(data))
     return out

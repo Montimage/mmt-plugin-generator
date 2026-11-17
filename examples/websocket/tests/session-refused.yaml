@@ -1,0 +1,100 @@
+# Session test of examples/websocket, written from RFC 6455 (not a port:
+# the corpus has no WebSocket model): its packets run in order, one TCP
+# connection. Format and rules: tests/corpus/README.md, Session files
+schema: 1
+id: "websocket/session-refused"
+model: "websocket"
+summary: "The server refuses the upgrade (RFC 6455 section 4.4): HTTP goes on, no frames"
+source: "RFC 6455 section 1.2, 4 (the opening handshake) and 5 (framing); the WebSocket layer's session state, examples/README.md, WebSocket"
+session:
+  through: "tcp:dport=8080,sport=49153"
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  attributes:
+    - name: "accept"
+      type: "MMT_STRING_DATA"
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+    - name: "close_code"
+      type: "MMT_U16_DATA"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+    - name: "key"
+      type: "MMT_STRING_DATA"
+    - name: "mask"
+      type: "MMT_U8_DATA"
+    - name: "masking_key"
+      type: "MMT_U32_DATA"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+    - name: "payload_offset"
+      type: "MMT_U32_DATA"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+    - name: "rsv2"
+      type: "MMT_U8_DATA"
+    - name: "rsv3"
+      type: "MMT_U8_DATA"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+    - name: "subprotocol"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nOrigin: http://example.com\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 63 68 61 74 20 48 54 54 50 2f 31"
+      - "2e 31 0d 0a 48 6f 73 74 3a 20 73 65 72 76 65 72"
+      - "2e 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a 55 70"
+      - "67 72 61 64 65 3a 20 77 65 62 73 6f 63 6b 65 74"
+      - "0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 55 70"
+      - "67 72 61 64 65 0d 0a 53 65 63 2d 57 65 62 53 6f"
+      - "63 6b 65 74 2d 4b 65 79 3a 20 64 47 68 6c 49 48"
+      - "4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51"
+      - "3d 3d 0d 0a 4f 72 69 67 69 6e 3a 20 68 74 74 70"
+      - "3a 2f 2f 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a"
+      - "53 65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72"
+      - "6f 74 6f 63 6f 6c 3a 20 63 68 61 74 2c 20 73 75"
+      - "70 65 72 63 68 61 74 0d 0a 53 65 63 2d 57 65 62"
+      - "53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a 20"
+      - "31 33 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 1
+        - name: "key"
+          value: "64 47 68 6c 49 48 4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51 3d 3d"
+          text: "dGhlIHNhbXBsZSBub25jZQ=="
+        - name: "subprotocol"
+          value: "63 68 61 74 2c 20 73 75 70 65 72 63 68 61 74"
+          text: "chat, superchat"
+  - from: "server"
+    text: "HTTP/1.1 400 Bad Request\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 34 30 30 20 42 61 64"
+      - "20 52 65 71 75 65 73 74 0d 0a 53 65 63 2d 57 65"
+      - "62 53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a"
+      - "20 31 33 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 2
+        - name: "status_code"
+          value: 400
+  - from: "server"
+    bytes:
+      - "81 05 48 65 6c 6c 6f"
+  - from: "client"
+    bytes:
+      - "81 85 37 fa 21 3d 7f 9f 4d 51 58"

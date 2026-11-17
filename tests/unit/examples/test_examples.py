@@ -27,7 +27,8 @@ from mmt_plugin import pluginyaml
 from mmt_plugin.cli import main
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP
 from mmt_plugin.sdk.resolve import resolve_profile
-from mmt_plugin.testing.packets import load
+from mmt_plugin.testing.packets import PacketTest, load
+from mmt_plugin.testing.session import SessionTest, load_test
 from mmt_plugin.testing.yamlsubset import loads
 
 REPO = Path(__file__).resolve().parents[3]
@@ -158,14 +159,22 @@ def test_the_packet_tests_of_a_new_example_name_a_source_for_every_value(name: s
     paths = sorted((EXAMPLES / name / "tests").glob("*.yaml"))
     assert paths, name
     for path in paths:
-        test = load(path, path.name, types)
-        assert (test.protocol, test.proto_id) == (label.upper(), pid)
-        assert test.id == f"{name}/{path.stem}"
+        found = load_test(path, path.name, types)
+        assert (found.protocol, found.proto_id) == (label.upper(), pid)
+        assert found.id == f"{name}/{path.stem}"
+        doc = loads(path.read_bytes())
+        assert doc["model"] == name, path
+        if isinstance(found, SessionTest):
+            # A session test (#99) names its source once, for every packet.
+            assert path.stem.startswith("session-"), path
+            assert str(doc.get("source", "")).strip(), path
+            assert found.attributes, path
+            continue
+        test = found
+        assert not path.stem.startswith("session-"), path
         assert test.attributes, path
         assert all(a.status != "undefined" for a in test.attributes), path
         # load() reads no source: every expected attribute names where its value comes from.
-        doc = loads(path.read_bytes())
-        assert doc["model"] == name, path
         for attr in doc["expect"]["attributes"]:
             assert str(attr.get("source", "")).strip(), (path, attr["name"])
 
@@ -179,7 +188,8 @@ def test_an_example_with_a_parent_runs_one_packet_test_through_it(name: str) -> 
     }
     profile = resolve_profile(PROFILE, {}, None, None).profile
     types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
-    tests = [load(p, p.name, types) for p in sorted((EXAMPLES / name / "tests").glob("*.yaml"))]
+    paths = sorted((EXAMPLES / name / "tests").glob("*.yaml"))
+    tests = [t for t in (load_test(p, p.name, types) for p in paths) if isinstance(t, PacketTest)]
     through = [t.through for t in tests if t.through is not None]
     if not parents:
         assert through == [], name

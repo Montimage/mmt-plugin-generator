@@ -338,13 +338,13 @@ def test_the_session_tests_follow_the_plugins_state(
     replays of #40 and #41): several frames in a segment, frames and headers
     over segments, retransmissions, lost bytes, refused upgrades, answers
     linked to their CALL, idle gaps and sessions longer than mmt-dpi's TCP
-    classifies (examples/README.md), each packet checked with every
-    attribute the session lists; then under the sanitizers, with their
-    corrupted copies. Without its CALL, a CALLRESULT is not linked: the
+    classifies, permessage-deflate (#107) (examples/README.md), each packet
+    checked with every attribute the session lists; then under the
+    sanitizers, with their corrupted copies. Without its CALL, a CALLRESULT is not linked: the
     expected action comes from the session, not from the packet."""
     sdk, cc = str(_sdk()), _cc()
     sessions = _session_tests(project)
-    assert len(sessions) == {"websocket": 24, "ocpp": 12}[project.name]
+    assert len(sessions) == {"websocket": 24, "ocpp": 22}[project.name]
     code, doc = _json(
         capsys,
         "test",

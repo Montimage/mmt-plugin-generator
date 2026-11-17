@@ -125,6 +125,8 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.default-scope` | Warning (PDL v1 only): give the attribute a `scope`. |
 | `model.pointer-field` | Warning: a `T*` field is 4 bytes read as `MMT_DATA_POINTER`; check that the spec means a pointer. |
 | `model.branch-offset-mismatch` | Warning (running offsets): give the attribute after the `if` an explicit offset. |
+| `model.define-sdk-name` | A define has the name of an SDK macro, constant or type (`PROTO_IP`): rename it; to use the SDK's protocol id, name the SDK macro directly. |
+| `model.data-len-width` | Warning: the `length` is not the fixed-width type's width (the message names both): use the type's width, or keep it only when the spec's field is narrower than its type (a 24-bit integer in `MMT_U32_DATA`). |
 | `model.name-collision` | Two names become the same C identifier: rename one (the hint names both). |
 | `model.integer-length` | An integer's `length` must be 1 to 8 bytes and fit its type: fix the type or the length. |
 | `model.variable-length` | A per-packet length needs a byte type: use `MMT_BINARY_DATA`, `MMT_BINARY_VAR_DATA` or `MMT_STRING_DATA`. |

@@ -18,7 +18,7 @@ from mmt_plugin.semantics import analyse
 from mmt_plugin.semantics.analyse import _c_div
 from mmt_plugin.semantics.model import Binary, Const, SizeOfType, Swap, ValueRef
 
-from .conftest import FILE, attr, build, ok, parse_model, profile, u8
+from .conftest import FILE, attr, blob, build, ok, parse_model, profile, u8
 
 
 @pytest.mark.parametrize(
@@ -88,7 +88,7 @@ def test_the_typed_tree_keeps_every_reference() -> None:
     ],
 )
 def test_constant_attributes_are_aligned(offset: str, length: str, aligned: bool) -> None:
-    model = ok(u8("a", "0") + u8("b", offset, length=length) + u8("c", "0"))
+    model = ok(u8("a", "0") + blob("b", offset, length) + u8("c", "0"))
     b, c = model.attribute("b"), model.attribute("c")
     assert b.aligned is aligned and c.aligned is aligned
     declared = b.declared_offset

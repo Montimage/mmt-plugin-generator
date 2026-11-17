@@ -18,7 +18,10 @@ list must be absent), and ``packets``, its steps, in order:
   acknowledgment numbers of a connection without loss; ``retransmit: true``
   sends it again at the sequence number of that side's previous segment
   with data, ``lost: N`` loses that side's next ``N`` bytes before it (the
-  capture never had them). ``expect`` is ``"none"`` (not the plugin's
+  capture never had them), ``back: N`` sends it ``N`` bytes before that
+  side's next sequence number without moving it (a segment that arrives
+  late, after the ones that followed it, or one that overlaps bytes
+  already sent; it ends at or before that number). ``expect`` is ``"none"`` (not the plugin's
   packet) or a mapping with ``attributes``, as a packet test's (``offset``
   and ``length`` optional, ``type`` too for an attribute
   ``session.attributes`` lists); without ``expect``, the packet is the
@@ -88,7 +91,17 @@ _SYN, _ACK, _PSH = 0x02, 0x10, 0x08
 #: The shortest Ethernet frame without its FCS (IEEE 802.3).
 _MIN_FRAME = 60
 _SIDES = ("client", "server")
-_SEGMENT_KEYS = {"from", "bytes", "retransmit", "lost", "expect", "summary", "note", "text"}
+_SEGMENT_KEYS = {
+    "from",
+    "bytes",
+    "retransmit",
+    "lost",
+    "back",
+    "expect",
+    "summary",
+    "note",
+    "text",
+}
 
 
 def _checksum(data: bytes) -> int:
@@ -209,7 +222,8 @@ class Connection:
 @dataclass(frozen=True)
 class SessionStep:
     """One step of ``packets``: ``kind`` is ``open``, ``idle`` (``count``
-    seconds) or ``segment`` (``side``, ``data``, ``retransmit``, ``lost``);
+    seconds) or ``segment`` (``side``, ``data``, ``retransmit``, ``lost``,
+    ``back``);
     ``expect`` is ``None`` for a packet that must not be the plugin's, else
     the attributes it lists."""
 
@@ -219,6 +233,7 @@ class SessionStep:
     retransmit: bool = False
     lost: int = 0
     count: int = 0
+    back: int = 0
     expect: tuple[ExpectedAttribute, ...] | None = None
 
 
@@ -309,6 +324,7 @@ def _load_session(doc: Mapping[str, Any], shown: str, data_types: Collection[str
         raise error(shown, "packets: a session test has at least one packet")
     steps = tuple(_step(shown, i, item, data_types, known) for i, item in enumerate(raw))
     sent = {"client": False, "server": False}
+    stream = {"client": 0, "server": 0}  # the bytes of each side's sequence space so far
     for i, step in enumerate(steps):
         if step.kind != "segment":
             continue
@@ -317,7 +333,15 @@ def _load_session(doc: Mapping[str, Any], shown: str, data_types: Collection[str
             raise error(
                 shown, f"packets[{i}]: retransmit, but the {step.side} sent no data before it"
             )
+        if step.back > stream[step.side]:
+            raise error(
+                shown,
+                f"packets[{i}]: back is {step.back}, but the {step.side} has sent or lost "
+                f"only {stream[step.side]} bytes before it",
+            )
         sent[step.side] = sent[step.side] or bool(step.data)
+        if not step.retransmit and not step.back:
+            stream[step.side] += step.lost + len(step.data)
     return SessionTest(test_id, shown, through, protocol, proto_id, tuple(known.items()), steps)
 
 
@@ -360,6 +384,19 @@ def _step(
         raise error(shown, f"{where}: lost is a number of bytes, 0 or more")
     if retransmit and lost:
         raise error(shown, f"{where}: a retransmission loses no bytes: give retransmit or lost")
+    back = item.get("back", 0)
+    if not isinstance(back, int) or isinstance(back, bool) or back < 0:
+        raise error(shown, f"{where}: back is a number of bytes, 0 or more")
+    if back and (retransmit or lost):
+        raise error(shown, f"{where}: give one of retransmit, lost and back")
+    if back and not data:
+        raise error(shown, f"{where}: a segment sent back has bytes")
+    if len(data) > back > 0:
+        raise error(
+            shown,
+            f"{where}: a segment sent back {back} bytes has at most {back} bytes "
+            "(it ends at or before the side's next sequence number)",
+        )
     expect = item.get("expect", {})
     attributes: tuple[ExpectedAttribute, ...] | None
     if expect == "none":
@@ -381,7 +418,7 @@ def _step(
             raise error(shown, f"{where}.expect.attributes: {duplicate!r} is listed twice")
     else:
         raise error(shown, f'{where}: expect is "none" or a mapping with attributes')
-    return SessionStep("segment", side, data, retransmit, lost, expect=attributes)
+    return SessionStep("segment", side, data, retransmit, lost, expect=attributes, back=back)
 
 
 @dataclass(frozen=True)
@@ -425,7 +462,9 @@ def build_frames(test: SessionTest) -> list[SessionFrame]:
             if step.lost:
                 (conn.skip_client if client else conn.skip_server)(step.lost)
             seq = last[step.side] if step.retransmit else None
-            if not step.retransmit and step.data:
+            if step.back:
+                seq = (conn.client_seq if client else conn.server_seq) - step.back
+            elif not step.retransmit and step.data:
                 last[step.side] = conn.client_seq if client else conn.server_seq
             (conn.client if client else conn.server)(step.data, seq)
             add(frames[-1], step.data, i, step.expect)

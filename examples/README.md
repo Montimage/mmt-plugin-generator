@@ -523,9 +523,13 @@ or to its version makes `generate --check` fail on every example. Then
 regenerate them all and commit the result:
 
 ```
-for d in examples/*/; do uv run mmt-plugin -C "$d" generate; done
+for d in examples/*/ ocip-plugin/project/; do uv run mmt-plugin -C "$d" generate; done
 ```
+
+`ocip-plugin/project` (the OCI-P plugin of mmt-security rule 231, not an
+example) is regenerated with them, and `tests/unit/ocip/` checks it the
+same way (#138).
 
 A release bumps the version, so it regenerates them in the same change;
 the release workflow's `verify` job runs `generate --check` on every
-example with the built wheel ([`docs/releasing.md`](../docs/releasing.md)).
+example and on `ocip-plugin/project` with the built wheel ([`docs/releasing.md`](../docs/releasing.md)).

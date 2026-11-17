@@ -20,7 +20,8 @@
  *
  * What a segment reports (nothing for a pure ACK; a segment with no new
  * bytes, a retransmission or an earlier segment arriving late, reports only
- * `has_dtd`, from a search of that segment alone, and `is_request`):
+ * `has_dtd`, from a search of that segment alone and across the edges of
+ * the hole it fills, below, and `is_request`):
  *
  * - `has_dtd`, always: 1 when a "<!DOCTYPE" ends in the segment's new bytes,
  *   in ASCII (letters in any case), UTF-16LE or UTF-16BE, found by a plain
@@ -49,9 +50,31 @@
  * as "?". A message ends at its </BroadsoftDocument>; the next one is
  * guessed again.
  *
- * After a gap in a direction (lost bytes), its scan starts again from an
- * empty tail and a new message. The segment ends where its IP length says,
- * and nothing is read past it or past the captured bytes.
+ * After a gap in a direction (lost bytes, or bytes still to come), its scan
+ * starts again from an empty tail and a new message. The segment ends where
+ * its IP length says, and nothing is read past it or past the captured
+ * bytes.
+ *
+ * Reordered and inserted segments: each direction records its latest hole,
+ * the bytes of a gap (or, before its first segment, every byte before it),
+ * with the 17 bytes before it and the first 17 bytes after it. A segment
+ * that arrives late in the hole (the first half of a split "<!DOCTYPE" sent
+ * after the second) is searched, with no state change, with the bytes
+ * before the hole when it starts where the hole starts and the bytes after
+ * it when it ends where the hole ends; a keyword with a byte in the late
+ * segment is `has_dtd` 1 there. The hole stays as recorded, so a filler
+ * sent into it first (one the server drops, a bad checksum, but the probe
+ * keeps) hides nothing. What stays unhandled: `dtd`, `session_id` and
+ * `command_type` are not rebuilt across a reordering (the late segment
+ * reports only `has_dtd` and `is_request`); only the latest hole of a
+ * direction is kept; a late segment is searched once, with the hole's
+ * edges as they stand when it arrives, so a keyword is found only when
+ * its bytes are in that late segment and in the edges already recorded:
+ * it is missed when it needs bytes after the hole that arrive later, or
+ * bytes of another late segment; and an in-order filler that the server
+ * drops, followed by the real bytes at the same sequence number, puts the
+ * scan out of step with the server's stream (the real segment is a
+ * retransmission, searched alone).
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
  * bytes are scanned alone, from an empty state, and `is_request` is absent.
@@ -133,11 +156,28 @@ struct ox_parse {
     struct ox_text buf;
 };
 
+/*
+ * The latest hole of a direction, [hole_end - hole_len, hole_end) in
+ * sequence numbers: the bytes the direction skipped, or, before its first
+ * segment seen, all the bytes before it (hole_open: its start is unknown).
+ * A segment that arrives late in it is searched with the bytes on each
+ * side: before[], the last bytes before the hole, and after[], the first
+ * bytes after it (they grow with the bytes that follow in order).
+ */
+struct ox_hole {
+    uint8_t known, open;
+    uint32_t end, len;
+    uint8_t before[OX_TAIL], before_len;
+    uint8_t after[OX_TAIL], after_len;
+    uint8_t after_done; /* a segment cut short by the capture: after[] stops there */
+};
+
 /* One direction of a session. */
 struct ox_direction {
     uint8_t seq_known;
     uint32_t next_seq;
     uint8_t tail[OX_TAIL], tail_len;
+    struct ox_hole hole;
     struct ox_parse parse;
 };
 
@@ -582,6 +622,111 @@ static void ox_scan(struct ox_direction *d, const uint8_t *p, unsigned n, struct
     }
 }
 
+/* --- a segment that arrives late: across its hole's edges --- */
+
+/* The bytes before a hole, a late segment's bytes in it, the bytes after it. */
+struct ox_parts {
+    const uint8_t *part[3];
+    unsigned len[3];
+};
+
+static uint8_t ox_part_at(const struct ox_parts *x, unsigned i)
+{
+    unsigned k;
+
+    for (k = 0; k < 2 && i >= x->len[k]; k++) {
+        i -= x->len[k];
+    }
+    return x->part[k][i];
+}
+
+/* A needle in the three parts that has at least one byte in the middle one. */
+static bool ox_find_across(const struct ox_parts *x, const uint8_t *needle, unsigned len, bool nocase)
+{
+    unsigned total = x->len[0] + x->len[1] + x->len[2], mid_end = x->len[0] + x->len[1], i, j;
+
+    if (total < len) {
+        return false;
+    }
+    /* Overlaps the middle: start < mid_end and start + len > len[0]. */
+    i = x->len[0] >= len ? x->len[0] - len + 1 : 0;
+    for (; i < mid_end && i + len <= total; i++) {
+        for (j = 0; j < len; j++) {
+            uint8_t c = ox_part_at(x, i + j);
+            if ((nocase ? ox_upper(c) : c) != needle[j]) {
+                break;
+            }
+        }
+        if (j == len) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * A late segment (no new bytes) that falls in the direction's hole: the
+ * keyword it completes with the bytes before the hole (when it starts
+ * where the hole starts) and after it (when it ends where the hole ends),
+ * as they stand now: it is not searched again when more bytes come.
+ * The hole stays as it is, so a filler sent into it first hides nothing.
+ */
+static bool ox_late_doctype(const struct ox_hole *h, const struct ox_segment *seg)
+{
+    struct ox_parts x;
+    int64_t e0, e1, lo, hi, len = h->len;
+
+    if (!h->known || seg->n == 0) {
+        return false;
+    }
+    /* The segment's bytes, relative to the hole's end (modulo 2^32). */
+    e0 = (int32_t)(seg->seq - h->end);
+    e1 = e0 + seg->n;
+    if (e0 >= 0 || (!h->open && e1 <= -len)) {
+        return false; /* after the hole, or before it */
+    }
+    lo = !h->open && e0 < -len ? -len : e0;
+    hi = e1 < 0 ? e1 : 0;
+    x.part[0] = h->before;
+    x.len[0] = !h->open && e0 <= -len ? h->before_len : 0;
+    x.part[1] = seg->p + (lo - e0);
+    x.len[1] = (unsigned)(hi - lo);
+    x.part[2] = h->after;
+    x.len[2] = e1 >= 0 ? h->after_len : 0;
+    return ox_find_across(&x, ox_ascii, sizeof(ox_ascii) - 1, true)
+           || ox_find_across(&x, ox_le, sizeof(ox_le), false) || ox_find_across(&x, ox_be, sizeof(ox_be), false);
+}
+
+/* Starts a hole that ends at seq, len bytes long (open: its start is unknown). */
+static void ox_hole_start(struct ox_direction *d, uint32_t seq, uint32_t len, bool open)
+{
+    struct ox_hole *h = &d->hole;
+
+    h->known = 1;
+    h->open = open;
+    h->end = seq;
+    h->len = len;
+    h->before_len = open ? 0 : d->tail_len;
+    memcpy(h->before, d->tail, h->before_len);
+    h->after_len = 0;
+    h->after_done = 0;
+}
+
+/* The bytes after the hole, in order, while fewer than OX_TAIL are kept;
+   cut: the capture has fewer bytes than the segment, so the next ones are
+   not the bytes after these. */
+static void ox_hole_after(struct ox_hole *h, const uint8_t *p, unsigned n, bool cut)
+{
+    unsigned room = OX_TAIL - h->after_len, k = n < room ? n : room;
+
+    if (!h->known || h->after_done) {
+        return;
+    }
+    memcpy(h->after + h->after_len, p, k);
+    h->after_len = (uint8_t)(h->after_len + k);
+    h->after_done = cut;
+}
+
 /* --- the segment --- */
 
 /* The TCP payload of the packet, TCP at tcp_index; 0 when there is none to read. */
@@ -655,22 +800,29 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             uint32_t old = (uint32_t)0 - (uint32_t)diff;
             if (old >= seg.total) {
                 /* No new bytes: a retransmission, or an earlier segment
-                   that arrives late (reordered). Search it alone for a
-                   DOCTYPE, without the tail, the tokenizer or any state
-                   change, so a reordered attack is not missed (a
-                   retransmitted attack segment reports it again). */
+                   that arrives late (reordered). Search it for a DOCTYPE
+                   alone and, in the hole, across the hole's edges,
+                   without the tail, the tokenizer or any state change,
+                   so a reordered attack is not missed (a retransmitted
+                   attack segment reports it again). */
                 view->scanned = 1;
                 view->dir_known = 1;
                 view->is_request = seg.dport == OX_PORT;
-                view->has_dtd = ox_has_doctype(NULL, 0, seg.p, seg.n);
+                view->has_dtd = ox_has_doctype(NULL, 0, seg.p, seg.n) || ox_late_doctype(&d->hole, &seg);
                 return;
             }
             pos = old; /* the new bytes after an overlap */
         } else if (diff > 0) {
-            /* Lost bytes: start again, empty tail, a new message. */
+            /* Lost bytes, or bytes still to come: record the hole, then
+               start again, empty tail, a new message. */
+            ox_hole_start(d, seg.seq, (uint32_t)diff, false);
             d->tail_len = 0;
             memset(&d->parse, 0, sizeof(d->parse));
         }
+    } else {
+        /* The direction's first segment: what came before it may still
+           arrive (the first segments reordered). */
+        ox_hole_start(d, seg.seq, 0, true);
     }
     d->seq_known = 1;
     d->next_seq = seg.seq + seg.total;
@@ -679,6 +831,7 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
     }
     view->dir_known = 1;
     view->is_request = seg.dport == OX_PORT;
+    ox_hole_after(&d->hole, seg.p + pos, seg.n - pos, seg.n < seg.total);
     ox_scan(d, seg.p + pos, seg.n - pos, view);
 }
 

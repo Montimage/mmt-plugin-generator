@@ -17,12 +17,22 @@ Cisco BroadWorks OCI-P over TCP 2208, for mmt-security rule 231 (CVE-2026-20320 
 | 1 | green: validate, generate, build, test exit 0 | — (first draft) |
 | 2 | green, `test --sanitize` | — |
 | 3 | green, `test --sanitize` | review: a segment with no new bytes (retransmission, or an earlier segment arriving late) reported nothing, so a reordered attack evaded `has_dtd` (old rule 1, new rule 0 on `attack_v10_reordered.pcap`); now searched alone. Added `session-long-split-doctype` (126 packets, past the 40 classification packets) |
+| 4 | green | — (re-run after `loop.sh` was made shellcheck-clean) |
+| 5 | green, `test --sanitize` | — (baseline on `dev` 1b54ba6 before #137) |
+| 6 | exit 6, 29/32 | #137: four reordered session tests (new session key `back`); `has_dtd` 0 where a late segment completes a `<!DOCTYPE` split across a hole |
+| 7 | green, `test --sanitize` | #137: each direction records its latest hole; a late segment is searched across the hole's edges, and a filler sent into the hole first hides nothing |
+| 8 | green, `test --sanitize` | — (#137's final source: comments only; the `.so` evaluated below; also green with clang) |
+| 9 | green, `test --sanitize` | review of #137: a `<!DOCTYPE` split between two late segments is missed; pinned by `session-reordered-two-late-halves` and documented below (comments only in the source, the same `.so`) |
+| 10 | green, `test --sanitize` | review of #137: a late segment is searched once, with the hole's edges as they stand then, so a `<!DOCTYPE` that needs bytes after the hole that arrive later is missed; pinned by `session-reordered-short-after-edge` and documented below (comments only in the source) |
 
-Last `test` summary: `{total: 28, passed: 28, failed: 0, skipped: 0}`: 11 packet tests, each also `through`
-`tcp:dport=2208`, and 8 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
-message plus its retransmission, two messages in one segment, a gap, a server DOCTYPE, and a 126-packet session whose
-split DOCTYPE comes after 50 benign packets with 70 s idle between its halves). `--sanitize`: 28209 fuzz and
-corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
+Last `test` summary: `{total: 34, passed: 34, failed: 0, skipped: 0}`: 10 packet tests, each also `through`
+`tcp:dport=2208`, and 14 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
+message plus its retransmission, two messages in one segment, a gap, a server DOCTYPE, a 126-packet session whose
+split DOCTYPE comes after 50 benign packets with 70 s idle between its halves, and six reordered ones: V7's halves
+in reverse order, the same after a filler sent into the hole, a 2-byte late segment between both halves, a whole
+DOCTYPE in the segment that arrives first, and two misses pinned as limits: V7 cut in three in reverse order, and
+a late byte whose keyword ends in bytes after the hole that arrive later).
+`--sanitize`: 33248 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
 carried tail both fail (`runs/run-1/notes.md`).
 
 ## Capture and evaluation
@@ -49,3 +59,13 @@ sees no DOCTYPE and the plugin does.
 - Encodings other than UTF-8/ASCII and UTF-16 (UTF-32, EBCDIC).
 - `dtd`, `session_id`, `command_type` of a message are from the first one that ends in the segment; `dtd` keeps the
   declaration's first 63 bytes.
+- Reordered and inserted segments (#137): a segment that arrives late in a hole reports `has_dtd` (searched alone
+  and across the hole's edges) and `is_request` only; `dtd`, `session_id` and `command_type` are not rebuilt across
+  a reordering. Only a direction's latest hole is kept, so a keyword split around an earlier hole is missed. A late
+  segment is searched once, with the hole's edges as they stand when it arrives, so a keyword is found only when its
+  bytes are in that late segment and in the edges already recorded: it is missed when it needs bytes after the hole
+  that arrive later (`session-reordered-short-after-edge` pins the miss), or bytes of another late segment
+  (`session-reordered-two-late-halves`). An in-order filler
+  that the server drops (a bad checksum) followed by the real bytes at the same sequence number puts the scan out of
+  step with the server's stream: the real segment is a retransmission, searched alone. The old payload-scan rule 231
+  misses these too.

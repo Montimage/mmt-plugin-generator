@@ -70,6 +70,7 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/build/test_sdk.py" in job  # build (#19): every corpus model
     assert "tests/unit/packettest/test_sdk.py" in job  # test (#20): every corpus model
     assert "tests/unit/examples/test_sdk.py" in job  # the ported examples (#28)
+    assert "tests/unit/ocip/test_sdk.py" in job  # the OCI-P plugin project (#138)
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
     assert "tests/unit/scaffold/test_sdk.py" in job  # scaffold on sample pcaps (#26)
     assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-generator evals (#27)
@@ -88,6 +89,18 @@ def test_the_examples_step_runs_their_sdk_tests_and_requires_them() -> None:
     # or lets it fail without failing the job.
     lines = [line.strip() for line in step.splitlines()]
     assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py" in lines
+    assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_ocip_step_runs_its_sdk_tests_and_requires_them() -> None:
+    # #138: ocip-plugin/project is not an example, so it has a step of its
+    # own; without the variables its tests would skip instead of failing.
+    step = _step("Build and test the OCI-P plugin project")
+    assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+    assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
+    assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+    lines = [line.strip() for line in step.splitlines()]
+    assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/ocip/test_sdk.py" in lines
     assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
 
 

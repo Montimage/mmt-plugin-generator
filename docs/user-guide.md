@@ -428,8 +428,10 @@ packets:
   `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
   segment `from` the client or the server, its TCP payload in `bytes`
   (none: a pure ACK), with `retransmit: true` to send it again at that
-  side's previous sequence number, or `lost: N` for bytes the capture
-  lost before it.
+  side's previous sequence number, `lost: N` for bytes the capture
+  lost before it, or `back: N` to send it `N` bytes before that side's
+  next sequence number (a segment that arrives late, or one sent over
+  bytes already sent; at most `N` bytes).
 - A segment's `expect` is `"none"` when it must not be your protocol's
   packet, or the attributes it reports, as in a packet test (`offset`
   and `length` are optional here, and so is `type` for an attribute the

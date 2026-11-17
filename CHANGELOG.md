@@ -9,6 +9,12 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- A session test's segment can arrive late (#137): `back: N` sends it `N`
+  bytes before that side's next sequence number without moving it, so a
+  test can send the second half of a message before the first, or a
+  filler over bytes already sent (`tests/corpus/README.md`, "Session
+  files").
+
 - The WebSocket and OCPP 1.6-J examples read permessage-deflate (RFC 7692,
   #107): both parse the 101 answer's `Sec-WebSocket-Extensions`
   (`*_no_context_takeover`, `*_max_window_bits` 8 to 15; any other

@@ -1,6 +1,6 @@
 # ocip-plugin
 
-Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (28/28 tests, sanitizers clean); capture evaluation PASS
+Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (34/34 tests, sanitizers clean); capture evaluation PASS
 (synthetic capture). See `REPORT.md`; decisions in `request.md`.
 
 ## Re-run
@@ -21,6 +21,13 @@ uv run --frozen python skills/mmt-plugin-generator/scripts/pcap_eval.py --sdk /s
 ```
 
 No `--accept` flags (no drift).
+
+## Kept current
+
+`project/` is regenerated with the examples after a generator change or a version bump (`examples/README.md`,
+"Regenerating"); `tests/unit/ocip/` checks that its `generated/` and `plugin.lock` are up to date and its tests are
+what `inputs/make_tests.py` writes, and, with `MMT_GOLDEN_SDK` (CI's "Generated code" job), builds it and runs its
+tests under the sanitizers (#138).
 
 ## Resume
 

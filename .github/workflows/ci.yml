@@ -497,6 +497,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py
+      - name: Build and test the OCI-P plugin project
+        # tests/unit/ocip/test_sdk.py: ocip-plugin/project (#134, #138),
+        # copied to a temporary directory: validate against the SDK, build
+        # from the committed generated/ (no regeneration), then test
+        # --sanitize on its packet and session tests.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/ocip/test_sdk.py
       - name: Create a project with mmt-plugin init and test it
         # tests/unit/init/test_sdk.py: mmt-plugin init (#23) in a temporary
         # directory, its id from the SDK's registry, then mmt-plugin test

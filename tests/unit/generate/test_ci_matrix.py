@@ -71,6 +71,7 @@ def test_the_job_requires_the_compile_and_load_tests() -> None:
     assert "tests/unit/packettest/test_sdk.py" in job  # test (#20): every corpus model
     assert "tests/unit/examples/test_sdk.py" in job  # the ported examples (#28)
     assert "tests/unit/pluginyaml/test_sdk.py" in job  # plugin.yaml parents (#24)
+    assert "tests/unit/scaffold/test_sdk.py" in job  # scaffold on sample pcaps (#26)
     assert "tests/unit/skill/test_sdk.py" in job  # the mmt-plugin-generator evals (#27)
     assert "tests/unit/docs/test_commands.py" in job  # the user docs' commands (#29)
     assert "tests/unit/run/test_sdk.py" in job  # run over captures (#103, #115)
@@ -113,6 +114,36 @@ def test_the_run_step_runs_its_sdk_tests_and_requires_them() -> None:
     lines = [line.strip() for line in step.splitlines()]
     assert "uv run pytest -v -rA -p no:cacheprovider tests/unit/run/test_sdk.py" in lines
     assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+
+
+def test_the_tshark_tests_run_with_the_real_tshark_and_require_it() -> None:
+    # #128: every leg of the matrix installs the distribution's tshark,
+    # without prompts, before the scaffold --tshark test (#125) and the
+    # skill's drift check against tshark (#123) run; MMT_REQUIRE_TSHARK makes
+    # them fail instead of skipping when tshark is missing.
+    install = _step("Install tshark")
+    assert not re.search(r"^        (if|continue-on-error):", install, re.MULTILINE)
+    lines = [line.strip() for line in install.splitlines()]
+    assert "apt-get install -y --no-install-recommends tshark" in lines
+    assert "sudo env DEBIAN_FRONTEND=noninteractive \\" in lines
+    assert "| sudo debconf-set-selections" in lines
+    assert "tshark --version | head -n 1" in lines
+    job = _commands()
+    for name, test in [
+        ("Scaffold packet tests from sample pcaps and test the proposal", "scaffold"),
+        ("Run the mmt-plugin-generator skill's evals", "skill"),
+    ]:
+        step = _step(name)
+        assert "MMT_REQUIRE_TSHARK: '1'" in step
+        assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
+        assert "MMT_GOLDEN_CC: ${{ matrix.cc }}" in step
+        assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
+        command = f"uv run pytest -v -rA -p no:cacheprovider tests/unit/{test}/test_sdk.py"
+        assert command in [line.strip() for line in step.splitlines()]
+        assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
+        assert job.index("name: Install tshark") < job.index(f"name: {name}")
+    # Both arches, both compilers: the install step has no condition.
+    assert "arch: [amd64, arm64]" in job
 
 
 def test_the_sdk_profile_job_checks_the_run_time_registry() -> None:

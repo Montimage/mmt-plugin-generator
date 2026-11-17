@@ -550,7 +550,7 @@ the command stops with `sdk.tshark-not-found` (exit 4), and without a
 dissector for the payloads with `model.no-dissector` (exit 3); nothing is
 written in either case.
 
-<!-- doc:skip needs tshark on PATH (CI's images have none) -->
+<!-- doc:skip needs tshark on PATH and the captures it names -->
 ```sh
 mmt-plugin -C dns scaffold --from-pcap dns.pcap --parent udp:port=53 --tshark
 mmt-plugin -C ws scaffold --from-pcap websocket.pcap --parent tcp:port=80 --tshark --protocol websocket

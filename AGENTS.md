@@ -363,8 +363,8 @@ protocol model. A Python rewrite is planned in
   `test_command.py`, `test_tshark.py` (a fake tshark on `PATH` printing
   `data/tshark/`, what tshark 4.2.2 printed for `samples.dns_capture()`),
   and `test_sdk.py` (`init`, `scaffold`, then the proposal passes `test`;
-  with `--tshark` too when tshark is installed, which CI's images are not;
-  needs `MMT_GOLDEN_SDK`).
+  with `--tshark` too when tshark is installed, and failing without it
+  when `MMT_REQUIRE_TSHARK=1`, #128; needs `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/run.py` (#103): `mmt-plugin run PCAP` runs the
   plugin of `--model` (as `test`'s) over a pcap or pcapng capture through
   mmt-dpi's stack and counts what it reports. Stages `build` (`build` when
@@ -441,7 +441,8 @@ protocol model. A Python rewrite is planned in
   `test_sdk.py` (every case green with a real SDK, and `pcap_eval.py` on the
   spec-telem plugin with and without tshark, with tshark a field without
   drift and one with, open then accepted; needs `MMT_GOLDEN_SDK` and
-  `libpcap-dev`).
+  `libpcap-dev`, and tshark for its tshark run, which skips without it
+  unless `MMT_REQUIRE_TSHARK=1`).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
@@ -493,6 +494,12 @@ protocol model. A Python rewrite is planned in
   (`scaffold` on sample pcaps, then `test` on the proposal),
   `tests/unit/run/test_sdk.py` (`run` over captures the test writes),
   `tests/unit/skill/test_sdk.py` (the mmt-plugin-generator evals, green),
+  the scaffold and skill ones with the real tshark: every leg of this job
+  installs the distribution's tshark (step "Install tshark", #128) and
+  sets `MMT_REQUIRE_TSHARK=1` on those two steps, so `scaffold --tshark`
+  and `pcap_eval.py`'s drift check against tshark run there and fail
+  instead of skipping when tshark is missing (the Python jobs have no
+  tshark and skip them),
   `tests/unit/docs/test_commands.py` (every `doc:run` block of the user
   docs, with `MMT_DOCS_INSTALL=1`; the Python 3.12 job also runs the
   install blocks),

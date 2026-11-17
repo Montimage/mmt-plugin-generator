@@ -16,6 +16,9 @@ package, a private prefix (never ``/opt/mmt``)::
 
 Without ``MMT_GOLDEN_SDK`` the tests skip, unless
 ``MMT_REQUIRE_GOLDEN_COMPILE=1`` (CI's "Generated code" job) makes them fail.
+The ``scaffold --tshark`` test also needs tshark on ``PATH``: without it, it
+skips, unless ``MMT_REQUIRE_TSHARK=1`` (the same job, which installs tshark,
+#128) makes it fail.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from . import samples
 SDK_ENV = "MMT_GOLDEN_SDK"
 CC_ENV = "MMT_GOLDEN_CC"
 REQUIRE_ENV = "MMT_REQUIRE_GOLDEN_COMPILE"
+REQUIRE_TSHARK_ENV = "MMT_REQUIRE_TSHARK"
 DATA = Path(__file__).with_name("data")
 
 
@@ -42,6 +46,15 @@ def _skip_or_fail(why: str) -> None:
     if os.environ.get(REQUIRE_ENV) == "1":
         pytest.fail(f"{REQUIRE_ENV}=1 but {why}")
     pytest.skip(why)
+
+
+def _need_tshark() -> None:
+    """Skip when tshark is not on ``PATH``, or fail when
+    ``MMT_REQUIRE_TSHARK=1`` (CI's "Generated code" job installs it, #128)."""
+    if shutil.which("tshark") is None:
+        if os.environ.get(REQUIRE_TSHARK_ENV) == "1":
+            pytest.fail(f"{REQUIRE_TSHARK_ENV}=1 but tshark is not installed")
+        pytest.skip("tshark is not installed")
 
 
 def _sdk() -> Path:
@@ -169,11 +182,9 @@ def test_the_tshark_draft_passes_the_tests_scaffold_wrote(
 ) -> None:
     """``scaffold --tshark`` (#125) with the real tshark: the fields it
     maps (16-bit bit fields, bytes, MAC and IPv4 addresses) read, through
-    the generated plugin, the values tshark decodes. tshark is not in CI's
-    images: without it the test skips, even with
-    ``MMT_REQUIRE_GOLDEN_COMPILE=1``."""
-    if shutil.which("tshark") is None:
-        pytest.skip("tshark is not installed")
+    the generated plugin, the values tshark decodes. Without tshark the test
+    skips, unless ``MMT_REQUIRE_TSHARK=1`` (CI's "Generated code" job)."""
+    _need_tshark()
     (work / "dns.pcap").write_bytes(samples.dns_capture())
     (work / "arp.pcap").write_bytes(samples.arp_capture())
     code, doc = _json(capsys, "init", "demo", "--id", "977", "--parent", parent)
@@ -193,3 +204,25 @@ def test_the_tshark_draft_passes_the_tests_scaffold_wrote(
     code, doc = _json(capsys, *argv)
     assert code == 0, doc["error"] or doc["result"]["packets"]
     assert doc["result"]["summary"]["passed"] == dissected
+
+
+@pytest.mark.parametrize("required", [True, False], ids=["required", "optional"])
+def test_a_missing_tshark_fails_only_when_required(
+    required: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#128: without tshark the tshark test skips, unless
+    ``MMT_REQUIRE_TSHARK=1``, which CI's "Generated code" job sets, makes it
+    fail; with tshark it runs. No SDK needed."""
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which", lambda name: None if name == "tshark" else real_which(name)
+    )
+    if required:
+        monkeypatch.setenv(REQUIRE_TSHARK_ENV, "1")
+    else:
+        monkeypatch.delenv(REQUIRE_TSHARK_ENV, raising=False)
+    outcome = pytest.fail.Exception if required else pytest.skip.Exception
+    with pytest.raises(outcome, match="tshark is not installed"):
+        _need_tshark()
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    _need_tshark()

@@ -154,6 +154,14 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Changed
 
+- CI runs the tshark tests with the real tshark (#128): every leg of the
+  "Generated code" job installs the distribution's tshark without prompts
+  (step "Install tshark"), then runs `scaffold --tshark` on the DNS, ARP
+  and WebSocket samples (`tests/unit/scaffold/test_sdk.py`) and
+  `pcap_eval.py`'s drift check against tshark
+  (`tests/unit/skill/test_sdk.py`). Both steps set `MMT_REQUIRE_TSHARK=1`,
+  which makes those tests fail instead of skipping when tshark is missing;
+  without it they still skip, as in the Python jobs.
 - `pcap_eval.py` with tshark (#123): every missed or foreign frame and
   every field mismatch is a drift to fix or accept, so `--min-recall`
   applies only without tshark, and `--min-agreement` and `--max-foreign`

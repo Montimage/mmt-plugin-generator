@@ -6,6 +6,7 @@ the proposal's)."""
 from __future__ import annotations
 
 import os
+import random
 import struct
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.commands.init import parse_selector
 from mmt_plugin.pcap import (
     HEADER_LIMIT,
+    Flow,
     Parent,
     Payload,
     bit_groups,
@@ -231,10 +233,18 @@ def test_a_file_name_that_is_not_utf8() -> None:
 # Bit fields (#102).
 
 
+#: The two directions of a connection, and one of an unrelated flow.
+CLIENT = ("ip", 0x0A000001, 50000, 0x0A000002, 80)
+SERVER = ("ip", 0x0A000002, 80, 0x0A000001, 50000)
+OTHER = ("ip", 0x0A000003, 40000, 0x0A000002, 80)
+OTHER_BACK = ("ip", 0x0A000002, 80, 0x0A000003, 40000)
+_FLOWS = {1: CLIENT, 2: SERVER, 3: OTHER, 4: OTHER_BACK}
+
+
 def _groups(
     values: list[int], flows: list[int] | None = None
 ) -> list[tuple[int, int, str]] | None:
-    return bit_groups(values, flows)
+    return bit_groups(values, None if flows is None else [_FLOWS[f] for f in flows])
 
 
 def test_a_byte_with_one_varying_run_stays_whole() -> None:
@@ -254,8 +264,6 @@ def test_a_byte_with_one_varying_run_stays_whole() -> None:
 
 
 def test_a_few_random_payloads_are_not_cut_into_bits() -> None:
-    import random
-
     rng = random.Random(102)
     for _ in range(500):
         payloads = [rng.randbytes(16) for _ in range(3)]
@@ -278,15 +286,65 @@ def test_a_role_flag_is_cut_from_its_run() -> None:
     # Without directions, or with a direction of both values, it is one number.
     assert _groups(values) is None
     assert _groups(values, [1] * len(values)) is None
+    # Two directions that are not the same connection's are not roles.
+    assert _groups(values, [1] * len(lengths) + [3] * len(lengths)) is None
+    # Nor is a bit both directions of another connection set.
+    masked = [0x80 | n for n in lengths]
+    other = [3] * len(lengths) + [4] * len(lengths)
+    assert _groups(values + masked + masked, flows + other) is None
+    assert _groups(values + values, flows + other) == [(0, 1, "role"), (1, 7, "varies")]
     # A direction with one payload does not show the other value.
     assert _groups([0x85, 0xFA, 0x05], [1, 1, 2]) is None
     assert _groups([0x85, 0xFA, 0x05, 0x7A], [1, 1, 2, 2]) == [(0, 1, "role"), (1, 7, "varies")]
 
 
+def test_a_byte_constant_within_each_direction_is_not_a_role_flag() -> None:
+    # Per-flow identifiers: each direction its own constant byte, both top
+    # bits.
+    values = [0x8D, 0x8D, 0x13, 0x13, 0xC4, 0xC4, 0x2A, 0x2A]
+    assert _groups(values, [1, 1, 2, 2, 3, 3, 4, 4]) is None
+
+
+def _rtp_like(
+    rng: random.Random, flows: int = 4, per_flow: int = 5
+) -> tuple[list[bytes], list[Flow | None]]:
+    payloads: list[bytes] = []
+    flow_of: list[Flow | None] = []
+    for n in range(flows):
+        flow = ("ip", 0x0A000001 + n, 5004 + 2 * n, 0x0A0000FF, 5004)
+        ssrc = rng.randbytes(4)
+        seq = rng.randrange(1 << 16)
+        stamp = rng.randrange(1 << 32)
+        for n in range(per_flow):
+            header = struct.pack(
+                "!BBHI", 0x80, 0x60, (seq + n) & 0xFFFF, (stamp + 160 * n) & 0xFFFFFFFF
+            )
+            payloads.append(header + ssrc + rng.randbytes(8))
+            flow_of.append(flow)
+    return payloads, flow_of
+
+
+def test_a_per_flow_identifier_stays_one_word() -> None:
+    # An RTP-like SSRC at offset 8, constant in each of 4 one-way UDP flows:
+    # neither it nor the timestamp before it is cut into role bits.
+    rng = random.Random(102)
+    whole = 0
+    for _ in range(200):
+        payloads, flows = _rtp_like(rng)
+        with_flows = propose(payloads, flows)
+        assert with_flows.fields == propose(payloads).fields
+        ssrc = [f for f in with_flows.fields if f.offset == 8]
+        if ssrc and (ssrc[0].name, ssrc[0].length, ssrc[0].bit_offset) == ("field_8", 4, None):
+            assert ssrc[0].to_json()["type"] == "MMT_U32_DATA"
+            whole += 1
+    # A few random timestamps' high bytes vary independently by chance,
+    # with or without the directions.
+    assert whole >= 190
+
+
 def test_websocket_frames_propose_fin_opcode_mask_and_length() -> None:
     frames = samples.websocket_client_frames() + samples.websocket_server_frames()
-    flows = ["client"] * 7 + ["server"] * 7
-    skeleton = propose(frames, flows)
+    skeleton = propose(frames, [CLIENT] * 7 + [SERVER] * 7)
     assert skeleton.header_length == 2
     assert [
         (f.name, f.offset, f.bit_offset, f.bit_width, f.constant) for f in skeleton.fields
@@ -327,7 +385,7 @@ def test_a_byte_cut_into_bits_ends_a_run_of_differing_bytes() -> None:
 
 def test_the_bit_fields_proposal_generates_and_its_tests_expect_it(tmp_path: Path) -> None:
     frames = samples.websocket_client_frames() + samples.websocket_server_frames()
-    skeleton = propose(frames, ["c"] * 7 + ["s"] * 7)
+    skeleton = propose(frames, [CLIENT] * 7 + [SERVER] * 7)
     parent = _parent("tcp:port=80")
     text = proposed_yaml("ws", 960, parent, skeleton, "ws.pcap", len(frames))
     _generates(text)

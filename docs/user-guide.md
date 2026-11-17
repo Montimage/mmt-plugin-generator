@@ -411,11 +411,13 @@ that every payload has, named `field_<offset>` (a length field is named
 `length`), with a comment saying what it saw. It never edits `plugin.yaml`.
 
 A byte whose bits vary independently (a flag that is set with several
-values of the rest of the byte, or one that each direction of the traffic
-sets its own way, such as WebSocket's MASK) is proposed as bit fields,
-`field_<offset>_b<bit>` (bits counted from the most significant), in a
-struct `bits_<offset>`. A byte whose varying bits form one number stays one
-field.
+values of the rest of the byte, or one that the two directions of a
+connection set to opposite values beside bits that vary within a
+direction, such as WebSocket's MASK) is proposed as bit fields, `field_<offset>_b<bit>` (bits
+counted from the most significant), in a struct `bits_<offset>`. A byte
+whose varying bits form one number stays one field, and so does a byte
+that is constant within each direction (a per-flow identifier such as
+RTP's SSRC).
 
 With a TCP parent (`tcp:port=80`), `scaffold` follows each direction of
 each connection as a stream: the payloads are the segments' bytes in

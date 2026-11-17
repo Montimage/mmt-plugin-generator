@@ -30,7 +30,16 @@ def vlan(vid: int, ethertype: int, payload: bytes) -> bytes:
     return _MAC_DST + _MAC_SRC + struct.pack(">HHH", 0x8100, vid, ethertype) + payload
 
 
-def ipv4(proto: int, payload: bytes, *, flags_frag: int = 0, options: bytes = b"") -> bytes:
+def ipv4(
+    proto: int,
+    payload: bytes,
+    *,
+    flags_frag: int = 0,
+    options: bytes = b"",
+    reply: bool = False,
+) -> bytes:
+    """From 192.0.2.1 to 192.0.2.2, or the other way with ``reply``."""
+    a, b = bytes([192, 0, 2, 1]), bytes([192, 0, 2, 2])
     ihl = (20 + len(options)) // 4
     total = 20 + len(options) + len(payload)
     header = struct.pack(
@@ -43,8 +52,8 @@ def ipv4(proto: int, payload: bytes, *, flags_frag: int = 0, options: bytes = b"
         64,
         proto,
         0,
-        bytes([192, 0, 2, 1]),
-        bytes([192, 0, 2, 2]),
+        b if reply else a,
+        a if reply else b,
     )
     return header + options + payload
 
@@ -140,9 +149,13 @@ def demo_payloads() -> list[bytes]:
     ]
 
 
-def tcp4(sport: int, dport: int, payload: bytes, *, seq: int, flags: int = 0x18) -> bytes:
-    """An Ethernet frame of IPv4 and TCP, from 192.0.2.1 to 192.0.2.2."""
-    return ethernet(0x0800, ipv4(6, tcp(sport, dport, payload, seq=seq, flags=flags)))
+def tcp4(
+    sport: int, dport: int, payload: bytes, *, seq: int, flags: int = 0x18, reply: bool = False
+) -> bytes:
+    """An Ethernet frame of IPv4 and TCP, from 192.0.2.1 to 192.0.2.2 (the
+    other way with ``reply``)."""
+    tcp_ = tcp(sport, dport, payload, seq=seq, flags=flags)
+    return ethernet(0x0800, ipv4(6, tcp_, reply=reply))
 
 
 def ws_frame(opcode: int, payload: bytes, *, fin: bool = True, key: bytes | None = None) -> bytes:
@@ -207,14 +220,14 @@ def websocket_capture() -> bytes:
     c_seq, s_seq = 1000, 5000
     frames = [
         tcp4(client, server, b"", seq=c_seq, flags=0x02),
-        tcp4(server, client, b"", seq=s_seq, flags=0x12),
+        tcp4(server, client, b"", seq=s_seq, flags=0x12, reply=True),
     ]
     c_next, s_next = c_seq + 1, s_seq + 1
     frames.append(tcp4(client, server, WS_REQUEST, seq=c_next))
     c_next += len(WS_REQUEST)
     server_frames = websocket_server_frames()
     first = WS_ANSWER + server_frames[0]
-    frames.append(tcp4(server, client, first, seq=s_next))
+    frames.append(tcp4(server, client, first, seq=s_next, reply=True))
     s_next += len(first)
     client_segments = []
     for f in websocket_client_frames():
@@ -222,7 +235,7 @@ def websocket_capture() -> bytes:
         c_next += len(f)
     server_segments = []
     for f in server_frames[1:]:
-        server_segments.append(tcp4(server, client, f, seq=s_next))
+        server_segments.append(tcp4(server, client, f, seq=s_next, reply=True))
         s_next += len(f)
     server_segments[1], server_segments[2] = server_segments[2], server_segments[1]
     for i in range(max(len(client_segments), len(server_segments))):

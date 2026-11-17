@@ -78,8 +78,12 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   Runs of varying bits are groups, a constant bit between two varying ones
   is taken as varying, two groups that do not vary independently (one's
   value seen with two of the other, both ways) are merged, and the top bit
-  of a run is a flag of its own when each direction of the traffic sets
-  it its own way (WebSocket's MASK, DNS's QR). On a WebSocket session it
+  of a run is a flag of its own when the two directions of each
+  connection seen both ways set it to opposite values and the rest of the
+  run varies within a direction (WebSocket's MASK, DNS's QR); a byte
+  constant within each direction (a per-flow identifier such as RTP's
+  SSRC), or unrelated one-way flows, are never cut by this rule, so a
+  4-byte identifier stays one field. On a WebSocket session it
   proposes FIN, RSV1-3, the opcode, MASK and the 7-bit length
   (`tests/unit/scaffold/test_command.py`, `test_sdk.py`). A byte left with
   one varying group, or with fewer than 4 distinct values (too little
@@ -95,7 +99,8 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   off, a segment after missing bytes waits for them, and a SYN with a new
   initial sequence number starts a new session. `result.packets.skipped`
   has three new reasons, `retransmission`, `gap` (more than 64 segments
-  waiting in a direction, which is then given up until a new SYN, or
+  waiting in a direction, or 1024 in all directions, which gives the
+  direction up until a new SYN, so memory is bounded by these caps, or
   still waiting when the capture ends) and `skip-until`. Before, each
   segment was a payload as captured, retransmissions and handshakes
   included. Decided, of what #102 lists: segments are not split into

@@ -108,6 +108,34 @@ def test_a_direction_with_too_many_segments_waiting_is_given_up() -> None:
     assert run.send(A, 7001, b"new") == [b"new"]
 
 
+def test_too_many_segments_waiting_in_all_directions_give_one_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mmt_plugin.pcap import streams
+
+    monkeypatch.setattr(streams, "MAX_WAITING_TOTAL", 4)
+    run = Run()
+    flows = [("ip", 1, 50000 + n, 2, 80) for n in range(3)]
+    for flow in flows:
+        run.send(flow, 100, b"", SYN)
+    # Two segments wait in each of the first two directions: 4 in all.
+    for flow in flows[:2]:
+        assert run.send(flow, 200, b"x") == []
+        assert run.send(flow, 300, b"y") == []
+    # A fifth gives its direction up, under the per-direction limit.
+    assert run.send(flows[2], 200, b"z") == []
+    assert run.send(flows[2], 101, b"late") == []
+    assert run.counts() == {"empty": 3, "gap": 2}
+    # The others still wait, and the missing bytes release them, which
+    # makes room for another direction's.
+    assert run.send(flows[0], 101, b"a" * 99) == [b"a" * 99, b"x"]
+    assert run.send(B, 100, b"", SYN) == []
+    assert run.send(B, 200, b"w") == []
+    assert run.counts() == {"empty": 4, "gap": 2}
+    run.streams.finish()
+    assert run.counts() == {"empty": 4, "gap": 6}
+
+
 def test_a_new_syn_starts_a_new_session() -> None:
     run = Run(b"\r\n\r\n")
     run.send(A, 100, b"", SYN)
@@ -159,8 +187,8 @@ def test_a_websocket_capture_after_its_handshake() -> None:
     by_flow: dict[object, list[bytes]] = {}
     for p in slicing.payloads:
         by_flow.setdefault(p.flow, []).append(p.data)
-    a, b = 0xC0000201, 0xC0000202  # samples.ipv4's addresses, both ways
-    assert by_flow == {("ip", a, 50000, b, 80): clients, ("ip", a, 80, b, 50000): servers}
+    a, b = 0xC0000201, 0xC0000202  # samples.ipv4's addresses, the server replies
+    assert by_flow == {("ip", a, 50000, b, 80): clients, ("ip", b, 80, a, 50000): servers}
     assert {k: v for k, v in slicing.skipped.items() if v} == {
         "empty": 2,  # SYN, SYN-ACK
         "retransmission": 1,

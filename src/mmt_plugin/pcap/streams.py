@@ -12,10 +12,14 @@ never bytes sent twice:
 - bytes the stream already delivered are cut off (``Payload.cut`` counts
   them); a segment with no new byte is skipped as ``retransmission``;
 - a segment after missing bytes waits until they come. More than
-  ``MAX_WAITING`` waiting in a direction gives it up: those segments, and
-  every later one of the direction until a new SYN, are skipped as ``gap``
-  (where a message starts after lost bytes is unknown), as are the ones
-  still waiting when the capture ends;
+  ``MAX_WAITING`` waiting in a direction, or more than
+  ``MAX_WAITING_TOTAL`` in all directions together, gives the segment's
+  direction up: its waiting segments, this one, and every later one of the
+  direction until a new SYN, are skipped as ``gap`` (where a message
+  starts after lost bytes is unknown), as are the ones still waiting when
+  the capture ends. So the payloads held are bounded by
+  ``MAX_WAITING_TOTAL``, whatever the size of the capture; the state of
+  each direction seen (a few numbers) is kept until the end;
 - a SYN with another initial sequence number starts a new session on the
   same addresses and ports (the old one's waiting segments are ``gap``);
 - with ``skip_until`` (a byte pattern), each direction's bytes of each
@@ -38,10 +42,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mmt_plugin.pcap.layers import Flow, Payload
 
-__all__ = ["MAX_WAITING", "TcpStreams"]
+__all__ = ["MAX_WAITING", "MAX_WAITING_TOTAL", "TcpStreams"]
 
 #: The most segments a direction holds after missing bytes.
 MAX_WAITING = 64
+#: The most segments all directions together hold after missing bytes.
+MAX_WAITING_TOTAL = 1024
 
 _MOD = 1 << 32
 _HALF = 1 << 31
@@ -75,12 +81,14 @@ class TcpStreams:
         self._skipped = skipped
         self._skip_until = skip_until
         self._directions: dict[Flow, _Direction] = {}
+        self._waiting = 0  # the segments waiting in all directions
 
     def _new(self) -> _Direction:
         return _Direction(skipping=self._skip_until is not None)
 
     def _drop_waiting(self, direction: _Direction) -> None:
         self._skipped["gap"] += len(direction.waiting)
+        self._waiting -= len(direction.waiting)
         direction.waiting.clear()
 
     def segment(self, payload: Payload, seq: int, flags: int) -> list[Payload]:
@@ -109,12 +117,13 @@ class TcpStreams:
             direction.next = start
         out: list[Payload] = []
         if not self._place(direction, _Waiting(start, payload), out):
-            if len(direction.waiting) >= MAX_WAITING:
+            if len(direction.waiting) >= MAX_WAITING or self._waiting >= MAX_WAITING_TOTAL:
                 self._drop_waiting(direction)
                 self._skipped["gap"] += 1
                 direction.lost = True
                 return out
             direction.waiting.append(_Waiting(start, payload))
+            self._waiting += 1
             return out
         while True:
             ready = next(
@@ -129,6 +138,7 @@ class TcpStreams:
             if ready is None:
                 return out
             direction.waiting.remove(ready)
+            self._waiting -= 1
             self._place(direction, ready, out)
 
     def _place(self, direction: _Direction, segment: _Waiting, out: list[Payload]) -> bool:

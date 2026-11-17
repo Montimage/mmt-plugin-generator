@@ -29,9 +29,14 @@ most significant: a bit varies when two payloads differ in it, and a
 constant bit between two that vary is taken as varying (a number whose
 values did not use it). Each run of varying bits, and each run of constant
 ones, is a group; the top bit of a varying run is a group of its own when
-it is constant within each direction of the payloads (``Payload.flow``)
-and takes both values among the directions with two payloads or more (a
-role flag: WebSocket's MASK, set by clients only, DNS's QR). Two
+it is constant within each direction of the payloads (``Payload.flow``),
+the two directions of each connection seen both ways with two payloads or
+more (one at least) set it to opposite values, and the rest of the run
+takes two values or more within one of those directions (a role flag
+beside data that varies: WebSocket's MASK, set by clients only, DNS's QR).
+So a byte that is constant within each direction (a per-flow identifier:
+RTP's SSRC, a session id), or the payloads of unrelated flows (several
+one-way UDP streams), are never cut by this rule. Two
 neighbouring varying groups (with the constant ones between them) are
 merged back unless they vary independently: one group's value is seen
 with two values of the other, and the other way round. A byte left with
@@ -48,10 +53,10 @@ from __future__ import annotations
 
 import itertools
 import json
-from collections.abc import Hashable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mmt_plugin.pcap.layers import Parent, Payload
+from mmt_plugin.pcap.layers import Flow, Parent, Payload
 from mmt_plugin.ui.render import escape
 
 __all__ = [
@@ -71,6 +76,9 @@ HEADER_LIMIT = 16
 
 _TYPES = {1: "MMT_U8_DATA", 2: "MMT_U16_DATA", 4: "MMT_U32_DATA"}
 _BYTES_PER_LINE = 16
+#: Each payload's direction (``Payload.flow``), or ``None``.
+Flows = Sequence[Flow | None] | None
+
 #: The fewest distinct values of a byte cut into bit fields: fewer are too
 #: little evidence (a few random bytes have constant bits by chance).
 _BIT_VALUES = 4
@@ -181,19 +189,36 @@ def _group_value(value: int, start: int, width: int) -> int:
     return (value >> (8 - start - width)) & ((1 << width) - 1)
 
 
-def _role_bit(values: Sequence[int], bit: int, flows: Sequence[Hashable] | None) -> bool:
-    """Whether ``bit`` is constant within each direction and takes both
-    values among the directions with two payloads or more."""
+def _reverse(flow: Flow) -> Flow:
+    net, src, sport, dst, dport = flow
+    return (net, dst, dport, src, sport)
+
+
+def _role_bit(values: Sequence[int], bit: int, end: int, flows: Flows) -> bool:
+    """Whether ``bit``, the top bit of the varying run ``bit``..``end - 1``,
+    is a role flag (module docstring): constant within each direction, the
+    opposite value in the two directions of each connection seen both ways
+    with two payloads or more (one at least), and the rest of the run
+    taking two values or more within one of those directions."""
     if flows is None:
         return False
-    seen: dict[Hashable, set[int]] = {}
-    counts: dict[Hashable, int] = {}
+    seen: dict[Flow | None, set[int]] = {}
+    rest: dict[Flow | None, set[int]] = {}
+    counts: dict[Flow | None, int] = {}
     for value, flow in zip(values, flows, strict=True):
         seen.setdefault(flow, set()).add(_bit(value, bit))
+        rest.setdefault(flow, set()).add(_group_value(value, bit + 1, end - bit - 1))
         counts[flow] = counts.get(flow, 0) + 1
     if any(len(bits) > 1 for bits in seen.values()):
         return False
-    return {next(iter(seen[f])) for f in seen if counts[f] > 1} == {0, 1}
+    pairs = [
+        (f, _reverse(f))
+        for f in seen
+        if f is not None and counts[f] > 1 and counts.get(_reverse(f), 0) > 1 and f < _reverse(f)
+    ]
+    if not pairs or any(seen[f] == seen[r] for f, r in pairs):
+        return False
+    return any(len(rest[f]) > 1 for pair in pairs for f in pair)
 
 
 def _independent(values: Sequence[int], a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -208,9 +233,7 @@ def _independent(values: Sequence[int], a: tuple[int, int], b: tuple[int, int]) 
     return any(len(s) > 1 for s in with_a.values()) and any(len(s) > 1 for s in with_b.values())
 
 
-def bit_groups(
-    values: Sequence[int], flows: Sequence[Hashable] | None = None
-) -> list[tuple[int, int, str]] | None:
+def bit_groups(values: Sequence[int], flows: Flows = None) -> list[tuple[int, int, str]] | None:
     """The bit groups of a byte whose payloads have ``values`` (``flows``:
     each payload's direction, or ``None``), as (bit offset from the most
     significant bit, width, kind), kind ``varies``, ``role`` or
@@ -227,7 +250,7 @@ def bit_groups(
             end += 1
         if not varies[b]:
             groups.append((b, end - b, "constant"))
-        elif end - b > 1 and _role_bit(values, b, flows):
+        elif end - b > 1 and _role_bit(values, b, end, flows):
             groups += [(b, 1, "role"), (b + 1, end - b - 1, "varies")]
         else:
             groups.append((b, end - b, "varies"))
@@ -260,10 +283,10 @@ def _bits_note(values: Sequence[int], start: int, width: int, kind: str) -> str:
     return f"{where}: varies: {len(seen)} values from {seen[0]} to {seen[-1]}"
 
 
-def propose(payloads: Sequence[bytes], flows: Sequence[Hashable] | None = None) -> Skeleton:
+def propose(payloads: Sequence[bytes], flows: Flows = None) -> Skeleton:
     """The field skeleton of ``payloads`` (at least one, none empty);
     ``flows``, each payload's direction (``Payload.flow``), finds the bit
-    flags each direction sets its own way."""
+    flags each direction of a connection sets its own way."""
     shortest = min(len(p) for p in payloads)
     header = min(shortest, HEADER_LIMIT)
     found = _length_field(payloads, header)

@@ -23,13 +23,15 @@ Cisco BroadWorks OCI-P over TCP 2208, for mmt-security rule 231 (CVE-2026-20320 
 | 7 | green, `test --sanitize` | #137: each direction records its latest hole; a late segment is searched across the hole's edges, and a filler sent into the hole first hides nothing |
 | 8 | green, `test --sanitize` | — (#137's final source: comments only; the `.so` evaluated below; also green with clang) |
 | 9 | green, `test --sanitize` | review of #137: a `<!DOCTYPE` split between two late segments is missed; pinned by `session-reordered-two-late-halves` and documented below (comments only in the source, the same `.so`) |
+| 10 | green, `test --sanitize` | review of #137: a late segment is searched once, with the hole's edges as they stand then, so a `<!DOCTYPE` that needs bytes after the hole that arrive later is missed; pinned by `session-reordered-short-after-edge` and documented below (comments only in the source) |
 
-Last `test` summary: `{total: 33, passed: 33, failed: 0, skipped: 0}`: 10 packet tests, each also `through`
-`tcp:dport=2208`, and 13 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
+Last `test` summary: `{total: 34, passed: 34, failed: 0, skipped: 0}`: 10 packet tests, each also `through`
+`tcp:dport=2208`, and 14 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
 message plus its retransmission, two messages in one segment, a gap, a server DOCTYPE, a 126-packet session whose
-split DOCTYPE comes after 50 benign packets with 70 s idle between its halves, and five reordered ones: V7's halves
+split DOCTYPE comes after 50 benign packets with 70 s idle between its halves, and six reordered ones: V7's halves
 in reverse order, the same after a filler sent into the hole, a 2-byte late segment between both halves, a whole
-DOCTYPE in the segment that arrives first, and V7 cut in three in reverse order, a miss pinned as a limit).
+DOCTYPE in the segment that arrives first, and two misses pinned as limits: V7 cut in three in reverse order, and
+a late byte whose keyword ends in bytes after the hole that arrive later).
 `--sanitize`: 33248 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
 carried tail both fail (`runs/run-1/notes.md`).
 
@@ -59,10 +61,11 @@ sees no DOCTYPE and the plugin does.
   declaration's first 63 bytes.
 - Reordered and inserted segments (#137): a segment that arrives late in a hole reports `has_dtd` (searched alone
   and across the hole's edges) and `is_request` only; `dtd`, `session_id` and `command_type` are not rebuilt across
-  a reordering. Only a direction's latest hole is kept, so a keyword split around an earlier hole is missed, and so
-  is one split between two or more late segments, even when each touches an edge of the hole: a late segment is
-  searched with the hole's recorded edges, never with another late one, so only a keyword whose bytes are on those
-  edges and in a single late segment is found (`session-reordered-two-late-halves` pins the miss). An in-order filler
+  a reordering. Only a direction's latest hole is kept, so a keyword split around an earlier hole is missed. A late
+  segment is searched once, with the hole's edges as they stand when it arrives, so a keyword is found only when its
+  bytes are in that late segment and in the edges already recorded: it is missed when it needs bytes after the hole
+  that arrive later (`session-reordered-short-after-edge` pins the miss), or bytes of another late segment
+  (`session-reordered-two-late-halves`). An in-order filler
   that the server drops (a bad checksum) followed by the real bytes at the same sequence number puts the scan out of
   step with the server's stream: the real segment is a retransmission, searched alone. The old payload-scan rule 231
   misses these too.

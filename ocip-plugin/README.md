@@ -1,6 +1,6 @@
 # ocip-plugin
 
-Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (33/33 tests, sanitizers clean); capture evaluation PASS
+Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (34/34 tests, sanitizers clean); capture evaluation PASS
 (synthetic capture). See `REPORT.md`; decisions in `request.md`.
 
 ## Re-run

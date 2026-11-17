@@ -67,13 +67,13 @@
  * keeps) hides nothing. What stays unhandled: `dtd`, `session_id` and
  * `command_type` are not rebuilt across a reordering (the late segment
  * reports only `has_dtd` and `is_request`); only the latest hole of a
- * direction is kept; a keyword split between two or more late segments
- * is missed, even when each touches an edge of the hole, since a late
- * segment is searched with the hole's recorded edges, never with another
- * late one (only a keyword whose bytes are on those edges and in a single
- * late segment is found); and an in-order filler that the server drops,
- * followed by the real bytes at the same sequence number, puts the scan
- * out of step with the server's stream (the real segment is a
+ * direction is kept; a late segment is searched once, with the hole's
+ * edges as they stand when it arrives, so a keyword is found only when
+ * its bytes are in that late segment and in the edges already recorded:
+ * it is missed when it needs bytes after the hole that arrive later, or
+ * bytes of another late segment; and an in-order filler that the server
+ * drops, followed by the real bytes at the same sequence number, puts the
+ * scan out of step with the server's stream (the real segment is a
  * retransmission, searched alone).
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
@@ -667,7 +667,8 @@ static bool ox_find_across(const struct ox_parts *x, const uint8_t *needle, unsi
 /*
  * A late segment (no new bytes) that falls in the direction's hole: the
  * keyword it completes with the bytes before the hole (when it starts
- * where the hole starts) and after it (when it ends where the hole ends).
+ * where the hole starts) and after it (when it ends where the hole ends),
+ * as they stand now: it is not searched again when more bytes come.
  * The hole stays as it is, so a filler sent into it first hides nothing.
  */
 static bool ox_late_doctype(const struct ox_hole *h, const struct ox_segment *seg)

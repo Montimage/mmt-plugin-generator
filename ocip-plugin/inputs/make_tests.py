@@ -725,4 +725,21 @@ write_session(
     ],
     "gen_pcaps.py attack_v7_split, cut in three at '<!DOC' and 'TYPE', in reverse order",
 )
+# A documented limit (REPORT.md, "Not checked"; the header of src/ocip_impl.c):
+# a late segment is searched once, with the hole's edges as recorded when it
+# arrives. Here the bytes after a 1-byte hole are one byte long when the late
+# "T" arrives; the rest of the keyword comes later, in order, and nothing
+# searches the late byte again. This test pins the miss.
+write_session(
+    "session-reordered-short-after-edge",
+    "Limit, pinned: ...<!DOC, then Y after a 1-byte hole, then the late T, then PE ...; "
+    "the keyword needs bytes after the hole that arrive after the late segment, so has_dtd is 0 everywhere",
+    [
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], text="...<!DOC"),
+        step("client", v7[cut + 1 : cut + 2], [("has_dtd", 0), ("is_request", 1)], lost=1, text="Y (T not yet seen)"),
+        step("client", v7[cut : cut + 1], [("has_dtd", 0), ("is_request", 1)], back=2, text="T, late"),
+        step("client", v7[cut + 2 :], after_v7, text="PE ..., in order"),
+    ],
+    "gen_pcaps.py attack_v7_split, cut at '<!DOC', 'T' and 'Y'; T sent after Y",
+)
 print("wrote", sorted(os.listdir(OUT)))

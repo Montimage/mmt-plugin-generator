@@ -4,7 +4,7 @@
 schema: 1
 id: "websocket/session-deflate-lost"
 model: "websocket"
-summary: "The capture loses a whole compressed message: the window's history is gone, so section 7.2.3.2's second message is not inflated (2); a self-contained one is (1); then the capture loses bytes inside a compressed frame: that message is not inflated, and the window loses its history"
+summary: "The capture loses a whole compressed message: the window's history is gone, so section 7.2.3.2's second message is not inflated (2); a self-contained one is (1); then the capture loses bytes inside a compressed frame: that message is not inflated, and the window loses its history; then bytes inside a plain fragment: its continuation is of an unknown message (2, no message opcode)"
 source: "RFC 6455 section 4 (the opening handshake) and 5 (framing); RFC 7692 section 7 (permessage-deflate), section 7.2.3.2; a lost message's bytes may have changed the window; the WebSocket layer's session state, examples/README.md, WebSocket"
 session:
   through: "tcp:dport=8080,sport=49182"
@@ -214,3 +214,55 @@ packets:
           value: 5
         - name: "rsv1"
           value: 1
+  - from: "server"
+    bytes:
+      - "01 05 48 65"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 0
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65"
+          text: "He"
+        - name: "payload_inflated"
+          value: 0
+        - name: "payload_len"
+          value: 5
+        - name: "rsv1"
+          value: 0
+  - from: "server"
+    lost: 2
+    note: "two bytes of the plain fragment were lost: its continuation is of an unknown message"
+    bytes:
+      - "6f 80 01 21"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 1
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "opcode"
+          value: 0
+        - name: "payload"
+          value: "21"
+          text: "!"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 1
+        - name: "rsv1"
+          value: 0

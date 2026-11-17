@@ -4,7 +4,7 @@
 schema: 1
 id: "websocket/session-deflate-takeover"
 model: "websocket"
-summary: "Context takeover (the default): section 7.2.3.2's second message refers to the first; four client messages whose last refers to bytes 32424 back, after the window wrapped"
+summary: "Context takeover (the default): section 7.2.3.2's second message refers to the first; two server messages in one segment (the first reported, the second still in the window, which the next needs); four client messages whose last refers to bytes 32424 back, after the window wrapped"
 source: "RFC 6455 section 4 (the opening handshake) and 5 (framing); RFC 7692 section 7 (permessage-deflate), section 7.2.3.2 (sharing the LZ77 sliding window); the client's messages are Python zlib's raw DEFLATE (wbits=-15) of each text, one compressor; the WebSocket layer's session state, examples/README.md, WebSocket"
 session:
   through: "tcp:dport=8080,sport=49172"
@@ -123,6 +123,63 @@ packets:
           value: 1
         - name: "payload_len"
           value: 5
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    note: "two compressed messages: the first one is reported"
+    bytes:
+      - "c1 0f 4a cb 2c 2a 2e 51 c8 4d 2d 2e 4e 4c 4f 05"
+      - "00 c1 24 2a 4e 4d ce cf 4b 81 f1 74 14 12 93 f2"
+      - "4b 4b 14 4a 32 52 15 8a 73 32 53 32 f3 d2 15 ca"
+      - "33 f3 52 f2 cb 01 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 2
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "66 69 72 73 74 20 6d 65 73 73 61 67 65"
+          text: "first message"
+        - name: "payload_inflated"
+          value: 1
+        - name: "payload_len"
+          value: 15
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    note: "refers to the second message"
+    bytes:
+      - "c1 04 22 56 1d 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "73 65 63 6f 6e 64 20 6d 65 73 73 61 67 65 2c 20 61 62 6f 75 74 20 74 68 65 20 73 6c 69 64 69 6e 67 20 77 69 6e 64 6f 77"
+          text: "second message, about the sliding window"
+        - name: "payload_inflated"
+          value: 1
+        - name: "payload_len"
+          value: 4
         - name: "rsv1"
           value: 1
   - from: "client"

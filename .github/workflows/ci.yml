@@ -436,6 +436,22 @@ jobs:
           [ -f /usr/include/pcap.h ] \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcap-dev; }
           uv sync
+      - name: Install tshark
+        # The scaffold --tshark test (#125) and the skill's drift check
+        # against tshark (#123) need the real tshark: the distribution's
+        # package, installed without prompts (wireshark-common's setuid
+        # question answered no: the tests only read capture files). The
+        # scaffold and skill steps below set MMT_REQUIRE_TSHARK, so a
+        # missing tshark fails them instead of skipping (#128).
+        run: |
+          echo 'wireshark-common wireshark-common/install-setuid boolean false' \
+            | sudo debconf-set-selections
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y --no-install-recommends tshark
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' tshark
+          command -v tshark
+          tshark --version | head -n 1
       - name: Compile, build and load the generated C of every corpus model
         # tests/unit/generate/test_compile.py: -fsyntax-only -Wall -Wextra
         # -Werror, registration with libmmt_core, and a plugin built -O2
@@ -507,10 +523,13 @@ jobs:
         # tests/unit/scaffold/test_sdk.py: mmt-plugin init, then scaffold
         # --from-pcap (#26) on sample captures under UDP and Ethernet
         # parents; the proposed plugin.yaml passes every packet test
-        # scaffold wrote, also under ASan and UBSan.
+        # scaffold wrote, also under ASan and UBSan. With the real tshark,
+        # scaffold --tshark (#125) drafts DNS, ARP and WebSocket plugins
+        # that read the values tshark decodes (MMT_REQUIRE_TSHARK, #128).
         env:
           MMT_GOLDEN_CC: ${{ matrix.cc }}
           MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
@@ -532,10 +551,13 @@ jobs:
         # test loop with --json until green; each command has no stdin data
         # and no terminal, and every envelope keeps the skill's contract.
         # Then the spec-telem plugin is evaluated on a capture that
-        # scripts/make_pcap.py writes, with scripts/pcap_eval.py.
+        # scripts/make_pcap.py writes, with scripts/pcap_eval.py, with and
+        # without the real tshark: with it, a field without drift, one with
+        # a drift, then that drift accepted (#123; MMT_REQUIRE_TSHARK, #128).
         env:
           MMT_GOLDEN_CC: ${{ matrix.cc }}
           MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/skill/test_sdk.py

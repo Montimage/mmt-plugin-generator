@@ -124,7 +124,7 @@ def test_the_sdk_profile_job_checks_the_run_time_registry() -> None:
     assert "MMT_REQUIRE_GOLDEN_COMPILE: '1'" in step
     assert 'MMT_GOLDEN_SDK="$SDK_PREFIX"' in step
     assert f"{test} \\" in [line.strip() for line in step.splitlines()]
-    assert f"grep -qx 'PASSED {test}'" in step
+    assert f"grep -qxF 'PASSED {test}'" in step
     assert '[ "$status" -eq 0 ] || exit "$status"' in step
     assert not re.search(r"^        (if|continue-on-error):", step, re.MULTILINE)
     # It runs after the headers check, in a job with both arches.

@@ -341,7 +341,7 @@ jobs:
             > "$out" || status=$?
           cat "$out"
           [ "$status" -eq 0 ] || exit "$status"
-          grep -qx 'PASSED tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile' "$out" \
+          grep -qxF 'PASSED tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile' "$out" \
             || { echo "the run-time registry check did not pass"; exit 1; }
 
   generated-code:

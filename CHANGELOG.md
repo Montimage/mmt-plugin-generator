@@ -68,6 +68,14 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Changed
 
+- SDK profiles have an `entry_point` (#56, N12): the callback role, the
+  symbol mmt-dpi looks up in a plugin (`init_proto`) and the macro of a
+  plugin built into the core (`CORE`). The generator takes both names
+  from it instead of writing them itself; the generated code is
+  unchanged. The template test also refuses an SDK struct field written
+  as a member access (`->caplen`). Decided: `headercheck` does not check
+  `entry_point`, which no header declares; loading every generated plugin
+  (`test_compile.py`) does.
 - The agent skill `skills/mmt-plugin-author/` is renamed
   `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
   folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
@@ -88,6 +96,53 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Fixed
 
+- `generate` after an interrupted run (#56, N2): it writes a journal,
+  `plugin.lock.pending`, next to `plugin.lock` before its first write
+  (each file it is about to write or remove, with its sha256 before and
+  after), and removes it after the lock. The next run, with the old model
+  or the new one, accepts a file whose sha256 the lock or the journal
+  lists, so it no longer reports `state.modified` for files nobody edited
+  and needs no `--force`; `--check` reports `state.stale`. Decided: fix
+  the code rather than correct `docs/design/cli.md` section 8 to the old
+  guarantee; a journal that cannot be read is ignored (the run is then as
+  strict as before); `init`'s `.gitignore` does not list the journal,
+  which exists only after an interrupted run.
+- `generate --strict` (#56, N3) also fails, before anything is written, on
+  the warnings found while planning the writes: `state.kept` and the
+  `--force` warnings, exit 7. The model's and the profile's warnings are
+  still checked first. `docs/design/cli.md` ("Details fixed by #14") is
+  the repository's record of #55's decision 13 and says so; #55's own
+  description is not edited.
+- `generate` and what is in the way (#56, N4): a directory (or any file
+  that is neither a regular file nor a symbolic link) where a generated
+  file goes is `state.modified`, and a directory named `plugin.lock` is
+  `state.invalid-lock`, both exit 7, also with `--check`, and never
+  replaced, even with `--force`; the hint is to move or delete it, no
+  longer `--force`. An `--output` (or a default `generated/`) that is, or
+  is under, an existing file is `usage.invalid-value` (exit 2), no longer
+  `internal.io` (exit 1). Decided: no new code; `state.modified` and
+  `state.invalid-lock` say "(a directory, never)" as `init`'s
+  `state.file-differs` and `import`'s `state.output-differs` already do.
+- `generate -o DIR` from inside a project with a `DIR` outside it (#56,
+  N10) writes its own `plugin.lock` in `DIR` and no longer rewrites the
+  project's.
+- `generate --force` with `--check`, `--dry-run` or a refused run (#56,
+  N11) says `would be overwritten (--force)` or `would be removed
+  (--force)`; the warning of an invalid lock that `--force` ignores no
+  longer repeats the lock's name, which is its location.
+- `docs/design/cli.md` (#56, N9): a modified file that the lock lists and
+  that is no longer generated is refused (`state.modified`, exit 7,
+  `--force` removes it), as the code always did; `state.kept` is for one
+  that is not a regular file of the output directory. Decided: keep the
+  code and fix the sentence, as the review proposed; a maintainer may
+  still choose the other way.
+- `val()` of 2^63 or more (#56, N7): already fixed on `dev` by #55 (the
+  value fails the evaluation). Added: the rule in `docs/plugin-yaml.md`
+  (Expressions) and a packet test against the SDK on `ff` x 8, where both
+  branches of `if (val(big) > 0)` are absent
+  (`tests/unit/packettest/test_sdk.py`). Decided: a test there rather
+  than a corpus model, since the corpus describes the Java tool's
+  constructs.
 - Styled output (#54, N1): `cell_width`, and `fit`, `box` and `table`
   with it, count an emoji sequence as the 2 cells a terminal draws: a ZWJ
   sequence, a regional-indicator flag, an emoji with a skin-tone modifier,

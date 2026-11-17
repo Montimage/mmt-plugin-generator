@@ -39,6 +39,7 @@ are cited as "bug N".
 from __future__ import annotations
 
 import re
+import textwrap
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -420,7 +421,13 @@ class CClassify:
 class CParent:
     """A generated classification under a parent (plugin.yaml's
     ``parents[].classify``): ``tests`` are C conditions on ``p``, the
-    parent's bytes, of which the first ``end`` must be captured."""
+    parent's bytes, of which the first ``end`` must be captured.
+
+    A classification by TCP port (``tcp``) has ``ports``, conditions on the
+    TCP header's bytes, and ``tests`` on the payload's, of which the first
+    ``end`` must be in the segment; ``offset`` is unused (the header's data
+    offset, as ``offset_type``) and ``summary`` is the function's comment,
+    line by line."""
 
     name: str
     declaration: str
@@ -433,6 +440,42 @@ class CParent:
     tests: tuple[str, ...]
     end: int
     offset: int
+    tcp: bool = False
+    ports: tuple[str, ...] = ()
+    summary: tuple[str, ...] = ()
+    offset_type: str = ""
+
+
+def _read(offset: int, length: int) -> str:
+    """The C of the ``length``-byte unsigned integer at ``p[offset]``, in
+    network byte order."""
+    parts = [
+        f"((uint64_t) p[{offset + i}] << {8 * (length - 1 - i)})"
+        if length - 1 - i
+        else f"(uint64_t) p[{offset + i}]"
+        for i in range(length)
+    ]
+    return parts[0] if len(parts) == 1 else "(" + " | ".join(parts) + ")"
+
+
+#: Where each port of a TCP header is, and how a comment names it.
+_TCP_PORTS = {"sport": (0, "source port"), "dport": (2, "destination port")}
+
+
+def _port_tests(ports: Sequence[tuple[str, int]]) -> tuple[tuple[str, ...], str]:
+    """The C conditions that skip a TCP header without ``ports`` (``port``
+    is the source or the destination port), and what they test, in words."""
+    tests, words = [], []
+    for key, value in ports:
+        if key == "port":
+            sport, dport = _read(0, 2), _read(2, 2)
+            tests.append(f"{sport} != {value:#x}u && {dport} != {value:#x}u")
+            words.append(f"the source or destination port is {value}")
+        else:
+            where, name = _TCP_PORTS[key]
+            tests.append(f"{_read(where, 2)} != {value:#x}u")
+            words.append(f"the {name} is {value}")
+    return tuple(tests), " and ".join(words)
 
 
 @dataclass(frozen=True)
@@ -994,8 +1037,9 @@ class _Builder:
         """``<label>_hook_register_parents``, which every plugin has: PDL
         names no parent, so user code attaches the protocol to its parents
         (``register_classification_function_with_parent_protocol``). It
-        returns what ``init_proto`` returns, and takes the protocol struct."""
-        init = self.h.callback("init_proto")
+        returns what the entry point (``init_proto``) returns, and takes the
+        protocol struct."""
+        init = self.h.callback(self.profile.entry_point.callback)
         protocol_t = f"{self.h.type('protocol_t')} *"
         self.c.type("protocol_t")
         return Hook(
@@ -1096,9 +1140,47 @@ class _Builder:
         offset_type = self.c.field("classified_proto_t", "offset")[1]
         limit = {"uint8_t": 0xFF, "uint16_t": 0xFFFF, "uint32_t": 0xFFFFFFFF}.get(offset_type)
         for n, parent in enumerate(classified, 1):
-            assert parent.match is not None and parent.offset is not None
+            assert parent.match is not None
             if parent.id is None or parent.macro is None:  # pragma: no cover - analysis refuses
                 raise AssertionError(f"parent {parent.name} has no id")
+            name = f"{self.lc}_classify_after_{c_name(parent.name).lower()}"
+            if len(classified) > 1:
+                name += f"_{n}"
+            if parent.ports:
+                ports, which = _port_tests(parent.ports)
+                matches = " and every match holds on the payload" if parent.match else ""
+                keep = "\0"  # a space the comment is not wrapped at
+                summary = textwrap.wrap(
+                    f"Classifies {self.model.protocol.name} after its parent {parent.name}"
+                    f" (plugin.yaml), in a segment with a payload: when {which}{matches},"
+                    f" {self.model.protocol.name} starts with the payload, after the TCP"
+                    " header and its options (the header's data offset), at"
+                    f" {index}{keep}+{keep}1.",
+                    width=72,
+                )
+                out.append(
+                    CParent(
+                        name=name,
+                        declaration=_declaration(cb.returns, name, cb.params),
+                        packet=packet,
+                        index=index,
+                        parent=parent.name,
+                        parent_id=str(parent.id),
+                        parent_macro=parent.macro,
+                        weight=parent.weight,
+                        tests=tuple(
+                            f"{_read(t.offset, t.length)} != {t.value:#x}u" for t in parent.match
+                        ),
+                        end=max((t.offset + t.length for t in parent.match), default=0),
+                        offset=0,
+                        tcp=True,
+                        ports=ports,
+                        summary=tuple(line.replace(keep, " ") for line in summary),
+                        offset_type=offset_type,
+                    )
+                )
+                continue
+            assert parent.offset is not None
             if limit is not None and parent.offset > limit:
                 self.error(
                     "model.out-of-range",
@@ -1107,19 +1189,7 @@ class _Builder:
                     f"give an offset of at most {limit}",
                     parent.span,
                 )
-            tests = []
-            for t in parent.match:
-                parts = [
-                    f"((uint64_t) p[{t.offset + i}] << {8 * (t.length - 1 - i)})"
-                    if t.length - 1 - i
-                    else f"(uint64_t) p[{t.offset + i}]"
-                    for i in range(t.length)
-                ]
-                read = parts[0] if len(parts) == 1 else "(" + " | ".join(parts) + ")"
-                tests.append(f"{read} != {t.value:#x}u")
-            name = f"{self.lc}_classify_after_{c_name(parent.name).lower()}"
-            if len(classified) > 1:
-                name += f"_{n}"
+            tests = [f"{_read(t.offset, t.length)} != {t.value:#x}u" for t in parent.match]
             out.append(
                 CParent(
                     name=name,
@@ -1352,8 +1422,9 @@ class _Builder:
         calls = self.calls(classify, hooks)
         reads = any(a.kind != "hook" for a in attributes)
         integers = any(a.kind == "integer" for a in attributes)
-        init_cb = self.h.callback("init_proto")
-        self.c.callback("init_proto")
+        entry = self.profile.entry_point
+        init_cb = self.h.callback(entry.callback)
+        self.c.callback(entry.callback)
         # Each SDK name is looked up (and its header included) only when the
         # templates print it.
         names = self.sdk
@@ -1378,6 +1449,7 @@ class _Builder:
             register_protocol=sdk.function("register_protocol"),
             protocol_t=sdk.type("protocol_t"),
             log_error=sdk.logger("error"),
+            core_macro=entry.core_macro,
         )
         h_includes = self.h.includes()
         c_includes = sdk.includes(exclude=h_includes)
@@ -1398,7 +1470,7 @@ class _Builder:
             metadata=f"{lc}_attributes_metadata",
             init=f"init_{lc}_proto_struct",
             init_declaration=_declaration(init_cb.returns, f"init_{lc}_proto_struct", ()),
-            init_proto_declaration=_declaration(init_cb.returns, "init_proto", init_cb.params),
+            init_proto_declaration=_declaration(init_cb.returns, entry.symbol, init_cb.params),
             h_includes=h_includes,
             c_includes=c_includes,
             defines=defines,

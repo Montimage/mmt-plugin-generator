@@ -67,8 +67,11 @@ attributes:
   `src/<label>_impl.c`. `build` fails with `build.missing-hook` until you
   define it; its hint gives the declaration.
 - **Parents.** Use `classify` when the parent's header says it is this
-  protocol (a UDP or TCP port, an EtherType): the match reads the parent's
-  header, in network byte order. Without `classify`, attach the protocol
+  protocol (a UDP port, an EtherType): the match reads the parent's
+  header, in network byte order. Under `tcp`, `classify` names the port
+  instead (`port`, either one, `sport` or `dport`), with optional `match`es
+  whose offsets count from the start of the payload; the generated code
+  reads the TCP header's length. Without `classify`, attach the protocol
   yourself in `<label>_hook_register_parents`. `validate` checks that the
   parent exists.
 - **Next protocol**: `classify_next` with `protocol.encapsulation: true`.
@@ -136,9 +139,14 @@ each failure names its step (`packet`). The format is in
 `scaffold --from-pcap` writes `<project>/plugin.proposed.yaml` and one
 packet test per payload, `<project>/tests/<label>-pcap-<n>.yaml`, whose
 values are what the proposal extracts. It never edits `plugin.yaml`.
+Under a `tcp` parent the payloads are each segment's new bytes in stream
+order; when each session starts with a text handshake (an HTTP upgrade),
+pass `--skip-until 0d0a0d0a` so that only the protocol's own bytes are
+sliced.
 
 1. Read the proposal: each field has a comment with what was seen
-   (constant, varies, the payload length).
+   (constant, varies, the payload length). A byte cut into bit fields is a
+   struct `bits_<offset>` of `field_<offset>_b<bit>` fields.
 2. Match the fields with what you know of the protocol (a spec, a
    description, the port). Rename them (`field_0` to `version`), merge or
    split them, and delete those that are payload, not header.

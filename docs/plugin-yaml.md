@@ -106,6 +106,17 @@ PDL v1 expression written as a string: numbers (decimal or `0x` hex),
 (`val(length) - 4`) is a **variable-length attribute**, of a byte type
 (`MMT_BINARY_DATA`, `MMT_BINARY_VAR_DATA`, `MMT_STRING_DATA`).
 
+The generated code computes expressions in signed 64-bit integers. An
+expression fails when it overflows, divides by zero, or reads a value it
+cannot represent: `val(x)` of an 8-byte integer (or a 64-bit bitfield) of
+2^63 or more, such as `ff ff ff ff ff ff ff ff`. The attribute `x` itself is
+still extracted with its full value; what fails is the expression that
+reads it. In a packet where an expression fails, an attribute whose
+`offset` or `length` uses it is absent, and so is every attribute under an
+`if` that uses it, in both its branches: a failed condition is neither true
+nor false. A failed `switch` (or case `offset`) classifies no next
+protocol.
+
 ### Offsets
 
 With `offsets: absolute` (the default), every offset counts from the start
@@ -128,6 +139,26 @@ checks that each one exists (`parents-exist`).
   of the parent. `weight` (0 to 100, default 5) orders the parent's
   classification functions, lowest first; mmt-dpi documents 0 to 9 and 90 to
   100. The parent must be a protocol of the SDK profile.
+- Under `tcp`, `classify` can name ports instead: `port` (the source or
+  the destination port), `sport` (the source port), `dport` (the
+  destination port), at least one, all of them holding, and no `offset`.
+  The protocol then starts with the TCP payload, after the header and its
+  options (the header's data offset says where), and is classified only in
+  a segment with a payload; where the segment ends comes from the IP
+  header, not from the capture, so Ethernet padding after a short segment
+  is not a payload. Its optional `match` tests the payload: each `offset`
+  counts from the start of the payload, where the protocol starts. A port
+  under any other parent is `model.classify-port`.
+
+  ```yaml
+  parents:
+    - protocol: tcp
+      classify:
+        port: 4840                                # either port
+        match:
+          - {offset: 0, length: 3, value: 0x48454c}   # the payload starts with HEL
+  ```
+
 - Without `classify`, your code attaches the protocol, in
   `<label>_hook_register_parents` (`src/<label>_impl.c`), which the
   generated init calls after attaching the others.
@@ -161,7 +192,8 @@ Every error is a diagnostic at its node's line and column, exit 3:
   value;
 - then the semantic checks of any model (`model.duplicate-name`,
   `model.unknown-attribute`, ...), and for a parent with `classify`
-  `model.unknown-parent` when the SDK profile does not have it.
+  `model.unknown-parent` when the SDK profile does not have it, and
+  `model.classify-port` for ports under a parent other than `tcp`.
 
 ```
 plugin.yaml:4:7: error: protocol.id: expected an integer, found a string (`960`) [model.schema]

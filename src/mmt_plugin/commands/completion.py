@@ -60,6 +60,7 @@ class Option:
     choices: tuple[str, ...]
     kind: str  # "dir", "file" or "none": what a value completes to
     repeat: bool
+    excludes: tuple[str, ...] = ()  # the flags of its mutually exclusive groups' other options
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,18 @@ def _shown(action: argparse.Action) -> bool:
     return action.help != argparse.SUPPRESS
 
 
+def _exclusive(parser: argparse.ArgumentParser, action: argparse.Action) -> tuple[str, ...]:
+    """The flags of the options that share a mutually exclusive group with ``action``."""
+    out: list[str] = []
+    for group in parser._mutually_exclusive_groups:
+        if action not in group._group_actions:
+            continue
+        for other in group._group_actions:
+            if other is not action and _shown(other):
+                out += [f for f in other.option_strings if f not in out]
+    return tuple(_checked(f) for f in out)
+
+
 def _options(parser: argparse.ArgumentParser) -> tuple[Option, ...]:
     out = []
     for action in parser._actions:
@@ -130,6 +143,7 @@ def _options(parser: argparse.ArgumentParser) -> tuple[Option, ...]:
                 choices=_choices(action),
                 kind=_kind(action),
                 repeat=isinstance(action, (argparse._CountAction, argparse._AppendAction)),
+                excludes=_exclusive(parser, action),
             )
         )
     return tuple(out)
@@ -306,7 +320,16 @@ def _zaction(kind: str, choices: Sequence[str]) -> str:
     return " "
 
 
-def _zsh_option(opt: Option) -> str:
+def _terminal(opt: Option) -> bool:
+    """``--help`` or ``--version``: it prints and exits, so nothing goes with it."""
+    return opt.flags[0] in ("-h", "--help") or "--version" in opt.flags
+
+
+def _zsh_option(opt: Option, terminal: Sequence[str] = ()) -> str:
+    """One ``_arguments`` spec. ``terminal`` holds the flags of the level's
+    ``--help`` and ``--version``, which are not offered once another option is
+    on the line; neither are an option's other flags, nor the options of its
+    mutually exclusive groups."""
     desc = f"[{_zdesc(opt.help)}]"
     value = ""
     flags = opt.flags
@@ -315,16 +338,20 @@ def _zsh_option(opt: Option) -> str:
         value = f":{message}:{_zaction(opt.kind, opt.choices)}"
         # "--opt=" takes the value after "=" or as the next word.
         flags = tuple(f + "=" if f.startswith("--") else f for f in flags)
-    if opt.repeat:
-        head = "'*'"
-    elif opt.flags[0] in ("-h", "--help") or "--version" in opt.flags:
+    if _terminal(opt):
         head = "'(- *)'"
-    elif len(opt.flags) > 1:
-        head = "'(" + " ".join(opt.flags) + ")'"
     else:
-        head = ""
+        own = opt.flags if len(opt.flags) > 1 and not opt.repeat else ()
+        excluded = list(dict.fromkeys((*own, *opt.excludes, *terminal)))
+        head = "(" + " ".join(excluded) + ")" if excluded else ""
+        head = f"'{head}*'" if opt.repeat else f"'{head}'" if head else ""
     names = flags[0] if len(flags) == 1 else "{" + ",".join(flags) + "}"
     return f"{head}{names}'{desc}{value}'"
+
+
+def _zsh_options(options: Sequence[Option]) -> list[str]:
+    terminal = [f for opt in options if _terminal(opt) for f in opt.flags]
+    return [_zsh_option(opt, terminal) for opt in options]
 
 
 def _zsh_positional(index: int, pos: Positional) -> str:
@@ -356,7 +383,7 @@ def _zsh(spec: Spec) -> str:
         '  local curcontext="$curcontext" state state_descr line ret=1',
         "  typeset -A opt_args",
     ]
-    root = [_zsh_option(o) for o in spec.options]
+    root = _zsh_options(spec.options)
     if spec.commands:
         lines += _zsh_arguments(
             "  ", [*root, "'1: :->command'"], "'*:: :->args' && ret=0", flags="-C -s"
@@ -378,7 +405,7 @@ def _zsh(spec: Spec) -> str:
             "      case $line[1] in",
         ]
         for command in spec.commands:
-            specs = [_zsh_option(o) for o in command.options]
+            specs = _zsh_options(command.options)
             specs += [_zsh_positional(i + 1, p) for i, p in enumerate(command.positionals)]
             lines.append(f"        {shlex.quote(command.name)})")
             if specs:

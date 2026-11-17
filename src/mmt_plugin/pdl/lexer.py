@@ -125,7 +125,7 @@ class _Lexer:
         self.pos = 0
         self.line = 1
         self.line_start = 0
-        if text.startswith("﻿"):
+        if text.startswith("\ufeff"):
             self.pos = self.line_start = 1
         self.tokens: list[Token] = []
 

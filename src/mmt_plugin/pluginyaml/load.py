@@ -32,8 +32,10 @@ from mmt_plugin.pluginyaml.schema import validate
 __all__ = ["DIAGNOSTIC_CODES", "PluginYaml", "PluginYamlError", "load", "profile_pin"]
 
 #: The codes of reading plugin.yaml (besides the PDL v1 syntax codes of its
-#: expressions).
-DIAGNOSTIC_CODES = ("model.yaml-syntax", "model.schema")
+#: expressions), and of what only plugin.yaml says: a classification by
+#: TCP port under another parent (``model.classify-port``, which the
+#: semantic passes report).
+DIAGNOSTIC_CODES = ("model.yaml-syntax", "model.schema", "model.classify-port")
 
 _SCOPES = {"packet": pdl.Scope.PACKET, "session": pdl.Scope.SESSION}
 
@@ -217,9 +219,9 @@ class _Builder:
     def parent_classify(self, node: Node) -> pdl.ParentClassify:
         assert isinstance(node, Mapping)
         match = node.get("match")
-        assert isinstance(match, Sequence)
+        assert match is None or isinstance(match, Sequence)
         tests = []
-        for m in match.items:
+        for m in () if match is None else match.items:
             assert isinstance(m, Mapping)
             tests.append(
                 pdl.ParentMatch(
@@ -229,7 +231,15 @@ class _Builder:
                     span=self.span(m),
                 )
             )
-        return pdl.ParentClassify(tuple(tests), self.integer(node.get("offset")), self.span(node))
+        offset, port, sport, dport = (node.get(k) for k in ("offset", "port", "sport", "dport"))
+        return pdl.ParentClassify(
+            tuple(tests),
+            None if offset is None else self.integer(offset),
+            self.span(node),
+            port=None if port is None else self.integer(port),
+            sport=None if sport is None else self.integer(sport),
+            dport=None if dport is None else self.integer(dport),
+        )
 
     # -- attributes --
 

@@ -162,6 +162,88 @@ def test_every_corpus_model_passes_its_packet_tests_under_the_sanitizers(
     }
 
 
+_BIG_VAL_MODEL = """Protocol {
+  Properties {
+    label = "big_val"
+    id = "998"
+    encoding = "network"
+  }
+  Attributes {
+    attribute {
+      alias="big" data_type="MMT_U64_DATA" data_len="8" offset="0" scope="SCOPE_PACKET"
+    }
+    if (val(big) > 0) {
+      attribute {
+        alias="pos" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
+      }
+    } else {
+      attribute {
+        alias="nonpos" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
+      }
+    }
+  }
+}
+"""
+
+
+# PDL v1 offsets run: pos and nonpos, at offset 0 after the 8 constant
+# bytes of big, are at byte 8.
+def _big_val_test(name: str, first: str, big: int, branch: str | None) -> str:
+    """A packet test of ``_BIG_VAL_MODEL``: 8 bytes ``first`` x 8, then 0x2a;
+    ``branch`` is the attribute present, or None when both are absent."""
+    lines = [
+        "schema: 1",
+        f'id: "big_val/{name}"',
+        "bytes:",
+        f'  - "{" ".join([first] * 8)} 2a"',
+        "expect:",
+        '  protocol: "BIG_VAL"',
+        "  proto_id: 998",
+        "  next:",
+        '    kind: "none"',
+        "  attributes:",
+        '    - name: "big"',
+        '      type: "MMT_U64_DATA"',
+        "      offset: 0",
+        "      length: 8",
+        f"      value: {big}",
+    ]
+    for attribute in ("pos", "nonpos"):
+        lines += [f'    - name: "{attribute}"', '      type: "MMT_U8_DATA"']
+        if attribute == branch:
+            lines += ["      offset: 8", "      length: 1", "      value: 42"]
+        else:
+            lines += ['      status: "absent"']
+    return "\n".join(lines) + "\n"
+
+
+def test_val_of_a_u64_above_int64_max_makes_both_branches_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Review of #55, N7: expressions compute in int64_t; val() of 2^63 or
+    # more fails the evaluation, so neither branch of the if holds
+    # (docs/plugin-yaml.md, Expressions), while the value itself is extracted.
+    data = _BIG_VAL_MODEL.encode()
+    generation, _, error = make_generation("model.pdl", data, _choice(_version()))
+    assert generation is not None, error
+    project = tmp_path / "big_val"
+    (project / "src").mkdir(parents=True)
+    (project / "tests").mkdir()
+    (project / "model.pdl").write_bytes(data)
+    impl = scaffold(generation, _choice(_version()).profile)
+    (project / impl.path).write_text(impl.text)
+    for name, first, big, branch in (
+        ("ff-x8", "ff", 2**64 - 1, None),
+        ("80-x8", "80", 0x8080808080808080, None),
+        ("7f-x8", "7f", 0x7F7F7F7F7F7F7F7F, "pos"),
+        ("00-x8", "00", 0, "nonpos"),
+    ):
+        (project / "tests" / f"{name}.yaml").write_text(_big_val_test(name, first, big, branch))
+    code, doc = _test(project, monkeypatch, capsys, "--sanitize", "--fuzz-count", "20")
+    assert code == 0, (doc["error"], doc["result"] and doc["result"]["packets"])
+    assert doc["result"]["summary"]["passed"] == 4
+
+
 def test_a_deliberately_broken_model_fails_with_the_attribute_and_both_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

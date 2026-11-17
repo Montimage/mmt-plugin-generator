@@ -172,9 +172,10 @@ in `sdk.profile` and the parent declared under `parents:`),
 `src/<label>_impl.c` (your code: one function per hook),
 `tests/<label>-basic.yaml` (a packet test of the sample header) and
 `.gitignore`. A parent that one match of its header identifies (an
-EtherType, a UDP source or destination port) gets a `classify`, and the
-packet test also runs `through` it; any other parent (`tcp:port=102`,
-`udp:port=4433`) is left to `<label>_hook_register_parents`.
+EtherType, a UDP source or destination port) gets a `classify`, so do TCP
+ports (`tcp:port=102`: a `classify` by port), and the packet test also runs
+`through` it; any other parent (`udp:port=4433`, `ip:proto=17`) is left to
+`<label>_hook_register_parents`.
 
 `import` warns with `model.legacy-*` codes about constructs that relied on
 bugs of the old Java tool. Read each warning: it says what changed. Then
@@ -229,7 +230,7 @@ Follow [`references/drafting.md`](references/drafting.md):
   offset and with the type the spec gives. Keep the profile pinned,
   `sdk: {profile: "<profile>"}`, as `init` wrote it. Declare the parent
   with `classify` when one match of the parent's header identifies the
-  protocol.
+  protocol, or, under `tcp`, a port does.
 - From a capture, in a project `init` created in this session, start
   from `plugin.proposed.yaml`: rename its fields after the spec, delete
   those that are payload, copy it over `plugin.yaml`, pin the profile
@@ -288,7 +289,20 @@ the run write `runs/run-<n>/notes.md`: the command that stopped, its
 
 ## Step 6: evaluate on the capture
 
-When a loop run is green, run the built plugin on the capture, as
+When a loop run is green, first look at what the plugin does on the
+capture with `run`: it runs the plugin through mmt-dpi's stack (its own
+parent classification) and reports the protocol paths with their packet
+counts and, per attribute, the packets that have it. A
+`test.no-match` warning, or an attribute in none of the plugin's packets,
+is a problem to fix before the evaluation:
+
+```sh
+mmt-plugin -C <project> --json run <work>/capture/capture.pcap --sdk <prefix> --cc <cc>
+```
+
+Read `result.summary.classified`, `result.paths[]` and
+`result.protocols[0].attributes[]`; keep the envelope in the loop run's
+folder. Then evaluate the built plugin on the capture, as
 [`references/evaluation.md`](references/evaluation.md) says:
 
 ```sh

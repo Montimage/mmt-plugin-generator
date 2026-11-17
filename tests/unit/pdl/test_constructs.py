@@ -479,6 +479,15 @@ def test_literals(ok: Parse, model: Build) -> None:
         assert e == IntLiteral(value, text, e.span)
 
 
+def test_a_negative_literal_joins_its_sign_to_the_digits(ok: Parse, model: Build) -> None:
+    # #48: what separates the `-` from the digits is not kept in `text`.
+    for written in ("- 5", "-/* x */5"):
+        e = offset_expr(ok, model, written)
+        assert e == IntLiteral(-5, "-5", e.span)
+    m = ok(model(defines="\tdefine D = - 007\n"))
+    assert m.defines[0].value == IntLiteral(-7, "-007", m.defines[0].value.span)
+
+
 @pytest.mark.parametrize(
     ("op", "operator"),
     [

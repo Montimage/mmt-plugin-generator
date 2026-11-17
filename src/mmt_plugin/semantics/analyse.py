@@ -439,6 +439,19 @@ class _Analyser:
         )
         weight = DEFAULT_PARENT_WEIGHT if parent.weight is None else parent.weight.value
         match = offset = None
+        ports: tuple[tuple[str, int], ...] = ()
+        if parent.classify is not None and parent.classify.ports:
+            ports = tuple((k, v.value) for k, v in parent.classify.ports)
+            if sdk is not None and sdk.macro != self.profile.parents.id_for("tcp"):
+                key, value = parent.classify.ports[0]
+                self.error(
+                    "model.classify-port",
+                    f"parent `{name}` is classified by {key}, which the generated code reads"
+                    " only in a TCP header",
+                    value.span,
+                    "classify by port under protocol: tcp; under another parent, give match"
+                    " and offset (offsets from the start of the parent)",
+                )
         if parent.classify is not None:
             if sdk is None:
                 self.error(
@@ -461,7 +474,7 @@ class _Analyser:
                     )
                 tests.append(ParentMatch(m.offset.value, m.length.value, m.value.value))
             match = tuple(tests)
-            offset = parent.classify.offset.value
+            offset = None if parent.classify.offset is None else parent.classify.offset.value
         return AnalysedParent(
             name=name,
             macro=None if sdk is None else sdk.macro,
@@ -470,6 +483,7 @@ class _Analyser:
             match=match,
             offset=offset,
             span=parent.span,
+            ports=ports,
         )
 
     # -- Properties (bug 23) --

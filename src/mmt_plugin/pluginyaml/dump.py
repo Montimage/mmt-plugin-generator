@@ -152,13 +152,15 @@ class _Writer:
         if p.weight is not None:
             out["weight"] = _int(p.weight)
         if p.classify is not None:
-            out["classify"] = {
-                "match": [
+            classify: dict[str, Any] = {k: _int(v) for k, v in p.classify.ports}
+            if p.classify.match or p.classify.offset is not None:
+                classify["match"] = [
                     {"offset": _int(t.offset), "length": _int(t.length), "value": _int(t.value)}
                     for t in p.classify.match
-                ],
-                "offset": _int(p.classify.offset),
-            }
+                ]
+            if p.classify.offset is not None:
+                classify["offset"] = _int(p.classify.offset)
+            out["classify"] = classify
         return out
 
     def elements(self, elements: tuple[pdl.AttributeElement, ...]) -> list[Any]:

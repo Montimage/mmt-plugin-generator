@@ -98,8 +98,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and eleven commands, `init` (T2.7), `import`
-  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  envelope and its schema) and twelve commands, `init` (T2.7), `import`
+  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4),
+  `run` (#103), `install`,
   `uninstall` and `doctor` (T2.5), `scaffold` (T4.1) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
@@ -136,7 +137,10 @@ protocol model. A Python rewrite is planned in
   run-time dependency) into the plugin header and source, in memory; every
   SDK name comes from the profile. `mmt-plugin generate`
   (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
-  `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
+  `schemas/lock/v1/plugin-lock.json`; in the output directory when that is
+  outside the project), with its journal `plugin.lock.pending` written
+  first and removed last, so an interrupted run recovers without `--force`
+  (#56). Tests in `tests/unit/generate/`, with
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
@@ -268,8 +272,8 @@ protocol model. A Python rewrite is planned in
   header, the profile pinned in `sdk.profile`, `--parent` as its `parents`
   entry, #65), the scaffold `src/<label>_impl.c`, the packet test
   `tests/<label>-basic.yaml` and a `.gitignore` with `build/`. A parent the
-  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`)
-  gets a `classify`, the one `scaffold` proposes
+  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`,
+  `tcp:` with `port=`, `sport=` or `dport=`, #100) gets a `classify`, the one `scaffold` proposes
   (`pcap/skeleton.py:parent_yaml`), and the packet test also runs
   `through` it; any other is left to `<label>_hook_register_parents`.
   `--name` is only the label upper-cased (`plugin.yaml` has no other). `--id` defaults to the lowest id in 950-999
@@ -299,11 +303,17 @@ protocol model. A Python rewrite is planned in
   as `plugin.yaml`. Every command reads both formats; `sdk.profile` pins the
   profile below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE`. A parent with
   `classify` gets a generated classification function that the init
-  registers before calling `<label>_hook_register_parents`. Tests in
+  registers before calling `<label>_hook_register_parents`: matches at
+  fixed offsets of the parent (`classify_fixed`), or, under `tcp`, ports
+  (`port`, `sport`, `dport`) and matches on the payload, which starts after
+  the TCP header's data offset (`classify_tcp`, #100; a port under another
+  parent is `model.classify-port`). Tests in
   `tests/unit/pluginyaml/`: `test_nodes.py`, `test_schema.py`, `test_load.py`,
   `test_roundtrip.py` (every corpus model round-trips in both offset modes
   and generates the same C) and `test_sdk.py` (a packet test that passes
-  only through the generated parent classification; needs `MMT_GOLDEN_SDK`).
+  only through the generated parent classification, and frames with TCP
+  options, other ports and padding through the TCP one; needs
+  `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/import_pdl.py` (T3.2): `mmt-plugin import PDL`
   (`-` is stdin) converts a PDL v1 model to `plugin.yaml`
   (`pluginyaml/convert.py`): `-o FILE` (default `<project>/plugin.yaml`; `-o -`
@@ -327,16 +337,51 @@ protocol model. A Python rewrite is planned in
   `<project>/plugin.proposed.yaml`, whose values the tests expect; it never
   edits `plugin.yaml`. The label and id come from `--model` (default
   `<project>/plugin.yaml`). `--max-packets` (default 20), `--dry-run`,
-  `--force`. A malformed pcap is `model.bad-pcap`, none under the parent
+  `--force`. Under a `tcp` parent each payload is a segment's new bytes in
+  its stream's order (retransmissions dropped, a gap given up), and
+  `--skip-until HEX` skips each direction's bytes of each session up to the
+  end of that pattern (an HTTP upgrade's `0d0a0d0a`), #102. A byte whose
+  bits vary independently is proposed as bit fields (a struct
+  `bits_<offset>`), with a role flag a direction sets its own way. A malformed pcap is `model.bad-pcap`, none under the parent
   `model.no-payloads` (exit 3); an output with other content is
   `state.output-differs` (exit 7) unless `--force`. `src/mmt_plugin/pcap/`:
   `reader.py` (pcap and pcapng, no dependency), `layers.py` (Ethernet,
-  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons) and `skeleton.py` (the field
-  rules, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
-  `samples.py` builds captures, `data/` holds two written by tcpdump and
+  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons), `streams.py` (TCP stream
+  order) and `skeleton.py` (the field
+  rules, the bit groups, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
+  `samples.py` builds captures (a WebSocket session among them), `test_streams.py`, `data/` holds two written by tcpdump and
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/run.py` (#103): `mmt-plugin run PCAP` runs the
+  plugin of `--model` (as `test`'s) over a pcap or pcapng capture through
+  mmt-dpi's stack and counts what it reports. Stages `build` (`build` when
+  stale; `--no-deps` exits 7 instead), `runner` and `capture`.
+  `src/mmt_plugin/capture/`: `runner.py` renders the C runner
+  (`templates/runner.c.j2`, into `<build-dir>/run/`, `build.runner-failed`
+  exit 5), which loads, from a plugin directory of its own
+  (`MMT_DPI_PLUGINS_DIR`), every `*.so` of the SDK's `plugins/`, the plugin
+  and each `--plugin` (one named as an SDK plugin replaces it), opens a
+  handler for the first frame's link type and processes the frames it
+  reads on stdin through mmt-dpi's stack (nothing attaches the plugin: its
+  own parent classification runs); `run` streams the capture's frames to
+  it (`mmt_plugin.pcap.reader`, record by record, with their time stamps,
+  which the reader now gives in nanoseconds) in batches while threads read
+  its report and the tail of its stderr: constant memory whatever the
+  capture's size. `result`: `summary` (frames, processed, skipped,
+  classified), `paths` (protocol names and ids, packets; at most 1024, the
+  rest in `paths_other`), `protocols` (the plugin's, then each
+  `--protocol`: packets, and per attribute the packets that have it).
+  Ethernet and Linux cooked captures only (mmt-dpi's stacks 1 and 624;
+  another link type is `model.unsupported-linktype`, exit 3).
+  Warnings `test.no-match`, `test.other-linktype`, `test.unknown-protocol`;
+  `test.load-failed` and `test.crash` (the frame; `--timeout`) exit 6; a
+  capture broken after its header `model.bad-pcap` (exit 3) with the
+  counts so far; `--max-packets`, `--dry-run`, `--strict`. Tests in
+  `tests/unit/run/`: `test_runner.py` and `test_command.py` (a fake runner,
+  `fakes.py`, with build's fakes) and `test_sdk.py` (a real runner against
+  a real SDK, including its memory on a small and a large capture; needs
+  `MMT_GOLDEN_SDK`).
 - `skills/mmt-plugin-generator/` (T4.2; `skills/mmt-plugin-author/` before
   it was renamed): the agent skill that writes a plugin
   from a protocol spec, a capture or a legacy PDL v1 model, or updates an
@@ -499,7 +544,10 @@ uv run python -m mmt_plugin.sdk.headercheck --sdk <dir>/opt/mmt --cc gcc
 ```
 
 Check that it fails on broken scratch copies of those headers (an
-unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
+unprototyped declaration, a wrong `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`
+or `PROTO_META`, a plugin id or alias changed, a protocol id that
+`parents.ids` does not list, also as an expression or on a continued line);
+same output and exit:
 
 ```
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc

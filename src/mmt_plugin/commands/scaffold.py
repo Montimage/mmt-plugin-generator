@@ -6,11 +6,13 @@ proposes a field skeleton (``mmt_plugin.pcap``). Stages, each stopping the
 run with its class's exit code:
 
 1. check ``--parent`` (the selector syntax of ``init --parent``, then a
-   parent ``mmt_plugin.pcap.layers`` decodes and its keys; usage, exit 2);
+   parent ``mmt_plugin.pcap.layers`` decodes and its keys; usage, exit 2)
+   and ``--skip-until`` (hex bytes, a ``tcp`` parent only);
 2. read the project's model (``--model``, default ``<project>/plugin.yaml``)
    for the protocol's label and id; a model that does not parse is exit 3;
 3. read the capture (pcap or pcapng) record by record, up to the record of
-   the ``--max-packets``-th payload: one that is not a capture, or is
+   the ``--max-packets``-th payload (under ``tcp``, each segment's new bytes
+   in its stream's order, ``mmt_plugin.pcap.streams``): one that is not a capture, or is
    broken before the payloads are found, is ``model.bad-pcap`` (exit 3);
    one with no payload under the parent is ``model.no-payloads`` (exit 3);
 4. propose the skeleton from the first ``--max-packets`` payloads, render
@@ -102,6 +104,22 @@ def _positive(text: str) -> int:
     return value
 
 
+def _pattern(text: str) -> bytes:
+    """``--skip-until``: hex bytes, optionally 0x-prefixed or separated by
+    spaces or colons."""
+    digits = text.strip()
+    if digits[:2].lower() == "0x":
+        digits = digits[2:]
+    digits = digits.replace(":", "").replace(" ", "")
+    try:
+        pattern = bytes.fromhex(digits)
+    except ValueError:
+        pattern = b""
+    if not pattern:
+        raise argparse.ArgumentTypeError("must be hex bytes, e.g. 0d0a0d0a")
+    return pattern
+
+
 def _choice() -> ProfileChoice:
     """The newest bundled profile: scaffold pins none, and the profile only
     checks that the proposal generates."""
@@ -133,7 +151,8 @@ class ScaffoldCommand:
                 "Slice the payloads of a pcap or pcapng capture under --parent into packet\n"
                 "tests (<tests-dir>/<label>-pcap-<n>.yaml) and propose a field skeleton,\n"
                 "plugin.proposed.yaml, whose values the tests expect. plugin.yaml is never\n"
-                "edited. Parents: " + ", ".join(PARENTS) + ". Re-running is a no-op;\n"
+                "edited. Parents: " + ", ".join(PARENTS) + ". Under tcp, each payload is a\n"
+                "segment's new bytes in its stream's order. Re-running is a no-op;\n"
                 "a file with other content is not replaced without --force."
             ),
             epilog=(
@@ -142,7 +161,9 @@ class ScaffoldCommand:
                 "  mmt-plugin -C demo scaffold --from-pcap demo.pcapng"
                 " --parent ethernet:ethertype=0x88b5\n"
                 "  mmt-plugin scaffold --from-pcap capture.pcap --parent tcp:dport=102"
-                " --max-packets 5 --dry-run"
+                " --max-packets 5 --dry-run\n"
+                "  mmt-plugin scaffold --from-pcap ws.pcap --parent tcp:port=80"
+                " --skip-until 0d0a0d0a"
             ),
         )
         parser.add_argument(
@@ -177,6 +198,13 @@ class ScaffoldCommand:
             help=f"the payloads to slice, the first N (default: {DEFAULT_MAX_PACKETS})",
         )
         parser.add_argument(
+            "--skip-until",
+            type=_pattern,
+            metavar="HEX",
+            help="under a tcp parent, skip each direction's bytes of each session up to the"
+            " end of this byte pattern, e.g. 0d0a0d0a after an HTTP handshake",
+        )
+        parser.add_argument(
             "--tests-dir",
             metavar="DIR",
             help="where to write the packet tests (default: <project>/tests/)",
@@ -193,6 +221,12 @@ class ScaffoldCommand:
         project = absolute(ctx.project)
         selector = parse_selector(args.parent)
         parent = parent_of(selector.text, selector.proto, selector.keys)
+        if args.skip_until is not None and parent.proto != "tcp":
+            raise CliError(
+                "usage.conflicting-options",
+                f"--skip-until follows TCP streams: --parent {parent.text!r} is not tcp",
+                "drop --skip-until, or pass a tcp parent, e.g. --parent tcp:port=80",
+            )
         choice = _choice()
         context = {"sdk": sdk_context(None, choice)}
 
@@ -218,7 +252,9 @@ class ScaffoldCommand:
         try:
             with pcap_path.open("rb") as stream:
                 capture = read_stream(stream)
-                slicing = slice_payloads(capture.frames(), parent, args.max_packets)
+                slicing = slice_payloads(
+                    capture.frames(), parent, args.max_packets, skip_until=args.skip_until
+                )
         except OSError as exc:
             raise CliError(
                 "model.bad-pcap",
@@ -243,7 +279,7 @@ class ScaffoldCommand:
                 f"no payload under {parent.text} in {pcap} ({slicing.frames} frames: {why})",
                 "check the --parent selector against the capture (tshark -r PCAP)",
             )
-        skeleton = propose([p.data for p in slicing.payloads])
+        skeleton = propose([p.data for p in slicing.payloads], [p.flow for p in slicing.payloads])
 
         proposed_path = project / PROPOSED_FILE
         proposed_shown = show_path(proposed_path, project)
@@ -309,6 +345,7 @@ class ScaffoldCommand:
             "pcap": pcap,
             "format": capture.format,
             "parent": parent.text,
+            "skip_until": None if args.skip_until is None else args.skip_until.hex(),
             "model": source.name,
             "protocol": {"label": label, "name": label.upper(), "id": pid},
             "packets": {

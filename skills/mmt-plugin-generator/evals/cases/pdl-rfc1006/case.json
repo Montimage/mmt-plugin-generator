@@ -11,7 +11,7 @@
   },
   "runs": [
     {
-      "note": "Take the imported model in place of init's sample model, put back init's profile pin and parent (TCP's header has no fixed length, so no classify: attached in rfc1006_hook_register_parents), and add packet tests from RFC 1006 (the corpus's, for this project's name and id).",
+      "note": "Take the imported model in place of init's sample model, put back init's profile pin and the parent, attached here by the legacy project's own hand-written classification in rfc1006_hook_register_parents instead of init's classify by port, and add packet tests from RFC 1006 (the corpus's, for this project's name and id).",
       "edits": [
         {
           "copy": "plugin.yaml",

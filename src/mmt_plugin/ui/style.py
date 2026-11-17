@@ -23,7 +23,7 @@ import math
 import re
 import time
 import unicodedata
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TextIO
@@ -92,10 +92,78 @@ def _char_width(ch: str) -> int:
     return 1
 
 
+_ZWJ = "\u200d"
+_VS16 = "\ufe0f"  # emoji presentation selector
+
+
+def _pictographic(ch: str) -> bool:
+    """Whether ``ch`` is in a block of emoji or pictographs (an approximation
+    of Extended_Pictographic, which ``unicodedata`` does not expose)."""
+    code = ord(ch)
+    return (
+        0x1F000 <= code <= 0x1FAFF
+        or 0x2600 <= code <= 0x27BF
+        or 0x2300 <= code <= 0x23FF
+        or 0x2B00 <= code <= 0x2BFF
+        or 0x2190 <= code <= 0x21FF
+        or code in (0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139, 0x3030, 0x303D)
+    )
+
+
+def _regional(ch: str) -> bool:
+    return 0x1F1E6 <= ord(ch) <= 0x1F1FF
+
+
+def _skin_tone(ch: str) -> bool:
+    return 0x1F3FB <= ord(ch) <= 0x1F3FF
+
+
+def _clusters(text: str) -> Iterator[tuple[str, int]]:
+    """``text`` cut into the clusters a terminal draws as one, with their
+    cells: a character with its combining and zero-width followers, and the
+    emoji sequences terminals draw in 2 cells (a ZWJ sequence, a pair of
+    regional indicators, an emoji with a skin-tone modifier, a character
+    with VS16, which also makes a keycap)."""
+    chars: list[str] = []
+    width = 0
+    pictographic = False  # the cluster is an emoji that a ZWJ or a modifier joins
+    joining = False  # the cluster ends with a ZWJ after an emoji
+    flag = False  # the cluster is a single regional indicator
+
+    for ch in text:
+        w = _char_width(ch)
+        if chars and w == 0:
+            chars.append(ch)
+            if ch == _VS16 and width == 1:
+                width = 2
+            joining = pictographic and ch == _ZWJ
+            continue
+        if chars and joining and _pictographic(ch):
+            chars.append(ch)
+            width, joining = 2, False
+            continue
+        if chars and pictographic and _skin_tone(ch):
+            chars.append(ch)
+            width = 2
+            continue
+        if chars and flag and _regional(ch):
+            chars.append(ch)
+            width, flag = 2, False
+            continue
+        if chars:
+            yield "".join(chars), width
+        chars, width = [ch], w
+        pictographic, joining, flag = _pictographic(ch), False, _regional(ch)
+    if chars:
+        yield "".join(chars), width
+
+
 def cell_width(text: str) -> int:
     """The terminal cells ``text`` takes: East Asian Wide and Fullwidth count 2,
-    combining marks and zero-width characters 0, everything else 1."""
-    return sum(_char_width(ch) for ch in text)
+    combining marks and zero-width characters 0, an emoji sequence (ZWJ,
+    regional-indicator flag, skin-tone modifier, VS16, keycap) 2, everything
+    else 1."""
+    return sum(w for _, w in _clusters(text))
 
 
 def strip_sgr(text: str) -> str:
@@ -212,9 +280,17 @@ def paint(text: str, role: Role, style: StreamStyle, *, bold: bool = False) -> S
     return _wrap(_safe(text), sgr(role, _tier(style), bold=bold))
 
 
+def _step(percent: float) -> int:
+    """``percent`` as one of the 101 gradient steps: clamped to 0-100, NaN 0."""
+    if math.isnan(percent):
+        return 0
+    return round_half_up(max(0.0, min(100.0, percent)))
+
+
 def gradient_rgb(percent: float) -> RGB:
-    """The low → mid → high gradient at ``percent`` (0-100, one of 101 steps)."""
-    step = max(0, min(100, round_half_up(percent)))
+    """The low → mid → high gradient at ``percent`` (0-100, one of 101 steps;
+    beyond them, and infinities, clamp; NaN is 0)."""
+    step = _step(percent)
     start, end, t = (_LOW, _MID, step / 50) if step <= 50 else (_MID, _HIGH, (step - 50) / 50)
     r, g, b = (round_half_up(a + (z - a) * t) for a, z in zip(start, end, strict=True))
     return (r, g, b)
@@ -223,7 +299,7 @@ def gradient_rgb(percent: float) -> RGB:
 def _gradient(percent: float, tier: ColorTier) -> str:
     if tier is ColorTier.NONE:
         return ""
-    step = max(0, min(100, round_half_up(percent)))
+    step = _step(percent)
     if tier is ColorTier.ANSI16:
         return f"\x1b[{92 if step <= 33 else 93 if step <= 66 else 91}m"
     return f"\x1b[{_color(gradient_rgb(step), 0, tier)}m"
@@ -296,11 +372,10 @@ def fit(text: str, width: int, style: StreamStyle) -> Styled:
             out.append(part)
             coded = True
             continue
-        for ch in part:
-            w = _char_width(ch)
+        for cluster, w in _clusters(part):
             if used + w > budget:
                 break
-            out.append(ch)
+            out.append(cluster)
             used += w
         else:
             continue
@@ -418,7 +493,9 @@ def table(
     ``align`` gives ``"left"`` or ``"right"`` per column (numbers right);
     missing entries are left. Cells are escaped unless ``Styled``. When the
     columns do not fit, the widest is narrowed first and its cells end with
-    an ellipsis.
+    an ellipsis. When even one cell per column and the gaps do not fit, each
+    line is cut to ``width`` (at least 1) and ends with an ellipsis, so no
+    line is ever wider than asked.
     """
     lines = [list(header)] if header is not None else []
     lines += [list(row) for row in rows]
@@ -444,7 +521,7 @@ def table(
             if n == 0 and header is not None:
                 shown = paint(shown, Role.TITLE, style)
             parts.append(shown if last else join(shown, " " * gap))
-        out.append(_join(parts))
+        out.append(fit(_join(parts), max(1, width), style))
     return out
 
 
@@ -495,10 +572,16 @@ def meter(value: float, *, style: StreamStyle, width: int = 10) -> Styled:
 
     Cell ``i`` (1-based) is filled when ``value >= round(i * 100 / width)``, in
     the gradient color of its position; empty cells are dim ``■``, or ``·``
-    when there is no color.
+    when there is no color. A value out of 0-100 is clamped (an infinity
+    too); NaN, a value unknown, draws every cell empty and `` n/a`` for the
+    number, in the same 4 cells.
     """
-    value = max(0.0, min(100.0, float(value)))
-    return _join((_cells(value, max(1, width), style), f"{round_half_up(value):>3}%"))
+    width = max(1, width)
+    value = float(value)
+    if math.isnan(value):
+        return _join((_cells(-1.0, width, style), " n/a"))
+    value = max(0.0, min(100.0, value))
+    return _join((_cells(value, width, style), f"{round_half_up(value):>3}%"))
 
 
 BRAILLE_UP = (" ⢀⢠⢰⢸", "⡀⣀⣠⣰⣸", "⡄⣄⣤⣴⣼", "⡆⣆⣦⣶⣾", "⡇⣇⣧⣷⣿")
@@ -517,25 +600,40 @@ def sparkline(
     the known maximum (100 for percentages), else the series maximum. Each
     cell has the gradient color of its larger sample. With ASCII glyphs only
     the numbers print: the numbers carry the data in every mode.
+
+    A NaN sample is a gap (level 0) and an infinity is clamped (level 4 or
+    0); ``min`` and ``max`` are of the finite samples (``n/a`` when there is
+    none), ``last`` is the last sample as it is (``nan``, ``inf``). The
+    series maximum is that of the finite samples; a NaN, infinite or
+    non-positive ``ceiling`` draws every level 0.
     """
     if not samples:
         return Styled("no samples")
-    numbers = (
-        f"min {_number(min(samples))}  max {_number(max(samples))}  last {_number(samples[-1])}"
-    )
+    values = [float(x) for x in samples]
+    finite = [x for x in values if math.isfinite(x)]
+    low, high = (_number(min(finite)), _number(max(finite))) if finite else ("n/a", "n/a")
+    numbers = f"min {low}  max {high}  last {_number(samples[-1])}"
     if not style.unicode:
         return Styled(numbers)
-    top = max(samples) if ceiling is None else ceiling
+    top = (max(finite) if finite else 0.0) if ceiling is None else float(ceiling)
+    if not math.isfinite(top) or top <= 0:
+        top = 0.0
     tier = _tier(style)
-    series = list(samples) + ([samples[-1]] if len(samples) % 2 else [])
+    series = values + ([values[-1]] if len(values) % 2 else [])
+
+    def scaled(x: float, scale: float) -> float:
+        """``x / top * scale``, clamped to 0-``scale``; NaN is 0."""
+        if top <= 0 or math.isnan(x):
+            return 0.0
+        return max(0.0, min(scale, x / top * scale))
 
     def level(x: float) -> int:
-        return 0 if top <= 0 else max(0, min(4, round_half_up(x / top * 4)))
+        return round_half_up(scaled(x, 4))
 
     cells = []
     for first, second in zip(series[::2], series[1::2], strict=True):
-        share = 0.0 if top <= 0 else min(100.0, max(first, second) / top * 100)
-        cells.append(_wrap(BRAILLE_UP[level(first)][level(second)], _gradient(share, tier)))
+        color = _gradient(max(scaled(first, 100), scaled(second, 100)), tier)
+        cells.append(_wrap(BRAILLE_UP[level(first)][level(second)], color))
     return _join((*cells, "  ", numbers))
 
 

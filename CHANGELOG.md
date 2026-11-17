@@ -21,6 +21,32 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   skill's `drafting.md` describe it. The WebSocket and OCPP examples' TCP
   session replays, which were Python in `tests/unit/examples/test_sdk.py`,
   are now their session tests, `examples/*/tests/session-*.yaml`.
+- `mmt-plugin run PCAP` runs the project's plugin, built when stale, over
+  a pcap or pcapng capture through mmt-dpi's stack, with the SDK's plugins
+  and any `--plugin`, and reports the protocol paths with their packet
+  counts and, per attribute of the plugin's protocol (and each
+  `--protocol`), how many packets have it, as text and in its `--json`
+  `result` (#103). The capture is streamed to a generated runner one frame
+  at a time, so a capture of several gigabytes runs in constant memory.
+  It reads Ethernet and Linux cooked (`tcpdump -i any`) captures; another
+  link type is the new error `model.unsupported-linktype`. New codes
+  `build.runner-failed`, and the warnings `test.no-match`,
+  `test.other-linktype` and `test.unknown-protocol`; `--max-packets`,
+  `--timeout`, `--dry-run`, `--strict`. The user guide and the
+  mmt-plugin-generator skill (Step 6) describe it.
+- The pcap reader gives each frame's time stamp (nanoseconds since the
+  epoch: pcap's microseconds or nanoseconds, pcapng's `if_tsresol` and
+  `if_tsoffset`), which `run` hands to mmt-dpi (#103).
+- `plugin.yaml`: a `tcp` parent's `classify` can name ports, `port` (the
+  source or the destination port), `sport` and `dport`, with optional
+  `match`es on the payload's first bytes (#100). The generated
+  classification finds the payload after the TCP header and its options
+  (the header's data offset), and classifies only a segment with a payload
+  (its end from the IP header, so Ethernet padding is not one). `init
+  --parent tcp:...` and `scaffold --parent tcp:...` write it, and `init`'s
+  packet test also runs `through` the selector. A port under another parent
+  is the new error `model.classify-port`. The model reference has the two
+  forms as `classify_fixed` and `classify_tcp`.
 - `examples/websocket/`: a WebSocket (RFC 6455) plugin, `websocket_example`
   (id 992), made with `mmt-plugin init` (#40). It claims a TCP session on
   any port from its opening handshake and follows it across segments: the
@@ -51,15 +77,167 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   keeps a work folder with the request, the inputs and their sources, the
   capture, each loop run's envelopes and notes, the evaluation and a
   report, to review or resume the work later.
+- `scaffold --skip-until HEX` (a `tcp` parent only; another is
+  `usage.conflicting-options`, exit 2) skips each direction's bytes of
+  each TCP session up to the end of a byte pattern, found across segments:
+  `0d0a0d0a` skips a WebSocket session's HTTP upgrade, and a frame in the
+  segment of the 101 answer becomes a payload of its own (#102). The
+  `--json` result has `skip_until`, the pattern in hex or null.
+- `scaffold` proposes bit fields (#102): a byte whose bits vary
+  independently is cut into `field_<offset>_b<bit>` fields in a struct
+  `bits_<offset>` of `plugin.proposed.yaml`, and the packet tests give
+  their `bit_offset` and `bit_width`, as `result.skeleton.fields` does.
+  Runs of varying bits are groups, a constant bit between two varying ones
+  is taken as varying, two groups that do not vary independently (one's
+  value seen with two of the other, both ways) are merged, and the top bit
+  of a run is a flag of its own when the two directions of each
+  connection seen both ways set it to opposite values and the rest of the
+  run varies within a direction (WebSocket's MASK, DNS's QR); a byte
+  constant within each direction (a per-flow identifier such as RTP's
+  SSRC), or unrelated one-way flows, are never cut by this rule, so a
+  4-byte identifier stays one field. On a WebSocket session it
+  proposes FIN, RSV1-3, the opcode, MASK and the 7-bit length
+  (`tests/unit/scaffold/test_command.py`, `test_sdk.py`). A byte left with
+  one varying group, or with fewer than 4 distinct values (too little
+  evidence), stays one field, so the proposals of the demo captures are
+  unchanged.
 
 ### Changed
 
+- `scaffold` under a `tcp` parent follows each direction of each
+  connection as a stream (`src/mmt_plugin/pcap/streams.py`, #102): a
+  payload is a segment's new bytes in sequence order (from the SYN, or
+  the first segment seen), a retransmission is skipped and an overlap cut
+  off, a segment after missing bytes waits for them, and a SYN with a new
+  initial sequence number starts a new session. `result.packets.skipped`
+  has three new reasons, `retransmission`, `gap` (more than 64 segments
+  waiting in a direction, or 1024 in all directions, which gives the
+  direction up until a new SYN, so memory is bounded by these caps, or
+  still waiting when the capture ends) and `skip-until`. Before, each
+  segment was a payload as captured, retransmissions and handshakes
+  included. Decided, of what #102 lists: segments are not split into
+  messages nor joined (several WebSocket frames in one segment stay one
+  payload, one frame over several segments stays several): that needs the
+  protocol's length rule, which is what the proposal is drafting, so it
+  is left to the user's hooks, as `examples/websocket/` does. A length
+  field that selects the header's length (WebSocket's 126 and 127) is not
+  proposed either: the length rule still looks for one fixed field whose
+  value is the payload length minus a constant. `--skip-until` takes a
+  byte pattern only, not a number of payloads per session: a pattern also
+  finds the end of a handshake whose last segment carries the first
+  message, which a count cannot.
+- SDK profiles have an `entry_point` (#56, N12): the callback role, the
+  symbol mmt-dpi looks up in a plugin (`init_proto`) and the macro of a
+  plugin built into the core (`CORE`). The generator takes both names
+  from it instead of writing them itself; the generated code is
+  unchanged. The template test also refuses an SDK struct field written
+  as a member access (`->caplen`). Decided: `headercheck` does not check
+  `entry_point`, which no header declares; loading every generated plugin
+  (`test_compile.py`) does.
 - The agent skill `skills/mmt-plugin-author/` is renamed
   `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
   folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
   envelope; 6, the capture evaluation.
+- Styled output (#54, N5): the width that boxes and tables are drawn to is
+  at most 500 cells (`ui.streams.MAX_WIDTH`), whatever `COLUMNS` or the
+  terminal says; `COLUMNS=100000` draws a 500-cell box
+  (`docs/design/cli.md`, section 10).
+- zsh completion (#54, N8): `-h`, `--help` and `--version` are no longer
+  offered once another option is on the line, and an option of an argparse
+  mutually exclusive group no longer offers the group's other options.
+  Decided: `--version` is excluded after another option although
+  `mmt-plugin --json --version` is valid (it prints the version envelope);
+  typing it in full still works. bash and fish completion are unchanged:
+  the issue asked for zsh, whose `_arguments` has exclusion lists. No
+  built-in command has a mutually exclusive group yet; the test command
+  of `tests/unit/test_completion.py` has one.
 
 ### Fixed
+
+- `generate` after an interrupted run (#56, N2): it writes a journal,
+  `plugin.lock.pending`, next to `plugin.lock` before its first write
+  (each file it is about to write or remove, with its sha256 before and
+  after), and removes it after the lock. The next run, with the old model
+  or the new one, accepts a file whose sha256 the lock or the journal
+  lists, so it no longer reports `state.modified` for files nobody edited
+  and needs no `--force`; `--check` reports `state.stale`. A run keeps the
+  entries of the journal it finds (two interruptions in a row), journals a
+  file `--force` overwrites only as it writes it (an interrupted `--force`
+  run does not adopt the hand edit), counts a leftover journal as drift
+  for `--check`, and refuses a directory in its place
+  (`state.invalid-lock`). Decided: fix
+  the code rather than correct `docs/design/cli.md` section 8 to the old
+  guarantee; a journal that cannot be read is ignored (the run is then as
+  strict as before); `init`'s `.gitignore` does not list the journal,
+  which exists only after an interrupted run.
+- `generate --strict` (#56, N3) also fails, before anything is written, on
+  the warnings found while planning the writes: `state.kept` and the
+  `--force` warnings, exit 7. The model's and the profile's warnings are
+  still checked first. `docs/design/cli.md` ("Details fixed by #14") is
+  the repository's record of #55's decision 13 and says so; #55's own
+  description is not edited.
+- `generate` and what is in the way (#56, N4): a directory (or any file
+  that is neither a regular file nor a symbolic link) where a generated
+  file goes is `state.modified`, and a directory named `plugin.lock` is
+  `state.invalid-lock`, both exit 7, also with `--check`, and never
+  replaced, even with `--force`; the hint is to move or delete it, no
+  longer `--force`. An `--output` (or a default `generated/`) that is, or
+  is under, an existing file is `usage.invalid-value` (exit 2), no longer
+  `internal.io` (exit 1). Decided: no new code; `state.modified` and
+  `state.invalid-lock` say "(a directory, never)" as `init`'s
+  `state.file-differs` and `import`'s `state.output-differs` already do.
+- `generate -o DIR` from inside a project with a `DIR` outside it (#56,
+  N10) writes its own `plugin.lock` in `DIR` and no longer rewrites the
+  project's. An output is the project's when its path or its real path is
+  inside the project, so a `generated/` linked elsewhere keeps the
+  project's lock.
+- `generate --force` with `--check`, `--dry-run` or a refused run (#56,
+  N11) says `would be overwritten (--force)` or `would be removed
+  (--force)`; the warning of an invalid lock that `--force` ignores no
+  longer repeats the lock's name, which is its location.
+- `docs/design/cli.md` (#56, N9): a modified file that the lock lists and
+  that is no longer generated is refused (`state.modified`, exit 7,
+  `--force` removes it), as the code always did; `state.kept` is for one
+  that is not a regular file of the output directory. Decided: keep the
+  code and fix the sentence, as the review proposed; a maintainer may
+  still choose the other way.
+- `val()` of 2^63 or more (#56, N7): already fixed on `dev` by #55 (the
+  value fails the evaluation). Added: the rule in `docs/plugin-yaml.md`
+  (Expressions) and a packet test against the SDK on `ff` x 8, where both
+  branches of `if (val(big) > 0)` are absent
+  (`tests/unit/packettest/test_sdk.py`). Decided: a test there rather
+  than a corpus model, since the corpus describes the Java tool's
+  constructs.
+- Styled output (#54, N1): `cell_width`, and `fit`, `box` and `table`
+  with it, count an emoji sequence as the 2 cells a terminal draws: a ZWJ
+  sequence, a regional-indicator flag, an emoji with a skin-tone modifier,
+  a character with VS16, a keycap; `fit` never cuts one in the middle. It
+  uses `unicodedata` only, with an approximation of
+  Extended_Pictographic (the emoji blocks), so an emoji outside them is
+  not joined. Decided: user text keeps its ZWJ escaped as `\u200d`
+  (`ui.render.escape` escapes every format character, #46), so a ZWJ
+  sequence draws joined only in text a renderer wrote; a lone regional
+  indicator counts 1, as `unicodedata` says.
+- Styled output (#54, N2): a table given a width below its minimum (one
+  cell per column plus the gaps) cuts each line to that width with an
+  ellipsis, instead of drawing it wider. Decided against dropping columns
+  or gaps first: a cut line keeps the first columns readable and the
+  rule is the one `box` already applies to a long line.
+- Styled output (#54, N3, N4): `meter(nan)` draws every cell empty and
+  ` n/a` instead of 100%, and an infinity clamps to 0% or 100%.
+  `sparkline` no longer raises on a NaN or infinite sample: a NaN is a gap,
+  an infinity clamps, `min` and `max` are of the finite samples (`n/a`
+  when there is none) and a NaN, infinite or non-positive `ceiling` draws
+  every level 0. `gradient_rgb` takes any float the same way.
+- Tests (#54, N7): already done on `dev` before this change (#55, which
+  found completion by name); the contract test now also finds the dummy
+  command by name, and the completion tests derive the command list from
+  the registry, so registering a command breaks none of them. The zsh
+  completion test (#54, R1, R2) also has a file next to the directory, to
+  show `-C` and `--project=` complete directories only, clears an
+  exported `FPATH`, and gives each line 10 s inside an outer limit of
+  10 s per line plus 60 s, so a broken setup ends in a readable diff.
+  N6 (bidi controls) was #46, closed.
 
 - `examples/websocket/` and `examples/ocpp/` (#104): their sessions get
   mmt-dpi's long session timeout (600 s, as its HTTP's), so a connection
@@ -70,6 +248,54 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   with a valid header, not inside a frame. `permessage-deflate` frames
   stay unread (a documented limit). The use case's A1 and A4 counts are
   measured again: A1 is within 31 frames and 5 messages of tshark.
+- PDL v1 (#48): an error inside a quoted value whose closing quote is
+  missing is reported once. `offset="BAD scope="packet"` gave a second,
+  spurious `model.syntax.unexpected-token` at `packet`; the parse now stops
+  at the first error (`docs/behaviour-changes.md`, row 40). Branch
+  coverage, #48's optional N7, was decided against: it needs a new dev
+  dependency, a `uv.lock` change and CI changes, while the parser's
+  constructs are already enumerated by `@covers` and each syntax code has a
+  test. It can be added later, project-wide, as its own change.
+- SDK detection (#50, F6): the SDK version is read from the `VERSION`
+  macro of `mmt_core.h` outside its comments, so a `#define VERSION`
+  inside a `/* */` or `//` comment before the real one is no longer taken
+  for it. The header check strips comments the same way, leaving string
+  literals alone (`"/*"` starts no comment), after joining continued
+  lines, so a `//` comment ending in a backslash also hides the next line.
+- SDK profiles (#50, F7): the loader rejects a `$comment` that is not a
+  string, and one below the top level, as the schema does, and the schema
+  rejects an empty `c_std`, as the loader does. A test runs both on about
+  2,200 mutations of the bundled profile; they agree on every one except
+  the loader's cross-reference checks.
+- `python -m mmt_plugin.sdk.headercheck` (#50): the completeness check of
+  `parents.ids` counts every `PROTO_*` macro a header defines, whatever its
+  value (`(PROTO_NAS5G + 1)`) and on continued lines, not only literal
+  one-line numbers: each must be an id, in `not_ids`, the `_ALIAS` of a
+  listed id or a `PROTO_CLASS_*` macro. mmt-dpi 1.10.2's headers pass
+  unchanged. `tests/check_headercheck_mutations.sh` also changes
+  `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`, `PROTO_META` and adds such
+  definitions, and must see each fail.
+- SDK profile values (#50, F3): already done on `dev` before this change
+  (#49, #51): the profile records, and the header check asserts, the value
+  of `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`,
+  `PROTO_META` and every id of `parents.ids`, the values the tool uses as
+  numbers. Decided: the other constants (`Classified`,
+  `MMT_CLASSIFY_MATCHED`, `SCOPE_PACKET`, the `MMT_*` data types...) keep
+  no value, since generated code names them and the header gives their
+  value at compile time; the profile's `$comment` says so, and a test fails
+  when the code reads the value of a constant whose value is not recorded.
+  A new test also checks the run-time registry against the profile (#50,
+  review of #51): with all the package's plugins loaded, mmt-dpi registers
+  exactly the profile's ids, under their aliases. It runs, with
+  `MMT_GOLDEN_SDK`, in `tests/unit/test_sdk_registry.py`, which CI's SDK
+  jobs already run; it is not added to the `sdk-profile` CI job, whose
+  workflow this change does not edit.
+- Profile choice (#50): decided to keep the order and document it: a
+  detected version with any suffix after its number, also `1.10.2.post1`,
+  `1.10.2+git` or a Debian revision `1.10.2-1`, ranks below its release,
+  like a pre-release (`docs/design/cli.md`, section 9). The version comes
+  from the `VERSION` macro, which a release sets to its plain number, and
+  a profile too old is the safe side.
 
 ## [0.1.0] - 2026-11-15
 

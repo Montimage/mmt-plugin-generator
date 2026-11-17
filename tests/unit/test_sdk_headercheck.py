@@ -21,8 +21,9 @@ from mmt_plugin.sdk.headercheck import (
     declared_names,
     render_ids_unit,
     render_unit,
+    unlisted_protocol_macros,
 )
-from mmt_plugin.sdk.profile import Profile, get_bundled, parse_profile
+from mmt_plugin.sdk.profile import Profile, ProtocolHeader, SdkProtocol, get_bundled, parse_profile
 
 CC = shutil.which("gcc") or shutil.which("cc")
 needs_cc = pytest.mark.skipif(CC is None, reason="no C compiler")
@@ -155,6 +156,12 @@ def _stub_data() -> dict[str, Any]:
             "register": "cp_register",
             "unknown": "CP_UNKNOWN",
             "doc": "cp",
+        },
+        "entry_point": {
+            "callback": "init",
+            "symbol": "init_proto",
+            "core_macro": "CORE",
+            "doc": "entry",
         },
         "parents": {
             "header": "stub.h",
@@ -331,6 +338,19 @@ HEADER_MUTATIONS: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
         [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_UDP (376)\n")],
         ["stub.h: parents.ids lists all its protocols (1)\nnot in the profile: PROTO_UDP"],
     ),
+    # Whatever the value or the layout of the definition (#50).
+    "unlisted protocol of an expression": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_NEW (PROTO_TCP+1)\n")],
+        ["not in the profile: PROTO_NEW"],
+    ),
+    "unlisted protocol on a continued line": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_NEW \\\n    355\n")],
+        ["not in the profile: PROTO_NEW"],
+    ),
+    "unlisted alias": (
+        [("#define PROTO_TCP 354\n", '#define PROTO_TCP 354\n#define PROTO_NEW_ALIAS "new"\n')],
+        ["not in the profile: PROTO_NEW_ALIAS"],
+    ),
     "alias value": (
         [('#define PROTO_TCP_ALIAS "tcp"', '#define PROTO_TCP_ALIAS "tcp2"')],
         ['parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is "tcp2", not "tcp"'],
@@ -431,6 +451,37 @@ def test_declared_names_cover_every_entry() -> None:
         *(m.name for m in profile.macros),
     }
     assert expected <= flat
+
+
+def test_the_completeness_check_reads_every_proto_define(tmp_path: Path) -> None:
+    # Every PROTO_* definition counts, whatever its value or layout; the
+    # ones in comments do not (#50).
+    header = tmp_path / "plug.h"
+    header.write_text(
+        "#define PROTO_PLUG 901\n"
+        '#define PROTO_PLUG_ALIAS "plug" /* #define PROTO_IN_COMMENT 1 */\n'
+        "// #define PROTO_IN_LINE_COMMENT 2\n"
+        "/*\n#define PROTO_IN_BLOCK 3\n*/\n"
+        '#define PROTO_TEXT "/*" /* a string holds no comment */\n'
+        "#define PROTO_NEXT (PROTO_PLUG + 1)\n"
+        "  #  define PROTO_SPLIT \\\n    903\n"
+        "#define PROTO_CLASS_ANY 4\n"
+        "#define PROTO_PLUG_HDRLEN 6\n"
+        '#define PROTO_OTHER_ALIAS "other"\n'
+        "#define NOT_PROTO_X 5\n"
+    )
+    plug = SdkProtocol("PROTO_PLUG", 901, "plug.h", "plug")
+    group = ProtocolHeader("plug.h", "doc", (plug,), ("PROTO_PLUG_HDRLEN",))
+    text = headercheck._read_header(str(header))
+    assert unlisted_protocol_macros(text, group) == [
+        "PROTO_TEXT",
+        "PROTO_NEXT",
+        "PROTO_SPLIT",
+        "PROTO_OTHER_ALIAS",
+    ]
+    # An alias counts only for an id that has one.
+    no_alias = ProtocolHeader("plug.h", "doc", (SdkProtocol("PROTO_PLUG", 901, "plug.h", None),))
+    assert "PROTO_PLUG_ALIAS" in unlisted_protocol_macros(text, no_alias)
 
 
 def test_missing_headers_and_compiler(tmp_path: Path) -> None:

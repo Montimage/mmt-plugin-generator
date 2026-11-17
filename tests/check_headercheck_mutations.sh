@@ -9,8 +9,13 @@
 #   profile records;
 # - plugin-ids: dicom/dicom.h gives PROTO_DICOM another id and alias than the
 #   profile records;
+# - core-values: mmt_core.h and proto_meta.h give PROTO_MAX_IDENTIFIER,
+#   PROTO_UNKNOWN and PROTO_META other values than the profile records;
 # - unlisted-id: mobile/mmt_mobile.h defines a protocol id, PROTO_NEW_PLUGIN,
-#   that parents.ids does not list.
+#   that parents.ids does not list;
+# - unlisted-expression: mobile/mmt_mobile.h defines two protocol ids that
+#   parents.ids does not list, one as an expression, (PROTO_NAS5G + 1), and
+#   one continued on the next line.
 #
 # Usage: bash tests/check_headercheck_mutations.sh PREFIX [CC]
 #
@@ -33,14 +38,17 @@ failed=0
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*"; failed=1; }
 
-# mutate NAME HEADER PERL_SUBSTITUTION...: a scratch prefix named NAME whose
-# HEADER has each substitution applied; a substitution that changes nothing
-# is an error, so the check cannot pass on a header that moved on.
+# mutate NAME HEADER PERL_SUBSTITUTION...: a scratch prefix named NAME
+# (created on its first call) whose HEADER has each substitution applied; a
+# substitution that changes nothing is an error, so the check cannot pass on
+# a header that moved on.
 mutate() {
     local name="$1" header="$2"
     shift 2
-    mkdir -p "$work/$name/dpi"
-    cp -R "$include" "$work/$name/dpi/"
+    if [ ! -d "$work/$name" ]; then
+        mkdir -p "$work/$name/dpi"
+        cp -R "$include" "$work/$name/dpi/"
+    fi
     local file="$work/$name/dpi/include/$header"
     local expr
     for expr in "$@"; do
@@ -93,8 +101,21 @@ expect_failure plugin-ids \
     'parents.ids.PROTO_DICOM is not 701' \
     'parents.ids.PROTO_DICOM: PROTO_DICOM_ALIAS is "dicom2", not "dicom"'
 
+mutate core-values mmt_core.h 's/#define PROTO_MAX_IDENTIFIER    1000\b/#define PROTO_MAX_IDENTIFIER    999/'
+mutate core-values proto_meta.h \
+    's/#define PROTO_UNKNOWN 0\b/#define PROTO_UNKNOWN 3/' \
+    's/#define PROTO_META    1\b/#define PROTO_META    2/'
+expect_failure core-values \
+    'constants.PROTO_MAX_IDENTIFIER is not 1000' \
+    'constants.PROTO_UNKNOWN is not 0' \
+    'constants.PROTO_META is not 1'
+
 mutate unlisted-id mobile/mmt_mobile.h \
     's/#define PROTO_NAS5G_ALIAS "nas_5g"\n\K/#define PROTO_NEW_PLUGIN 905\n/'
 expect_failure unlisted-id 'not in the profile: PROTO_NEW_PLUGIN'
+
+mutate unlisted-expression mobile/mmt_mobile.h \
+    's/#define PROTO_NAS5G_ALIAS "nas_5g"\n\K/#define PROTO_NEXT_PLUGIN (PROTO_NAS5G + 1)\n#define PROTO_SPLIT_PLUGIN \\\n    906\n/'
+expect_failure unlisted-expression 'not in the profile: PROTO_NEXT_PLUGIN, PROTO_SPLIT_PLUGIN'
 
 exit "$failed"

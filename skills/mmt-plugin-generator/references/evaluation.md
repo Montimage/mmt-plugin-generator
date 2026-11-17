@@ -8,6 +8,13 @@ plugin (and nothing else), that the plugin extracts its attributes there,
 and, when tshark has a dissector for the protocol, that each value is
 tshark's.
 
+`mmt-plugin run` (the CLI's own command) gives the first look: the
+protocol paths with their packet counts and, per attribute, the packets
+that have it, through mmt-dpi's stack, in constant memory, without libpcap
+or tshark. The evaluation below adds what `run` does not measure: the
+frames that should be the protocol (recall), the foreign ones, the
+displaced paths and the field values against tshark.
+
 ## Run it
 
 After a green loop run (`SKILL.md`, "Done" criteria for the loop), with

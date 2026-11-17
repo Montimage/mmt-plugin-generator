@@ -96,6 +96,92 @@ def test_files_written_by_tcpdump_and_editcap(name: str, fmt: str) -> None:
     assert all(f.linktype == 1 for f in frames)
 
 
+@pytest.mark.parametrize("big_endian", [False, True])
+@pytest.mark.parametrize(("nanoseconds", "unit"), [(False, 1000), (True, 1)])
+def test_pcap_time_stamps_are_nanoseconds_since_the_epoch(
+    big_endian: bool, nanoseconds: bool, unit: int
+) -> None:
+    data = bytearray(samples.pcap(FRAMES[:2], big_endian=big_endian, nanoseconds=nanoseconds))
+    order = ">" if big_endian else "<"
+    struct.pack_into(order + "I", data, 24 + 4, 123456)  # the first record's fraction
+    stamps = [f.timestamp for f in _frames(bytes(data))]
+    assert stamps == [1700000000 * 10**9 + 123456 * unit, 1700000001 * 10**9]
+
+
+def _pcapng_stamped(options: bytes, high: int, low: int, order: str = "<") -> bytes:
+    """A pcapng section: an interface with ``options`` and one enhanced
+    packet block stamped ``high``:``low``."""
+    shb = samples.pcapng([], big_endian=order == ">")[:28]
+    body = struct.pack(order + "HHI", 1, 0, 0) + options
+    idb = (
+        struct.pack(order + "II", 1, 12 + len(body))
+        + body
+        + struct.pack(order + "I", 12 + len(body))
+    )
+    frame = FRAMES[0]
+    epb = struct.pack(order + "IIIII", 0, high, low, len(frame), len(frame)) + frame
+    epb += b"\0" * (-len(epb) % 4)
+    return (
+        shb
+        + idb
+        + struct.pack(order + "II", 6, 12 + len(epb))
+        + epb
+        + struct.pack(order + "I", 12 + len(epb))
+    )
+
+
+def _option(code: int, value: bytes, order: str = "<") -> bytes:
+    return struct.pack(order + "HH", code, len(value)) + value + b"\0" * (-len(value) % 4)
+
+
+@pytest.mark.parametrize("order", ["<", ">"])
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        # No if_tsresol: microseconds.
+        (b"", 1_700_000_000_123_456_000),
+        # if_tsresol 9: nanoseconds; a comment option before it is skipped.
+        (b"comment!" + b"tsresol9", 1_700_000_000_123_456_789),
+        # if_tsresol 0x83: 2^-3 seconds.
+        (b"tsresol-2", 1_700_000_000_125_000_000),
+        # if_tsoffset 100 seconds, microseconds.
+        (b"tsoffset", 1_700_000_100_123_456_000),
+    ],
+)
+def test_pcapng_time_stamps_follow_the_interface_options(
+    order: str, options: bytes, expected: int
+) -> None:
+    built = b""
+    if options.startswith(b"comment!"):
+        built += _option(1, b"a comment", order)
+    if options.endswith(b"tsresol9"):
+        built += _option(9, b"\x09", order)
+        stamp = 1_700_000_000_123_456_789
+    elif options == b"tsresol-2":
+        built += _option(9, b"\x83", order)
+        stamp = 1_700_000_000 * 8 + 1
+    else:
+        stamp = 1_700_000_000_123_456
+    if options == b"tsoffset":
+        built += _option(14, struct.pack(order + "q", 100), order)
+    built += struct.pack(order + "HH", 0, 0)  # opt_endofopt
+    data = _pcapng_stamped(built, stamp >> 32, stamp & 0xFFFFFFFF, order)
+    assert [f.timestamp for f in _frames(data)] == [expected]
+
+
+def test_a_simple_packet_block_has_no_time_stamp() -> None:
+    assert [f.timestamp for f in _frames(samples.pcapng(FRAMES[:1], simple=True))] == [0]
+
+
+def test_tcpdump_and_editcap_files_have_the_same_time_stamps() -> None:
+    # demo-editcap.pcapng is demo-tcpdump.pcap rewritten by editcap (its
+    # interface has no if_tsresol: microseconds, as the pcap's records).
+    pcap = [f.timestamp for f in read((DATA / "demo-tcpdump.pcap").read_bytes()).frames()]
+    pcapng = [f.timestamp for f in read((DATA / "demo-editcap.pcapng").read_bytes()).frames()]
+    assert pcap == pcapng
+    assert pcap == [(1_700_000_000 + i) * 10**9 for i in range(5)]
+
+
 @pytest.mark.parametrize(
     ("data", "message"),
     [

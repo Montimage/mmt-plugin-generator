@@ -302,6 +302,78 @@ def test_a_locked_file_outside_the_output_dir_is_never_removed(project: Path, ru
     assert [f.path for f in parse_lock(lock_path.read_text()).files] == [C, H]
 
 
+def test_an_output_outside_the_project_gets_its_own_lock(
+    tmp_path: Path, project: Path, run: Run
+) -> None:
+    # Review of #55, N10: a one-off -o elsewhere leaves the project's lock alone.
+    (project / "plugin.yaml").write_text("# a project\n")
+    assert run("model.pdl", *PROFILE)[0] == 0
+    before = snapshot(project)
+    elsewhere = tmp_path.parent / (tmp_path.name + "-elsewhere")
+    code, doc = run("model.pdl", "-o", str(elsewhere), *PROFILE)
+    assert code == 0, doc["error"]
+    assert doc["result"]["lock"]["path"] == (elsewhere / "plugin.lock").as_posix()
+    assert [f.path for f in parse_lock((elsewhere / "plugin.lock").read_text()).files] == [C, H]
+    assert snapshot(project) == before
+    code, doc = run("model.pdl", *PROFILE, "--check")
+    assert code == 0 and codes(doc) == []
+
+
+# --- what is in the way ------------------------------------------------------
+
+
+@pytest.mark.parametrize("flags", [[], ["--force"], ["--check"], ["--dry-run", "--force"]])
+def test_a_directory_in_place_of_a_generated_file_is_exit_7(
+    project: Path, run: Run, flags: list[str]
+) -> None:
+    # Review of #55, N4: never internal.io, and never replaced, even with --force.
+    (project / "out" / H).mkdir(parents=True)
+    (project / "out" / H / "keep").write_text("mine\n")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, *flags)
+    assert code == 7 and doc["error"]["code"] == "state.modified"
+    (diag,) = [d for d in doc["diagnostics"] if d["severity"] == "error"]
+    assert diag["code"] == "state.modified" and diag["location"]["file"] == "out/" + H
+    assert "--force" not in diag["hint"] and "move or delete out/" + H in diag["hint"]
+    assert (project / "out" / H / "keep").read_text() == "mine\n"
+    assert not (project / "out" / C).exists() and not (project / "out" / "plugin.lock").exists()
+    # The hint works.
+    (project / "out" / H / "keep").unlink()
+    (project / "out" / H).rmdir()
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+
+
+@pytest.mark.parametrize("flags", [[], ["--force"], ["--check"]])
+def test_a_directory_in_place_of_the_lock_is_exit_7(
+    project: Path, run: Run, flags: list[str]
+) -> None:
+    (project / "out" / "plugin.lock").mkdir(parents=True)
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, *flags)
+    assert code == 7 and doc["error"]["code"] == "state.invalid-lock"
+    assert "--force" not in doc["error"]["hint"]
+    assert "move or delete out/plugin.lock" in doc["error"]["hint"]
+    assert not (project / "out" / C).exists()
+    (project / "out" / "plugin.lock").rmdir()
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+
+
+@pytest.mark.parametrize("output", ["afile", "afile/sub"])
+def test_an_output_that_is_a_regular_file_is_a_usage_error(
+    project: Path, run: Run, output: str
+) -> None:
+    (project / "afile").write_text("not a directory\n")
+    code, doc = run("model.pdl", "-o", output, *PROFILE)
+    assert code == 2 and doc["error"]["code"] == "usage.invalid-value"
+    assert doc["error"]["message"].startswith(f"--output {output} ")
+    assert (project / "afile").read_text() == "not a directory\n"
+
+
+def test_a_default_output_that_is_a_file_is_a_usage_error(project: Path, run: Run) -> None:
+    (project / "generated").write_text("not a directory\n")
+    code, doc = run("model.pdl", *PROFILE)
+    assert code == 2 and doc["error"]["code"] == "usage.invalid-value"
+    assert doc["error"]["message"] == "generated is not a directory"
+
+
 # --- src/ is the user's ------------------------------------------------------
 
 
@@ -356,7 +428,8 @@ def test_an_interrupted_run_leaves_the_previous_state_recoverable(
     monkeypatch.setattr(generate_module, "write_atomic", interrupted)
     code, _ = run("model.pdl", "-o", "out", *PROFILE)
     assert code == 130
-    # The lock is the old one: it is written last.
+    # The journal was written; the lock is the old one: it is written last.
+    assert calls[0] == project / "out" / "plugin.lock.pending"
     assert (project / "out" / "plugin.lock").read_bytes() == old_lock
     assert not [p for p in (project / "out").iterdir() if p.name.endswith(".tmp")]
     monkeypatch.setattr(generate_module, "write_atomic", real)
@@ -365,6 +438,111 @@ def test_an_interrupted_run_leaves_the_previous_state_recoverable(
     code, doc = run("model.pdl", "-o", "out", *PROFILE)
     assert code == 0, doc["error"]
     assert run("model.pdl", "-o", "out", *PROFILE, "--check")[0] == 0
+    assert not (project / "out" / "plugin.lock.pending").exists()
+
+
+def _interrupt_at(monkeypatch: pytest.MonkeyPatch, n: int) -> list[Path]:
+    """Make generate's ``n``-th write raise ``KeyboardInterrupt`` (SIGINT
+    between two writes); the paths it was asked to write."""
+    real = fsio.write_atomic
+    calls: list[Path] = []
+
+    def interrupted(path: Path | str, data: bytes | str, **kwargs: Any) -> Any:
+        calls.append(Path(path))
+        if len(calls) == n:
+            raise KeyboardInterrupt
+        return real(path, data, **kwargs)
+
+    monkeypatch.setattr(generate_module, "write_atomic", interrupted)
+    return calls
+
+
+def _resume(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(generate_module, "write_atomic", fsio.write_atomic)
+
+
+def _moved(offset: str) -> str:
+    return source_text(MODEL).replace('offset="7"', f'offset="{offset}"')
+
+
+@pytest.mark.parametrize("rerun", ["previous", "new"])
+def test_a_run_interrupted_between_two_file_writes_needs_no_force(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch, rerun: str
+) -> None:
+    # Review of #55, N2: the journal (plugin.lock.pending) lists each file
+    # as it was and as the run writes it, so neither model's next run takes
+    # the half-written set for a hand edit.
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    previous = snapshot(project / "out")
+    (project / "model.pdl").write_text(_moved("8"))
+    calls = _interrupt_at(monkeypatch, 3)  # the journal, the .c, then the .h
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 130
+    out = project / "out"
+    assert calls == [out / "plugin.lock.pending", out / C, out / H]
+    assert snapshot(out)[C] != previous[C] and snapshot(out)[H] == previous[H]
+    _resume(monkeypatch)
+
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--check")
+    assert code == 7 and doc["error"]["code"] == "state.stale"
+    assert "state.modified" not in codes(doc)
+    if rerun == "previous":
+        (project / "model.pdl").write_text(source_text(MODEL))
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 0, doc["error"]
+    assert codes(doc) == []
+    assert not (out / "plugin.lock.pending").exists()
+    assert run("model.pdl", "-o", "out", *PROFILE, "--check")[0] == 0
+    if rerun == "previous":
+        assert {k: v[0] for k, v in snapshot(out).items()} == {
+            k: v[0] for k, v in previous.items()
+        }
+
+
+def test_runs_interrupted_twice_then_a_third_model_need_no_force(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    # The second run stops right after its journal, so the .c is still the
+    # first run's: the second journal must list it as it was.
+    for offset, n in (("8", 3), ("9", 2)):
+        (project / "model.pdl").write_text(_moved(offset))
+        _interrupt_at(monkeypatch, n)
+        assert run("model.pdl", "-o", "out", *PROFILE)[0] == 130
+        _resume(monkeypatch)
+    (project / "model.pdl").write_text(_moved("10"))
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 0 and codes(doc) == []
+
+
+def test_a_run_interrupted_while_removing_needs_no_force(
+    project: Path, run: Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The new files are written, the old ones not yet removed: the previous
+    # model's run takes the new files, which its lock does not list, back.
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    _relabel(project, "renamed")
+    real_unlink = Path.unlink
+
+    def unlink(self: Path, missing_ok: bool = False) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 130
+    monkeypatch.setattr(Path, "unlink", real_unlink)
+    assert (project / "out" / "renamed_mmt_plugin.c").exists()
+    (project / "model.pdl").write_text(source_text(MODEL))
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 0 and codes(doc) == []
+    assert sorted(p.name for p in (project / "out").iterdir()) == [C, H, "plugin.lock"]
+
+
+def test_an_unreadable_journal_is_ignored(project: Path, run: Run) -> None:
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    (project / "out" / "plugin.lock.pending").write_text("{not json")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--check")
+    assert code == 0, doc["error"]
+    code, doc = run("model.pdl", "-o", "out", *PROFILE)
+    assert code == 0 and not (project / "out" / "plugin.lock.pending").exists()
 
 
 # --- the model stage ---------------------------------------------------------
@@ -530,6 +708,72 @@ def test_strict_fails_on_a_model_warning_with_its_class(project: Path, run: Run)
     code, doc = run("model.pdl", "-o", "out2", *PROFILE, "--strict")
     assert code == 3 and doc["error"]["code"] == "model.default-scope"
     assert not (project / "out2").exists()
+
+
+def test_strict_fails_on_a_warning_of_the_plan_before_writing(project: Path, run: Run) -> None:
+    # Review of #55, N3: state.kept is found while planning; --strict fails on it.
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    outside = project / "precious.c"
+    outside.write_text("/* not generated */\n")
+    lock_path = project / "out" / "plugin.lock"
+    data = json.loads(lock_path.read_text())
+    data["files"].append({"path": "../precious.c", "sha256": sha256_file(outside)})
+    lock_path.write_text(json.dumps(data))
+    (project / "model.pdl").write_text(_moved("8"))
+    before = snapshot(project)
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--strict")
+    assert code == 7 and doc["error"]["code"] == "state.kept"
+    assert codes(doc) == ["state.kept"]
+    assert snapshot(project) == before
+    assert {a for a in actions(doc).values()} <= {"would-update", "unchanged"}
+
+
+def test_strict_fails_on_the_force_warnings(project: Path, run: Run) -> None:
+    (project / "out").mkdir()
+    (project / "out" / "plugin.lock").write_text("{not json")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force", "--strict")
+    assert code == 7 and doc["error"]["code"] == "state.invalid-lock"
+    assert not (project / "out" / C).exists()
+    assert run("model.pdl", "-o", "out", *PROFILE, "--force")[0] == 0
+    edited = project / "out" / C
+    edited.write_text("/* mine */\n")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force", "--strict")
+    assert code == 7 and doc["error"]["code"] == "state.modified"
+    assert edited.read_text() == "/* mine */\n"
+    (diag,) = doc["diagnostics"]
+    assert diag["message"] == "was edited since generate wrote it: would be overwritten (--force)"
+
+
+@pytest.mark.parametrize("flag", ["--check", "--dry-run"])
+def test_force_says_would_be_when_nothing_is_written(project: Path, run: Run, flag: str) -> None:
+    # Review of #55, N11.
+    assert run("model.pdl", "-o", "out", *PROFILE)[0] == 0
+    (project / "out" / C).write_text("/* mine */\n")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force", flag)
+    assert code == (7 if flag == "--check" else 0)
+    (diag,) = doc["diagnostics"]
+    assert diag["message"] == "was edited since generate wrote it: would be overwritten (--force)"
+    assert (project / "out" / C).read_text() == "/* mine */\n"
+    _relabel(project, "renamed")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force", flag)
+    assert [d["message"] for d in doc["diagnostics"]] == [
+        "no longer generated, and edited since generate wrote it: would be removed (--force)"
+    ]
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force")
+    assert [d["message"] for d in doc["diagnostics"]] == [
+        "no longer generated, and edited since generate wrote it: removed (--force)"
+    ]
+
+
+def test_the_ignored_lock_warning_names_the_lock_once(project: Path, run: Run) -> None:
+    (project / "out").mkdir()
+    (project / "out" / "plugin.lock").write_text("{not json")
+    code, doc = run("model.pdl", "-o", "out", *PROFILE, "--force")
+    assert code == 0
+    (diag,) = doc["diagnostics"]
+    assert diag["location"]["file"] == "out/plugin.lock"
+    assert diag["message"].startswith("not JSON: ")
+    assert diag["message"].endswith(": ignored (--force)")
 
 
 # --- human output ------------------------------------------------------------

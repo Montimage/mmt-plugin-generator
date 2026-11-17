@@ -4,7 +4,8 @@ Generates the plugin's C header and source from a model (plugin.yaml or
 PDL v1) into the
 output directory (``<project>/generated/`` by default), and records them in
 ``plugin.lock`` (``mmt_plugin.lock``): at the project root, or in the output
-directory for a model outside a project (no ``plugin.yaml`` in the project).
+directory for a model outside a project (no ``plugin.yaml`` in the project)
+or an output directory outside the project.
 
 Stages, each stopping the run with its class's exit code:
 
@@ -17,15 +18,22 @@ Stages, each stopping the run with its class's exit code:
 3. parse, analyse (an SDK id or name conflict is an error) and render the
    whole set in memory (exit 3, nothing written); ``--strict`` fails on any
    warning;
-4. plan every write against the files on disk and the lock: an unchanged
-   file is not rewritten (its mtime is kept); a file whose sha256 is neither
-   the new one nor the lock's was edited by hand, and is not overwritten or
-   removed without ``--force`` (``state.modified``, exit 7, nothing written);
-   a file the lock lists that is no longer generated is removed when it is
-   unmodified and inside the output directory;
-5. write each file atomically (``mmt_plugin.fsio``), then remove the old
-   ones, then write ``plugin.lock`` last. An interrupted run leaves the old
-   lock, against which the next run (or ``--check``) sees what changed.
+4. plan every write against the files on disk, the lock and the journal of
+   an interrupted run: an unchanged file is not rewritten (its mtime is
+   kept); a file whose sha256 is neither the new one nor one that the lock
+   or the journal lists was edited by hand, and is not overwritten or
+   removed without ``--force`` (``state.modified``, exit 7, nothing
+   written); a directory (or any other file that is neither a regular file
+   nor a symbolic link) where a generated file goes is never replaced, even
+   with ``--force``; a file the lock lists that is no longer generated is
+   removed when it is unmodified and inside the output directory;
+   ``--strict`` then fails on the warnings of the plan too;
+5. write the journal ``plugin.lock.pending`` (each file's sha256 before and
+   after), then each file atomically (``mmt_plugin.fsio``), then remove the
+   old ones, then write ``plugin.lock`` and remove the journal. An
+   interrupted run leaves every file either as it was or as the run wrote
+   it, both in the journal, so the next run, with the old model or the new
+   one, (or ``--check``) sees what changed and nothing edited by hand.
 
 ``--check`` and ``--dry-run`` write nothing and report ``would-*`` actions;
 ``--check`` exits 7 (``state.stale``) when any file or the lock would change.
@@ -56,7 +64,16 @@ from mmt_plugin.commands.modelio import (
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, sha256_file, write_atomic
-from mmt_plugin.lock import LOCK_NAME, Lock, LockedFile, LockError, read_lock
+from mmt_plugin.lock import (
+    LOCK_NAME,
+    PENDING_NAME,
+    Lock,
+    LockedFile,
+    LockError,
+    dumps_pending,
+    read_lock,
+    read_pending,
+)
 from mmt_plugin.pdl import PdlSyntaxError
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, find_sdk
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
@@ -129,10 +146,20 @@ class _Planned:
     sha256: str
     data: bytes | None  # None for a removal
     refused: bool = False
+    #: The sha256 of the file on disk before the run (None: none, or a link).
+    before: str | None = None
+    #: Why --force overwrites or removes it ("" when it does not need --force).
+    forced: str = ""
 
 
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _special(path: Path) -> bool:
+    """Whether something other than a regular file or a symbolic link (a
+    directory, a FIFO, ...) is at ``path``: generate never replaces it."""
+    return os.path.lexists(path) and not path.is_symlink() and not path.is_file()
 
 
 class GenerateCommand:
@@ -162,9 +189,10 @@ class GenerateCommand:
                 "Generate the plugin's C header and source from MODEL into the output\n"
                 "directory, and record them in plugin.lock: at the project root, or in\n"
                 "the output directory for a model outside a project (no plugin.yaml in\n"
-                "--project). A generated file edited by hand is not overwritten without\n"
-                "--force. Nothing is written under <project>/src/. Generation needs an\n"
-                "SDK profile, not an installed SDK."
+                "--project) or an output directory outside the project. A generated\n"
+                "file edited by hand is not overwritten without --force. Nothing is\n"
+                "written under <project>/src/. Generation needs an SDK profile, not an\n"
+                "installed SDK."
             ),
             epilog=(
                 "examples:\n"
@@ -258,13 +286,36 @@ class GenerateCommand:
                 " code: generate never writes there",
                 f"pick another output directory (default: {DEFAULT_OUTPUT}/)",
             )
-        lock_dir = project if (project / PROJECT_FILE).is_file() else output
+        named = "--output " if args.output is not None else ""
+        for d in (output, *output.parents):
+            if os.path.lexists(d):
+                if not d.is_dir():
+                    what = "is" if d == output else f"is under {show_path(d, project)}, which is"
+                    raise CliError(
+                        "usage.invalid-value",
+                        f"{named}{show_path(output, project)} {what} not a directory",
+                        "pick an output directory (-o DIR), or move the file out of the way",
+                    )
+                break
+        # The project's plugin.lock records the project's own output; a
+        # one-off output elsewhere gets its own lock (#56).
+        real_project = Path(os.path.realpath(project))
+        in_project = inside(output, project) and inside(real_out, real_project)
+        lock_dir = project if in_project and (project / PROJECT_FILE).is_file() else output
         return _Paths(project, output, lock_dir, user_dir)
 
     def _old_lock(self, paths: _Paths, force: bool) -> tuple[Lock | None, list[Diagnostic]]:
         lock_path = paths.lock_dir / LOCK_NAME
+        shown = paths.show(lock_path)
+        if _special(lock_path):
+            # Not even --force replaces a directory (#56).
+            raise CliError(
+                "state.invalid-lock",
+                f"{shown}: is a directory or another special file, not a lock",
+                f"move or delete {shown}, then re-run generate",
+            )
         try:
-            return read_lock(lock_path, paths.show(lock_path)), []
+            return read_lock(lock_path, shown), []
         except LockError as exc:
             if not force:
                 raise CliError(
@@ -273,11 +324,13 @@ class GenerateCommand:
                     "fix or delete plugin.lock, or re-run with --force to regenerate every"
                     " file and the lock",
                 ) from None
+            # The location names the lock: the message does not repeat it.
+            reason = str(exc).removeprefix(f"{shown}: ")
             note = Diagnostic(
                 Severity.WARNING,
                 "state.invalid-lock",
-                f"{exc}: ignored (--force)",
-                location=Location(paths.show(lock_path)),
+                f"{reason}: ignored (--force)",
+                location=Location(shown),
             )
             return None, [note]
 
@@ -286,8 +339,12 @@ class GenerateCommand:
         generation: Generation,
         paths: _Paths,
         old: Lock | None,
+        pending: dict[str, frozenset[str]],
         force: bool,
     ) -> tuple[list[_Planned], list[Diagnostic]]:
+        """Every file's action, and the diagnostics of the plan. A file
+        ``--force`` overwrites or removes has its reason in ``forced``: its
+        warning depends on whether the run writes (``_forced_notes``)."""
         planned: list[_Planned] = []
         diagnostics: list[Diagnostic] = []
         produced: set[str] = set()
@@ -295,42 +352,62 @@ class GenerateCommand:
             f"move the change into {USER_DIR}/{generation.label.lower()}_impl.c, or re-run"
             " with --force to discard it"
         )
+
+        def known(key: str) -> set[str]:
+            # What generate wrote there: the lock's, and the journal's of an
+            # interrupted run (the file as it was, or as that run wrote it).
+            locked = None if old is None else old.file(key)
+            return set(pending.get(key, ())) | ({locked.sha256} if locked else set())
+
+        def in_the_way(path: Path) -> Diagnostic:
+            return Diagnostic(
+                Severity.ERROR,
+                "state.modified",
+                "is a directory or another special file, not a generated file: not"
+                " replaced, even with --force",
+                hint=f"move or delete {paths.show(path)}, then re-run generate",
+                location=Location(paths.show(path)),
+            )
+
         for f in generation.files:
             path = paths.output / f.name
             key = paths.in_lock(path)
             produced.add(key)
             data = f.data
             new = sha256_bytes(data)
+            if _special(path):
+                diagnostics.append(in_the_way(path))
+                planned.append(_Planned(path, paths.show(path), "updated", new, data, True))
+                continue
             current = None if path.is_symlink() else sha256_file(path)
-            locked = None if old is None else old.file(key)
-            refused = False
+            item = _Planned(path, paths.show(path), "updated", new, data, before=current)
             if current is None and not os.path.lexists(path):
-                action = "created"
+                item.action = "created"
             elif current == new:
-                action = "unchanged"
-            else:
-                action = "updated"
-                if locked is None or current != locked.sha256:
-                    refused = not force
-                    why = (
-                        "exists and is not in plugin.lock"
-                        if locked is None
-                        else "was edited since generate wrote it"
-                    )
+                item.action = "unchanged"
+            elif current is None or current not in known(key):
+                item.forced = (
+                    "exists and is not in plugin.lock"
+                    if not known(key)
+                    else "was edited since generate wrote it"
+                )
+                if not force:
+                    item.refused = True
                     diagnostics.append(
                         Diagnostic(
-                            Severity.ERROR if refused else Severity.WARNING,
+                            Severity.ERROR,
                             "state.modified",
-                            why + (": not overwritten" if refused else ": overwritten (--force)"),
-                            hint=hint if refused else None,
-                            location=Location(paths.show(path)),
+                            f"{item.forced}: not overwritten",
+                            hint=hint,
+                            location=Location(item.shown),
                         )
                     )
-            planned.append(_Planned(path, paths.show(path), action, new, data, refused))
-        for entry in () if old is None else old.files:
-            if entry.path in produced:
+            planned.append(item)
+        listed = [] if old is None else [e.path for e in old.files]
+        for key in sorted({*listed, *pending}):
+            if key in produced:
                 continue
-            path = Path(os.path.normpath(paths.lock_dir / entry.path))
+            path = Path(os.path.normpath(paths.lock_dir / key))
             if not os.path.lexists(path):
                 continue
             real = Path(os.path.realpath(path))
@@ -353,22 +430,23 @@ class GenerateCommand:
                 )
                 continue
             current = sha256_file(path)
-            refused = False
-            if current != entry.sha256:
-                refused = not force
-                diagnostics.append(
-                    Diagnostic(
-                        Severity.ERROR if refused else Severity.WARNING,
-                        "state.modified",
-                        "no longer generated, and edited since generate wrote it:"
-                        + (" not removed" if refused else " removed (--force)"),
-                        hint=hint if refused else None,
-                        location=Location(shown),
+            if current is None:
+                continue
+            item = _Planned(path, shown, "removed", current, None, before=current)
+            if current not in known(key):
+                item.forced = "no longer generated, and edited since generate wrote it"
+                if not force:
+                    item.refused = True
+                    diagnostics.append(
+                        Diagnostic(
+                            Severity.ERROR,
+                            "state.modified",
+                            f"{item.forced}: not removed",
+                            hint=hint,
+                            location=Location(shown),
+                        )
                     )
-                )
-            planned.append(
-                _Planned(path, shown, "removed", current or entry.sha256, None, refused)
-            )
+            planned.append(item)
         planned.sort(key=lambda p: p.shown)
         return planned, diagnostics
 
@@ -383,19 +461,17 @@ class GenerateCommand:
         diagnostics += found
         if error is not None or generation is None:
             return Outcome(diagnostics=diagnostics, error=error, context=context)
-        warnings = [d for d in diagnostics if d.severity is Severity.WARNING]
-        if args.strict and warnings:
-            first = warnings[0]
-            strict = CliError(
-                first.code,
-                f"--strict: {_plural(len(warnings), 'warning')} ({first.code})",
-                "fix the warnings, or run without --strict",
-            )
-            return Outcome(diagnostics=diagnostics, error=strict, context=context)
+        if args.strict:
+            strict = _strict(diagnostics)
+            if strict is not None:
+                return Outcome(diagnostics=diagnostics, error=strict, context=context)
 
         old, lock_notes = self._old_lock(paths, args.force)
         diagnostics += lock_notes
-        planned, plan_notes = self._plan(generation, paths, old, args.force)
+        lock_path = paths.lock_dir / LOCK_NAME
+        pending_path = paths.lock_dir / PENDING_NAME
+        pending = read_pending(pending_path)
+        planned, plan_notes = self._plan(generation, paths, old, pending, args.force)
         diagnostics += plan_notes
         lock = Lock(
             generator="mmt-plugin",
@@ -410,7 +486,6 @@ class GenerateCommand:
             ),
         )
         lock_data = lock.dumps().encode("ascii")
-        lock_path = paths.lock_dir / LOCK_NAME
         lock_sha = sha256_bytes(lock_data)
         if old is None and not os.path.lexists(lock_path):
             lock_action = "created"
@@ -420,23 +495,44 @@ class GenerateCommand:
             lock_action = "updated"
         refused = [p for p in planned if p.refused]
         drift = [p for p in planned if p.action != "unchanged"] or lock_action != "unchanged"
-        writes = not (args.check or args.dry_run or refused)
 
         error = None
         if refused:
+            edited = all(p.data is None or not _special(p.path) for p in refused)
             error = CliError(
                 "state.modified",
-                f"{_plural(len(refused), 'generated file')} edited by hand: nothing written",
-                f"move your changes into {USER_DIR}/, or re-run with --force to discard them",
+                f"{_plural(len(refused), 'generated file')}"
+                + (" edited by hand" if edited else " edited by hand or in the way")
+                + ": nothing written",
+                f"move your changes into {USER_DIR}/, or re-run with --force to discard them"
+                if edited
+                else "see each file's hint",
             )
-        elif args.check and drift:
+        elif args.strict:
+            # The plan's warnings (state.kept, the --force ones) fail too (#56).
+            error = _strict([*diagnostics, *_forced_notes(planned, paths, writes=False)])
+        if error is None and args.check and drift:
             error = CliError(
                 "state.stale",
                 "the generated files or plugin.lock are not up to date",
                 "run mmt-plugin generate (without --check) and commit the result",
             )
+        writes = not (args.check or args.dry_run or error is not None)
+        diagnostics += _forced_notes(planned, paths, writes=writes)
 
         if writes:
+            changes = [p for p in planned if p.action != "unchanged"]
+            if changes:
+                # The journal: each file as it is, and as this run leaves it,
+                # so an interrupted run is not taken for a hand edit (#56).
+                journal: dict[str, set[str]] = {}
+                for p in changes:
+                    hashes = journal.setdefault(paths.in_lock(p.path), set())
+                    if p.before is not None:
+                        hashes.add(p.before)
+                    if p.data is not None:
+                        hashes.add(p.sha256)
+                write_atomic(pending_path, dumps_pending(journal), replace_link=True)
             for p in planned:
                 if p.data is not None:
                     # A link was refused above unless --force.
@@ -447,6 +543,8 @@ class GenerateCommand:
                     p.path.unlink()
             # plugin.lock is generate's own: a link there is replaced.
             lock_action = write_atomic(lock_path, lock_data, replace_link=True).action.value
+            if pending_path.is_symlink() or pending_path.is_file():
+                pending_path.unlink()
         else:
             for p in planned:
                 p.action = _WOULD.get(p.action, p.action)
@@ -505,6 +603,40 @@ def make_generation(
         diagnostics += exc.diagnostics
         return None, diagnostics, _model_error(name, exc.diagnostics)
     return generation, [*diagnostics, *generation.diagnostics], None
+
+
+def _strict(diagnostics: Sequence[Diagnostic]) -> CliError | None:
+    """``--strict``: the error of the first warning (its code, so its class),
+    or ``None`` without warnings."""
+    warnings = [d for d in diagnostics if d.severity is Severity.WARNING]
+    if not warnings:
+        return None
+    first = warnings[0]
+    return CliError(
+        first.code,
+        f"--strict: {_plural(len(warnings), 'warning')} ({first.code})",
+        "fix the warnings, or run without --strict",
+    )
+
+
+def _forced_notes(planned: Sequence[_Planned], paths: _Paths, *, writes: bool) -> list[Diagnostic]:
+    """The warnings of the files ``--force`` overwrites or removes: what the
+    run does, or would do when it writes nothing (#56)."""
+    notes = []
+    for p in planned:
+        if not p.forced or p.refused:
+            continue
+        verb = "removed" if p.data is None else "overwritten"
+        done = verb if writes else f"would be {verb}"
+        notes.append(
+            Diagnostic(
+                Severity.WARNING,
+                "state.modified",
+                f"{p.forced}: {done} (--force)",
+                location=Location(p.shown),
+            )
+        )
+    return notes
 
 
 def _model_error(name: str, diagnostics: Sequence[Diagnostic]) -> CliError:

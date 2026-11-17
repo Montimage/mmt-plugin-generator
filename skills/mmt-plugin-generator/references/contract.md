@@ -155,8 +155,8 @@ A row is a code, or a family ending in `*`. Codes are the
 | `test.no-packets` | Warning: write packet tests in `tests/*.yaml`; a run without one is not green. |
 | `test.bench-failed` | Warning from `--bench`: go on. |
 | `state.stale` | Run the command without `--no-deps` (or `generate`) to bring the files up to date. |
-| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. |
-| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. |
+| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. A directory where a generated file goes: ask the user (`--force` does not replace it). |
+| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. A directory named `plugin.lock`: ask the user (`--force` does not replace it). |
 | `state.kept` | Warning: a file `generate` no longer writes was kept. Delete it if it is yours. |
 | `state.exists` | A file no install manifest lists is at the target: ask the user. |
 | `state.installed-modified` | An installed file was changed since install: ask the user. |

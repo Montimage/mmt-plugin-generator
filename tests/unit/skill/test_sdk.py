@@ -112,6 +112,29 @@ def test_the_capture_evaluation_passes_on_a_synthetic_capture(
     assert (out / "report.md").read_text("utf-8").startswith("# Capture evaluation: telem — PASS")
     lines = (out / "frames.jsonl").read_text("utf-8").splitlines()
     assert [json.loads(line)["frame"] for line in lines] == [1, 2, 3, 4]
+    if tshark:
+        assert report["drift"]["checked"] and report["drift"]["items"] == []
+        # The drift check against tshark: the message length agrees with
+        # tshark's data.len (no drift), never with udp.length (8 bytes more
+        # in every frame: a drift, a defect until accepted).
+        same = ["--decode-as", "udp.port==5684,data", "--field", "length=data.len"]
+        assert pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *same]) == 0
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        assert report["fields"]["length"]["agreement"] == 1.0
+        assert report["drift"]["items"] == []
+        drift = ["--field", "length=udp.length"]
+        assert pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *drift]) == 1
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        (item,) = report["drift"]["items"]
+        assert (item["key"], item["frames"], item["status"]) == ("length", 4, "defect")
+        accept = [*drift, "--accept", "length=udp.length counts the UDP header"]
+        assert (
+            pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *accept]) == 0
+        )
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        assert report["drift"]["items"][0]["status"] == "accepted"
+    else:
+        assert not report["drift"]["checked"]
 
     other = tmp_path / "other.pcap"
     assert (

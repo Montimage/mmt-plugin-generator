@@ -8,7 +8,8 @@ compares the plugin's packets and values with what the capture holds:
 
     pcap_eval.py --sdk <prefix> --plugin <project>/build/mmtp_<label>.so \\
         --label <label> --parent <selector> --capture <pcap> --out <dir> \\
-        [--field <attribute>=<tshark field> ...] [--synthetic]
+        [--field <attribute>=<tshark field> ...] [--accept <key>=<reason> ...] \\
+        [--synthetic]
 
 Expected packets. ``--expect-filter`` is a tshark display filter that
 selects the frames that carry the protocol; ``--scope-filter`` selects every
@@ -26,11 +27,25 @@ frame, the plugin's value with tshark's first occurrence of the field
 the protocol (``--decode-as`` passes ``-d`` to tshark, e.g.
 ``udp.port==5684,coap``).
 
+Drift. tshark is the reference tool: every difference from it is a drift,
+listed in ``report.json`` (``drift.items``) and, frame by frame, in
+``drift.jsonl``. Each ``--field`` attribute that differs in any expected
+frame is one drift (its key is the attribute), the expected frames the
+plugin does not claim are the drift ``missed`` and the claimed frames
+outside the scope the drift ``foreign``. A drift is a defect, and the
+verdict FAIL, unless ``--accept <key>=<reason>`` accepts it; the reason is
+recorded with it. With tshark, the drift decides and ``--min-recall`` does
+not apply. Without tshark there is no reference: the drift is not checked (a
+warning), ``--min-recall`` applies to the frames ``mmt_plugin.pcap``
+expects, and ``--field`` is exit 3. ``--min-agreement`` and
+``--max-foreign`` are accepted and ignored: an accepted drift replaced them.
+
 Writes in ``--out``: ``bin/pcap_eval`` (linked with the SDK's
 ``libmmt_core.so.<version>``, whose soname ``lib/`` resolves),
 ``baseline-plugins/`` (links to the SDK's plugins), ``plugins/`` (the same
 and a copy of the plugin), ``baseline.json``, ``plugin.json``,
-``frames.jsonl``, ``report.json`` and ``report.md``. It never writes under
+``frames.jsonl``, ``drift.jsonl`` (with tshark), ``report.json`` and
+``report.md``. It never writes under
 ``--sdk``: an SDK plugin with the plugin's file name (an installed copy) is
 left out of both runs. Prints one summary line.
 
@@ -56,6 +71,8 @@ HERE = Path(__file__).resolve().parent
 RUNNER_SRC = HERE / "pcap_eval.c"
 OWN_ATTRIBUTE_LIMIT = 4096  # ids from 4096 are mmt-dpi's generic attributes (p_data, stats, ...)
 EXIT_PASS, EXIT_FAIL, EXIT_USAGE, EXIT_ENV = 0, 1, 2, 3
+REFERENCE = "tshark"  # the only reference tool for the drift check
+CLASSIFICATION_KEYS = ("missed", "foreign")  # the drift keys that are not attributes
 # libmmt_core.so.<major>.<minor>...: group 1 is its soname, libmmt_core.so.<major>.
 CORE_VERSIONED = re.compile(r"^(libmmt_core\.so\.[0-9]+)(\.[0-9]+)+$")
 
@@ -275,6 +292,32 @@ def tshark_fields(
     return rows
 
 
+def field_mismatches(
+    dump: list[dict[str, Any]],
+    reference: dict[int, dict[str, str]],
+    fields: dict[str, str],
+    expected: set[int],
+) -> tuple[dict[str, int], dict[str, list[dict[str, Any]]]]:
+    """Per attribute: the expected frames where tshark has the field, and
+    every one of them where the plugin's value differs (``plugin`` None:
+    the plugin has no value there)."""
+    compared: dict[str, int] = {}
+    rows: dict[str, list[dict[str, Any]]] = {}
+    by_frame = {row["frame"]: row["attributes"] for row in dump}
+    for attr in fields:
+        compared[attr] = 0
+        rows[attr] = []
+        for frame in sorted(expected & set(by_frame)):
+            ref = reference.get(frame, {}).get(attr)
+            if ref is None:
+                continue
+            compared[attr] += 1
+            got = by_frame[frame].get(attr)
+            if got is None or normalize(got) != normalize(ref):
+                rows[attr].append({"frame": frame, "tshark": ref, "plugin": got})
+    return compared, rows
+
+
 def compare_fields(
     dump: list[dict[str, Any]],
     reference: dict[int, dict[str, str]],
@@ -282,33 +325,85 @@ def compare_fields(
     expected: set[int],
 ) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    by_frame = {row["frame"]: row["attributes"] for row in dump}
+    compared, rows = field_mismatches(dump, reference, fields, expected)
     for attr in fields:
-        compared = matched = 0
-        missing_plugin = 0
-        examples: list[dict[str, Any]] = []
-        for frame in sorted(expected & set(by_frame)):
-            ref = reference.get(frame, {}).get(attr)
-            if ref is None:
-                continue
-            compared += 1
-            got = by_frame[frame].get(attr)
-            if got is None:
-                missing_plugin += 1
-            elif normalize(got) == normalize(ref):
-                matched += 1
-                continue
-            if len(examples) < 5:
-                examples.append({"frame": frame, "tshark": ref, "plugin": got})
+        n, bad = compared[attr], rows[attr]
+        matched = n - len(bad)
         out[attr] = {
             "tshark_field": fields[attr],
-            "compared": compared,
+            "compared": n,
             "matched": matched,
-            "missing_in_plugin": missing_plugin,
-            "agreement": round(matched / compared, 4) if compared else None,
-            "mismatches": examples,
+            "missing_in_plugin": sum(1 for r in bad if r["plugin"] is None),
+            "agreement": round(matched / n, 4) if n else None,
+            "mismatches": bad[:5],
         }
     return out
+
+
+def parse_accept(items: list[str], fields: dict[str, str]) -> dict[str, str]:
+    """``--accept <key>=<reason>``: the key is a ``--field`` attribute,
+    ``missed`` or ``foreign``, the reason is not empty, and each key once."""
+    accepted: dict[str, str] = {}
+    for item in items:
+        key, sep, reason = item.partition("=")
+        key, reason = key.strip(), reason.strip()
+        if not sep or not key or not reason:
+            raise EvalExit(EXIT_USAGE, f"--accept {item!r}: write <key>=<reason>, with a reason")
+        if key not in fields and key not in CLASSIFICATION_KEYS:
+            known = ", ".join([*fields, *CLASSIFICATION_KEYS])
+            raise EvalExit(
+                EXIT_USAGE, f"--accept {item!r}: {key!r} is not a drift key (one of: {known})"
+            )
+        if key in accepted:
+            raise EvalExit(EXIT_USAGE, f"--accept {key!r} is given twice")
+        accepted[key] = reason
+    return accepted
+
+
+def drift_items(
+    field_rows: dict[str, list[dict[str, Any]]],
+    fields: dict[str, str],
+    missed: list[int],
+    foreign: list[int] | None,
+    accepted: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Every drift from the reference: one per ``--field`` attribute that
+    differs in an expected frame, then ``missed`` and ``foreign``. Each is a
+    ``defect`` unless ``accepted`` names it (then ``accepted``, with its
+    reason)."""
+    items: list[dict[str, Any]] = []
+
+    def add(key: str, kind: str, frames: list[int], **extra: Any) -> None:
+        if not frames:
+            return
+        reason = accepted.get(key)
+        items.append(
+            {
+                "key": key,
+                "kind": kind,
+                **extra,
+                "frames": len(frames),
+                "first_frames": frames[:5],
+                "status": "accepted" if reason else "defect",
+                "reason": reason,
+            }
+        )
+
+    for attr, rows in field_rows.items():
+        add(attr, "field", [r["frame"] for r in rows], tshark_field=fields[attr])
+    add("missed", "classification", missed)
+    add("foreign", "classification", foreign or [])
+    return items
+
+
+def drift_lines(
+    field_rows: dict[str, list[dict[str, Any]]], missed: list[int], foreign: list[int] | None
+) -> list[dict[str, Any]]:
+    """``drift.jsonl``: one line per frame of each drift, every frame."""
+    lines = [{"key": a, **row} for a, rows in field_rows.items() for row in rows]
+    lines += [{"key": "missed", "frame": f} for f in missed]
+    lines += [{"key": "foreign", "frame": f} for f in foreign or []]
+    return lines
 
 
 def displaced(baseline: dict[str, Any], plugin: dict[str, Any], label: str) -> dict[str, int]:
@@ -321,6 +416,20 @@ def displaced(baseline: dict[str, Any], plugin: dict[str, Any], label: str) -> d
         if drop > 0 and last != "unknown" and label.upper() not in path.upper():
             lost[path] = drop
     return lost
+
+
+def drift_problem(d: dict[str, Any], scope_filter: str | None) -> str:
+    """The problem of an open drift (a defect)."""
+    if d["key"] == "missed":
+        what = f"{d['frames']} expected frames are not classified as the plugin's"
+    elif d["key"] == "foreign":
+        what = f"{d['frames']} claimed frames are outside {scope_filter!r}"
+    else:
+        what = f"field {d['key']} differs from {d['tshark_field']} in {d['frames']} frames"
+    return (
+        f"drift {d['key']}: {what} (first: frame {d['first_frames'][0]}):"
+        f" fix the plugin, or --accept {d['key']}=<reason>"
+    )
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any]:
@@ -340,7 +449,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         attr, sep, tsf = item.partition("=")
         if not sep or not attr or not tsf:
             raise EvalExit(EXIT_USAGE, f"--field {item!r}: write <attribute>=<tshark field>")
+        if attr in CLASSIFICATION_KEYS:
+            raise EvalExit(EXIT_USAGE, f"--field {item!r}: {attr!r} is a drift key, not a field")
         fields[attr] = tsf
+    accepted = parse_accept(args.accept, fields)
     out: Path = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     have_tshark = shutil.which("tshark") is not None
@@ -384,11 +496,21 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     missed = sorted(expected - claimed)
     foreign = sorted(claimed - scope) if scope is not None else None
     recall = round(len(hit) / len(expected), 4) if expected else None
-    field_report = (
-        compare_fields(dump, tshark_fields(args.capture, fields, args.decode_as), fields, expected)
-        if fields
-        else {}
-    )
+    field_report: dict[str, Any] = {}
+    field_rows: dict[str, list[dict[str, Any]]] = {}
+    if fields:
+        reference = tshark_fields(args.capture, fields, args.decode_as)
+        field_report = compare_fields(dump, reference, fields, expected)
+        _, field_rows = field_mismatches(dump, reference, fields, expected)
+    drifts = drift_items(field_rows, fields, missed, foreign, accepted) if have_tshark else []
+    drift_path = out / "drift.jsonl"
+    if have_tshark:
+        drift_path.write_text(
+            "".join(json.dumps(d) + "\n" for d in drift_lines(field_rows, missed, foreign)),
+            "utf-8",
+        )
+    else:
+        drift_path.unlink(missing_ok=True)
     own = {n: a for n, a in plugin.get("attributes", {}).items() if a["id"] < OWN_ATTRIBUTE_LIMIT}
     never = sorted(n for n, a in own.items() if a["present"] == 0)
     lost = displaced(baseline, plugin, args.label)
@@ -410,24 +532,26 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             problems.append(
                 f"the capture has no frame matching {expect_filter!r}: wrong capture or filter"
             )
+        elif have_tshark:
+            for d in drifts:
+                if d["status"] == "defect":
+                    problems.append(drift_problem(d, scope_filter))
         elif recall is not None and recall < args.min_recall:
             problems.append(
                 f"recall {recall:.2%} < {args.min_recall:.0%}:"
                 f" {len(missed)} expected frames not classified"
             )
-        if foreign:
-            share = len(foreign) / max(len(claimed), 1)
-            msg = f"{len(foreign)} claimed frames are outside {scope_filter!r} ({share:.2%})"
-            (problems if share > args.max_foreign else warnings).append(msg)
         for attr, rep in field_report.items():
             if rep["compared"] == 0:
                 warnings.append(
                     f"field {attr}: tshark's {rep['tshark_field']} is in no expected frame"
                 )
-            elif rep["agreement"] < args.min_agreement:
-                problems.append(
-                    f"field {attr}: {rep['agreement']:.2%} agreement with {rep['tshark_field']}"
-                )
+        if have_tshark and scope is None:
+            warnings.append("no --scope-filter: the drift foreign is not checked")
+        seen = {d["key"] for d in drifts}
+        for key in accepted:
+            if have_tshark and key not in seen:
+                warnings.append(f"--accept {key}: no such drift on this capture")
         if never:
             warnings.append("attributes never extracted on this capture: " + ", ".join(never))
         if hollow:
@@ -455,7 +579,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         )
     if not have_tshark:
         warnings.append(
-            "no tshark: expected frames from mmt_plugin.pcap, scope (foreign frames) not measured"
+            "no tshark: expected frames from mmt_plugin.pcap, scope (foreign frames) not measured,"
+            " drift against a reference tool not checked"
+            + (" (--accept ignored)" if accepted else "")
         )
 
     return {
@@ -484,6 +610,14 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "foreign_frames": foreign[:50] if foreign is not None else None,
         "hollow_frames": hollow[:50],
         "fields": field_report,
+        "drift": {
+            "reference": REFERENCE if have_tshark else None,
+            "checked": have_tshark,
+            "open": sum(1 for d in drifts if d["status"] == "defect"),
+            "accepted": sum(1 for d in drifts if d["status"] == "accepted"),
+            "items": drifts,
+            "file": drift_path.name if have_tshark else None,
+        },
         "attributes": {
             n: {"present": a["present"], "values": a["values"], "other_values": a["other_values"]}
             for n, a in own.items()
@@ -493,11 +627,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             "plugin": plugin.get("paths", {}),
             "displaced": lost,
         },
-        "thresholds": {
-            "min_recall": args.min_recall,
-            "min_agreement": args.min_agreement,
-            "max_foreign": args.max_foreign,
-        },
+        "thresholds": {"min_recall": args.min_recall},
     }
 
 
@@ -531,6 +661,28 @@ def markdown(r: dict[str, Any]) -> str:
                 f" | {f['agreement']} |"
             )
         lines.append("")
+    drift = r.get("drift")
+    if drift is not None:
+        lines += ["## Drift against tshark", ""]
+        if not drift["checked"]:
+            lines += ["Not checked: no tshark (the reference tool) on PATH.", ""]
+        elif not drift["items"]:
+            lines += ["None: the plugin agrees with tshark on every compared frame.", ""]
+        else:
+            lines += [
+                f"{drift['open']} open (defects), {drift['accepted']} accepted;"
+                f" every frame in `{drift['file']}`.",
+                "",
+                "| Key | Kind | Frames | First frames | Status | Reason |",
+                "|---|---|---:|---|---|---|",
+            ]
+            for d in drift["items"]:
+                first = ", ".join(map(str, d["first_frames"]))
+                lines.append(
+                    f"| {d['key']} | {d['kind']} | {d['frames']} | {first}"
+                    f" | {d['status']} | {d['reason'] or ''} |"
+                )
+            lines.append("")
     lines += [
         "## Attributes",
         "",
@@ -584,17 +736,31 @@ def main(argv: list[str] | None = None) -> int:
         "--field", action="append", default=[], help="attribute=tshark.field (repeatable)"
     )
     p.add_argument(
+        "--accept",
+        action="append",
+        default=[],
+        help="accept a drift: <attribute|missed|foreign>=<reason> (repeatable)",
+    )
+    p.add_argument(
         "--synthetic", action="store_true", help="the capture was generated, not recorded"
     )
     p.add_argument(
-        "--min-recall", type=float, default=0.95, help="the expected frames to classify (0.95)"
+        "--min-recall",
+        type=float,
+        default=0.95,
+        help="without tshark: the expected frames to classify (0.95)",
     )
-    p.add_argument("--min-agreement", type=float, default=1.0, help="per --field agreement (1.0)")
+    p.add_argument(
+        "--min-agreement",
+        type=float,
+        default=1.0,
+        help="ignored: replaced by the drift check and --accept",
+    )
     p.add_argument(
         "--max-foreign",
         type=float,
         default=0.0,
-        help="share of claimed frames outside the scope (0)",
+        help="ignored: replaced by the drift check and --accept",
     )
     args = p.parse_args(argv)
     try:
@@ -607,7 +773,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"pcap_eval: {report['verdict']}: {report['hit']}/{report['expected']['frames']}"
         f" expected frames classified, {len(report['problems'])} problems,"
-        f" {len(report['warnings'])} warnings; {args.out / 'report.md'}"
+        f" {len(report['warnings'])} warnings, {report['drift']['open']} open drifts;"
+        f" {args.out / 'report.md'}"
     )
     return EXIT_PASS if report["verdict"] == "PASS" else EXIT_FAIL
 

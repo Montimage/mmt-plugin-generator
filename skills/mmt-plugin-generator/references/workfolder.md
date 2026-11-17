@@ -41,7 +41,8 @@ it is, re-run every step, and pick the work up where it stopped.
       <command>.json   each envelope of loop run n (validate, generate, ...)
       notes.md         what failed (exit, error.code, location) and the fix
   eval/                scripts/pcap_eval.py --out: report.md, report.json,
-                       frames.jsonl, baseline.json, plugin.json
+                       frames.jsonl, drift.jsonl (with tshark),
+                       baseline.json, plugin.json
                        (bin/ and plugins/ are rebuilt: no need to keep them)
   REPORT.md            the final report (SKILL.md, "Done")
   manifest.json        versions and hashes (below)
@@ -86,9 +87,32 @@ code.
     "project/build/mmtp_telem.so": "<sha256>"
   },
   "loop_runs": 4,
-  "eval": {"verdict": "PASS", "recall": 1.0, "report": "eval/report.md"}
+  "eval": {
+    "verdict": "PASS",
+    "recall": 1.0,
+    "report": "eval/report.md",
+    "drift": {"checked": true, "open": 0, "accepted": 1}
+  }
 }
 ```
+
+`eval.drift` is `report.json`'s `drift` without its items: `checked` false
+without tshark.
+
+## REPORT.md
+
+The final report of `SKILL.md`, "Done", with a section per run of the
+skill (dated, for an update). Its "Drift against tshark" part has one row
+per drift of the last evaluation, from `eval/report.md`:
+
+| Key | Kind | Frames | Status | Reason, or the fix |
+|---|---|---:|---|---|
+| length | field | 4 | accepted | udp.length counts the UDP header; the spec's length is the message's |
+| missed | classification | 2 | fixed | `classify` matched only the client's port: run 3 |
+
+A drift fixed in an earlier evaluation run is listed as `fixed`, with the
+loop run of the fix. No drift: say "none". No tshark: "not checked: no
+tshark".
 
 Take the versions from `mmt-plugin --json --version` (`result.version`),
 the SDK's `dpi/lib/libmmt_core.so.<version>`, `<cc> --version` and
@@ -101,9 +125,12 @@ Short, and written last:
 1. One line: the protocol, the label, and whether the plugin is green and
    the evaluation passed.
 2. "Re-run": the loop commands with this folder's paths, then the
-   `pcap_eval.py` command, copied from `eval/report.json` and the runs.
-3. "Resume": what is left (a failing step, an open question, a warning of
-   the evaluation that was not explained), or "nothing".
+   `pcap_eval.py` command of the last evaluation run, with its `--accept`
+   flags (each accepted item of `drift.items` in `eval/report.json`: its
+   key and reason).
+3. "Resume": what is left (a failing step, an open question, a drift that
+   is still a defect, a warning of the evaluation that was not explained),
+   or "nothing".
 
 ## Resuming from a work folder
 

@@ -48,8 +48,10 @@ folder, getting a capture and evaluating on it.
 - A C compiler, `gcc` or `clang`, and the libpcap headers (`libpcap-dev`)
   for the capture evaluation.
 - Python 3 for `scripts/`, and the Wireshark tools (`tshark`, `capinfos`,
-  `editcap`, `mergecap`) to check and compare captures. Without tshark the
-  evaluation still runs, with less (`references/evaluation.md`).
+  `editcap`, `mergecap`) to check and compare captures. tshark is the only
+  reference tool for the drift check. Without tshark the evaluation still
+  runs, with less, and the drift is not checked
+  (`references/evaluation.md`).
 - The SDK profile: the newest entry of `result.sdk_profiles` in
   `mmt-plugin --json --version`, or the version of the SDK you build
   against. In an existing project, `<profile>` is the one its `plugin.yaml`
@@ -308,13 +310,23 @@ folder. Then evaluate the built plugin on the capture, as
 ```sh
 python3 <skill>/scripts/pcap_eval.py --sdk <prefix> --cc <cc> \
     --plugin <project>/build/mmtp_<label>.so --label <label> --parent <selector> \
-    --capture <work>/capture/capture.pcap --out <work>/eval [--field <attr>=<tshark field>] [--synthetic]
+    --capture <work>/capture/capture.pcap --out <work>/eval [--field <attr>=<tshark field>] \
+    [--accept <key>=<reason>] [--synthetic]
 ```
 
 It runs the capture through mmt-dpi without and with the plugin and writes
 `<work>/eval/report.md`. Exit 0 is PASS, 1 FAIL, 2 a wrong command, 3 the
 environment (compiler, libpcap, SDK). Map every attribute that a tshark
-dissector also decodes with `--field`. On FAIL, fix one problem
+dissector also decodes with `--field`.
+
+Every difference from tshark is a drift: a `--field` attribute whose value
+differs, expected frames the plugin misses (`missed`), claimed frames
+outside the protocol's traffic (`foreign`). The report lists each one, and
+`<work>/eval/drift.jsonl` each of its frames. Judge every drift from the
+spec ([evaluation.md](references/evaluation.md#drift-against-tshark)): a
+defect, which you fix, or an accepted difference, which you pass as
+`--accept <key>=<reason>`, with the reason. A drift not accepted is a
+defect, and the evaluation a FAIL. On FAIL, fix one problem
 ([evaluation.md](references/evaluation.md#fixing-a-fail)), write a packet
 test from the frame that showed it with the spec's values, run the loop
 until green, then evaluate again; stop after 3 evaluation runs that fail
@@ -327,8 +339,9 @@ The plugin is green when, in one loop run, all four commands exit 0 and
 `total` at least 1 (a run with no packet test is the warning
 `test.no-packets`, not green), and `validate`'s `parents-exist` check is
 `pass`. It is done when it is green and the capture evaluation of that
-build is PASS, or the evaluation was skipped with the user's leave or for
-lack of an SDK.
+build is PASS (no open drift: each one fixed, or accepted with its reason),
+or the evaluation was skipped with the user's leave or for lack of an SDK.
+Never report a plugin as done while a drift is a defect.
 
 Write `<work>/REPORT.md`, `<work>/manifest.json` and `<work>/README.md`
 ([workfolder.md](references/workfolder.md)), then report:
@@ -344,8 +357,10 @@ Write `<work>/REPORT.md`, `<work>/manifest.json` and `<work>/README.md`
 - the capture: where it came from (given, found with its URL, recorded,
   or synthetic), and the evaluation: its verdict, recall, field agreement
   and each warning with its explanation;
-- what you could not check (no SDK, no tshark dissector, a field the spec
-  leaves open, a synthetic capture).
+- the drift against tshark: each drift, its key, its frames, and whether
+  it was fixed or accepted, with the reason;
+- what you could not check (no SDK, no tshark: drift not checked, no
+  tshark dissector, a field the spec leaves open, a synthetic capture).
 
 ## Evals
 

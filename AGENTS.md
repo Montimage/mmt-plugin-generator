@@ -37,7 +37,10 @@ protocol model. A Python rewrite is planned in
   plugin made the same way: directly above TCP (mmt-dpi 1.10.2 does not
   classify a layer above `websocket_example`), it claims a session whose
   handshake offers `ocpp1.6`, parses the WebSocket framing itself and
-  links each answer to its CALL's action. Labels are `<protocol>_example`,
+  links each answer to its CALL's action. Both inflate permessage-deflate
+  messages (RFC 7692, #107) with one decoder, `src/ws_inflate.c` and
+  `src/ws_inflate.h`, copied byte for byte into each project (a project
+  builds only its own `src/`). Labels are `<protocol>_example`,
   ids 976-993, profile 1.10.2 pinned. All 18 build and pass their packet
   tests against
   mmt-dpi 1.10.2; `examples/README.md` lists each one's label, id,
@@ -46,11 +49,12 @@ protocol model. A Python rewrite is planned in
   says. Tests in `tests/unit/examples/`: `test_examples.py` (the models,
   `generate --check`, the ports' packet tests against the corpus, a source
   for every value of the others', one `through` test per example with a
-  parent, and a source for every session test, `tests/session-*.yaml`)
+  parent, a source for every session test, `tests/session-*.yaml`, and
+  the two `ws_inflate` copies identical)
   and `test_sdk.py` (`validate`, `build` and `test --sanitize` on each
   one, then each parent's classification broken, which fails only the
   run through it and the session tests; the WebSocket and OCPP examples'
-  session tests (#99), 8 and 12, under the sanitizers with corrupted
+  session tests (#99, #107), 24 and 23, under the sanitizers with corrupted
   copies, and one without its CALL; then an OCPP session through the
   harness `test` built, next to the WebSocket plugin; needs
   `MMT_GOLDEN_SDK`).

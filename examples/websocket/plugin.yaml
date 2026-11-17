@@ -54,3 +54,6 @@ attributes:
     type: MMT_STRING_DATA   # Sec-WebSocket-Key of the request
   - name: accept
     type: MMT_STRING_DATA   # Sec-WebSocket-Accept of the answer
+  # permessage-deflate (RFC 7692).
+  - name: payload_inflated
+    type: MMT_U8_DATA       # what payload carries: 1 an inflated message, 0 a plain frame's bytes, 2 compressed bytes

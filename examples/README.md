@@ -154,7 +154,7 @@ section 5.5.1 (`tests/*.yaml`, each value with its section).
 
 | example | label | id | parent | what it reports |
 |---|---|---|---|---|
-| `websocket` | `websocket_example` | 992 | `tcp`, any port, from the opening handshake (hook) | the handshake's fields; per segment, the first frame's header, its unmasked payload, the number of frames, the bytes of an earlier frame |
+| `websocket` | `websocket_example` | 992 | `tcp`, any port, from the opening handshake (hook) | the handshake's fields; per segment, the first frame's header, its unmasked payload (or a compressed message inflated, permessage-deflate), the number of frames, the bytes of an earlier frame |
 
 Every attribute is a hook, without an offset: where a frame starts in a
 segment depends on the session (the handshake before it, a frame begun in
@@ -178,7 +178,53 @@ an earlier segment), which no `plugin.yaml` expression can read.
   header split across segments counts in the segment where it ends. On
   frames, `subprotocol` is the one the 101 answer selected. A pure ACK, a retransmission, client data before the
   answer and anything after a refused upgrade (a status other than 101)
-  report nothing.
+  report nothing. `payload_inflated` says what `payload` carries
+  (permessage-deflate, below), absent with it: 1, `payload` is the message
+  inflated (RFC 7692 section 7.2.2), its frames all in the segment or
+  collected over earlier ones: the compressed message that ended in the
+  segment (the first, when several did), at most 1024 bytes, even in a
+  segment without a frame header (the frame fields still describe the
+  first frame, whatever message it belongs to); 0, `payload` is the first
+  frame's bytes as sent, its message plain (RSV1 0 on its first frame,
+  section 6); 2, `payload` is compressed bytes not inflated (the message
+  ends in a later segment, or did not inflate: a distance past the history
+  the window holds, RFC 1951 section 3.2, a corrupt or too long message),
+  or bytes of a message whose first frame was not seen, unless the answer
+  negotiated no extension (then nothing is compressed, and they are 0).
+- **permessage-deflate** (RFC 7692, #107). The 101 answer's
+  `Sec-WebSocket-Extensions` fields (every one, at any length, in the
+  answer's first segment or the next) decide (section 7.1):
+  `permessage-deflate` with `server_no_context_takeover`,
+  `client_no_context_takeover` (no value), `server_max_window_bits` and
+  `client_max_window_bits` (8 to 15), each at most once, inflates; the
+  `server_*` parameters are the server's messages', `client_*` the
+  client's. Any other extension or parameter, a value out of range or a
+  parameter twice, and the session inflates nothing (every compressed
+  frame reports 2). A message is compressed when its first frame has RSV1
+  (section 6). Each direction collects a compressed message's payload,
+  unmasked, over its frames and segments (continuation frames, the bytes of
+  a frame begun in an earlier segment), up to 64 KiB
+  (`WS_INFLATE_IN_MAX`, a buffer grown as needed), and inflates it at its
+  last frame with `00 00 ff ff` appended (section 7.2.2), to at most 1 MiB
+  (`WS_INFLATE_OUT_MAX`), through the direction's 32 KiB window (context
+  takeover, section 7.2.3.2; emptied before each message under
+  `*_no_context_takeover`, section 7.1.1; a 32 KiB window decodes any
+  window bits). The buffers and the window are allocated at the
+  direction's first compressed message and freed with the session.
+  `src/ws_inflate.c` is the decoder (RFC 1951: stored, fixed and dynamic
+  Huffman blocks), the same file in `examples/ocpp/src/`
+  (`tests/unit/examples/test_examples.py` checks that the two copies are
+  identical). It never builds output from history it did not see: a byte
+  missing inside a compressed message (lost, past the capture's end, a
+  header lost and the parse started again) drops that message and empties
+  the window, and so does a missing byte between messages, a message
+  that does not inflate or one longer than the caps. The messages after
+  are inflated when they are self-contained; the others report 2: no
+  message rather than a wrong one. A session joined after the handshake
+  (no answer seen) inflates the same way, context takeover assumed, from
+  an empty window. Without a session, a compressed message whose frames
+  are all in the segment is inflated from an empty window, to at most 64
+  KiB (`WS_INFLATE_ALONE_MAX`).
 - **State.** mmt-dpi has no TCP reassembly for plugins. Per direction, the
   session data keeps the next sequence number, the bytes the current frame
   still owes, a split header and the message in progress. A retransmitted
@@ -217,16 +263,29 @@ frames in a segment, a fragmented message, a 16-bit frame over two
 segments, a split header, a retransmission, lost payload bytes, a lost
 frame header, close frames, more than 40 packets, a refused upgrade, plain
 HTTP, a capture that starts at the answer, an answer's header block over
-two segments, and a session idle for 70 s; with
-and without the sanitizers, then corrupted and cut short.
+two segments, and a session idle for 70 s; and permessage-deflate
+(`tests/session-deflate-*.yaml`, #107): compressed messages each way,
+masked and not, context takeover (two messages in a segment, a
+back-reference 32 424 bytes away after the window wrapped), both and one
+`*_no_context_takeover`, window bits in a field over 63 bytes in the
+answer's second segment, an unknown extension or parameter and bits out of
+range (nothing inflated), no extension at all, a fragmented message, a
+frame over two segments, a message's end then a ping, lost messages, lost
+bytes inside a frame, a lost first fragment, dynamic Huffman codes and a
+message that inflates past 1 MiB; with and without the sanitizers, then
+corrupted and cut short. The packet tests `tests/deflate-*.yaml` are RFC
+7692 section 7.2.3's examples, each in one segment.
 
 Not covered, or open:
 
 - Out-of-order segments are not reordered: after a gap the parse goes on
   as after lost bytes, and the late segment is then a retransmission. A header field line split across segments is lost; only
   the first segment of the request is read.
-- Extensions (RFC 6455 section 9, `permessage-deflate`, RFC 7692): `rsv1`
-  is reported, the payload is not inflated.
+- Extensions other than `permessage-deflate` (RFC 6455 section 9): `rsv1`
+  is reported, the payload is not inflated. A compressed message is not
+  inflated (2) when a byte of it, or the history it refers to, was not
+  seen, or when it is over the caps (above): it is a message missing,
+  never a wrong one.
 - A refused upgrade keeps the session as `WEBSOCKET_EXAMPLE` with nothing
   to report: mmt-dpi 1.10.2 has no way for a plugin to give a session back.
 - A child protocol can attach with
@@ -261,7 +320,7 @@ WebSocket frames (`tests/*.yaml`, each value with its section).
 
 | example | label | id | parent | what it reports |
 |---|---|---|---|---|
-| `ocpp` | `ocpp_example` | 993 | `tcp`, any port, from an opening handshake offering `ocpp1.6` (hook) | per segment, the first OCPP-J message: its type, UniqueId, action (on an answer, its CALL's), error code and description, payload, typed fields; the number of messages |
+| `ocpp` | `ocpp_example` | 993 | `tcp`, any port, from an opening handshake offering `ocpp1.6` (hook) | per segment, the first OCPP-J message completed in it (compressed ones inflated): its type, UniqueId, action (on an answer, its CALL's), error code and description, payload, typed fields; the number of messages |
 
 mmt-dpi 1.10.2 does not classify a protocol above `websocket_example`
 (above, "WebSocket", "Not covered, or open"), so `ocpp_example` is not
@@ -279,15 +338,24 @@ frame header, the unmasking, the TCP state), trimmed.
   answer that selects `ocpp1.6` claims a capture without the request, and
   a segment that starts with an unfragmented text frame holding an OCPP-J
   message (`[`, then 2, 3 or 4, then `,`, then a complete string, with
-  JSON whitespace around them) one that starts after the handshake.
-- **Attributes.** A segment reports the first OCPP-J message whose frame
-  header ends in it, parsed from the frame's bytes in the segment,
-  unmasked: `message_type_id` (2 CALL, 3 CALLRESULT, 4 CALLERROR),
+  JSON whitespace around them) one that starts after the handshake. A
+  compressed text frame (RSV1) claims it only when the whole frame is in
+  the segment and its first 64 bytes, inflated from an empty window (from
+  at most 512 bytes of the frame), start with that shape up to the
+  string's opening quote; a compressed frame that is not OCPP-J (another
+  JSON text, bytes that are not DEFLATE data) or ends in a later segment
+  claims nothing.
+- **Attributes.** A segment reports the first OCPP-J message completed in
+  it, in the order of its bytes: an uncompressed one where its frame
+  header ends, parsed from the frame's bytes in the segment, unmasked; a
+  compressed one (permessage-deflate, below) where its last frame ends,
+  parsed from the whole message inflated. `message_type_id` (2 CALL, 3 CALLRESULT, 4 CALLERROR),
   `unique_id`, `action` (a CALL's Action; on a CALLRESULT or CALLERROR,
   the Action of the CALL it answers, absent when that CALL was not seen),
   `error_code` and `error_description` (CALLERROR), `payload` (the Payload,
-  or a CALLERROR's errorDetails, as sent), and `message_count`, the OCPP-J
-  messages whose frame header ends in the segment. The typed fields come
+  or a CALLERROR's errorDetails, as sent or as inflated), and
+  `message_count`, the OCPP-J messages completed in the segment, of both
+  kinds. The typed fields come
   from a CALL's payload, at their place in it, never from a key found
   anywhere: `connector_id`, the top-level `connectorId`; `id_tag`, the
   top-level `idTag` of Authorize, StartTransaction and
@@ -319,6 +387,30 @@ frame header, the unmasking, the TCP state), trimmed.
   minutes of silence is still a retransmission, #104), and mmt-dpi 1.10.2
   calling the classification function, then after 40 packets the session
   data hooks.
+- **permessage-deflate** (RFC 7692, #107) is `websocket_example`'s
+  (above), with the same decoder, `src/ws_inflate.c`: the answer's
+  `Sec-WebSocket-Extensions` decide, per direction (in the answer's first
+  segment or the next); an extension or parameter this plugin does not
+  know, and a compressed message is no OCPP-J message. Each direction
+  collects a compressed message (up to 64 KiB, `OC_INFLATE_IN_MAX`) over its
+  frames and segments and inflates it at its last frame (up to 1 MiB,
+  `OC_INFLATE_OUT_MAX`) into its own buffer, which the next message reuses
+  (grown to the largest message; when it was too small, the window gets
+  its history back and the message is decoded again); a text message is
+  then parsed like an uncompressed one, linked to its CALL the same way,
+  and its first 1024 payload bytes are copied into the segment's view for
+  `payload`. The window and the buffers are allocated at the direction's
+  first compressed message and freed with the session. A byte missing inside a
+  compressed message or between messages (lost, past the capture's end, a
+  header lost and the parse started again), a message that does not
+  inflate or one over the caps: that message is not reported and the
+  window is emptied, so the messages after are reported only when they are
+  self-contained, never a message built from bytes the plugin did not see.
+  A session claimed without its handshake (on a frame, or joined by
+  `session_data_init`) treats RSV1 as permessage-deflate, context takeover
+  assumed, from an empty window. Without a session (the harness's packet
+  tests) a compressed message is not inflated, and nothing is allocated:
+  it reports nothing.
 
 Its session tests (`tests/session-*.yaml`, #99) run TCP sessions through
 it (on port 9000) and check every attribute of every packet: CALL then
@@ -332,8 +424,20 @@ selecting `ocpp2.0.1`, a refused upgrade, a chat WebSocket session, an
 `OCPP1.6` offer and plain HTTP (none of them claimed), a capture that
 starts after the handshake or at the answer, an answer's header block
 over two segments, a CALL retransmitted after 70 s of silence and a lost
-frame header; with and without the sanitizers, then corrupted and cut
-short. `tests/unit/examples/test_sdk.py` also loads `mmtp_ocpp_example.so` and
+frame header; and permessage-deflate (`tests/session-deflate-*.yaml`,
+#107): a compressed CALL and its CALLRESULT linked, its payload the plain
+text, two Heartbeats whose second refers to the first (context takeover),
+both `*_no_context_takeover` with window bits in the answer's second
+segment, `server_no_context_takeover` alone (the server's messages only),
+an unknown parameter (nothing inflated), a lost message and lost
+bytes inside a frame then a message that refers to them (not reported)
+and a self-contained one (reported), a lost first fragment, a message over
+two segments (reported in the second), a segment with the end of one
+message, a whole one and the start of a third, a RemoteStartTransaction
+with dynamic Huffman codes and its typed fields, and a capture that starts
+after the handshake, claimed on a compressed CALL, or not claimed by
+compressed frames that are not OCPP-J; with and without the sanitizers,
+then corrupted and cut short. `tests/unit/examples/test_sdk.py` also loads `mmtp_ocpp_example.so` and
 `mmtp_websocket_example.so` in one plugin directory: the `ocpp1.6`
 session is `OCPP_EXAMPLE`, the chat session `WEBSOCKET_EXAMPLE`, both
 directly above TCP.
@@ -353,9 +457,11 @@ Not covered, or open:
   others, which are linked too). A message is read from its first frame,
   in the segment where that frame's header ends: continuation frames and
   the bytes of a frame in later segments are not reassembled, so a field
-  after them is not reported. Compressed frames (`permessage-deflate`,
-  RSV1) are not read: inflating them needs a DEFLATE decoder in the
-  plugin, which links only `libmmt_core` (#104 kept this limit).
+  after them is not reported. A compressed message is reassembled (it
+  must be, to inflate) and reported where it ends; one that cannot be
+  inflated (a byte or the history it refers to not seen, over the caps,
+  an extension not known) is not reported: a message missing, never a
+  wrong one.
 - Checking per-action CALL counts and links against real captures (the
   Zenodo record 14887131 of #41, against tshark) is a manual run, not CI:
   the run of #39 is in

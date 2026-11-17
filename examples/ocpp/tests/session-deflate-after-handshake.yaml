@@ -1,0 +1,101 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications, RFC 6455 and RFC 7692 (permessage-deflate, #107): its
+# packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-deflate-after-handshake"
+model: "ocpp"
+summary: "A capture that starts after a handshake that negotiated permessage-deflate: a compressed CALL claims the session, its answer is linked, and the next CALL, which refers to the first, is inflated (context takeover assumed)"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; RFC 7692 section 7 (permessage-deflate), section 6 (RSV1) and 7.2.3.2; each message Python zlib's raw DEFLATE (wbits=-15) of its OCPP-J text, one compressor a direction; the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49238"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - from: "server"
+    bytes:
+      - "c1 3c 8a 36 d2 51 2a d0 35 54 d2 51 72 4f 2d 71"
+      - "ce cf 4b cb 4c 2f 2d 4a 2c c9 cc cf 53 d2 a9 56"
+      - "ca 4e ad 54 b2 8a 56 f2 48 4d 2c 2a 49 4a 4d 2c"
+      - "f1 cc 2b 49 2d 2a 4b cc 51 8a ad 8d 05 00"
+    expect:
+      attributes:
+        - name: "action"
+          value: "47 65 74 43 6f 6e 66 69 67 75 72 61 74 69 6f 6e"
+          text: "GetConfiguration"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 6b 65 79 22 3a 5b 22 48 65 61 72 74 62 65 61 74 49 6e 74 65 72 76 61 6c 22 5d 7d"
+          text: "{\"key\":[\"HeartbeatInterval\"]}"
+        - name: "unique_id"
+          value: "70 2d 31"
+          text: "p-1"
+  - from: "client"
+    bytes:
+      - "c1 d6 37 fa 21 3d 23 70 60 37 b7 da 35 38 d8 08"
+      - "f7 3b b1 41 6f 6d 43 fe 50 cc 9c 95 69 9f 56 e0"
+      - "a5 49 c0 96 14 0d 04 a0 28 a1 6a f5 70 8c f1 9a"
+      - "fc 63 25 9f 36 fe fb f5 27 60 46 06 e5 f5 a3 08"
+      - "e3 a9 90 6a 18 e0 d3 db b1 a5 81 e2 5d f6 a1 06"
+      - "e4 3f 7a ed 4f 8e a5 e8 8e 44 fa fd"
+    expect:
+      attributes:
+        - name: "action"
+          value: "47 65 74 43 6f 6e 66 69 67 75 72 61 74 69 6f 6e"
+          text: "GetConfiguration"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 6f 6e 66 69 67 75 72 61 74 69 6f 6e 4b 65 79 22 3a 5b 7b 22 6b 65 79 22 3a 22 48 65 61 72 74 62 65 61 74 49 6e 74 65 72 76 61 6c 22 2c 22 72 65 61 64 6f 6e 6c 79 22 3a 66 61 6c 73 65 2c 22 76 61 6c 75 65 22 3a 22 33 30 30 22 7d 5d 7d"
+          text: "{\"configurationKey\":[{\"key\":\"HeartbeatInterval\",\"readonly\":false,\"value\":\"300\"}]}"
+        - name: "unique_id"
+          value: "70 2d 31"
+          text: "p-1"
+  - from: "server"
+    note: "refers to the CALL before"
+    bytes:
+      - "c1 1b 8a 06 eb 34 22 55 a7 8e 92 6f 2a 90 19 96"
+      - "98 53 9a 1a 9c 98 5b 90 93 8a 6c 28 00"
+    expect:
+      attributes:
+        - name: "action"
+          value: "47 65 74 43 6f 6e 66 69 67 75 72 61 74 69 6f 6e"
+          text: "GetConfiguration"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 6b 65 79 22 3a 5b 22 48 65 61 72 74 62 65 61 74 49 6e 74 65 72 76 61 6c 22 2c 22 4d 65 74 65 72 56 61 6c 75 65 53 61 6d 70 6c 65 49 6e 74 65 72 76 61 6c 22 5d 7d"
+          text: "{\"key\":[\"HeartbeatInterval\",\"MeterValueSampleInterval\"]}"
+        - name: "unique_id"
+          value: "70 2d 32"
+          text: "p-2"

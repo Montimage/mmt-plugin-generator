@@ -1,0 +1,114 @@
+# Session test of examples/websocket, written from RFC 6455 and RFC 7692
+# (permessage-deflate, #107): its packets run in order, one TCP connection.
+# Format and rules: tests/corpus/README.md, Session files
+schema: 1
+id: "websocket/session-deflate-dynamic"
+model: "websocket"
+summary: "A 396-byte JSON text compressed with dynamic Huffman codes (BTYPE 10), from the client, masked"
+source: "RFC 6455 section 4 (the opening handshake) and 5 (framing); RFC 7692 section 7 (permessage-deflate), RFC 1951 section 3.2.7 (dynamic Huffman codes); Python zlib's raw DEFLATE (wbits=-15) of the text, whose first block has BTYPE 10; the WebSocket layer's session state, examples/README.md, WebSocket"
+session:
+  through: "tcp:dport=8080,sport=49184"
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  attributes:
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "payload_inflated"
+      type: "MMT_U8_DATA"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 63 68 61 74 20 48 54 54 50 2f 31"
+      - "2e 31 0d 0a 48 6f 73 74 3a 20 73 65 72 76 65 72"
+      - "2e 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a 55 70"
+      - "67 72 61 64 65 3a 20 77 65 62 73 6f 63 6b 65 74"
+      - "0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 55 70"
+      - "67 72 61 64 65 0d 0a 53 65 63 2d 57 65 62 53 6f"
+      - "63 6b 65 74 2d 4b 65 79 3a 20 64 47 68 6c 49 48"
+      - "4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51"
+      - "3d 3d 0d 0a 53 65 63 2d 57 65 62 53 6f 63 6b 65"
+      - "74 2d 45 78 74 65 6e 73 69 6f 6e 73 3a 20 70 65"
+      - "72 6d 65 73 73 61 67 65 2d 64 65 66 6c 61 74 65"
+      - "3b 20 63 6c 69 65 6e 74 5f 6d 61 78 5f 77 69 6e"
+      - "64 6f 77 5f 62 69 74 73 0d 0a 53 65 63 2d 57 65"
+      - "62 53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a"
+      - "20 31 33 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 1
+  - from: "server"
+    text: "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59"
+      - "47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 45 78 74"
+      - "65 6e 73 69 6f 6e 73 3a 20 70 65 72 6d 65 73 73"
+      - "61 67 65 2d 64 65 66 6c 61 74 65 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 2
+  - from: "client"
+    bytes:
+      - "c1 fe 00 e3 37 fa 21 3d ab 74 60 76 34 cb 31 b8"
+      - "c8 31 bd ee 87 b3 97 78 44 d1 e4 7e 38 58 75 6c"
+      - "87 82 29 86 54 f7 4d af a5 b6 8b 6f cd 25 bc 95"
+      - "9f dd 2e 0f a0 1b ec 46 c4 44 8c 2b 97 34 94 0b"
+      - "8d a9 01 dd 25 f3 d2 a0 ac d0 37 2d 70 e2 73 b1"
+      - "0f aa eb d6 26 56 33 7d ee 3f c3 3b c5 d3 17 98"
+      - "d0 8a d9 73 b7 27 3f bc 4b 3a 63 13 db 3b 23 82"
+      - "03 49 6f f2 0d 8f 8a 06 0c cd f7 55 ee 65 0c 23"
+      - "8f 5d 91 5e f5 0b 06 4a cf 26 61 54 e4 31 18 06"
+      - "8f 60 d1 a8 6f 40 d8 cd fd 91 ed 03 ba 84 c1 e6"
+      - "64 30 e0 88 e4 3c 9c 7d 74 8a 84 0f 2e e9 e0 78"
+      - "f3 46 5a ae 7c 9c 1d 9d 6b 7d 5c f7 13 cd 99 ce"
+      - "b2 cb f8 06 92 3b 14 41 81 a4 74 a7 a7 a2 8a ec"
+      - "80 9d d6 f2 47 e8 9e 75 21 a8 de a2 54 af 52 fb"
+      - "7f a5 25 42 20 d5 c0 c9 ef 1c 3c"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "5b 32 2c 22 31 39 32 32 33 32 30 31 22 2c 22 4d 65 74 65 72 56 61 6c 75 65 73 22 2c 7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 31 2c 22 74 72 61 6e 73 61 63 74 69 6f 6e 49 64 22 3a 34 32 2c 22 6d 65 74 65 72 56 61 6c 75 65 22 3a 5b 7b 22 74 69 6d 65 73 74 61 6d 70 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 2c 22 73 61 6d 70 6c 65 64 56 61 6c 75 65 22 3a 5b 7b 22 76 61 6c 75 65 22 3a 22 31 32 33 34 2e 35 22 2c 22 63 6f 6e 74 65 78 74 22 3a 22 53 61 6d 70 6c 65 2e 50 65 72 69 6f 64 69 63 22 2c 22 66 6f 72 6d 61 74 22 3a 22 52 61 77 22 2c 22 6d 65 61 73 75 72 61 6e 64 22 3a 22 45 6e 65 72 67 79 2e 41 63 74 69 76 65 2e 49 6d 70 6f 72 74 2e 52 65 67 69 73 74 65 72 22 2c 22 6c 6f 63 61 74 69 6f 6e 22 3a 22 4f 75 74 6c 65 74 22 2c 22 75 6e 69 74 22 3a 22 57 68 22 7d 2c 7b 22 76 61 6c 75 65 22 3a 22 31 36 2e 32 22 2c 22 63 6f 6e 74 65 78 74 22 3a 22 53 61 6d 70 6c 65 2e 50 65 72 69 6f 64 69 63 22 2c 22 66 6f 72 6d 61 74 22 3a 22 52 61 77 22 2c 22 6d 65 61 73 75 72 61 6e 64 22 3a 22 43 75 72 72 65 6e 74 2e 49 6d 70 6f 72 74 22 2c 22 6c 6f 63 61 74 69 6f 6e 22 3a 22 4f 75 74 6c 65 74 22 2c 22 75 6e 69 74 22 3a 22 41 22 7d 5d 7d 5d 7d 5d"
+        - name: "payload_inflated"
+          value: 1
+        - name: "payload_len"
+          value: 227
+        - name: "rsv1"
+          value: 1

@@ -61,6 +61,8 @@
 
 /* --- accept: MMT_STRING_DATA, extracted by a user hook (no offset) */
 
+/* --- payload_inflated: MMT_U8_DATA, extracted by a user hook (no offset) */
+
 /* The attribute table, in id order; registered by init_websocket_example_proto_struct(). */
 static attribute_metadata_t websocket_example_attributes_metadata[WEBSOCKET_EXAMPLE_ATTRIBUTES_NB] = {
     {.id = WEBSOCKET_EXAMPLE_FIN, .alias = WEBSOCKET_EXAMPLE_FIN_ALIAS, .data_type = MMT_U8_DATA, .data_len = 1, .position_in_packet = POSITION_NOT_KNOWN, .scope = SCOPE_PACKET, .extraction_function = websocket_example_hook_extract_fin},
@@ -82,6 +84,7 @@ static attribute_metadata_t websocket_example_attributes_metadata[WEBSOCKET_EXAM
     {.id = WEBSOCKET_EXAMPLE_SUBPROTOCOL, .alias = WEBSOCKET_EXAMPLE_SUBPROTOCOL_ALIAS, .data_type = MMT_STRING_DATA, .data_len = BINARY_64DATA_TYPE_LEN, .position_in_packet = POSITION_NOT_KNOWN, .scope = SCOPE_PACKET, .extraction_function = websocket_example_hook_extract_subprotocol},
     {.id = WEBSOCKET_EXAMPLE_KEY, .alias = WEBSOCKET_EXAMPLE_KEY_ALIAS, .data_type = MMT_STRING_DATA, .data_len = BINARY_64DATA_TYPE_LEN, .position_in_packet = POSITION_NOT_KNOWN, .scope = SCOPE_PACKET, .extraction_function = websocket_example_hook_extract_key},
     {.id = WEBSOCKET_EXAMPLE_ACCEPT, .alias = WEBSOCKET_EXAMPLE_ACCEPT_ALIAS, .data_type = MMT_STRING_DATA, .data_len = BINARY_64DATA_TYPE_LEN, .position_in_packet = POSITION_NOT_KNOWN, .scope = SCOPE_PACKET, .extraction_function = websocket_example_hook_extract_accept},
+    {.id = WEBSOCKET_EXAMPLE_PAYLOAD_INFLATED, .alias = WEBSOCKET_EXAMPLE_PAYLOAD_INFLATED_ALIAS, .data_type = MMT_U8_DATA, .data_len = 1, .position_in_packet = POSITION_NOT_KNOWN, .scope = SCOPE_PACKET, .extraction_function = websocket_example_hook_extract_payload_inflated},
 };
 
 int init_websocket_example_proto_struct(void)

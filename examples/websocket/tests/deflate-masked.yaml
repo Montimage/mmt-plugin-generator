@@ -1,0 +1,91 @@
+# Packet test of examples/websocket, written from RFC 6455 and RFC 7692
+# (permessage-deflate, #107). Format and rules: tests/corpus/README.md
+schema: 1
+id: "websocket/deflate-masked"
+model: "websocket"
+summary: "A compressed text message from the client, masked"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, after an HTTP Upgrade to websocket (any port)"
+  source: "RFC 6455 section 1.7 (over TCP) and section 4 (the opening handshake)"
+bytes:
+  - "c1 87 37 fa 21 3d c5 b2 ec f4 fe fd 21"
+bytes_source: "RFC 7692 section 7.2.3.1's frame with MASK set and RFC 6455 section 5.7's masking key 0x37 0xfa 0x21 0x3d (section 5.3)"
+expect:
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 0
+      source: "RFC 6455 section 5.2: the segment is frame data, not an HTTP message of section 4"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2: FIN, the most significant bit of byte 0"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 7692 section 6: RSV1 set on a compressed message's first frame"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2: opcode, the low 4 bits of byte 0 (1: text)"
+    - name: "mask"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.2: MASK, the most significant bit of byte 1"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+      offset: 1
+      length: 1
+      value: 7
+      source: "RFC 6455 section 5.2: Payload length, the low 7 bits of byte 1: the compressed bytes"
+    - name: "payload_offset"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 6
+      value: 6
+      source: "RFC 6455 section 5.2: the payload follows the 2-byte header and the masking key"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 6
+      length: 7
+      value: "48 65 6c 6c 6f"
+      text: "Hello"
+      source: "RFC 7692 section 7.2.3.1: \"Hello\", the payload unmasked first (RFC 6455 section 5.3)"
+    - name: "payload_inflated"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 7
+      value: 1
+      source: "examples/README.md, WebSocket: 1, payload is the message inflated (RFC 7692 section 7.2.2), its frames all in the segment"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 13
+      value: 1
+      source: "RFC 6455 section 5.2: one frame whose header ends in the segment"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 6455 section 5.4: a data frame's own opcode is its message's"

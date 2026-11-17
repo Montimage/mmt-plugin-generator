@@ -615,6 +615,12 @@
     "unknown": "MMT_CLASS_UNKNOWN",
     "doc": "A plugin that classes its protocols fills a static mmt_class_provider_t and registers it from init_proto()."
   },
+  "entry_point": {
+    "callback": "init_proto",
+    "symbol": "init_proto",
+    "core_macro": "CORE",
+    "doc": "Every plugin defines the function init_proto (plugin_defs.h: its type is generic_init_proto), which mmt-dpi's plugins_engine.c finds with dlsym() when it loads the plugin. A plugin built into libmmt_core is compiled with CORE defined and has no such entry point: the SDK's own plugin headers declare init_proto() only under #ifndef CORE (dicom/dicom.h)."
+  },
   "parents": {
     "header": "tcpip/mmt_tcpip.h",
     "declared_in": "tcpip/mmt_tcpip_protocols.h",

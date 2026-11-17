@@ -8,7 +8,8 @@ tcpdump-written ``data/demo-tcpdump.pcap``) into packet tests and
 (generate, compile with ``-Wall -Wextra -Werror``, link) and passes every
 packet test scaffold wrote, also under ``--sanitize``, whether the user code
 attaches the parent (``udp:port``) or the generated code does
-(``udp:dport``, ``ethernet:ethertype``). The SDK is an extracted mmt-dpi
+(``udp:dport``, ``ethernet:ethertype``, ``tcp:port``: a WebSocket session
+whose bytes are proposed as bit fields, #102). The SDK is an extracted mmt-dpi
 package, a private prefix (never ``/opt/mmt``)::
 
     MMT_GOLDEN_SDK=<dir>/opt/mmt MMT_GOLDEN_CC=gcc uv run pytest tests/unit/scaffold/test_sdk.py
@@ -88,6 +89,7 @@ def work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             ]
         )
     )
+    (cwd / "ws.pcap").write_bytes(samples.websocket_capture())
     (cwd / "eth.pcap").write_bytes(
         samples.pcap([samples.ethernet(0x88B6, p) for p in samples.demo_payloads()])
     )
@@ -95,21 +97,29 @@ def work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.mark.parametrize(
-    ("pcap", "parent", "payloads"),
+    ("pcap", "parent", "payloads", "extra"),
     [
-        ("udp.pcapng", "udp:port=4433", 3),
-        (str(DATA / "demo-tcpdump.pcap"), "udp:dport=4433", 3),
-        ("eth.pcap", "ethernet:ethertype=0x88b6", 3),
+        ("udp.pcapng", "udp:port=4433", 3, ()),
+        (str(DATA / "demo-tcpdump.pcap"), "udp:dport=4433", 3, ()),
+        ("eth.pcap", "ethernet:ethertype=0x88b6", 3, ()),
+        # Bit fields (FIN, opcode, MASK, the 7-bit length) from a WebSocket
+        # session's frames, after its handshake (#102).
+        ("ws.pcap", "tcp:port=80", 14, ("--skip-until", "0d0a0d0a")),
     ],
 )
 def test_the_proposal_passes_the_tests_scaffold_wrote(
-    work: Path, capsys: pytest.CaptureFixture[str], pcap: str, parent: str, payloads: int
+    work: Path,
+    capsys: pytest.CaptureFixture[str],
+    pcap: str,
+    parent: str,
+    payloads: int,
+    extra: tuple[str, ...],
 ) -> None:
     code, doc = _json(capsys, "init", "demo", "--id", "977", "--parent", parent)
     assert code == 0, doc["error"]
     project = work / "demo"
     code, doc = _json(
-        capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent,
+        capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent, *extra,
     )  # fmt: skip
     assert code == 0, doc["error"]
     assert doc["result"]["packets"]["payloads"] == payloads
@@ -133,7 +143,7 @@ def test_the_proposal_passes_the_tests_scaffold_wrote(
 
     # A second scaffold is a no-op, and plugin.yaml was never touched by it.
     code, doc = _json(
-        capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent,
+        capsys, "-C", "demo", "scaffold", "--from-pcap", pcap, "--parent", parent, *extra,
     )  # fmt: skip
     assert code == 0, doc["error"]
     assert {f["action"] for f in doc["result"]["files"]} == {"unchanged"}

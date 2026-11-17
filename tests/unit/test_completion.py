@@ -37,6 +37,9 @@ class TrickyCommand:
         parser.add_argument("--level", choices=["low", "high"], help="one of: low, high")
         parser.add_argument("--addr", metavar="HOST:PORT", help="an address: host:port")
         parser.add_argument("--hidden", help=argparse.SUPPRESS)
+        speed = parser.add_mutually_exclusive_group()
+        speed.add_argument("--fast", action="store_true", help="go fast")
+        speed.add_argument("--slow", action="store_true", help="go slow")
         return parser
 
     def run(self, args: argparse.Namespace, ctx: Context) -> Outcome:
@@ -160,6 +163,11 @@ def test_zsh_specs_keep_their_fields(
     # "--opt=" completes the value after "=" and as the next word.
     assert "{-C,--project=}'[" in script
     assert "--level='[one of: low, high]:level:(low high)'" in script
+    # --help and --version go alone; a group's options exclude each other.
+    assert "'(-h --help --version)'--json'[" in script
+    assert "'(-h --help --version)*'{-v,--verbose}'[" in script
+    assert "'(--slow -h --help)'--fast'[" in script
+    assert "'(- *)'--version'[" in script
 
 
 def test_spec_reads_choices_and_value_kinds(commands: list[Command]) -> None:
@@ -172,6 +180,9 @@ def test_spec_reads_choices_and_value_kinds(commands: list[Command]) -> None:
     assert options["-v"].repeat and not options["-v"].takes_value
     assert "--hidden" not in options
     assert tricky.positionals[0].kind == "file"
+    assert options["--fast"].excludes == ("--slow",)
+    assert options["--slow"].excludes == ("--fast",)
+    assert options["--level"].excludes == ()
     completion = next(c for c in spec.commands if c.name == "completion")
     assert completion.positionals[0].choices == SHELLS
 
@@ -270,11 +281,7 @@ def test_bash_loads_without_running_the_tool_and_completes(
     lines = proc.stdout.splitlines()
     assert lines[0] == "complete -F _mmt_plugin mmt-plugin"
     got = dict(line.split("|", 1) for line in lines[1:])
-    assert (
-        got["mmt-plugin "]
-        == "init import validate generate build test run install uninstall doctor scaffold"
-        " completion dummy tricky "
-    )
+    assert got["mmt-plugin "] == " ".join(c.name for c in commands) + " "
     assert got["mmt-plugin --js"] == "--json "
     assert got["mmt-plugin completion "] == "bash zsh fish "
     assert got["mmt-plugin --json completion z"] == "zsh "
@@ -327,12 +334,14 @@ def test_zsh_loads_without_running_the_tool_and_registers(
 # Drives a real interactive zsh through zpty: types each line and a TAB, and
 # records the words the completion system offers. The shell in the pty
 # sources _ZSH_SETUP first.
-# usage: zsh -f driver SETUP FPATH CWD HITS LINE...; prints "LINE|word ...".
+# usage: zsh -f driver SETUP FPATH CWD HITS SECONDS LINE...; prints
+# "LINE|word ...", or "LINE|TIMEOUT" when a line takes over SECONDS.
 _ZSH_DRIVER = r"""
 zmodload zsh/zpty zsh/zselect || exit 3
 setup=$1
 export ZT_FPATH=$2 ZT_CWD=$3 ZT_HITS=$4
-shift 4
+budget=$5
+shift 5
 zpty z zsh -f -i
 zpty -w z "source ${(q)setup}"
 for line in "$@"; do
@@ -340,7 +349,7 @@ for line in "$@"; do
   zpty -w z 'comppostfuncs=(_zt_done)'
   zpty -w -n z "$line"$'\t'
   ok=0
-  for i in {1..300}; do
+  for i in {1..$(( budget * 20 ))}; do
     while zpty -r -t z junk; do :; done
     [[ "$(<$ZT_HITS)" == *'<DONE>'* ]] && { ok=1; break }
     zselect -t 5
@@ -352,6 +361,9 @@ for line in "$@"; do
 done
 zpty -d z
 """
+
+#: The seconds the zsh driver waits for one line's completion.
+_ZSH_LINE_BUDGET = 10
 
 _ZSH_SETUP = r"""
 PROMPT= RPROMPT=
@@ -390,13 +402,14 @@ def test_zsh_completes_commands_options_and_values(
     (fpath / "_mmt-plugin").write_text(_script("zsh", commands, capsys))
     work = tmp_path / "work"
     (work / "subdir").mkdir(parents=True)
+    (work / "sub.pdl").write_text("")  # a file: -C and --project= complete directories only
     driver = tmp_path / "driver.zsh"
     driver.write_text(_ZSH_DRIVER)
+    env.pop("FPATH", None)  # an exported FPATH would break compinit
     setup = tmp_path / "setup.zsh"
     setup.write_text(_ZSH_SETUP)
     expected = {
-        "mmt-plugin ": "build completion doctor dummy generate import init install run scaffold"
-        " test tricky uninstall validate",
+        "mmt-plugin ": " ".join(sorted(c.name for c in commands)),
         "mmt-plugin --js": "--json",
         "mmt-plugin completion ": "bash fish zsh",
         "mmt-plugin tricky --le": "--level",
@@ -404,6 +417,15 @@ def test_zsh_completes_commands_options_and_values(
         "mmt-plugin tricky --level=": "high low",
         "mmt-plugin -C su": "subdir",
         "mmt-plugin --project=su": "subdir",
+        "mmt-plugin tricky su": "sub.pdl subdir",
+        # --help and --version go alone (#54, N8).
+        "mmt-plugin --v": "--verbose --version",
+        "mmt-plugin --json --v": "--verbose",
+        "mmt-plugin --json --he": "",
+        "mmt-plugin tricky --json --he": "",
+        # A mutually exclusive group (#54, N8).
+        "mmt-plugin tricky --f": "--fast",
+        "mmt-plugin tricky --slow --f": "",
     }
     proc = subprocess.run(
         [
@@ -414,12 +436,14 @@ def test_zsh_completes_commands_options_and_values(
             str(fpath),
             str(work),
             str(tmp_path / "hits"),
+            str(_ZSH_LINE_BUDGET),
             *expected,
         ],
         capture_output=True,
         text=True,
         env=env,
-        timeout=120,
+        # Each line times out first, so a broken setup ends in a readable diff.
+        timeout=_ZSH_LINE_BUDGET * len(expected) + 60,
         check=False,
     )
     assert proc.returncode == 0, proc.stderr

@@ -125,9 +125,14 @@ the spec. That run does not check `next`.
 `scaffold --from-pcap` writes `<project>/plugin.proposed.yaml` and one
 packet test per payload, `<project>/tests/<label>-pcap-<n>.yaml`, whose
 values are what the proposal extracts. It never edits `plugin.yaml`.
+Under a `tcp` parent the payloads are each segment's new bytes in stream
+order; when each session starts with a text handshake (an HTTP upgrade),
+pass `--skip-until 0d0a0d0a` so that only the protocol's own bytes are
+sliced.
 
 1. Read the proposal: each field has a comment with what was seen
-   (constant, varies, the payload length).
+   (constant, varies, the payload length). A byte cut into bit fields is a
+   struct `bits_<offset>` of `field_<offset>_b<bit>` fields.
 2. Match the fields with what you know of the protocol (a spec, a
    description, the port). Rename them (`field_0` to `version`), merge or
    split them, and delete those that are payload, not header.

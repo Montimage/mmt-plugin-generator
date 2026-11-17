@@ -516,7 +516,7 @@ def test_every_command_can_return_the_universal_codes(commands: list[Command]) -
         assert set(ALWAYS) <= set(exit_codes_of(command))
     completion = next(c for c in commands if c.name == "completion")
     assert exit_codes_of(completion) == ALWAYS  # completion adds none
-    dummy = commands[-1]
+    dummy = next(c for c in commands if c.name == "dummy")
     assert exit_codes_of(dummy) == tuple(ExitCode)
 
 

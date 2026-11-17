@@ -11,15 +11,39 @@ shortest payload's length up to ``HEADER_LIMIT``, which every payload has:
    some of the header). It is named ``length``;
 2. a 4-byte word at an offset that is a multiple of 4 whose last byte
    differs between payloads is a 4-byte field (an identifier, a counter, a
-   sequence number, whose high bytes change less often);
+   sequence number, whose high bytes change less often).
+   Before it, a byte whose bits vary independently is cut into bit fields
+   (``bit_groups``, below);
 3. every other byte that is the same in every payload is a 1-byte field (a
    version, a type, a flag byte);
 4. each other run of bytes that differ is cut into 4-, 2- and 1-byte fields,
-   the widest first.
+   the widest first (a byte cut into bit fields ends the run).
 
 Fields are named ``field_<offset>``, integers in network byte order
-(``MMT_U8_DATA``, ``MMT_U16_DATA``, ``MMT_U32_DATA``). The bytes after the
-header are not proposed: a comment says what is there. The packet tests
+(``MMT_U8_DATA``, ``MMT_U16_DATA``, ``MMT_U32_DATA``); a byte's bit fields
+``field_<offset>_b<bit>``, ``bit`` counted from its most significant bit,
+in a struct ``bits_<offset>`` of the proposed model.
+
+``bit_groups`` cuts a byte whose value varies into groups of bits, from the
+most significant: a bit varies when two payloads differ in it, and a
+constant bit between two that vary is taken as varying (a number whose
+values did not use it). Each run of varying bits, and each run of constant
+ones, is a group; the top bit of a varying run is a group of its own when
+it is constant within each direction of the payloads (``Payload.flow``),
+the two directions of each connection seen both ways with two payloads or
+more (one at least) set it to opposite values, and the rest of the run
+takes two values or more within one of those directions (a role flag
+beside data that varies: WebSocket's MASK, set by clients only, DNS's QR).
+So a byte that is constant within each direction (a per-flow identifier:
+RTP's SSRC, a session id), or the payloads of unrelated flows (several
+one-way UDP streams), are never cut by this rule. Two
+neighbouring varying groups (with the constant ones between them) are
+merged back unless they vary independently: one group's value is seen
+with two values of the other, and the other way round. A byte left with
+fewer than two varying groups, or with fewer than 4 distinct values, is
+not cut: a type byte with 7 constant bits stays one field.
+
+The bytes after the header are not proposed: a comment says what is there. The packet tests
 expect what the proposed model extracts from each captured payload, so they
 pass once the proposal is the model; they are a draft for the protocol's
 specification to correct, not values taken from it.
@@ -27,17 +51,19 @@ specification to correct, not values taken from it.
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mmt_plugin.pcap.layers import Parent, Payload
+from mmt_plugin.pcap.layers import Flow, Parent, Payload
 from mmt_plugin.ui.render import escape
 
 __all__ = [
     "HEADER_LIMIT",
     "Field",
     "Skeleton",
+    "bit_groups",
     "classifies",
     "packet_test",
     "parent_yaml",
@@ -50,18 +76,28 @@ HEADER_LIMIT = 16
 
 _TYPES = {1: "MMT_U8_DATA", 2: "MMT_U16_DATA", 4: "MMT_U32_DATA"}
 _BYTES_PER_LINE = 16
+#: Each payload's direction (``Payload.flow``), or ``None``.
+Flows = Sequence[Flow | None] | None
+
+#: The fewest distinct values of a byte cut into bit fields: fewer are too
+#: little evidence (a few random bytes have constant bits by chance).
+_BIT_VALUES = 4
 
 
 @dataclass(frozen=True)
 class Field:
     """A proposed attribute: ``constant`` when every payload has the same
-    value; ``note`` says what was seen."""
+    value; ``note`` says what was seen. A bit field (of a 1-byte field) has
+    ``bit_offset``, from the byte's most significant bit, and
+    ``bit_width``."""
 
     name: str
     offset: int
     length: int
     constant: bool
     note: str
+    bit_offset: int | None = None
+    bit_width: int | None = None
 
     @property
     def type(self) -> str:
@@ -69,16 +105,24 @@ class Field:
 
     def value(self, data: bytes) -> int:
         """Its value in ``data`` (network byte order)."""
-        return int.from_bytes(data[self.offset : self.offset + self.length], "big")
+        whole = int.from_bytes(data[self.offset : self.offset + self.length], "big")
+        if self.bit_offset is None or self.bit_width is None:
+            return whole
+        shift = self.length * 8 - self.bit_offset - self.bit_width
+        return (whole >> shift) & ((1 << self.bit_width) - 1)
 
     def to_json(self) -> dict[str, object]:
-        return {
+        out: dict[str, object] = {
             "name": self.name,
             "type": self.type,
             "offset": self.offset,
             "length": self.length,
             "constant": self.constant,
         }
+        if self.bit_offset is not None:
+            out["bit_offset"] = self.bit_offset
+            out["bit_width"] = self.bit_width
+        return out
 
 
 @dataclass(frozen=True)
@@ -136,8 +180,113 @@ def _values_note(values: Sequence[int], width: int) -> str:
     return f"varies: {len(distinct)} values from {distinct[0]} to {distinct[-1]}"
 
 
-def propose(payloads: Sequence[bytes]) -> Skeleton:
-    """The field skeleton of ``payloads`` (at least one, none empty)."""
+def _bit(value: int, bit: int) -> int:
+    """Bit ``bit`` of a byte, counted from its most significant bit."""
+    return (value >> (7 - bit)) & 1
+
+
+def _group_value(value: int, start: int, width: int) -> int:
+    return (value >> (8 - start - width)) & ((1 << width) - 1)
+
+
+def _reverse(flow: Flow) -> Flow:
+    net, src, sport, dst, dport = flow
+    return (net, dst, dport, src, sport)
+
+
+def _role_bit(values: Sequence[int], bit: int, end: int, flows: Flows) -> bool:
+    """Whether ``bit``, the top bit of the varying run ``bit``..``end - 1``,
+    is a role flag (module docstring): constant within each direction, the
+    opposite value in the two directions of each connection seen both ways
+    with two payloads or more (one at least), and the rest of the run
+    taking two values or more within one of those directions."""
+    if flows is None:
+        return False
+    seen: dict[Flow | None, set[int]] = {}
+    rest: dict[Flow | None, set[int]] = {}
+    counts: dict[Flow | None, int] = {}
+    for value, flow in zip(values, flows, strict=True):
+        seen.setdefault(flow, set()).add(_bit(value, bit))
+        rest.setdefault(flow, set()).add(_group_value(value, bit + 1, end - bit - 1))
+        counts[flow] = counts.get(flow, 0) + 1
+    if any(len(bits) > 1 for bits in seen.values()):
+        return False
+    pairs = [
+        (f, _reverse(f))
+        for f in seen
+        if f is not None and counts[f] > 1 and counts.get(_reverse(f), 0) > 1 and f < _reverse(f)
+    ]
+    if not pairs or any(seen[f] == seen[r] for f, r in pairs):
+        return False
+    return any(len(rest[f]) > 1 for pair in pairs for f in pair)
+
+
+def _independent(values: Sequence[int], a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Whether bit groups ``a`` and ``b`` (start, width) vary independently:
+    a value of each is seen with two values of the other."""
+    pairs = {(_group_value(v, *a), _group_value(v, *b)) for v in values}
+    with_a: dict[int, set[int]] = {}
+    with_b: dict[int, set[int]] = {}
+    for x, y in pairs:
+        with_a.setdefault(x, set()).add(y)
+        with_b.setdefault(y, set()).add(x)
+    return any(len(s) > 1 for s in with_a.values()) and any(len(s) > 1 for s in with_b.values())
+
+
+def bit_groups(values: Sequence[int], flows: Flows = None) -> list[tuple[int, int, str]] | None:
+    """The bit groups of a byte whose payloads have ``values`` (``flows``:
+    each payload's direction, or ``None``), as (bit offset from the most
+    significant bit, width, kind), kind ``varies``, ``role`` or
+    ``constant``; ``None`` when the byte stays whole (module docstring)."""
+    if len(set(values)) < _BIT_VALUES:
+        return None
+    varies = [len({_bit(v, b) for v in values}) > 1 for b in range(8)]
+    varies = [varies[b] or (0 < b < 7 and varies[b - 1] and varies[b + 1]) for b in range(8)]
+    groups: list[tuple[int, int, str]] = []
+    b = 0
+    while b < 8:
+        end = b
+        while end < 8 and varies[end] == varies[b]:
+            end += 1
+        if not varies[b]:
+            groups.append((b, end - b, "constant"))
+        elif end - b > 1 and _role_bit(values, b, end, flows):
+            groups += [(b, 1, "role"), (b + 1, end - b - 1, "varies")]
+        else:
+            groups.append((b, end - b, "varies"))
+        b = end
+    merged = True
+    while merged:
+        merged = False
+        moving = [i for i, g in enumerate(groups) if g[2] == "varies"]
+        for i, j in itertools.pairwise(moving):
+            a, c = groups[i], groups[j]
+            if any(g[2] == "role" for g in groups[i:j]):
+                continue
+            if not _independent(values, a[:2], c[:2]):
+                start, end = a[0], c[0] + c[1]
+                groups[i : j + 1] = [(start, end - start, "varies")]
+                merged = True
+                break
+    if sum(1 for g in groups if g[2] != "constant") < 2:
+        return None
+    return groups
+
+
+def _bits_note(values: Sequence[int], start: int, width: int, kind: str) -> str:
+    where = f"bit {start}" if width == 1 else f"bits {start}-{start + width - 1}"
+    if kind == "role":
+        return f"{where}: one value per direction, both seen"
+    seen = sorted({_group_value(v, start, width) for v in values})
+    if len(seen) == 1:
+        return f"{where}: constant {seen[0]} in every payload"
+    return f"{where}: varies: {len(seen)} values from {seen[0]} to {seen[-1]}"
+
+
+def propose(payloads: Sequence[bytes], flows: Flows = None) -> Skeleton:
+    """The field skeleton of ``payloads`` (at least one, none empty);
+    ``flows``, each payload's direction (``Payload.flow``), finds the bit
+    flags each direction of a connection sets its own way."""
     shortest = min(len(p) for p in payloads)
     header = min(shortest, HEADER_LIMIT)
     found = _length_field(payloads, header)
@@ -157,6 +306,9 @@ def propose(payloads: Sequence[bytes]) -> Skeleton:
         fields.append(field)
         return field
 
+    def bits(offset: int) -> list[tuple[int, int, str]] | None:
+        return bit_groups([p[offset] for p in payloads], flows)
+
     i = 0
     while i < header:
         if found is not None and i == found[0]:
@@ -164,6 +316,23 @@ def propose(payloads: Sequence[bytes]) -> Skeleton:
             note = "the payload length" + (f" - {adjust}" if adjust else "") + " in every payload"
             length = add(i, width, name="length", note=note)
             i += width
+            continue
+        groups = bits(i)
+        if groups is not None:
+            values = [p[i] for p in payloads]
+            for start, width, kind in groups:
+                fields.append(
+                    Field(
+                        f"field_{i}_b{start}",
+                        i,
+                        1,
+                        len({_group_value(v, start, width) for v in values}) == 1,
+                        _bits_note(values, start, width, kind),
+                        start,
+                        width,
+                    )
+                )
+            i += 1
             continue
         end = header if found is None or found[0] < i else found[0]
         if i % 4 == 0 and i + 4 <= end and not _same(payloads, i + 3):
@@ -175,7 +344,7 @@ def propose(payloads: Sequence[bytes]) -> Skeleton:
             i += 1
             continue
         run = i
-        while run < end and not _same(payloads, run):
+        while run < end and not _same(payloads, run) and (run == i or bits(run) is None):
             run += 1
         while i < run:
             width = next(w for w in (4, 2, 1) if i + w <= run)
@@ -277,6 +446,20 @@ def proposed_yaml(
         "attributes:",
     ]
     for field in skeleton.fields:
+        if field.bit_offset is not None:
+            if field.bit_offset == 0:
+                lines += [
+                    f"  - struct: bits_{field.offset}"
+                    f"    # byte {field.offset}, cut into bit fields",
+                    f"    offset: {field.offset}",
+                    "    fields:",
+                    "      - type: uint8_t",
+                    "        bits:",
+                ]
+            lines.append(
+                f"          - {{name: {field.name}, width: {field.bit_width}}}    # {field.note}"
+            )
+            continue
         lines += [
             f"  - name: {field.name}    # {field.note}",
             f"    type: {field.type}",
@@ -305,6 +488,11 @@ def packet_test(
     ``payload``, expecting the skeleton's values."""
     where = f"frame {payload.frame} of {pcap}"
     data = payload.data
+    captured = f"captured: frame {payload.frame} of {pcap}"
+    if payload.cut:
+        captured = (
+            f"captured: the payload of frame {payload.frame} of {pcap}, from byte {payload.cut}"
+        )
     hexed = [f"{b:02x}" for b in data]
     lines = [
         f"# Packet test {_comment(test_id)}, drafted by mmt-plugin scaffold from"
@@ -325,7 +513,7 @@ def packet_test(
             f'  - "{" ".join(hexed[i : i + _BYTES_PER_LINE])}"'
             for i in range(0, len(hexed), _BYTES_PER_LINE)
         ),
-        f"bytes_source: {_quote(f'captured: {where}')}",
+        f"bytes_source: {_quote(captured)}",
         "expect:",
         f"  protocol: {_quote(label.upper())}",
         f"  proto_id: {pid}",
@@ -341,4 +529,9 @@ def packet_test(
             f"      length: {field.length}",
             f"      value: {field.value(data)}",
         ]
+        if field.bit_offset is not None:
+            lines += [
+                f"      bit_offset: {field.bit_offset}",
+                f"      bit_width: {field.bit_width}",
+            ]
     return "\n".join(lines) + "\n"

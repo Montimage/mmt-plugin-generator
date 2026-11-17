@@ -13,6 +13,15 @@ indentation, keys in schema order and a final newline, so the same inputs
 give the same bytes; no timestamp and no absolute path is recorded.
 ``parse_lock`` repeats the schema's checks by hand (no run-time dependency on
 a JSON Schema validator) and refuses a newer ``lock_version``.
+
+``plugin.lock.pending`` (``PENDING_NAME``, #56) is ``generate``'s journal of
+a run in progress: before its first write, ``generate`` records there, for
+each file it is about to write or remove, the sha256 the file has and the
+one it will have; it removes the journal once the lock is written. After an
+interrupted run, each file is in one of those two states, so the next run
+accepts a file whose sha256 the lock or the journal lists as one generate
+wrote. The journal is internal: ``dumps_pending`` and ``read_pending``, and
+a journal that cannot be read is ignored.
 """
 
 from __future__ import annotations
@@ -27,17 +36,26 @@ from typing import Any
 __all__ = [
     "LOCK_NAME",
     "LOCK_VERSION",
+    "PENDING_NAME",
     "SCHEMA_RESOURCE",
     "Lock",
     "LockError",
     "LockedFile",
+    "dumps_pending",
     "load_schema",
     "parse_lock",
     "read_lock",
+    "read_pending",
 ]
 
 #: The lock's file name.
 LOCK_NAME = "plugin.lock"
+
+#: The journal of a ``generate`` run in progress, next to the lock.
+PENDING_NAME = "plugin.lock.pending"
+
+#: The ``pending_version`` of the journal.
+PENDING_VERSION = 1
 
 #: The ``lock_version`` this module writes and reads.
 LOCK_VERSION = 1
@@ -185,6 +203,46 @@ def read_lock(path: Path, source: str | None = None) -> Lock | None:
     except UnicodeDecodeError:
         raise LockError(f"{name}: not UTF-8") from None
     return parse_lock(text, name)
+
+
+def dumps_pending(files: dict[str, set[str]]) -> str:
+    """The journal's text: each path (relative to the lock's directory) with
+    the sha256 values generate may leave there, sorted."""
+    doc = {
+        "pending_version": PENDING_VERSION,
+        "files": [{"path": k, "sha256": sorted(v)} for k, v in sorted(files.items())],
+    }
+    return json.dumps(doc, indent=2, ensure_ascii=True) + "\n"
+
+
+def read_pending(path: Path) -> dict[str, frozenset[str]]:
+    """The journal at ``path``: each path and its sha256 values; empty when
+    there is none, or it is not a regular file, or cannot be read."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return {}
+        doc = json.loads(path.read_bytes().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    files: dict[str, frozenset[str]] = {}
+    if not isinstance(doc, dict) or doc.get("pending_version") != PENDING_VERSION:
+        return {}
+    entries = doc.get("files")
+    if not isinstance(entries, list):
+        return {}
+    for n, entry in enumerate(entries):
+        try:
+            entry = _object(entry, f"files[{n}]", ("path", "sha256"))
+            key = _check_path(entry["path"], f"files[{n}]")
+        except LockError:
+            return {}
+        hashes = entry["sha256"]
+        if not isinstance(hashes, list) or not all(
+            isinstance(h, str) and _SHA256.match(h) for h in hashes
+        ):
+            return {}
+        files[key] = frozenset(hashes)
+    return files
 
 
 def load_schema() -> dict[str, Any]:

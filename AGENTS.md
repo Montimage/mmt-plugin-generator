@@ -134,7 +134,10 @@ protocol model. A Python rewrite is planned in
   run-time dependency) into the plugin header and source, in memory; every
   SDK name comes from the profile. `mmt-plugin generate`
   (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
-  `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
+  `schemas/lock/v1/plugin-lock.json`; in the output directory when that is
+  outside the project), with its journal `plugin.lock.pending` written
+  first and removed last, so an interrupted run recovers without `--force`
+  (#56). Tests in `tests/unit/generate/`, with
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
@@ -318,13 +321,19 @@ protocol model. A Python rewrite is planned in
   `<project>/plugin.proposed.yaml`, whose values the tests expect; it never
   edits `plugin.yaml`. The label and id come from `--model` (default
   `<project>/plugin.yaml`). `--max-packets` (default 20), `--dry-run`,
-  `--force`. A malformed pcap is `model.bad-pcap`, none under the parent
+  `--force`. Under a `tcp` parent each payload is a segment's new bytes in
+  its stream's order (retransmissions dropped, a gap given up), and
+  `--skip-until HEX` skips each direction's bytes of each session up to the
+  end of that pattern (an HTTP upgrade's `0d0a0d0a`), #102. A byte whose
+  bits vary independently is proposed as bit fields (a struct
+  `bits_<offset>`), with a role flag a direction sets its own way. A malformed pcap is `model.bad-pcap`, none under the parent
   `model.no-payloads` (exit 3); an output with other content is
   `state.output-differs` (exit 7) unless `--force`. `src/mmt_plugin/pcap/`:
   `reader.py` (pcap and pcapng, no dependency), `layers.py` (Ethernet,
-  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons) and `skeleton.py` (the field
-  rules, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
-  `samples.py` builds captures, `data/` holds two written by tcpdump and
+  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons), `streams.py` (TCP stream
+  order) and `skeleton.py` (the field
+  rules, the bit groups, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
+  `samples.py` builds captures (a WebSocket session among them), `test_streams.py`, `data/` holds two written by tcpdump and
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
   `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
   proposal passes `test`; needs `MMT_GOLDEN_SDK`).

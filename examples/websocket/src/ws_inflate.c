@@ -255,6 +255,9 @@ static int ws_codes(struct ws_bits *b, struct ws_out *o, const struct ws_huff *l
             return WS_INFLATE_TRUNCATED;
         }
         distance = ws_dist_base[sym] + extra;
+        if (o->n >= o->cap) {
+            return WS_INFLATE_CAP; /* the cap first: what came before is good */
+        }
         /* Only bytes the window holds: the history and this call's output. */
         if (distance > z->valid) {
             return WS_INFLATE_FAR;

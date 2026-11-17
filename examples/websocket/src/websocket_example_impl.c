@@ -57,7 +57,8 @@
  *   takeover, section 7.2.3.2; emptied before each message under
  *   *_no_context_takeover). src/ws_inflate.c is the decoder (RFC 1951),
  *   which never builds output from history it did not see: a byte lost
- *   inside a compressed message drops it, any loss empties the window, and
+ *   inside a compressed message drops it, any loss empties the window (and
+ *   makes the message in progress unknown: 2, no message_opcode), and
  *   so does a message that does not inflate or is too long; the messages
  *   after inflate when they are self-contained. A session joined after the
  *   handshake inflates the same way, context takeover assumed, from an
@@ -703,6 +704,20 @@ static void ws_message_resync(struct ws_direction *d)
     }
 }
 
+/* Bytes lost inside the current frame (a gap still in step, the capture's
+   end): a compressed message is not inflated, the window loses its
+   history, and while the extension may be on the message is unknown. */
+static void ws_message_lost(struct ws_direction *d)
+{
+    ws_message_drop(d);
+    if (d->deflate != WS_DEFLATE_OFF) {
+        if (d->msg != WS_MSG_NONE) {
+            d->msg = WS_MSG_UNKNOWN;
+        }
+        d->message_opcode = 0;
+    }
+}
+
 /* Room for `more` bytes and the 4 octets of section 7.2.2; false (the
    message dropped) past WS_INFLATE_IN_MAX or without memory. */
 static bool ws_reserve(struct ws_direction *d, size_t more)
@@ -942,10 +957,9 @@ static void ws_frames(const uint8_t *p, unsigned n, unsigned pos, unsigned missi
     }
     if (missing > 0) {
         if (d->header_len == 0 && d->owed >= missing) {
-            /* Payload the capture lost: a compressed message with it is not
-               inflated, and the window loses its history. */
+            /* Payload the capture lost (ws_message_lost()). */
             d->owed -= missing;
-            ws_message_drop(d);
+            ws_message_lost(d);
             if (d->owed == 0 && d->frame_fin) {
                 ws_message_end(d, view);
             }
@@ -1118,7 +1132,7 @@ static void ws_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             uint32_t lost = (uint32_t)diff;
             if (d->header_len == 0 && !d->in_http && d->owed >= lost) {
                 d->owed -= lost; /* payload bytes were lost: still in step */
-                ws_message_drop(d);
+                ws_message_lost(d);
                 if (d->owed == 0 && d->frame_fin) {
                     ws_message_end(d, view);
                 }

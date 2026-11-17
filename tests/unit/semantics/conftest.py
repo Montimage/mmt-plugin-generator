@@ -65,6 +65,15 @@ def u8(name: str, offset: str, *, length: str = "1", scope: str = "packet") -> s
     )
 
 
+def blob(name: str, offset: str, length: str) -> str:
+    """A byte-string attribute: any data_len, without the fixed-width
+    warning of an integer type (#53)."""
+    return attr(
+        f'alias="{name}" data_type="MMT_BINARY_DATA" data_len="{length}" offset="{offset}" '
+        'scope="packet"'
+    )
+
+
 def classify(body: str) -> str:
     """A classifynext block around a switch body."""
     return f"\tclassifynext {{\n\t\tswitch(1) {{\n{body}\n\t\t\tdefault: break\n\t\t}}\n\t}}\n"

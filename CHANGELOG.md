@@ -65,6 +65,33 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   keeps a work folder with the request, the inputs and their sources, the
   capture, each loop run's envelopes and notes, the evaluation and a
   report, to review or resume the work later.
+- Two semantic checks left out of #51 (#53), run by every command that
+  analyses a model. A define named like a macro, constant, type or
+  protocol macro that the SDK profile records (ethernet's
+  `PROTO_IP = 15`) is the new error `model.define-sdk-name`, its related
+  location the SDK header: the generated header would redefine the SDK's
+  macro, and the model's expressions would read the define's value where
+  they name the SDK's. A constant `data_len` other than a fixed-width
+  type's width (`MMT_U16_DATA` with `data_len="4"`, `MMT_U32_DATA` with 3)
+  is the new warning `model.data-len-width`, naming both widths
+  (`docs/behaviour-changes.md`, rows 36 and 37). Decisions: the define
+  check is an error, not a warning, since the C would silently use another
+  protocol id; it is case-sensitive, as C is, so `define proto_ip` is
+  accepted, although the model's own expressions still find it first
+  where they name `PROTO_IP` (names are case-insensitive in PDL), a known
+  gap left for a later change. The width check is a warning, not an
+  error: a field narrower than its integer type (24 bits in
+  `MMT_U32_DATA`) is read correctly from `data_len` bytes by the new
+  generator, unlike Java's fixed-width reads, and a longer integer is
+  already the error `model.integer-length` at generation. A user hook's
+  `data_len` (no offset) is not checked, as it only places what follows.
+  No corpus model or example is affected (ethernet's model does not parse).
+  Importing a PDL v1 model with such a define now exits 3.
+- `tests/corpus/README.md` moves its "still open" rules to "Decided
+  rules", worded as T1.3 (#51) implements them: `offset()`/`len()`,
+  literal in-struct offsets after alignment stops and, also implemented
+  (T1.5, behaviour change 19) though #53 did not list it, field names that
+  are C keywords. The section had no other entry, so it is removed.
 
 ### Changed
 
@@ -87,7 +114,7 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 - PDL v1 (#48): an error inside a quoted value whose closing quote is
   missing is reported once. `offset="BAD scope="packet"` gave a second,
   spurious `model.syntax.unexpected-token` at `packet`; the parse now stops
-  at the first error (`docs/behaviour-changes.md`, row 40). Branch
+  at the first error (`docs/behaviour-changes.md`, row 42). Branch
   coverage, #48's optional N7, was decided against: it needs a new dev
   dependency, a `uv.lock` change and CI changes, while the parser's
   constructs are already enumerated by `@covers` and each syntax code has a

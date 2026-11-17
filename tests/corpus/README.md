@@ -317,13 +317,27 @@ implement them.
   alignment state are those of the else branch (Java behaviour, kept). T1.3
   warns when a constant, aligned attribute follows an if/else whose branches
   advance R by different amounts.
-
-Still open, fixed by the corpus for T1.2/T1.3 to confirm:
-
-- `offset()`/`len()`;
-- literal in-struct offsets after alignment stops;
-- keyword field names that are also C keywords (`sizeof`, `int`, `char` in
-  `pdl_keyword_names`) need renaming in the generated C.
+- **`offset()`/`len()`** (implemented by T1.3, #51, as the corpus fixed it;
+  moved here from the open rules by #53). `offset(X)` and `len(X)` are
+  attribute X's byte offset and length as analysed: an aligned X's
+  offset is its absolute one (R + its declared offset), and they fold to a
+  number when X's offset or length is constant (`pdl_expressions`:
+  `offset(hexoff) + 1` is 11, `len(hexoff)` is 2). X must be declared
+  before the expression and visible there (an attribute of an `if` branch
+  only inside that branch, `model.conditional-reference`); an X without an
+  offset (a user hook) is the error `model.hook-reference`. An attribute
+  whose `offset` or `data_len` uses either one is not constant, so it turns
+  alignment off, even when it folds.
+- **Literal in-struct offsets after alignment stops** (implemented by T1.3,
+  #51, as the corpus fixed it; moved here by #53). Once alignment is off, a
+  struct no longer adds R: in PDL v1 it sits at offset 0, so each field is
+  at its in-struct offset (`pdl_alignment`'s `t0` is at 0, after the
+  literal `lit` at 11); a `plugin.yaml` struct sits at its own `offset`.
+- **Field names that are C keywords** (implemented by T1.5; moved here by
+  #53). A field or attribute named like a C keyword (`sizeof`, `int`,
+  `char` in `pdl_keyword_names`) gets a trailing underscore in the
+  generated C (`sizeof_`); its alias is unchanged
+  (`docs/behaviour-changes.md`, row 19).
 
 The validator checks each expected value against the packet bytes at the
 offset the fixture states, not that offset against the model: the T1.x

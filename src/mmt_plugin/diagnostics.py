@@ -113,6 +113,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.pointer-field": "warning: a `T*` struct field (4 bytes, read as MMT_DATA_POINTER)",
         "model.branch-offset-mismatch": "warning: an aligned attribute follows an if/else whose "
         "branches advance the running offset differently",
+        "model.define-sdk-name": "a define has the name of an SDK macro, constant or type that "
+        "the SDK profile records (case-sensitive)",
+        "model.data-len-width": "warning: an attribute's constant data_len is not its "
+        "fixed-width type's width",
         # Code generation and `generate` (mmt_plugin.codegen, mmt_plugin.commands.generate, #14).
         "model.unreadable": "the model file cannot be read, or is not UTF-8 text",
         # plugin.yaml (mmt_plugin.pluginyaml, #24).

@@ -3,12 +3,13 @@
   "title": "mmt-plugin scaffold --json result, schema_version 1",
   "description": "The result of scaffold --from-pcap (docs/design/cli.md, section 6). Paths are relative to the project (-C) when inside it (POSIX separators), absolute otherwise. With --dry-run, or when an output is in the way, nothing is written and the actions are would-*; an unchanged file is not rewritten.",
   "type": "object",
-  "required": ["pcap", "format", "parent", "model", "protocol", "packets", "skeleton", "proposed", "tests_dir", "files", "dry_run"],
+  "required": ["pcap", "format", "parent", "skip_until", "model", "protocol", "packets", "skeleton", "proposed", "tests_dir", "files", "dry_run"],
   "additionalProperties": false,
   "properties": {
     "pcap": {"type": "string", "minLength": 1, "description": "The capture read (--from-pcap)."},
     "format": {"enum": ["pcap", "pcapng"]},
     "parent": {"type": "string", "minLength": 1, "description": "The --parent selector, as given."},
+    "skip_until": {"description": "The --skip-until pattern, in lower-case hex, or null.", "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^([0-9a-f]{2})+$"}]},
     "model": {"type": "string", "minLength": 1, "description": "The model the label and the id come from (--model, default <project>/plugin.yaml), or <stdin>."},
     "protocol": {
       "type": "object",
@@ -30,7 +31,7 @@
         "skipped": {
           "type": "object",
           "description": "The frames read that gave no payload, by reason.",
-          "required": ["no-match", "empty", "fragment", "malformed", "truncated", "unsupported-link"],
+          "required": ["no-match", "empty", "fragment", "malformed", "truncated", "unsupported-link", "retransmission", "gap", "skip-until"],
           "additionalProperties": false,
           "properties": {
             "no-match": {"type": "integer", "minimum": 0, "description": "The parent selector does not match."},
@@ -38,7 +39,10 @@
             "fragment": {"type": "integer", "minimum": 0, "description": "An IPv4 or IPv6 fragment: not reassembled."},
             "malformed": {"type": "integer", "minimum": 0, "description": "A header below the payload is broken."},
             "truncated": {"type": "integer", "minimum": 0, "description": "The capture cut the frame."},
-            "unsupported-link": {"type": "integer", "minimum": 0, "description": "A link type scaffold does not decode."}
+            "unsupported-link": {"type": "integer", "minimum": 0, "description": "A link type scaffold does not decode."},
+            "retransmission": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment whose bytes its stream already gave."},
+            "gap": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment after bytes the capture lacks (more than 64 waiting in its direction, or still waiting at the end)."},
+            "skip-until": {"type": "integer", "minimum": 0, "description": "Under tcp: a segment whose bytes all come before the end of the --skip-until pattern in its direction."}
           }
         }
       }
@@ -61,8 +65,11 @@
               "type": {"enum": ["MMT_U8_DATA", "MMT_U16_DATA", "MMT_U32_DATA"]},
               "offset": {"type": "integer", "minimum": 0},
               "length": {"enum": [1, 2, 4]},
-              "constant": {"type": "boolean", "description": "Every payload has the same value."}
-            }
+              "constant": {"type": "boolean", "description": "Every payload has the same value."},
+              "bit_offset": {"type": "integer", "minimum": 0, "maximum": 7, "description": "A bit field of the 1-byte field at offset: its first bit, from the most significant."},
+              "bit_width": {"type": "integer", "minimum": 1, "maximum": 8, "description": "A bit field's width in bits."}
+            },
+            "dependentRequired": {"bit_offset": ["bit_width"], "bit_width": ["bit_offset"]}
           }
         },
         "length_field": {

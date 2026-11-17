@@ -65,8 +65,49 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   keeps a work folder with the request, the inputs and their sources, the
   capture, each loop run's envelopes and notes, the evaluation and a
   report, to review or resume the work later.
+- `scaffold --skip-until HEX` (a `tcp` parent only; another is
+  `usage.conflicting-options`, exit 2) skips each direction's bytes of
+  each TCP session up to the end of a byte pattern, found across segments:
+  `0d0a0d0a` skips a WebSocket session's HTTP upgrade, and a frame in the
+  segment of the 101 answer becomes a payload of its own (#102). The
+  `--json` result has `skip_until`, the pattern in hex or null.
+- `scaffold` proposes bit fields (#102): a byte whose bits vary
+  independently is cut into `field_<offset>_b<bit>` fields in a struct
+  `bits_<offset>` of `plugin.proposed.yaml`, and the packet tests give
+  their `bit_offset` and `bit_width`, as `result.skeleton.fields` does.
+  Runs of varying bits are groups, a constant bit between two varying ones
+  is taken as varying, two groups that do not vary independently (one's
+  value seen with two of the other, both ways) are merged, and the top bit
+  of a run is a flag of its own when each direction of the traffic sets
+  it its own way (WebSocket's MASK, DNS's QR). On a WebSocket session it
+  proposes FIN, RSV1-3, the opcode, MASK and the 7-bit length
+  (`tests/unit/scaffold/test_command.py`, `test_sdk.py`). A byte left with
+  one varying group stays one field, so the proposals of the demo
+  captures are unchanged.
 
 ### Changed
+
+- `scaffold` under a `tcp` parent follows each direction of each
+  connection as a stream (`src/mmt_plugin/pcap/streams.py`, #102): a
+  payload is a segment's new bytes in sequence order (from the SYN, or
+  the first segment seen), a retransmission is skipped and an overlap cut
+  off, a segment after missing bytes waits for them, and a SYN with a new
+  initial sequence number starts a new session. `result.packets.skipped`
+  has three new reasons, `retransmission`, `gap` (more than 64 segments
+  waiting in a direction, which is then given up until a new SYN, or
+  still waiting when the slicing ends) and `skip-until`. Before, each
+  segment was a payload as captured, retransmissions and handshakes
+  included. Decided, of what #102 lists: segments are not split into
+  messages nor joined (several WebSocket frames in one segment stay one
+  payload, one frame over several segments stays several): that needs the
+  protocol's length rule, which is what the proposal is drafting, so it
+  is left to the user's hooks, as `examples/websocket/` does. A length
+  field that selects the header's length (WebSocket's 126 and 127) is not
+  proposed either: the length rule still looks for one fixed field whose
+  value is the payload length minus a constant. `--skip-until` takes a
+  byte pattern only, not a number of payloads per session: a pattern also
+  finds the end of a handshake whose last segment carries the first
+  message, which a count cannot.
 
 - SDK profiles have an `entry_point` (#56, N12): the callback role, the
   symbol mmt-dpi looks up in a plugin (`init_proto`) and the macro of a

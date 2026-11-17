@@ -11,8 +11,8 @@
   header and its extension headers;
 - ``udp``, keys ``port`` (source or destination), ``sport``, ``dport``:
   after the UDP header, up to its length;
-- ``tcp``, the same keys: after the TCP header and its options, one segment
-  (segments are not reassembled).
+- ``tcp``, the same keys: after the TCP header and its options, one
+  segment's new bytes in its stream's order (``mmt_plugin.pcap.streams``).
 
 Every key given must hold. ``slice_payloads(capture, parent, limit)`` decodes
 each frame (link types Ethernet, Linux cooked v1 and v2, BSD loopback and
@@ -22,7 +22,9 @@ counted under its reason, when the parent does not match (``no-match``),
 its payload is empty (``empty``), it is an IP fragment (``fragment``: they
 are not reassembled), a header is broken (``malformed``), or the capture
 cut it (``truncated``), or its link type is not decoded
-(``unsupported-link``).
+(``unsupported-link``); under ``tcp``, also when it carries no new byte
+(``retransmission``), comes after bytes the capture lacks (``gap``) or
+before the end of ``--skip-until``'s pattern (``skip-until``).
 """
 
 from __future__ import annotations
@@ -33,10 +35,12 @@ from dataclasses import dataclass, field
 
 from mmt_plugin.diagnostics import CliError
 from mmt_plugin.pcap.reader import Frame
+from mmt_plugin.pcap.streams import TcpStreams
 
 __all__ = [
     "PARENTS",
     "SKIP_REASONS",
+    "Flow",
     "Parent",
     "Payload",
     "Slicing",
@@ -54,7 +58,17 @@ PARENTS: dict[str, dict[str, int]] = {
 }
 
 #: Why a frame gives no payload, in the order the result reports them.
-SKIP_REASONS = ("no-match", "empty", "fragment", "malformed", "truncated", "unsupported-link")
+SKIP_REASONS = (
+    "no-match",
+    "empty",
+    "fragment",
+    "malformed",
+    "truncated",
+    "unsupported-link",
+    "retransmission",
+    "gap",
+    "skip-until",
+)
 
 _ETHERNET = 1
 _NULL = 0
@@ -117,14 +131,24 @@ def parent_of(text: str, proto: str, keys: Iterable[tuple[str, str]]) -> Parent:
     return Parent(text, proto, tuple(values))
 
 
+#: A UDP or TCP payload's direction: the network layer's name, the source
+#: address and port, the destination address and port.
+Flow = tuple[str, int, int, int, int]
+
+
 @dataclass(frozen=True)
 class Payload:
     """A sliced payload: its ``frame`` number, the protocol ``path`` down to
-    the parent (outermost first) and its bytes."""
+    the parent (outermost first) and its bytes. Under UDP or TCP, ``flow``
+    is its direction; ``cut`` counts the bytes of the frame's payload
+    before ``data`` (a TCP segment's bytes delivered before, or before the
+    end of ``--skip-until``'s pattern)."""
 
     frame: int
     path: tuple[str, ...]
     data: bytes
+    flow: Flow | None = None
+    cut: int = 0
 
 
 @dataclass
@@ -190,7 +214,11 @@ def _ipv4(data: bytes, layers: list[_Layer]) -> None:
     if _u16(data, 6) & 0x3FFF:  # more fragments, or a fragment offset
         raise _Stop("fragment")
     proto = data[9]
-    layers.append(_Layer("ip", {"proto": proto}, data[ihl:total]))
+    addresses = {
+        "src": int.from_bytes(data[12:16], "big"),
+        "dst": int.from_bytes(data[16:20], "big"),
+    }
+    layers.append(_Layer("ip", {"proto": proto, **addresses}, data[ihl:total]))
     _transport(proto, data[ihl:total], layers)
 
 
@@ -201,6 +229,10 @@ def _ipv6(data: bytes, layers: list[_Layer]) -> None:
     if length == 0 or 40 + length > len(data):  # 0: a jumbogram
         raise _Stop("malformed")
     proto = data[6]
+    addresses = {
+        "src": int.from_bytes(data[8:24], "big"),
+        "dst": int.from_bytes(data[24:40], "big"),
+    }
     rest = data[40 : 40 + length]
     while proto in (*_IPV6_OPTIONS, _IPV6_FRAGMENT, _IPV6_AH):
         if len(rest) < 8:
@@ -216,7 +248,7 @@ def _ipv6(data: bytes, layers: list[_Layer]) -> None:
         if size > len(rest):
             raise _Stop("malformed")
         proto, rest = rest[0], rest[size:]
-    layers.append(_Layer("ipv6", {"proto": proto}, rest))
+    layers.append(_Layer("ipv6", {"proto": proto, **addresses}, rest))
     _transport(proto, rest, layers)
 
 
@@ -235,8 +267,13 @@ def _transport(proto: int, data: bytes, layers: list[_Layer]) -> None:
         offset = (data[12] >> 4) * 4
         if offset < 20 or offset > len(data):
             raise _Stop("malformed")
-        ports = {"sport": _u16(data, 0), "dport": _u16(data, 2)}
-        layers.append(_Layer("tcp", ports, data[offset:]))
+        fields = {
+            "sport": _u16(data, 0),
+            "dport": _u16(data, 2),
+            "seq": struct.unpack_from(">I", data, 4)[0],
+            "flags": data[13],
+        }
+        layers.append(_Layer("tcp", fields, data[offset:]))
 
 
 def _link(frame: Frame, layers: list[_Layer]) -> bool:
@@ -290,7 +327,18 @@ def _matches(layer: _Layer, parent: Parent) -> bool:
     return True
 
 
-def _reason(frame: Frame, parent: Parent) -> tuple[str, Payload | None]:
+@dataclass(frozen=True)
+class _Found:
+    """A frame's payload under the parent, with its layer's ``fields``."""
+
+    payload: Payload
+    fields: dict[str, int]
+
+
+def _reason(frame: Frame, parent: Parent) -> tuple[str, _Found | None]:
+    """Why ``frame`` gives no payload, or ``""`` and its payload. Under a
+    ``tcp`` parent, an empty segment is found too: ``TcpStreams`` reads its
+    SYN flag, then counts it."""
     layers: list[_Layer] = []
     stopped = None
     try:
@@ -302,14 +350,24 @@ def _reason(frame: Frame, parent: Parent) -> tuple[str, Payload | None]:
         if _matches(layer, parent):
             if parent.proto == "ethernet" and frame.truncated:
                 return "truncated", None
-            if not layer.payload:
+            if not layer.payload and parent.proto != "tcp":
                 return "empty", None
             # The tags after an Ethernet header are part of its path.
             end = i + 1
             while end < len(layers) and layers[end].name == "8021q":
                 end += 1
             path = tuple(x.name for x in layers[:end])
-            return "", Payload(frame.number, path, layer.payload)
+            flow: Flow | None = None
+            if layer.name in ("udp", "tcp"):
+                net = layers[i - 1]
+                flow = (
+                    net.name,
+                    net.fields["src"],
+                    layer.fields["sport"],
+                    net.fields["dst"],
+                    layer.fields["dport"],
+                )
+            return "", _Found(Payload(frame.number, path, layer.payload, flow), layer.fields)
     if stopped is None:
         return "no-match", None
     if stopped == "malformed" and frame.truncated:
@@ -317,18 +375,31 @@ def _reason(frame: Frame, parent: Parent) -> tuple[str, Payload | None]:
     return stopped, None
 
 
-def slice_payloads(frames: Iterable[Frame], parent: Parent, limit: int) -> Slicing:
+def slice_payloads(
+    frames: Iterable[Frame], parent: Parent, limit: int, *, skip_until: bytes | None = None
+) -> Slicing:
     """The first ``limit`` payloads under ``parent`` in ``frames``; frames
     are read only until there are ``limit`` of them (``PcapError`` from a
-    broken capture propagates)."""
+    broken capture propagates). Under a ``tcp`` parent the segments go
+    through ``TcpStreams`` (``skip_until``: each direction's bytes up to the
+    end of that pattern are skipped); ``skip_until`` needs one."""
+    if skip_until is not None and parent.proto != "tcp":
+        raise ValueError("skip_until needs a tcp parent")
     out = Slicing()
+    streams = TcpStreams(out.skipped, skip_until) if parent.proto == "tcp" else None
     for frame in frames:
         out.frames += 1
-        reason, payload = _reason(frame, parent)
-        if payload is None:
+        reason, found = _reason(frame, parent)
+        if found is None:
             out.skipped[reason] += 1
             continue
-        out.payloads.append(payload)
+        if streams is None:
+            out.payloads.append(found.payload)
+        else:
+            ready = streams.segment(found.payload, found.fields["seq"], found.fields["flags"])
+            out.payloads += ready[: limit - len(out.payloads)]
         if len(out.payloads) >= limit:
             break
+    if streams is not None:
+        streams.finish()
     return out

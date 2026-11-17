@@ -166,8 +166,9 @@ No CALLERROR appears in any capture, on either side.
   9 505 answers have it; in A4, 34 of 34; in A3, 4 126 872 of 4 128 843 (1 971 answers come
   after their CALL was evicted from the 16-entry table during the flood).
 
-The plugins' run time on A3 (14.8 M packets, one core): 12 s through
-mmt-dpi alone, 22 s with `websocket_example`, 23 s with both.
+The plugins' run time on A3 (14.8 M packets, one core), measured for #104
+and not repeated for #107: 12 s through mmt-dpi alone, 22 s with
+`websocket_example`, 23 s with both.
 
 ### Before #104
 

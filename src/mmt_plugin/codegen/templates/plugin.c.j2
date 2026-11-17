@@ -545,7 +545,7 @@ static {{ sdk.metadata_t }} {{ metadata }}[{{ nb }}] = {
     return 1;
 }
 
-#ifndef CORE
+#ifndef {{ sdk.core_macro }}
 {{ init_proto_declaration }}
 {
     return {{ init }}();

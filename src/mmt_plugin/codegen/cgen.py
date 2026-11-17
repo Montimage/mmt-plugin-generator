@@ -1037,8 +1037,9 @@ class _Builder:
         """``<label>_hook_register_parents``, which every plugin has: PDL
         names no parent, so user code attaches the protocol to its parents
         (``register_classification_function_with_parent_protocol``). It
-        returns what ``init_proto`` returns, and takes the protocol struct."""
-        init = self.h.callback("init_proto")
+        returns what the entry point (``init_proto``) returns, and takes the
+        protocol struct."""
+        init = self.h.callback(self.profile.entry_point.callback)
         protocol_t = f"{self.h.type('protocol_t')} *"
         self.c.type("protocol_t")
         return Hook(
@@ -1421,8 +1422,9 @@ class _Builder:
         calls = self.calls(classify, hooks)
         reads = any(a.kind != "hook" for a in attributes)
         integers = any(a.kind == "integer" for a in attributes)
-        init_cb = self.h.callback("init_proto")
-        self.c.callback("init_proto")
+        entry = self.profile.entry_point
+        init_cb = self.h.callback(entry.callback)
+        self.c.callback(entry.callback)
         # Each SDK name is looked up (and its header included) only when the
         # templates print it.
         names = self.sdk
@@ -1447,6 +1449,7 @@ class _Builder:
             register_protocol=sdk.function("register_protocol"),
             protocol_t=sdk.type("protocol_t"),
             log_error=sdk.logger("error"),
+            core_macro=entry.core_macro,
         )
         h_includes = self.h.includes()
         c_includes = sdk.includes(exclude=h_includes)
@@ -1467,7 +1470,7 @@ class _Builder:
             metadata=f"{lc}_attributes_metadata",
             init=f"init_{lc}_proto_struct",
             init_declaration=_declaration(init_cb.returns, f"init_{lc}_proto_struct", ()),
-            init_proto_declaration=_declaration(init_cb.returns, "init_proto", init_cb.params),
+            init_proto_declaration=_declaration(init_cb.returns, entry.symbol, init_cb.params),
             h_includes=h_includes,
             c_includes=c_includes,
             defines=defines,

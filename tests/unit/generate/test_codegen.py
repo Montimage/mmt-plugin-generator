@@ -653,7 +653,13 @@ def test_no_sdk_name_is_written_in_the_templates() -> None:
         *(c.name for c in p.constants),
         *(m.name for m in p.macros),
         *(h.name for h in p.headers),
+        # The plugin entry point and the built-in macro (review of #55, N12).
+        p.entry_point.symbol,
+        p.entry_point.core_macro,
     }
+    # SDK struct fields share names with C words and locals (data, offset):
+    # a field is the SDK's only after -> or . (N12).
+    fields = {f.name for s in p.structs for f in s.fields}
     for template in (*TEMPLATES.values(), SCAFFOLD_TEMPLATE):
         text = (
             resources.files("mmt_plugin.codegen")
@@ -663,6 +669,15 @@ def test_no_sdk_name_is_written_in_the_templates() -> None:
         )
         words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", text))
         assert not names & words, (template, sorted(names & words))
+        c_text = re.sub(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}", "X", text, flags=re.S)
+        members = set(re.findall(r"(?:->|\.)\s*([A-Za-z_]\w*)", c_text))
+        assert not fields & members, (template, sorted(fields & members))
+
+
+def test_the_template_check_sees_a_hard_coded_member_access() -> None:
+    # The check above, on a line that writes an SDK field itself.
+    c_text = re.sub(r"\{\{.*?\}\}", "X", "n = {{ packet }}->p_hdr->caplen;")
+    assert set(re.findall(r"(?:->|\.)\s*([A-Za-z_]\w*)", c_text)) == {"p_hdr", "caplen"}
 
 
 def test_the_includes_are_profile_headers() -> None:

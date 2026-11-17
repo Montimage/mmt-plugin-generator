@@ -26,27 +26,69 @@
  *   5.6) whose payload has the OCPP-J array shape (OCPP-J 1.6 section 4.1.3
  *   and 4.2): "[", then 2, 3 or 4, then ",", then a complete string, with
  *   JSON whitespace (RFC 8259 section 2) around them: a capture that starts
- *   after the handshake.
+ *   after the handshake. A compressed one (RSV1, RFC 7692 section 6) claims
+ *   it when the whole frame is in the segment and its first
+ *   OC_CLAIM_OUT bytes, inflated from an empty window, start with that
+ *   shape up to the string's opening quote.
  *
  * Any other session is left to the others (websocket_example, mmt-dpi's
  * HTTP): the classification runs at weight 4, before both.
  *
- * What a segment reports: the first OCPP-J message whose frame header ends
- * in the segment (a text frame, opcode 1, FIN set or not: a fragmented
- * message is read from its first frame only, continuation frames are not
- * reassembled), parsed from the payload bytes the segment has, unmasked:
+ * What a segment reports: the first OCPP-J message completed in the
+ * segment, in the order of its bytes. An uncompressed message is completed
+ * where its first frame's header ends (a text frame, opcode 1, RSV1 0, FIN
+ * set or not: a fragmented message is read from its first frame only,
+ * continuation frames are not reassembled), and parsed from the payload
+ * bytes the segment has, unmasked; a compressed one (permessage-deflate,
+ * below) where its last frame ends, and parsed from the whole message
+ * inflated. Its fields:
  * `message_type_id`, `unique_id`, `action` (a CALL's; a CALLRESULT's or
  * CALLERROR's is the Action of the CALL it answers, absent when that CALL
  * was not seen), `error_code` and `error_description` (CALLERROR),
- * `payload` (the Payload or errorDetails JSON value as sent, from its first
- * byte to its end or the segment's), the typed fields of a CALL's payload,
- * and `message_count` (the OCPP-J messages whose frame header ends in the
- * segment). Strings are the bytes between the quotes as sent (JSON escapes
- * are not decoded), at most the first 63 (MMT_STRING_DATA); `payload` at
- * most the first 1024 (MMT_BINARY_VAR_DATA). Nothing is reported for the
- * handshake, a pure ACK, a retransmission, a frame that is not an OCPP-J
- * message (a ping, a frame with RSV1, which permessage-deflate would have
- * compressed), or anything of a session that did not select ocpp1.6.
+ * `payload` (the Payload or errorDetails JSON value as sent, or as
+ * inflated, from its first byte to its end or the segment's), the typed
+ * fields of a CALL's payload, and `message_count` (the OCPP-J messages
+ * completed in the segment, of both kinds). Strings are the bytes between
+ * the quotes as sent (JSON escapes are not decoded), at most the first 63
+ * (MMT_STRING_DATA); `payload` at most the first 1024 (MMT_BINARY_VAR_DATA).
+ * Nothing is reported for the handshake, a pure ACK, a retransmission, a
+ * frame that is not an OCPP-J message (a ping, a compressed message that
+ * does not inflate, below), or anything of a session that did not select
+ * ocpp1.6.
+ *
+ * permessage-deflate (RFC 7692), as websocket_example inflates it:
+ *
+ * - The 101 answer's Sec-WebSocket-Extensions fields (every one, read from
+ *   the field lines, in the answer's first segment or the next) decide
+ *   (section 7.1): permessage-deflate with server_no_context_takeover,
+ *   client_no_context_takeover (no value) and server_max_window_bits,
+ *   client_max_window_bits (8 to 15), each at most once, inflates; the
+ *   server_* parameters are the server's messages', client_* the client's.
+ *   Any other extension or parameter, a value out of range or a parameter
+ *   twice, and the session inflates nothing: a compressed message is no
+ *   OCPP-J message. A 32 KiB window decodes any window bits.
+ * - RSV1 on a message's first frame says it is compressed (section 6).
+ *   Each direction collects its payload, unmasked, over its frames and
+ *   segments (continuation frames and the bytes of a frame begun in an
+ *   earlier segment too), up to OC_INFLATE_IN_MAX bytes, and inflates it at
+ *   its last frame with 00 00 ff ff appended (section 7.2.2), to at most
+ *   OC_INFLATE_OUT_MAX bytes, through the direction's 32 KiB window
+ *   (context takeover, section 7.2.3.2; emptied before each message under
+ *   *_no_context_takeover, section 7.1.1) into the direction's buffer,
+ *   which the next message reuses. A text message is then parsed as an
+ *   uncompressed one, from the inflated bytes; a binary one only keeps the
+ *   window in step.
+ * - src/ws_inflate.c is the decoder (RFC 1951; the same file as
+ *   websocket_example's), which never builds output from history it did
+ *   not see. A byte missing inside a compressed message (lost, past the
+ *   capture's end, a header lost and the parse started again) drops the
+ *   message and empties the window; so does a byte missing between
+ *   messages, and a message that does not inflate or is too long. The
+ *   messages after are reported when they are self-contained: never a
+ *   message built from bytes the plugin did not see.
+ * - A session joined without its handshake (claimed on a frame, or by
+ *   session_data_init) treats RSV1 as permessage-deflate, with context
+ *   takeover, from an empty window.
  *
  * The typed fields are read at their place in the payload object (OCPP 1.6
  * section 6), never by a key name found anywhere:
@@ -87,7 +129,9 @@
  *
  * Without a session (mmt-plugin test's packets, which the harness puts
  * behind Ethernet), the layer's bytes are WebSocket frames parsed alone,
- * with no link to a CALL.
+ * with no link to a CALL, and a compressed message is not inflated (no
+ * negotiation is known, and nothing is allocated there): it reports
+ * nothing.
  *
  * Where the parse runs, in mmt-dpi 1.10.2: as for websocket_example, the
  * classification function on every packet of a session this plugin owns
@@ -106,11 +150,27 @@
 #include "tcpip/mmt_tcpip.h"
 
 #include "ocpp_example_mmt_plugin.h"
+#include "ws_inflate.h"
 
 #define OC_TEXT 63       /* the bytes of an MMT_STRING_DATA value, before its NUL */
 #define OC_ID_MAX 36     /* OCPP-J 1.6 section 4.1.4: a UniqueId has at most 36 characters */
 #define OC_CALLS 16      /* the CALLs a session keeps for their answers */
 #define WS_HEADER_MAX 14 /* 2, 8 of extended length, 4 of masking key */
+#define OC_PAYLOAD_MAX 1024 /* the bytes of an MMT_BINARY_VAR_DATA value */
+
+/*
+ * permessage-deflate (RFC 7692): the compressed bytes of one message this
+ * plugin keeps at most (a longer message is not inflated), and the bytes it
+ * inflates a message to at most (a message that inflates to more is not
+ * reported), as websocket_example's. For the claim of a session without its
+ * handshake: the bytes of a compressed frame it inflates from (with
+ * 00 00 ff ff), and the bytes it inflates them to at most, enough for the
+ * OCPP-J array's start.
+ */
+#define OC_INFLATE_IN_MAX (64u * 1024u)
+#define OC_INFLATE_OUT_MAX (1024u * 1024u)
+#define OC_CLAIM_IN 512u
+#define OC_CLAIM_OUT 64u
 
 /*
  * The idle time, in seconds, after which mmt-dpi ends a session this plugin
@@ -128,6 +188,30 @@
 enum oc_kind { OC_KIND_NONE, OC_KIND_REQUEST, OC_KIND_ANSWER, OC_KIND_FRAME };
 enum oc_state { OC_REQUEST_SEEN = 1, OC_ANSWER_PENDING, OC_OPEN, OC_OTHER };
 enum oc_type { OC_CALL = 2, OC_CALLRESULT = 3, OC_CALLERROR = 4 };
+
+/* Whether a direction inflates its compressed messages (RFC 7692). */
+enum oc_deflate {
+    OC_DEFLATE_OFF, /* no 101 answer negotiated it (or none was seen): nothing is compressed */
+    OC_DEFLATE_ON,  /* permessage-deflate with parameters this plugin knows, or a session joined later */
+    OC_DEFLATE_BAD  /* something else: compressed messages are not inflated */
+};
+
+/* The message in progress in a direction (RFC 7692 section 6). */
+enum oc_message_state {
+    OC_MSG_NONE,       /* between messages */
+    OC_MSG_PLAIN,      /* its first frame had RSV1 0 */
+    OC_MSG_COMPRESSED, /* RSV1 1: its payload is collected, then inflated at its last frame */
+    OC_MSG_UNKNOWN     /* compressed and not inflated, or its first frame was not seen */
+};
+
+/* The permessage-deflate parameters of the 101 answer (RFC 7692 section 7.1). */
+struct oc_ext {
+    uint8_t seen;                     /* a Sec-WebSocket-Extensions field had an extension */
+    uint8_t deflate;                  /* permessage-deflate */
+    uint8_t bad;                      /* another extension, a parameter unknown, repeated or out of range */
+    uint8_t server_nct, client_nct;   /* server_ and client_no_context_takeover */
+    uint8_t server_bits, client_bits; /* server_ and client_max_window_bits, 8 to 15, 0: absent */
+};
 
 struct oc_text {
     uint8_t present;
@@ -153,6 +237,11 @@ struct oc_view {
     uint32_t payload_offset; /* the first message's payload, from base */
     uint8_t mask, phase;     /* its unmasking: key[(phase + i) % 4] */
     uint8_t key[4];
+    /* The first message was inflated: its payload's first bytes, copied
+       (the direction's buffer is reused by the next message). */
+    uint8_t inflated;
+    uint16_t copy_len;
+    uint8_t copy[OC_PAYLOAD_MAX];
 };
 
 /* One direction of a session. */
@@ -165,6 +254,19 @@ struct oc_direction {
     uint8_t resync;  /* a header was lost: frames from a segment that starts with one */
     uint8_t in_http; /* inside the answer's header block */
     uint8_t eol;     /* 1: after "\n", 2: after "\n\r" (the end of the block) */
+    /* permessage-deflate (RFC 7692); the buffers and the window are
+       allocated at the direction's first compressed message */
+    uint8_t deflate;                  /* enum oc_deflate */
+    uint8_t no_takeover;              /* the direction's *_no_context_takeover: an empty window for each message */
+    uint8_t msg;                      /* enum oc_message_state */
+    uint8_t msg_text;                 /* the message is a text message (opcode 1) */
+    uint8_t frame_collect, frame_fin; /* the current frame: its payload is collected; it ends its message */
+    uint8_t frame_mask, frame_key[4], frame_phase; /* its masking key, the next byte's index in it */
+    uint8_t *in;                      /* the compressed message's payload, unmasked, then 00 00 ff ff */
+    size_t in_len, in_cap;
+    uint8_t *out; /* the last message inflated */
+    size_t out_cap;
+    struct ws_inflate z; /* the direction's LZ77 window (ws_inflate.h) */
 };
 
 /* A CALL waiting for its answer. */
@@ -179,6 +281,7 @@ struct oc_session {
     uint8_t state;
     uint8_t client;          /* the client's packet direction (get_session_last_packet_direction) */
     struct oc_text selected; /* the answer's Sec-WebSocket-Protocol */
+    struct oc_ext ext;       /* the extensions the answer accepted */
     struct oc_direction dir[2];
     uint32_t clock;
     struct oc_call calls[OC_CALLS];
@@ -258,6 +361,7 @@ struct oc_http {
     bool upgrade;            /* an Upgrade field with the token websocket */
     bool offers;             /* a Sec-WebSocket-Protocol field with the token ocpp1.6 */
     struct oc_text selected; /* the first Sec-WebSocket-Protocol field */
+    struct oc_ext ext;       /* every Sec-WebSocket-Extensions field */
     unsigned end;            /* the bytes of the header block, blank line included */
     bool complete;           /* the block ends in the segment */
     uint8_t eol;             /* the end-of-block scan's state at the segment's end */
@@ -289,6 +393,167 @@ static bool oc_has_token(const uint8_t *p, unsigned n, const char *token, bool n
     return false;
 }
 
+/* A token character (RFC 7230 section 3.2.6). */
+static bool oc_tchar(uint8_t c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+           || (c != 0 && memchr("!#$%&'*+-.^_`|~", c, 15) != NULL);
+}
+
+/* Skips optional white space. */
+static void oc_ows(const uint8_t *p, unsigned n, unsigned *at)
+{
+    while (*at < n && oc_space(p[*at])) {
+        (*at)++;
+    }
+}
+
+/* Reads a token, returning its length. */
+static unsigned oc_token(const uint8_t *p, unsigned n, unsigned *at)
+{
+    unsigned start = *at;
+
+    while (*at < n && oc_tchar(p[*at])) {
+        (*at)++;
+    }
+    return *at - start;
+}
+
+/* A max_window_bits value: 8 to 15, without leading zeros (RFC 7692
+   section 7.1.2.1); 0 for anything else. */
+static uint8_t oc_window_bits(const uint8_t *v, unsigned n)
+{
+    if (n == 1 && v[0] >= '8' && v[0] <= '9') {
+        return (uint8_t)(v[0] - '0');
+    }
+    if (n == 2 && v[0] == '1' && v[1] >= '0' && v[1] <= '5') {
+        return (uint8_t)(10 + v[1] - '0');
+    }
+    return 0;
+}
+
+/*
+ * One parameter of permessage-deflate in the answer (RFC 7692 section
+ * 7.1): the two *_no_context_takeover without a value, the two
+ * *_max_window_bits with one (a client_max_window_bits without a value is
+ * only for the offer, section 7.1.2.2), each at most once. Returns false
+ * for anything else. As websocket_example's ws_ext_param().
+ */
+static bool oc_ext_param(struct oc_ext *e, const uint8_t *name, unsigned n, bool has_value, const uint8_t *value,
+                         unsigned vlen)
+{
+    uint8_t *flag = NULL, *bits = NULL;
+
+    if (oc_is_nocase(name, n, "server_no_context_takeover")) {
+        flag = &e->server_nct;
+    } else if (oc_is_nocase(name, n, "client_no_context_takeover")) {
+        flag = &e->client_nct;
+    } else if (oc_is_nocase(name, n, "server_max_window_bits")) {
+        bits = &e->server_bits;
+    } else if (oc_is_nocase(name, n, "client_max_window_bits")) {
+        bits = &e->client_bits;
+    } else {
+        return false;
+    }
+    if (flag != NULL) {
+        if (has_value || *flag) {
+            return false;
+        }
+        *flag = 1;
+        return true;
+    }
+    if (!has_value || *bits != 0 || value == NULL) {
+        return false;
+    }
+    *bits = oc_window_bits(value, vlen);
+    return *bits != 0;
+}
+
+/*
+ * The extension list of a Sec-WebSocket-Extensions field (RFC 6455
+ * section 9.1: extension *( ";" token [ "=" (token / quoted-string) ] ),
+ * comma-separated), read directly from the field line, whatever its length.
+ * An answer may accept permessage-deflate once; any other extension, or a
+ * parameter oc_ext_param() refuses, marks the list bad. As
+ * websocket_example's ws_ext_parse().
+ */
+static void oc_ext_parse(struct oc_ext *e, const uint8_t *p, unsigned n)
+{
+    unsigned at = 0;
+
+    while (!e->bad) {
+        unsigned name;
+
+        while (at < n && (oc_space(p[at]) || p[at] == ',')) {
+            at++;
+        }
+        if (at >= n) {
+            return;
+        }
+        e->seen = 1;
+        name = at;
+        if (!oc_is_nocase(p + name, oc_token(p, n, &at), "permessage-deflate") || e->deflate) {
+            e->bad = 1;
+            return;
+        }
+        e->deflate = 1;
+        oc_ows(p, n, &at);
+        while (at < n && p[at] == ';') {
+            uint8_t value[2];
+            unsigned pname, plen, vlen = 0;
+            bool has_value = false, too_long = false;
+
+            at++;
+            oc_ows(p, n, &at);
+            pname = at;
+            plen = oc_token(p, n, &at);
+            oc_ows(p, n, &at);
+            if (at < n && p[at] == '=') {
+                at++;
+                oc_ows(p, n, &at);
+                has_value = true;
+                if (at < n && p[at] == '"') {
+                    /* A quoted-string, its quoted-pairs unescaped (RFC 7230 section 3.2.6). */
+                    for (at++; at < n && p[at] != '"'; at++) {
+                        if (p[at] == '\\' && ++at >= n) {
+                            break;
+                        }
+                        if (vlen < sizeof(value)) {
+                            value[vlen++] = p[at];
+                        } else {
+                            too_long = true;
+                        }
+                    }
+                    if (at >= n) {
+                        e->bad = 1;
+                        return;
+                    }
+                    at++;
+                } else {
+                    unsigned start = at, len = oc_token(p, n, &at);
+
+                    if (len == 0) {
+                        e->bad = 1;
+                        return;
+                    }
+                    too_long = len > sizeof(value);
+                    vlen = too_long ? 0 : len;
+                    memcpy(value, p + start, vlen);
+                }
+                oc_ows(p, n, &at);
+            }
+            if (plen == 0 || !oc_ext_param(e, p + pname, plen, has_value, too_long ? NULL : value, vlen)) {
+                e->bad = 1;
+                return;
+            }
+        }
+        if (at < n && p[at] != ',') {
+            e->bad = 1;
+            return;
+        }
+    }
+}
+
 static void oc_header_field(struct oc_http *http, const uint8_t *line, unsigned n)
 {
     unsigned colon = 0, start, end;
@@ -316,6 +581,9 @@ static void oc_header_field(struct oc_http *http, const uint8_t *line, unsigned 
         if (!http->selected.present) {
             oc_text_set(&http->selected, line + start, end - start);
         }
+    } else if (oc_is_nocase(line, colon, "sec-websocket-extensions")) {
+        /* Every field of the name: together, one list (RFC 7230 section 3.2.2). */
+        oc_ext_parse(&http->ext, line + start, end - start);
     }
 }
 
@@ -907,23 +1175,19 @@ static bool ws_header(const uint8_t *h, uint64_t *len, unsigned *at)
     return true;
 }
 
-/* A text frame's payload p[0..n) as an OCPP-J message; s (with dir) links it. */
-static void oc_message(struct oc_session *s, unsigned dir, const uint8_t *h, const uint8_t *p, unsigned n,
-                       unsigned offset, struct oc_view *view)
+/*
+ * A text message's bytes (a frame's payload in the segment, or a message
+ * inflated) as an OCPP-J message; s (with dir) links it. offset is where b
+ * starts in the segment (unused when inflated: the first message's payload
+ * is then copied into the view).
+ */
+static void oc_message(struct oc_session *s, unsigned dir, const struct oc_bytes *b, unsigned offset, bool inflated,
+                       struct oc_view *view)
 {
-    struct oc_bytes b;
     struct oc_msg msg;
-    unsigned key_at = ws_header_len(h[1]) - 4;
     bool first = view->message_count == 0;
 
-    b.p = p;
-    b.n = n;
-    b.mask = h[1] >> 7;
-    memset(b.key, 0, sizeof(b.key));
-    if (b.mask) {
-        memcpy(b.key, h + key_at, 4);
-    }
-    if (!oc_parse(&b, &msg, first)) {
+    if (!oc_parse(b, &msg, first)) {
         return;
     }
     if (s != NULL) {
@@ -936,11 +1200,235 @@ static void oc_message(struct oc_session *s, unsigned dir, const uint8_t *h, con
     view->message_count++;
     if (first) {
         view->first = msg;
-        view->payload_offset = offset + msg.payload_at;
-        view->mask = b.mask;
-        view->phase = (uint8_t)(msg.payload_at & 3);
-        memcpy(view->key, b.key, 4);
+        if (inflated) {
+            size_t n = msg.has_payload ? msg.payload_len : 0;
+
+            if (n > sizeof(view->copy)) {
+                n = sizeof(view->copy);
+            }
+            memcpy(view->copy, b->p + msg.payload_at, n);
+            view->copy_len = (uint16_t)n;
+            view->inflated = 1;
+        } else {
+            view->payload_offset = offset + msg.payload_at;
+            view->mask = b->mask;
+            view->phase = (uint8_t)(msg.payload_at & 3);
+            memcpy(view->key, b->key, 4);
+        }
     }
+}
+
+/* A text frame's payload p[0..n) in the segment (h its header) as an OCPP-J message. */
+static void oc_frame_message(struct oc_session *s, unsigned dir, const uint8_t *h, const uint8_t *p, unsigned n,
+                             unsigned offset, struct oc_view *view)
+{
+    struct oc_bytes b;
+
+    b.p = p;
+    b.n = n;
+    b.mask = h[1] >> 7;
+    memset(b.key, 0, sizeof(b.key));
+    if (b.mask) {
+        memcpy(b.key, h + ws_header_len(h[1]) - 4, 4);
+    }
+    oc_message(s, dir, &b, offset, false, view);
+}
+
+/* --- permessage-deflate (RFC 7692), as websocket_example's --- */
+
+/* The compressed message in progress is lost (a missing byte, too long):
+   it is not inflated, and neither is the history the window held. */
+static void oc_message_drop(struct oc_direction *d)
+{
+    if (d->msg == OC_MSG_COMPRESSED) {
+        d->msg = OC_MSG_UNKNOWN;
+    }
+    d->frame_collect = 0;
+    d->in_len = 0;
+    ws_inflate_reset(&d->z);
+}
+
+/* The parse starts again at a header: the message in progress is unknown. */
+static void oc_message_resync(struct oc_direction *d)
+{
+    oc_message_drop(d);
+    d->msg = OC_MSG_NONE;
+    d->frame_fin = 0;
+}
+
+/* Bytes lost inside the current frame (a gap still in step, the capture's
+   end): a compressed message is not inflated, the window loses its
+   history, and while the extension may be on the message is unknown. */
+static void oc_message_lost(struct oc_direction *d)
+{
+    oc_message_drop(d);
+    if (d->deflate != OC_DEFLATE_OFF && d->msg != OC_MSG_NONE) {
+        d->msg = OC_MSG_UNKNOWN;
+    }
+}
+
+/* Room for `more` bytes and the 4 octets of section 7.2.2; false (the
+   message dropped) past OC_INFLATE_IN_MAX or without memory. */
+static bool oc_reserve(struct oc_direction *d, size_t more)
+{
+    size_t need, cap;
+    uint8_t *in;
+
+    if (more > OC_INFLATE_IN_MAX - d->in_len) {
+        oc_message_drop(d);
+        return false;
+    }
+    need = d->in_len + more + 4;
+    if (need <= d->in_cap) {
+        return true;
+    }
+    cap = d->in_cap < 256 ? 256 : d->in_cap * 2;
+    if (cap < need) {
+        cap = need;
+    }
+    if (cap > OC_INFLATE_IN_MAX + 4) {
+        cap = OC_INFLATE_IN_MAX + 4;
+    }
+    in = realloc(d->in, cap);
+    if (in == NULL) {
+        oc_message_drop(d);
+        return false;
+    }
+    d->in = in;
+    d->in_cap = cap;
+    return true;
+}
+
+/* Payload bytes of the current frame: unmasked (RFC 6455 section 5.3)
+   into the compressed message, when it collects them. */
+static void oc_collect(struct oc_direction *d, const uint8_t *p, size_t n)
+{
+    size_t i;
+
+    if (!d->frame_collect || n == 0 || !oc_reserve(d, n)) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        d->in[d->in_len++] = d->frame_mask ? (uint8_t)(p[i] ^ d->frame_key[d->frame_phase++ & 3]) : p[i];
+    }
+}
+
+/* The window's history before a message, to decode it again into a larger
+   buffer (ws_inflate() decodes once, through the window), per thread. */
+static _Thread_local uint8_t oc_history[WS_INFLATE_WINDOW];
+
+/*
+ * Inflates the direction's compressed message (section 7.2.2: its payload,
+ * then 00 00 ff ff), with an empty window under *_no_context_takeover
+ * (section 7.1.1), into d->out[0..*got). The buffer grows to the message's
+ * size: when it was too small, the window gets its history back and the
+ * message is decoded again. False when the message does not inflate (an
+ * error, more than OC_INFLATE_OUT_MAX bytes, no memory): the window is
+ * then empty.
+ */
+static bool oc_inflate(struct oc_direction *d, size_t *got)
+{
+    static const uint8_t tail[4] = {0x00, 0x00, 0xff, 0xff};
+    uint32_t pos, valid;
+    uint8_t *out;
+
+    *got = 0;
+    if (!oc_reserve(d, 0) || !ws_inflate_alloc(&d->z)) {
+        return false;
+    }
+    memcpy(d->in + d->in_len, tail, sizeof(tail));
+    if (d->no_takeover) {
+        ws_inflate_reset(&d->z);
+    }
+    pos = d->z.pos;
+    valid = d->z.valid;
+    if (valid > 0) {
+        memcpy(oc_history, d->z.window, d->z.size);
+    }
+    if (ws_inflate(&d->z, d->in, d->in_len + sizeof(tail), d->out, d->out_cap, OC_INFLATE_OUT_MAX, got)
+        != WS_INFLATE_OK) {
+        return false;
+    }
+    if (*got <= d->out_cap) {
+        return true;
+    }
+    out = realloc(d->out, *got);
+    if (out == NULL) {
+        ws_inflate_reset(&d->z);
+        return false;
+    }
+    d->out = out;
+    d->out_cap = *got;
+    if (valid > 0) {
+        memcpy(d->z.window, oc_history, d->z.size);
+    }
+    d->z.pos = pos;
+    d->z.valid = valid;
+    return ws_inflate(&d->z, d->in, d->in_len + sizeof(tail), d->out, d->out_cap, OC_INFLATE_OUT_MAX, got)
+           == WS_INFLATE_OK;
+}
+
+/*
+ * The last frame of a message ended. A compressed one is inflated; a text
+ * message that inflates is then an OCPP-J message, parsed from the whole
+ * message (a binary one only keeps the window in step).
+ */
+static void oc_message_end(struct oc_session *s, unsigned dir, struct oc_direction *d, struct oc_view *view)
+{
+    size_t got = 0;
+
+    if (d->msg == OC_MSG_COMPRESSED && oc_inflate(d, &got) && d->msg_text) {
+        struct oc_bytes b;
+
+        memset(&b, 0, sizeof(b));
+        b.p = d->out;
+        b.n = (unsigned)got; /* at most OC_INFLATE_OUT_MAX */
+        oc_message(s, dir, &b, 0, true, view);
+    }
+    d->msg = OC_MSG_NONE;
+    d->in_len = 0;
+    d->frame_collect = 0;
+    d->frame_fin = 0;
+}
+
+/*
+ * A frame header h (its masking key at key_at): the message it belongs to
+ * (section 6: RSV1 on a message's first frame says it is compressed;
+ * control frames are not part of it) and whether its payload is collected.
+ */
+static void oc_message_frame(struct oc_direction *d, const uint8_t *h, unsigned key_at)
+{
+    uint8_t opcode = h[0] & 0x0f, rsv1 = (h[0] >> 6) & 1;
+
+    d->frame_collect = 0;
+    d->frame_fin = 0;
+    d->frame_mask = h[1] >> 7;
+    d->frame_phase = 0;
+    if (d->frame_mask) {
+        memcpy(d->frame_key, h + key_at, 4);
+    }
+    if (opcode > 2) {
+        return; /* control (and reserved) frames are never compressed */
+    }
+    if (opcode != 0) {
+        /* A new message: a compressed one still in progress is lost (RFC
+           6455 section 5.4 allows none). */
+        if (d->msg == OC_MSG_COMPRESSED) {
+            oc_message_drop(d);
+        }
+        d->in_len = 0;
+        d->msg_text = opcode == 1;
+        if (!rsv1) {
+            d->msg = OC_MSG_PLAIN;
+        } else {
+            d->msg = d->deflate == OC_DEFLATE_ON ? OC_MSG_COMPRESSED : OC_MSG_UNKNOWN;
+        }
+    } else if (d->msg == OC_MSG_NONE) {
+        /* Its first frame was not seen: without the extension, plain. */
+        d->msg = d->deflate == OC_DEFLATE_OFF ? OC_MSG_PLAIN : OC_MSG_UNKNOWN;
+    }
+    d->frame_collect = d->msg == OC_MSG_COMPRESSED;
+    d->frame_fin = h[0] >> 7;
 }
 
 /*
@@ -959,8 +1447,12 @@ static void ws_frames(struct oc_session *s, unsigned dir, const uint8_t *p, unsi
     if (d->owed > 0 && pos < n) {
         uint64_t take = d->owed < n - pos ? d->owed : n - pos;
 
+        oc_collect(d, p + pos, (size_t)take);
         d->owed -= take;
         pos += (unsigned)take;
+        if (d->owed == 0 && d->frame_fin) {
+            oc_message_end(s, dir, d, view);
+        }
     }
     while (pos < n) {
         uint8_t h[WS_HEADER_MAX];
@@ -986,42 +1478,124 @@ static void ws_frames(struct oc_session *s, unsigned dir, const uint8_t *p, unsi
             /* Not WebSocket from here: restart at the next segment. */
             d->owed = 0;
             d->resync = 1;
+            oc_message_resync(d);
             return;
         }
+        oc_message_frame(d, h, at);
         take = len < n - pos ? len : n - pos;
-        /* A text frame (opcode 1) without RSV1 (no compression) starts a
-           message: OCPP-J 1.6 section 4.1.2. */
+        /* A text frame (opcode 1) without RSV1 (not compressed) starts a
+           message: OCPP-J 1.6 section 4.1.2. A compressed one is parsed
+           where it ends (oc_message_end()). */
         if ((h[0] & 0x4f) == 0x01) {
-            oc_message(s, dir, h, p + pos, (unsigned)take, pos, view);
+            oc_frame_message(s, dir, h, p + pos, (unsigned)take, pos, view);
         }
+        oc_collect(d, p + pos, (size_t)take);
         pos += (unsigned)take;
         d->owed = len - take;
+        if (d->owed == 0 && d->frame_fin) {
+            oc_message_end(s, dir, d, view);
+        }
     }
     if (missing > 0) {
         if (d->header_len == 0 && d->owed >= missing) {
+            /* Payload the capture lost (oc_message_lost()). */
             d->owed -= missing;
+            oc_message_lost(d);
+            if (d->owed == 0 && d->frame_fin) {
+                oc_message_end(s, dir, d, view);
+            }
         } else {
             /* A header was in the bytes the capture lost: restart. */
             d->owed = 0;
             d->header_len = 0;
             d->resync = 1;
+            oc_message_resync(d);
         }
     }
 }
 
-/* Whether p[0..n) starts with an unfragmented text frame holding an OCPP-J message. */
+/*
+ * Whether b, the first bytes of a message, start like an OCPP-J message up
+ * to its UniqueId's opening quote: "[", 2, 3 or 4, ",", '"', with JSON
+ * whitespace around them (OCPP-J 1.6 section 4.2).
+ */
+static bool oc_prefix(const struct oc_bytes *b)
+{
+    unsigned at = oc_ws(b, 0);
+
+    if (!oc_byte(b, at, '[')) {
+        return false;
+    }
+    at = oc_ws(b, at + 1);
+    if (at >= b->n || oc_at(b, at) < '2' || oc_at(b, at) > '4') {
+        return false;
+    }
+    at = oc_ws(b, at + 1);
+    if (!oc_byte(b, at, ',')) {
+        return false;
+    }
+    return oc_byte(b, oc_ws(b, at + 1), '"');
+}
+
+/*
+ * Whether the compressed text frame of payload p[0..len), all in the
+ * segment, starts an OCPP-J message: its first OC_CLAIM_OUT bytes,
+ * inflated from an empty window (from at most OC_CLAIM_IN bytes of it with
+ * 00 00 ff ff; a longer frame must reach that output first), have
+ * oc_prefix()'s shape.
+ */
+static bool oc_compressed_opens(const uint8_t *h, const uint8_t *p, unsigned len)
+{
+    uint8_t in[OC_CLAIM_IN], out[OC_CLAIM_OUT], window[OC_CLAIM_OUT];
+    const uint8_t *key = h + ws_header_len(h[1]) - 4;
+    unsigned n = len < OC_CLAIM_IN - 4 ? len : OC_CLAIM_IN - 4, i;
+    struct ws_inflate z;
+    struct oc_bytes b;
+    size_t got = 0;
+    int rc;
+
+    for (i = 0; i < n; i++) {
+        in[i] = (h[1] & 0x80) ? (uint8_t)(p[i] ^ key[i & 3]) : p[i];
+    }
+    if (n == len) {
+        static const uint8_t tail[4] = {0x00, 0x00, 0xff, 0xff};
+
+        memcpy(in + n, tail, sizeof(tail));
+        n += (unsigned)sizeof(tail);
+    }
+    ws_inflate_init(&z, window, sizeof(window));
+    rc = ws_inflate(&z, in, n, out, sizeof(out), sizeof(out), &got);
+    if (rc != WS_INFLATE_OK && rc != WS_INFLATE_CAP) {
+        return false;
+    }
+    memset(&b, 0, sizeof(b));
+    b.p = out;
+    b.n = (unsigned)got;
+    return oc_prefix(&b);
+}
+
+/*
+ * Whether p[0..n) starts with an unfragmented text frame holding an OCPP-J
+ * message: uncompressed, its bytes in the segment parse as one; compressed
+ * (RSV1, RFC 7692 section 6), the whole frame is in the segment and
+ * oc_compressed_opens().
+ */
 static bool oc_frame_opens(const uint8_t *p, unsigned n)
 {
     struct oc_view view;
     uint64_t len;
     unsigned at;
 
-    if (n < 2 || p[0] != 0x81 || n < ws_header_len(p[1]) || !ws_header(p, &len, &at)) {
-        return false; /* FIN, no RSV bit, opcode 1 (RFC 6455 section 5.2) */
+    /* FIN, RSV2 and RSV3 0, opcode 1 (RFC 6455 section 5.2); RSV1 or not */
+    if (n < 2 || (p[0] != 0x81 && p[0] != 0xc1) || n < ws_header_len(p[1]) || !ws_header(p, &len, &at)) {
+        return false;
+    }
+    at = ws_header_len(p[1]);
+    if (p[0] == 0xc1) {
+        return len <= n - at && oc_compressed_opens(p, p + at, (unsigned)len);
     }
     memset(&view, 0, sizeof(view));
-    at = ws_header_len(p[1]);
-    oc_message(NULL, 0, p, p + at, (unsigned)(len < n - at ? len : n - at), at, &view);
+    oc_frame_message(NULL, 0, p, p + at, (unsigned)(len < n - at ? len : n - at), at, &view);
     return view.message_count > 0;
 }
 
@@ -1085,11 +1659,36 @@ static uint8_t oc_opening(const uint8_t *p, unsigned n)
     return oc_frame_opens(p, n) ? OC_KIND_FRAME : OC_KIND_NONE;
 }
 
+/* Each direction's deflate from the extensions the answer accepted: the
+   server_* parameters are the server's messages', client_* the client's
+   (RFC 7692 section 7.1). Any window bits decode in a 32 KiB window. */
+static void oc_deflate_apply(struct oc_session *s)
+{
+    uint8_t mode = !s->ext.seen                     ? OC_DEFLATE_OFF
+                   : s->ext.deflate && !s->ext.bad ? OC_DEFLATE_ON
+                                                    : OC_DEFLATE_BAD;
+    unsigned dir;
+
+    for (dir = 0; dir < 2; dir++) {
+        s->dir[dir].deflate = mode;
+        s->dir[dir].no_takeover = dir == s->client ? s->ext.client_nct : s->ext.server_nct;
+    }
+}
+
+/* A session joined without its handshake: RSV1 is permessage-deflate's,
+   with context takeover, from an empty window. */
+static void oc_deflate_joined(struct oc_session *s)
+{
+    s->dir[0].deflate = OC_DEFLATE_ON;
+    s->dir[1].deflate = OC_DEFLATE_ON;
+}
+
 /* The end of the answer's header block: OCPP from here when it selected ocpp1.6. */
 static void oc_answer_done(struct oc_session *s, struct oc_direction *d, const struct oc_segment *seg, unsigned pos,
                            unsigned dir, struct oc_view *view)
 {
     s->state = oc_selects_ocpp(&s->selected) ? OC_OPEN : OC_OTHER;
+    oc_deflate_apply(s);
     d->in_http = 0;
     if (s->state == OC_OPEN && pos < seg->n) {
         ws_frames(s, dir, seg->p, seg->n, pos, seg->total - seg->n, d, view);
@@ -1113,6 +1712,7 @@ static void oc_answer(struct oc_session *s, struct oc_direction *d, const struct
         return;
     }
     s->selected = http.selected;
+    s->ext = http.ext;
     if (!http.complete) {
         s->state = OC_ANSWER_PENDING;
         d->in_http = 1;
@@ -1160,10 +1760,15 @@ static void oc_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             uint32_t lost = (uint32_t)diff;
             if (d->header_len == 0 && !d->in_http && d->owed >= lost) {
                 d->owed -= lost; /* payload bytes were lost: still in step */
+                oc_message_lost(d);
+                if (d->owed == 0 && d->frame_fin) {
+                    oc_message_end(s, dir, d, view);
+                }
             } else {
                 d->owed = 0;
                 d->header_len = 0;
                 d->resync = 1;
+                oc_message_resync(d);
                 if (d->in_http) {
                     /* The end of the answer's header block was lost. */
                     oc_answer_done(s, d, &seg, seg.n, dir, view);
@@ -1190,6 +1795,7 @@ static void oc_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             break;
         default: /* frames, from a capture that started after the handshake */
             s->state = OC_OPEN;
+            oc_deflate_joined(s);
             ws_frames(s, dir, seg.p, seg.n, pos, seg.total - seg.n, d, view);
             break;
         }
@@ -1210,6 +1816,7 @@ static void oc_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             struct oc_http more;
 
             memset(&more, 0, sizeof(more));
+            more.ext = s->ext;
             if (!at_line) {
                 while (from < m && q[from] != '\n') {
                     from++;
@@ -1222,6 +1829,7 @@ static void oc_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
             if (!s->selected.present) {
                 s->selected = more.selected;
             }
+            s->ext = more.ext;
             if (end != 0) {
                 oc_answer_done(s, d, &seg, pos + end, dir, view);
             }
@@ -1306,6 +1914,7 @@ void ocpp_example_hook_session_data_init(ipacket_t *ipacket, unsigned index)
     s = calloc(1, sizeof(*s));
     if (s != NULL) {
         s->state = OC_OPEN; /* joined after the handshake: frames from the next segment */
+        oc_deflate_joined(s);
         set_proto_session_data(ipacket->session, s, index);
     }
 }
@@ -1313,7 +1922,17 @@ void ocpp_example_hook_session_data_init(ipacket_t *ipacket, unsigned index)
 /* Frees the session data of a session. */
 void ocpp_example_hook_session_data_cleanup(mmt_session_t *session, unsigned index)
 {
-    free(get_proto_session_data(session, index));
+    struct oc_session *s = get_proto_session_data(session, index);
+    unsigned dir;
+
+    if (s != NULL) {
+        for (dir = 0; dir < 2; dir++) {
+            free(s->dir[dir].in);
+            free(s->dir[dir].out);
+            ws_inflate_free(&s->dir[dir].z);
+        }
+        free(s);
+    }
     set_proto_session_data(session, NULL, index);
 }
 
@@ -1365,6 +1984,8 @@ static const struct oc_view *oc_view_of(const ipacket_t *packet, mmt_proto_index
         return &oc_none;
     }
     memset(&oc_alone, 0, sizeof(oc_alone));
+    /* deflate OFF: a compressed message is never collected (nothing is
+       allocated) and reports nothing. */
     memset(&fresh, 0, sizeof(fresh));
     oc_alone.view.base = (unsigned)offset;
     ws_frames(NULL, 0, packet->data + offset, caplen - (unsigned)offset, 0, 0, &fresh, &oc_alone.view);
@@ -1452,6 +2073,13 @@ int ocpp_example_hook_extract_payload(const ipacket_t *packet, mmt_proto_index_t
 
     if (view->message_count == 0 || !m->has_payload) {
         return 0;
+    }
+    if (view->inflated) {
+        /* A compressed message, inflated: its payload's first bytes. */
+        n = view->copy_len < sizeof(out->data) ? view->copy_len : (unsigned)sizeof(out->data);
+        memcpy(out->data, view->copy, n);
+        out->len = n;
+        return 1;
     }
     n = m->payload_len < sizeof(out->data) ? m->payload_len : (unsigned)sizeof(out->data);
     if (view->base > caplen || view->payload_offset > caplen - view->base) {

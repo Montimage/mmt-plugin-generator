@@ -198,3 +198,13 @@ def test_an_example_with_a_parent_runs_one_packet_test_through_it(name: str) -> 
     # runs it, and breaks that parent's classification).
     assert len(through) == 1, name
     assert through[0].proto in parents, (name, through[0].text, parents)
+
+
+@pytest.mark.parametrize("file", ["ws_inflate.c", "ws_inflate.h"])
+def test_the_websocket_and_ocpp_examples_share_one_inflater(file: str) -> None:
+    """The permessage-deflate decoder (#107) is one pair of files, copied
+    into both projects (a project builds only its own src/): the copies
+    must stay byte for byte the same."""
+    websocket = (EXAMPLES / "websocket" / "src" / file).read_bytes()
+    ocpp = (EXAMPLES / "ocpp" / "src" / file).read_bytes()
+    assert websocket == ocpp, f"copy examples/websocket/src/{file} to examples/ocpp/src/"

@@ -92,6 +92,46 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   dependency, a `uv.lock` change and CI changes, while the parser's
   constructs are already enumerated by `@covers` and each syntax code has a
   test. It can be added later, project-wide, as its own change.
+- SDK detection (#50, F6): the SDK version is read from the `VERSION`
+  macro of `mmt_core.h` outside its comments, so a `#define VERSION`
+  inside a `/* */` or `//` comment before the real one is no longer taken
+  for it. The header check strips comments the same way, leaving string
+  literals alone (`"/*"` starts no comment), after joining continued
+  lines, so a `//` comment ending in a backslash also hides the next line.
+- SDK profiles (#50, F7): the loader rejects a `$comment` that is not a
+  string, and one below the top level, as the schema does, and the schema
+  rejects an empty `c_std`, as the loader does. A test runs both on about
+  2,200 mutations of the bundled profile; they agree on every one except
+  the loader's cross-reference checks.
+- `python -m mmt_plugin.sdk.headercheck` (#50): the completeness check of
+  `parents.ids` counts every `PROTO_*` macro a header defines, whatever its
+  value (`(PROTO_NAS5G + 1)`) and on continued lines, not only literal
+  one-line numbers: each must be an id, in `not_ids`, the `_ALIAS` of a
+  listed id or a `PROTO_CLASS_*` macro. mmt-dpi 1.10.2's headers pass
+  unchanged. `tests/check_headercheck_mutations.sh` also changes
+  `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`, `PROTO_META` and adds such
+  definitions, and must see each fail.
+- SDK profile values (#50, F3): already done on `dev` before this change
+  (#49, #51): the profile records, and the header check asserts, the value
+  of `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`, `PROTO_UNKNOWN`,
+  `PROTO_META` and every id of `parents.ids`, the values the tool uses as
+  numbers. Decided: the other constants (`Classified`,
+  `MMT_CLASSIFY_MATCHED`, `SCOPE_PACKET`, the `MMT_*` data types...) keep
+  no value, since generated code names them and the header gives their
+  value at compile time; the profile's `$comment` says so, and a test fails
+  when the code reads the value of a constant whose value is not recorded.
+  A new test also checks the run-time registry against the profile (#50,
+  review of #51): with all the package's plugins loaded, mmt-dpi registers
+  exactly the profile's ids, under their aliases. It runs, with
+  `MMT_GOLDEN_SDK`, in `tests/unit/test_sdk_registry.py`, which CI's SDK
+  jobs already run; it is not added to the `sdk-profile` CI job, whose
+  workflow this change does not edit.
+- Profile choice (#50): decided to keep the order and document it: a
+  detected version with any suffix after its number, also `1.10.2.post1`,
+  `1.10.2+git` or a Debian revision `1.10.2-1`, ranks below its release,
+  like a pre-release (`docs/design/cli.md`, section 9). The version comes
+  from the `VERSION` macro, which a release sets to its plain number, and
+  a profile too old is the safe side.
 
 ## [0.1.0] - 2026-11-15
 

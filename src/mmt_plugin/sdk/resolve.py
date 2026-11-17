@@ -16,10 +16,15 @@ A profile asked for in steps 1-3 that is not bundled is ``sdk.profile-not-found`
 "Nearest" (``nearest_version``): the newest bundled profile whose version is
 not above the SDK's, so generated code only uses what that SDK already had;
 when every bundled profile is newer, the oldest. Versions compare as dotted
-numbers (``1.10.2`` > ``1.9.9``); a version with a suffix, a pre-release
-(``1.10.2-rc1``), compares just below its release (``1.10.2``), so it gets
-the newest profile below that release, and one with no numeric part, or an
-SDK whose version is unknown, gets the newest profile.
+numbers (``1.10.2`` > ``1.9.9``); a version with any suffix after its
+dotted number compares just below that release (``1.10.2``), so it gets the
+newest profile below that release, and one with no numeric part, or an SDK
+whose version is unknown, gets the newest profile. Every suffix counts as a
+pre-release (``1.10.2-rc1``), also one that marks a later build of the same
+release (``1.10.2.post1``, ``1.10.2+git``, a Debian revision ``1.10.2-1``):
+the version comes from the ``VERSION`` macro of ``mmt_core.h``, which a
+release sets to its plain number, and taking a profile too old is the safe
+side (#50).
 """
 
 from __future__ import annotations
@@ -100,7 +105,8 @@ def nearest_version(detected: str | None, bundled: Sequence[str]) -> str:
     if numeric is None:
         return ordered[-1]
     key, is_release = numeric
-    # A pre-release is just below its release: only a release reaches it.
+    # Any suffix (a pre-release, also ``.post1``, ``+git``, ``-1``) is just
+    # below its release: only the plain release reaches it.
     not_above = [
         v for v in ordered if version_key(v) < key or (is_release and version_key(v) == key)
     ]

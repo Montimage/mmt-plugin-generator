@@ -262,8 +262,9 @@ class SdkProtocol:
 @dataclass(frozen=True)
 class ProtocolHeader:
     """The protocols one header of an SDK plugin defines, in header order.
-    ``not_ids`` are its other numeric ``PROTO_*`` macros, which are not
-    protocol ids."""
+    ``not_ids`` are its other ``PROTO_*`` macros, whatever their value,
+    which are neither protocol ids nor the ``PROTO_<X>_ALIAS`` of a listed id
+    (``PROTO_CLASS_*`` macros need not be listed)."""
 
     header: str
     doc: str
@@ -368,12 +369,14 @@ class _Reader:
     def __init__(self, value: Any, where: str, keys: Sequence[str], optional: Sequence[str] = ()):
         if not isinstance(value, dict):
             raise ProfileError(f"{where}: expected an object")
-        unknown = sorted(set(value) - set(keys) - set(optional) - {"$comment"})
+        unknown = sorted(set(value) - set(keys) - set(optional))
         if unknown:
             raise ProfileError(f"{where}: unknown key {unknown[0]!r}")
         missing = [k for k in keys if k not in value]
         if missing:
             raise ProfileError(f"{where}: missing key {missing[0]!r}")
+        if "$comment" in value and not isinstance(value["$comment"], str):
+            raise ProfileError(f"{where}.$comment: expected a string")
         self.value: dict[str, Any] = value
         self.where = where
 
@@ -458,6 +461,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
             "class_provider",
             "parents",
         ),
+        ("$comment",),
     )
     schema_version = top.value["schema_version"]
     if type(schema_version) is not int or schema_version != SCHEMA_VERSION:

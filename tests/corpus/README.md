@@ -273,7 +273,12 @@ packets:
     `bytes` is its TCP payload (none: a pure ACK). `retransmit: true` sends
     it at the sequence number of that side's previous segment with data;
     `lost: N` loses that side's next `N` bytes before it (the capture never
-    had them). `expect` is `"none"` (not the plugin's packet) or a mapping
+    had them); `back: N` sends it `N` bytes before that side's next
+    sequence number without moving it (a segment that arrives late, after
+    the ones that followed it, or one sent over bytes already sent), and it
+    has bytes, at most `N` of them; `N` is at most what that side has sent
+    or lost so far. One step gives at most one of `retransmit`, `lost` and
+    `back`. `expect` is `"none"` (not the plugin's packet) or a mapping
     with `attributes`, as a packet file's `expect.attributes`, except that
     `offset` and `length` are optional (a value can come from an earlier
     packet) and so is `type` for an attribute `session.attributes` lists.

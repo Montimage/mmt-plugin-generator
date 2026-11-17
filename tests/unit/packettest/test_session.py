@@ -177,6 +177,10 @@ def test_a_packet_test_still_loads_and_load_rejects_a_session_test(tmp_path: Pat
         ('  - from: "server"\n    expect', '  - from: "nobody"\n    expect', "client or server"),
         ("    lost: 5\n", "    lost: -1\n", "lost is a number"),
         ("    lost: 5\n", "    lost: 5\n    retransmit: true\n", "give retransmit or lost"),
+        ("    lost: 5\n", "    back: -1\n", "back is a number"),
+        ("    lost: 5\n", "    back: true\n", "back is a number"),
+        ("    lost: 5\n", "    lost: 5\n    back: 1\n", "give one of retransmit, lost and back"),
+        ("    lost: 5\n", "    back: 3\n", "the client has sent or lost only 2 bytes"),
         ('    expect: "none"\n', '    expect: "maybe"\n', 'expect is "none"'),
         ('    expect: "none"\n', "    flags: 1\n", "unknown key 'flags'"),
         ('      - "01 02"\n', '      - "01 0G"\n', "hex pairs"),
@@ -204,6 +208,38 @@ def test_a_retransmission_needs_data_sent_before_it(tmp_path: Path) -> None:
     text = SESSION.replace('  - from: "server"\n    bytes:\n      - "aa bb cc"\n  - idle: 2\n', "")
     with pytest.raises(PacketTestError, match="the server sent no data before it"):
         _load(tmp_path, text)
+
+
+def _late(steps: str) -> str:
+    """SESSION's connection with the client steps ``steps`` instead of its packets."""
+    return SESSION[: SESSION.index("packets:")] + "packets:\n  - open: true\n" + steps
+
+
+def test_a_segment_sent_back_has_bytes_that_end_by_the_next_sequence_number(
+    tmp_path: Path,
+) -> None:
+    sent = '  - from: "client"\n    bytes:\n      - "01 02 03"\n'
+    with pytest.raises(PacketTestError, match="a segment sent back has bytes"):
+        _load(tmp_path, _late(sent + '  - from: "client"\n    back: 2\n'))
+    with pytest.raises(PacketTestError, match="sent back 2 bytes has at most 2 bytes"):
+        _load(
+            tmp_path,
+            _late(sent + '  - from: "client"\n    back: 2\n    bytes:\n      - "02 03 04"\n'),
+        )
+    # Bytes lost count: a segment can be sent back into them.
+    test = _session(
+        tmp_path,
+        _late(
+            '  - from: "client"\n    lost: 4\n    bytes:\n      - "05"\n'
+            '  - from: "client"\n    back: 5\n    bytes:\n      - "01 02"\n'
+        ),
+    )
+    assert [s.back for s in test.steps] == [0, 0, 5]
+    # The server's bytes are not the client's.
+    with pytest.raises(PacketTestError, match="the server has sent or lost only 0 bytes"):
+        _load(
+            tmp_path, _late(sent + '  - from: "server"\n    back: 1\n    bytes:\n      - "01"\n')
+        )
 
 
 def test_a_session_needs_packets(tmp_path: Path) -> None:
@@ -243,6 +279,34 @@ def test_the_frames_follow_one_tcp_connection(tmp_path: Path) -> None:
         False,
     ]
     assert [f.payload for f in frames][3] == b"\x01\x02"
+
+
+def test_a_segment_sent_back_arrives_late_without_moving_the_sequence(tmp_path: Path) -> None:
+    # "<!DOC" and "TYPE" in reverse order: TYPE first (the 5 bytes before
+    # it lost so far), a filler over the hole, "<!DOC" in it, then more.
+    test = _session(
+        tmp_path,
+        _late(
+            '  - from: "client"\n    bytes:\n      - "61 62"\n'
+            '  - from: "client"\n    lost: 5\n    bytes:\n      - "54 59 50 45"\n'
+            '  - from: "client"\n    back: 9\n    bytes:\n      - "78 78 78"\n'
+            '  - from: "client"\n    back: 9\n    bytes:\n      - "3c 21 44 4f 43"\n'
+            '  - from: "server"\n    bytes:\n      - "aa"\n'
+            '  - from: "client"\n    retransmit: true\n    bytes:\n      - "54 59 50 45"\n'
+            '  - from: "client"\n    bytes:\n      - "20"\n'
+        ),
+    )
+    seen = [_tcp(f.frame) for f in build_frames(test)][3:]
+    assert [(s[4], s[7]) for s in seen if s[0] == bytes([198, 18, 0, 1])] == [
+        (1001, b"ab"),
+        (1008, b"TYPE"),
+        (1003, b"xxx"),
+        (1003, b"<!DOC"),
+        (1008, b"TYPE"),  # a retransmission repeats the last segment in order
+        (1012, b" "),
+    ]
+    # The server acknowledges up to the client's next sequence number.
+    assert seen[4][4:6] == (500001, 1012)
 
 
 def test_every_frame_has_right_checksums_and_ethernet_padding(tmp_path: Path) -> None:

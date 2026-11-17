@@ -225,7 +225,8 @@ protocol model. A Python rewrite is planned in
   session test (#99, `session.py`: `session` and `packets` instead of
   `bytes` and `expect`; `tests/corpus/README.md`, "Session files") is the
   packets of one TCP connection (`open`, `idle` and client or server
-  segments, with `retransmit` and `lost`; sequence numbers, checksums and
+  segments, with `retransmit`, `lost` and `back`, a late segment;
+  sequence numbers, checksums and
   padding built by `session.py`), run in order in a harness of its own,
   each checked directly above TCP (`<parent>`), the attributes of
   `session.attributes` it does not list absent: one `result.packets`

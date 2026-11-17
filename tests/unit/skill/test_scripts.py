@@ -2,13 +2,16 @@
 
 ``scripts/make_pcap.py`` writes a synthetic capture: what ``mmt_plugin.pcap``
 slices back out of it under the parent is each payload, byte for byte, and
-every checksum holds. ``scripts/pcap_eval.py``'s filters, comparisons and
-report are checked on hand-made runs; ``test_sdk.py`` runs it on a built
-plugin.
+every checksum holds. ``scripts/pcap_eval.py``'s filters, comparisons,
+drift against tshark and report are checked on hand-made runs (a drift case
+and a no-drift case through ``main`` with the runner and tshark faked);
+``test_sdk.py`` runs it on a built plugin.
 """
 
 from __future__ import annotations
 
+import json
+import shutil
 import struct
 from pathlib import Path
 from typing import Any
@@ -191,6 +194,14 @@ def _report(**over: Any) -> dict[str, Any]:
         "fields": {
             "length": {"tshark_field": "x.len", "compared": 2, "matched": 2, "agreement": 1.0}
         },
+        "drift": {
+            "reference": "tshark",
+            "checked": True,
+            "open": 0,
+            "accepted": 0,
+            "items": [],
+            "file": "drift.jsonl",
+        },
         "attributes": {"length": {"present": 2, "values": {"12": 2}, "other_values": 0}},
         "paths": {"baseline": {"a.unknown": 2}, "plugin": {"a.TELEM": 2}, "displaced": {}},
     }
@@ -205,6 +216,7 @@ def test_the_markdown_report_has_every_section() -> None:
     for heading in (
         "## Warnings",
         "## Fields against tshark",
+        "## Drift against tshark",
         "## Attributes",
         "## Protocol paths",
     ):
@@ -212,6 +224,24 @@ def test_the_markdown_report_has_every_section() -> None:
     assert "| `a.TELEM` | 0 | 2 |" in text
     failed = pcap_eval.markdown(_report(verdict="FAIL", problems=["recall 0%"], missed_frames=[3]))
     assert "## Problems" in failed and "Missed frames (first 50): 3" in failed
+    assert "None: the plugin agrees with tshark" in text
+    item = {
+        "key": "length",
+        "kind": "field",
+        "tshark_field": "x.len",
+        "frames": 2,
+        "first_frames": [1, 2],
+        "status": "accepted",
+        "reason": "x.len counts the trailer",
+    }
+    drifted = _report(
+        drift={**_report()["drift"], "accepted": 1, "items": [item]},
+    )
+    md = pcap_eval.markdown(drifted)
+    assert "0 open (defects), 1 accepted; every frame in `drift.jsonl`." in md
+    assert "| length | field | 2 | 1, 2 | accepted | x.len counts the trailer |" in md
+    unchecked = _report(drift={**_report()["drift"], "checked": False, "reference": None})
+    assert "Not checked: no tshark" in pcap_eval.markdown(unchecked)
 
 
 def test_the_runner_source_is_shipped_next_to_the_script() -> None:
@@ -306,3 +336,200 @@ def test_eval_rejects_missing_inputs_before_running_anything(tmp_path: Path) -> 
         )
         == 3
     )
+
+
+# --- pcap_eval.py: drift against tshark ---------------------------------------
+
+
+def test_no_difference_is_no_drift() -> None:
+    assert pcap_eval.drift_items({"length": []}, {"length": "x.len"}, [], [], {}) == []
+    assert pcap_eval.drift_lines({"length": []}, [], None) == []
+
+
+def test_each_difference_is_a_defect_until_accepted() -> None:
+    rows: dict[str, list[dict[str, Any]]] = {
+        "length": [{"frame": 2, "tshark": "8", "plugin": "9"}],
+        "kind": [{"frame": f, "tshark": "1", "plugin": None} for f in range(1, 8)],
+    }
+    fields = {"length": "x.len", "kind": "x.kind"}
+    items = pcap_eval.drift_items(rows, fields, [5, 6], [9], {"kind": "x.kind is masked"})
+    assert [(d["key"], d["kind"], d["frames"], d["status"]) for d in items] == [
+        ("length", "field", 1, "defect"),
+        ("kind", "field", 7, "accepted"),
+        ("missed", "classification", 2, "defect"),
+        ("foreign", "classification", 1, "defect"),
+    ]
+    assert items[1]["reason"] == "x.kind is masked" and items[0]["reason"] is None
+    assert items[1]["first_frames"] == [1, 2, 3, 4, 5]
+    assert items[0]["tshark_field"] == "x.len"
+    # drift.jsonl keeps every frame, not only the first ones.
+    lines = pcap_eval.drift_lines(rows, [5, 6], [9])
+    assert len(lines) == 1 + 7 + 2 + 1
+    assert lines[0] == {"key": "length", "frame": 2, "tshark": "8", "plugin": "9"}
+    assert lines[-1] == {"key": "foreign", "frame": 9}
+
+
+def test_the_full_mismatch_list_is_not_capped() -> None:
+    dump = [{"frame": f, "path": "x", "attributes": {"length": "1"}} for f in range(1, 21)]
+    reference = {f: {"length": "2"} for f in range(1, 21)}
+    _, rows = pcap_eval.field_mismatches(dump, reference, {"length": "x.len"}, set(range(1, 21)))
+    assert len(rows["length"]) == 20
+    rep = pcap_eval.compare_fields(dump, reference, {"length": "x.len"}, set(range(1, 21)))
+    assert len(rep["length"]["mismatches"]) == 5 and rep["length"]["agreement"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        ["length"],
+        ["length="],
+        ["length=  "],
+        ["=why"],
+        ["lenght=a typo"],
+        ["length=a", "length=b"],
+    ],
+)
+def test_a_bad_accept_is_a_usage_error(items: list[str]) -> None:
+    with pytest.raises(pcap_eval.EvalExit) as exc:
+        pcap_eval.parse_accept(items, {"length": "x.len"})
+    assert exc.value.code == pcap_eval.EXIT_USAGE
+
+
+def test_accept_takes_attributes_and_the_classification_keys() -> None:
+    got = pcap_eval.parse_accept(
+        ["length=x.len counts the trailer", "missed = the capture starts mid-session"],
+        {"length": "x.len"},
+    )
+    assert got == {
+        "length": "x.len counts the trailer",
+        "missed": "the capture starts mid-session",
+    }
+
+
+def _fake_eval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, tshark: bool, plugin_length: str
+) -> list[str]:
+    """``main``'s arguments for an evaluation whose runner and tshark are
+    faked: 3 frames, frames 1 and 2 expected (and claimed, with the
+    attribute ``length``), frame 3 outside the scope. tshark's ``x.len`` is
+    12 in both; the plugin's ``plugin_length`` in frame 2."""
+    sdk = tmp_path / "sdk"
+    (sdk / "dpi" / "include").mkdir(parents=True)
+    (sdk / "dpi" / "include" / "mmt_core.h").write_text("")
+    (sdk / "plugins").mkdir()
+    so = tmp_path / "mmtp_telem.so"
+    so.write_bytes(b"so")
+    cap = tmp_path / "c.pcap"
+    cap.write_bytes(b"pcap")
+
+    def runner(
+        binary: Path, capture: Path, label: str, plugins: Path, dump: Path | None
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {"frames": 3, "registered": True, "paths": {}, "attributes": {}}
+        if dump is not None:
+            rows = [(1, "12"), (2, plugin_length)]
+            dump.write_text(
+                "".join(
+                    json.dumps({"frame": f, "path": "x.TELEM", "attributes": {"length": v}}) + "\n"
+                    for f, v in rows
+                )
+            )
+            result["attributes"] = {
+                "length": {"id": 1, "present": 2, "values": {"12": 1}, "other_values": 1}
+            }
+            result["paths"] = {"x.TELEM": 2}
+        return {**result, "crashed": False}
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: (
+            ("/usr/bin/tshark" if tshark else None) if name == "tshark" else real_which(name)
+        ),
+    )
+    monkeypatch.setattr(pcap_eval, "compile_runner", lambda sdk, cc, out: out / "bin" / "x")
+    monkeypatch.setattr(pcap_eval, "run_runner", runner)
+    monkeypatch.setattr(pcap_eval, "tshark_frames", lambda capture, flt, decode: {1, 2})
+    monkeypatch.setattr(
+        pcap_eval,
+        "tshark_fields",
+        lambda capture, fields, decode: {1: {"length": "12"}, 2: {"length": "0x0c"}},
+    )
+    monkeypatch.setattr(pcap_eval, "fallback_frames", lambda capture, selector: {1, 2})
+    args = ["--sdk", str(sdk), "--plugin", str(so), "--label", "telem"]
+    return [*args, "--parent", "udp:port=1", "--capture", str(cap), "--out", str(tmp_path / "out")]
+
+
+def _read(tmp_path: Path) -> dict[str, Any]:
+    report: dict[str, Any] = json.loads((tmp_path / "out" / "report.json").read_text("utf-8"))
+    return report
+
+
+def test_no_drift_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _fake_eval(tmp_path, monkeypatch, tshark=True, plugin_length="12")
+    assert pcap_eval.main([*args, "--field", "length=x.len"]) == 0
+    report = _read(tmp_path)
+    assert report["verdict"] == "PASS", report["problems"]
+    assert report["drift"] == {
+        "reference": "tshark",
+        "checked": True,
+        "open": 0,
+        "accepted": 0,
+        "items": [],
+        "file": "drift.jsonl",
+    }
+    assert (tmp_path / "out" / "drift.jsonl").read_text("utf-8") == ""
+    assert "None: the plugin agrees with tshark" in (tmp_path / "out" / "report.md").read_text()
+
+
+def test_an_open_drift_fails_and_an_accepted_one_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _fake_eval(tmp_path, monkeypatch, tshark=True, plugin_length="20")
+    args += ["--field", "length=x.len"]
+    assert pcap_eval.main(args) == 1
+    report = _read(tmp_path)
+    assert report["verdict"] == "FAIL"
+    assert report["drift"]["open"] == 1
+    (item,) = report["drift"]["items"]
+    assert (item["key"], item["status"], item["first_frames"]) == ("length", "defect", [2])
+    assert any(p.startswith("drift length: field length differs") for p in report["problems"])
+    lines = (tmp_path / "out" / "drift.jsonl").read_text("utf-8").splitlines()
+    assert [json.loads(line) for line in lines] == [
+        {"key": "length", "frame": 2, "tshark": "0x0c", "plugin": "20"}
+    ]
+
+    reason = "x.len is the payload length, the attribute the whole message"
+    assert (
+        pcap_eval.main(
+            [
+                *args,
+                "--accept",
+                f"length={reason}",
+                "--accept",
+                "missed=the capture starts mid-session",
+            ]
+        )
+        == 0
+    )
+    report = _read(tmp_path)
+    assert report["verdict"] == "PASS", report["problems"]
+    assert (report["drift"]["open"], report["drift"]["accepted"]) == (0, 1)
+    assert report["drift"]["items"][0]["reason"] == reason
+    assert "--accept missed: no such drift on this capture" in report["warnings"]
+    assert f"| accepted | {reason} |" in (tmp_path / "out" / "report.md").read_text()
+
+
+def test_without_tshark_the_drift_is_not_checked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _fake_eval(tmp_path, monkeypatch, tshark=False, plugin_length="20")
+    assert pcap_eval.main([*args, "--field", "length=x.len"]) == 3
+    assert pcap_eval.main([*args, "--accept", "missed=why"]) == 0
+    report = _read(tmp_path)
+    assert report["verdict"] == "PASS"
+    assert report["drift"]["checked"] is False and report["drift"]["reference"] is None
+    assert any("drift against a reference tool not checked" in w for w in report["warnings"])
+    assert any("(--accept ignored)" in w for w in report["warnings"])
+    assert not (tmp_path / "out" / "drift.jsonl").exists()

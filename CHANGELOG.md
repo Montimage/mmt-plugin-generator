@@ -9,6 +9,17 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- The mmt-plugin-generator skill checks a plugin for drift against tshark
+  (#123): `scripts/pcap_eval.py` reports each difference from tshark on
+  the capture (a `--field` attribute whose value differs, expected frames
+  the plugin misses, `missed`, and claimed frames outside its traffic,
+  `foreign`) in `report.json`, `report.md` and, frame by frame,
+  `drift.jsonl`. A drift is a defect, and the evaluation a FAIL, until
+  `--accept <key>=<reason>` accepts it with its reason; the skill never
+  reports a plugin done with a defect open, and records each drift in the
+  work folder's `REPORT.md`. tshark is the only reference tool; without it
+  the drift is not checked and the report says so. The user guide has the
+  step ("Check the plugin against tshark").
 - `mmt-plugin test` runs session tests (#99): a file in `tests/` with
   `session` (a `tcp` selector, the protocol, its id, the attributes every
   packet checks) and `packets` (the three-way handshake, idle time, and
@@ -131,6 +142,13 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   unchanged.
 
 ### Changed
+
+- `pcap_eval.py` with tshark (#123): every missed or foreign frame and
+  every field mismatch is a drift to fix or accept, so `--min-recall`
+  applies only without tshark, and `--min-agreement` and `--max-foreign`
+  are accepted and ignored (`report.json`'s `thresholds` keeps
+  `min_recall` only). The evaluation guide accepts a field drift with
+  `--accept` instead of dropping its `--field`.
 
 - `scaffold` under a `tcp` parent follows each direction of each
   connection as a stream (`src/mmt_plugin/pcap/streams.py`, #102): a

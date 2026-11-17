@@ -19,6 +19,7 @@ machine-readable output.
 - [Install the plugin](#install-the-plugin)
 - [Draft a model from a capture](#draft-a-model-from-a-capture)
 - [Run the plugin over a capture](#run-the-plugin-over-a-capture)
+- [Check the plugin against tshark](#check-the-plugin-against-tshark)
 - [Start from a PDL v1 model](#start-from-a-pdl-v1-model)
 - [Shell completion](#shell-completion)
 - [Scripts, CI and agents: `--json`](#scripts-ci-and-agents---json)
@@ -584,6 +585,54 @@ python3 -c 'import json; r = json.load(open("run.json"))["result"]; print(r["sum
 
 The runner is generated into `<build-dir>/run/` and loads the plugins from
 a directory of its own (`MMT_DPI_PLUGINS_DIR`), never the host's.
+
+## Check the plugin against tshark
+
+Packet tests check the values you wrote down; a capture shows whether the
+plugin agrees with another dissector on real traffic. Before you accept a
+plugin, run it over a capture of its protocol and compare what it
+classifies and extracts with tshark, the reference tool: every difference
+is a drift, to fix or to accept with a reason. The agent skill's
+`pcap_eval.py` does it (it needs a C compiler, the libpcap headers,
+`libpcap-dev`, and tshark):
+
+<!-- doc:run no-sdk -->
+```sh
+python3 skills/mmt-plugin-generator/scripts/pcap_eval.py --help
+```
+
+<!-- doc:skip needs tshark, libpcap-dev and a capture of the protocol -->
+```sh
+python3 skills/mmt-plugin-generator/scripts/pcap_eval.py --sdk <prefix> \
+    --plugin demo/build/mmtp_demo.so --label demo --parent udp:dport=4433 \
+    --capture demo.pcap --out demo-eval --field length=<tshark field>
+```
+
+It runs the capture through mmt-dpi without and with the plugin, then
+compares with tshark:
+
+- `missed`: frames tshark's filter for the parent selects (by default the
+  frames with a payload on the parent's port, EtherType or IP protocol)
+  that the plugin does not classify;
+- `foreign`: frames the plugin classifies outside that traffic;
+- each `--field <attribute>=<tshark field>`: the frames where the
+  attribute's value differs from tshark's field (`--decode-as` gives
+  tshark a dissector for an unusual port).
+
+`demo-eval/report.md` lists each drift and `demo-eval/drift.jsonl` each of
+its frames. Judge each one from the protocol's spec: when the plugin is
+wrong, it is a defect: write the frame's bytes as a packet test with the
+spec's values and fix the model. When tshark is wrong, or describes the
+field otherwise (another unit, a masked value), accept it with
+`--accept <key>=<reason>` (`<key>` an attribute, `missed` or `foreign`):
+it stays in the report, with the reason. The script exits 1 (FAIL) while
+a drift is not accepted, 0 when every one is.
+
+tshark is the only reference tool supported. Without it the evaluation
+still runs, but the drift is not checked: the report says so, and
+`--field` is an error. The
+[skill's evaluation guide](../skills/mmt-plugin-generator/references/evaluation.md#drift-against-tshark)
+has the details.
 
 ## Start from a PDL v1 model
 

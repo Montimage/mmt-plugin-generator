@@ -395,7 +395,11 @@ protocol model. A Python rewrite is planned in
   (`references/evaluation.md`: `scripts/pcap_eval.py` compiles
   `scripts/pcap_eval.c` against the SDK and libpcap, runs the capture
   through mmt-dpi without and with the plugin, and reports recall, foreign
-  frames and, with tshark, field agreement). `SKILL.md` gives the entry commands (`init`, then `import` or
+  frames and, with tshark, field agreement, and the drift against tshark,
+  the only reference tool (#123): each `--field` attribute that differs,
+  `missed` and `foreign` frames, every frame in `drift.jsonl`; a drift is a
+  defect, and the verdict FAIL, unless `--accept <key>=<reason>` accepts
+  it; without tshark it is not checked). `SKILL.md` gives the entry commands (`init`, then `import` or
   `scaffold --from-pcap`; for an existing project, `validate --no-sdk`, then
   the loop once before any edit, which must be green) and the loop
   (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
@@ -419,9 +423,12 @@ protocol model. A Python rewrite is planned in
   (every case without an SDK, the envelopes against the JSON Schemas, the
   tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
   fail), `test_scripts.py` (`make_pcap.py`'s captures sliced back by
-  `mmt_plugin.pcap`, `pcap_eval.py`'s filters, comparisons and report) and
+  `mmt_plugin.pcap`, `pcap_eval.py`'s filters, comparisons, drift and
+  report, a drift and a no-drift run through `main` with the runner and
+  tshark faked) and
   `test_sdk.py` (every case green with a real SDK, and `pcap_eval.py` on the
-  spec-telem plugin with and without tshark; needs `MMT_GOLDEN_SDK` and
+  spec-telem plugin with and without tshark, with tshark a field without
+  drift and one with, open then accepted; needs `MMT_GOLDEN_SDK` and
   `libpcap-dev`).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
@@ -738,7 +745,9 @@ Follow `skills/mmt-plugin-generator/SKILL.md`. In short:
   change its expected values to what the plugin outputs.
 - Keep a work folder with everything that made the plugin, get a capture
   (found, recorded, or generated and marked synthetic) and evaluate the
-  green plugin on it with `scripts/pcap_eval.py`.
+  green plugin on it with `scripts/pcap_eval.py`. Judge every drift against
+  tshark from the spec: fix it, or accept it with `--accept <key>=<reason>`;
+  never report a plugin done while a drift is a defect.
 - To update an existing project, check it (`validate --no-sdk`) and run the
   loop once before any edit; stop and report if it is not green. Keep its
   label, id, `sdk.profile` and `parents:` unless the request changes them,

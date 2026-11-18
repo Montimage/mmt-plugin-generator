@@ -406,8 +406,9 @@ protocol model. A Python rewrite is planned in
   request, the inputs and their sources, the capture, each loop run's
   envelopes and notes, the evaluation, `REPORT.md`, `manifest.json`), gets
   a capture of the protocol when the user gave none
-  (`references/capture.md`: found, recorded, or generated with
-  `scripts/make_pcap.py`, stdlib only) and evaluates the green plugin on it
+  (`references/capture.md`: found, recorded or crafted through the
+  `cyberlab` skill, a frontmatter dependency acquired with `asm` at first
+  use, or, without it, generated with `scripts/make_pcap.py`, stdlib only) and evaluates the green plugin on it
   (`references/evaluation.md`: `scripts/pcap_eval.py` compiles
   `scripts/pcap_eval.c` against the SDK and libpcap, runs the capture
   through mmt-dpi without and with the plugin, and reports recall, foreign

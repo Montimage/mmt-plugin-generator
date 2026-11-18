@@ -174,6 +174,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Changed
 
+- The mmt-plugin-generator skill (0.3.0) records and crafts captures
+  through the `cyberlab` skill (`montimage-projects/cyberlab`,
+  `skills/cyberlab`), declared in its frontmatter `dependencies`
+  and acquired with `asm deps acquire` only when Step 1 needs it: a
+  protocol-capture mission in an isolated Docker lab (`lab capture`, the
+  capture's origin **recorded**) or `cyberlab craft` (`crafted
+  (synthetic)`, **synthetic**), each verified against expectations written
+  before it exists and handed back with its provenance. Recording on the
+  host's loopback interface is gone. Without cyberlab the skill generates
+  the capture with `scripts/make_pcap.py`, marked synthetic, and says why.
 - CI runs the tshark tests with the real tshark (#128): every leg of the
   "Generated code" job installs the distribution's tshark without prompts
   (step "Install tshark"), then runs `scaffold --tshark` on the DNS, ARP

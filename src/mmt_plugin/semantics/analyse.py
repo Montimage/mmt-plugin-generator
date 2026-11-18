@@ -128,8 +128,37 @@ HINTS: Mapping[str, str] = MappingProxyType(
         "offset() or len() of it",
         "model.branch-offset-mismatch": "give the attribute an offset that does not depend on "
         "the if/else, or make both branches the same length",
+        "model.define-sdk-name": "rename the define: the SDK already has a macro, constant or "
+        "type of that name",
+        "model.data-len-width": "give the type's width as data_len (or omit it), or a type of "
+        "the data_len's width",
     }
 )
+
+
+def _bytes(n: int) -> str:
+    return "1 byte" if n == 1 else f"{n} bytes"
+
+
+def _sdk_reserved(profile: Profile) -> dict[str, tuple[str, str]]:
+    """Each name the profile records as a macro, constant, type or protocol
+    macro, with what it is and the header that declares it."""
+    names: dict[str, tuple[str, str]] = {}
+    for header in profile.parents.ids:
+        for p in header.protocols:
+            names.setdefault(p.macro, ("protocol macro", p.header))
+        for other in header.not_ids:
+            names.setdefault(other, ("macro", header.header))
+    for m in profile.macros:
+        names.setdefault(m.name, ("macro", m.header))
+    names.setdefault(profile.logger.debug_opt_in, ("macro", profile.logger.header))
+    for c in profile.constants:
+        kind = "protocol macro" if c.group == "protocol_id" else "constant"
+        names.setdefault(c.name, (kind, c.header))
+    for t in profile.types:
+        names.setdefault(t.name, ("type", t.header))
+    return names
+
 
 _ARITHMETIC = frozenset({BinaryOperator.ADD, BinaryOperator.SUB, BinaryOperator.MUL})
 
@@ -318,6 +347,10 @@ class _Analyser:
             for p in (*plugins, *core)
             if p in core or p.header == profile.parents.declared_in
         }
+        # Every name the SDK profile records that a model define would
+        # replace in C (#53): the macros, constants, types and protocol
+        # macros, case-sensitive like C, with the header that declares each.
+        self.sdk_reserved: dict[str, tuple[str, str]] = _sdk_reserved(profile)
         # Every name the model declares, first occurrence, to tell a later
         # definition from none at all.
         self.declared_attrs: dict[str, pdl.Name] = {}
@@ -439,6 +472,19 @@ class _Analyser:
         )
         weight = DEFAULT_PARENT_WEIGHT if parent.weight is None else parent.weight.value
         match = offset = None
+        ports: tuple[tuple[str, int], ...] = ()
+        if parent.classify is not None and parent.classify.ports:
+            ports = tuple((k, v.value) for k, v in parent.classify.ports)
+            if sdk is not None and sdk.macro != self.profile.parents.id_for("tcp"):
+                key, value = parent.classify.ports[0]
+                self.error(
+                    "model.classify-port",
+                    f"parent `{name}` is classified by {key}, which the generated code reads"
+                    " only in a TCP header",
+                    value.span,
+                    "classify by port under protocol: tcp; under another parent, give match"
+                    " and offset (offsets from the start of the parent)",
+                )
         if parent.classify is not None:
             if sdk is None:
                 self.error(
@@ -461,7 +507,7 @@ class _Analyser:
                     )
                 tests.append(ParentMatch(m.offset.value, m.length.value, m.value.value))
             match = tuple(tests)
-            offset = parent.classify.offset.value
+            offset = None if parent.classify.offset is None else parent.classify.offset.value
         return AnalysedParent(
             name=name,
             macro=None if sdk is None else sdk.macro,
@@ -470,6 +516,7 @@ class _Analyser:
             match=match,
             offset=offset,
             span=parent.span,
+            ports=ports,
         )
 
     # -- Properties (bug 23) --
@@ -560,6 +607,7 @@ class _Analyser:
         first = self.defines.get(key)
         if first is not None:
             self._duplicate("define", d.name, first.span)
+        self._check_sdk_define(d.name)
         value = 0
         alias_of = None
         if isinstance(d.value, pdl.IntLiteral):
@@ -575,6 +623,38 @@ class _Analyser:
         self.defines.setdefault(key, analysed)
         return analysed
 
+    def _check_sdk_define(self, name: pdl.Name) -> None:
+        """A define named like an SDK macro (#53): the generated header would
+        redefine the SDK's macro, and the model's own expressions would read
+        the define's value where they name the SDK's (ethernet's
+        ``PROTO_IP = 15``). The Java tool wrapped each define in
+        ``#ifndef``, so the SDK's value silently won in the C."""
+        found = self.sdk_reserved.get(name.text)
+        if found is None:
+            return
+        kind, header = found
+        sdk_id = self.sdk_names.get(name.text)
+        what = f"{kind} {name.text}"
+        if sdk_id is not None:
+            what += f" (= {sdk_id})"
+        self.error(
+            "model.define-sdk-name",
+            f"define `{name.text}` has the name of the SDK {what}: the generated header would "
+            "redefine it, and the model's expressions would read the define instead",
+            name.span,
+            hint=(
+                f"rename the define; to use the SDK's value, name {name.text} directly, "
+                "without a define"
+                if sdk_id is not None
+                else "rename the define"
+            ),
+            related=[
+                Related(
+                    f"{name.text} is declared in {header} (SDK profile {self.profile.version})"
+                )
+            ],
+        )
+
     def _duplicate(self, what: str, name: pdl.Name, first: Span) -> None:
         self.error(
             "model.duplicate-name",
@@ -587,7 +667,11 @@ class _Analyser:
         """A define (case-insensitively) or an SDK protocol macro."""
         key = name.text.lower()
         define = self.defines.get(key)
-        if define is not None and key != self.defining.get("define"):
+        # An SDK macro named exactly wins over a define whose name differs
+        # only in case (#53): `define proto_ip = 15` must not change what
+        # PROTO_IP means.
+        exact_sdk = name.text in self.sdk_names and (define is None or define.name != name.text)
+        if define is not None and key != self.defining.get("define") and not exact_sdk:
             return define.value, define.name
         if name.text in self.sdk_names:
             return self.sdk_names[name.text], name.text
@@ -889,6 +973,8 @@ class _Analyser:
             if declared_len.value is None:
                 self._leading_zeros(el.data_len, where)
             self._check_range(declared_len, 1, where)
+            if el.offset is not None:
+                self._check_width(el, declared_len)
         length: Expr | None = declared_len
         length_defaulted = False
         if declared_len is None and el.offset is not None:
@@ -958,6 +1044,48 @@ class _Analyser:
         )
         self._register(el.alias, attribute)
         return attribute, state
+
+    def _check_width(self, el: pdl.Attribute, length: Expr) -> None:
+        """A constant data_len other than a fixed-width type's width (#53).
+        mmt-dpi registers the attribute with the type's width whatever its
+        data_len: an integer is read from data_len bytes (a longer one is
+        ``model.integer-length`` at generation), a byte type is copied up to
+        its width and zero-padded. A user hook (no offset) stores its value
+        itself, so its data_len is not checked, and neither is an
+        MMT_DATA_POINTER, stored as a pointer into the packet whatever the
+        length (its 4 bytes are a ``T*`` struct field's wire width). A longer
+        integer is also ``model.integer-length`` at generation; the warning
+        still says so where ``validate`` stops after the semantics."""
+        dt = el.data_type.type
+        if dt is DataType.MMT_DATA_POINTER:
+            return
+        width = FIXED_WIDTHS.get(dt)
+        value = length.value
+        if width is None or value is None or value < 1 or value == width:
+            return
+        if dt in INTEGER_TYPES and value < width:
+            effect = f"the value is read from {_bytes(value)} into a {width}-byte integer"
+            hint = (
+                f"give data_len {width} (or omit it); keep {value} only for a field narrower "
+                f"than its type, such as a {8 * value}-bit integer"
+            )
+        elif dt in INTEGER_TYPES:
+            effect = f"its value is stored in {_bytes(width)}, so the high bytes would be lost"
+            hint = f"give data_len {width} (or omit it), or a wider integer type"
+        else:
+            effect = (
+                f"only {value} of its {width} bytes come from the packet, the rest are zeros"
+                if value < width
+                else f"only the first {_bytes(width)} of the {value} read are kept"
+            )
+            hint = f"give data_len {width} (or omit it), or MMT_BINARY_DATA for {_bytes(value)}"
+        self.warning(
+            "model.data-len-width",
+            f"`{el.alias.text}` has data_len {value}, but {dt.value} is {_bytes(width)} wide: "
+            f"{effect}",
+            el.data_len.span if el.data_len is not None else el.alias.span,
+            hint=hint,
+        )
 
     def _struct(
         self, el: pdl.Struct, guards: tuple[Guard, ...], state: _State

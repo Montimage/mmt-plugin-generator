@@ -80,7 +80,7 @@ struct {{ s.tag }} {
 /* Registers the protocol and its attributes with mmt-dpi; 1 on success. */
 {{ init_declaration }};
 
-#ifndef CORE
+#ifndef {{ sdk.core_macro }}
 /* The plugin entry point that mmt-dpi calls when it loads the plugin. */
 {{ init_proto_declaration }};
 #endif

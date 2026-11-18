@@ -17,7 +17,10 @@ machine-readable output.
 - [Build](#build)
 - [Packet tests](#packet-tests)
 - [Install the plugin](#install-the-plugin)
+- [Use the plugin in mmt-security rules](#use-the-plugin-in-mmt-security-rules)
 - [Draft a model from a capture](#draft-a-model-from-a-capture)
+- [Run the plugin over a capture](#run-the-plugin-over-a-capture)
+- [Check the plugin against tshark](#check-the-plugin-against-tshark)
 - [Start from a PDL v1 model](#start-from-a-pdl-v1-model)
 - [Shell completion](#shell-completion)
 - [Scripts, CI and agents: `--json`](#scripts-ci-and-agents---json)
@@ -139,7 +142,10 @@ mmt-plugin init demo --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2
 
 The label (`demo`) names the plugin, `mmtp_demo.so`, and the registered
 protocol name, `DEMO` (always the label upper-cased: `--name` accepts no
-other). Third-party plugins use ids 950 to 999; with an SDK, `init` picks
+other). mmt-security rules name the protocol that way, `DEMO.kind`, never
+`demo.kind`
+([Use the plugin in mmt-security rules](#use-the-plugin-in-mmt-security-rules)).
+Third-party plugins use ids 950 to 999; with an SDK, `init` picks
 the lowest free one when you leave out `--id`. Re-running `init` changes
 nothing; it never replaces a file with other content unless you pass
 `--force`. A project that an older `init` created, with a PDL v1
@@ -152,9 +158,11 @@ nothing; it never replaces a file with other content unless you pass
 written for, and declares the parent: `--parent udp:dport=4433` became a
 `classify` that attaches the protocol to UDP destination port 4433 in
 generated code. A parent that one match of its header identifies (an
-EtherType, a UDP source or destination port) gets one; any other
-(`tcp:port=102`, or `udp:port=4433`, which matches either port) is listed
-without `classify`, for your code to attach:
+EtherType, a UDP source or destination port) gets one, and so do TCP ports
+(`tcp:port=102` is a `classify` by port, the protocol starting after the
+TCP header and its options); any other (`udp:port=4433`, which matches
+either port, `ip:proto=17`) is listed without `classify`, for your code to
+attach:
 
 ```yaml
 # The DEMO protocol plugin's model, created by mmt-plugin init. Every
@@ -197,8 +205,8 @@ What goes in a model:
   an `offset` is extracted by a hook;
 - `classify_next`: which protocol comes next, and where;
 - `parents`: what this protocol runs on. A parent with `classify` (a fixed
-  header such as Ethernet or UDP) is attached by the generated code; one
-  without is attached by your code;
+  header such as Ethernet or UDP, or TCP ports) is attached by the
+  generated code; one without is attached by your code;
 - `sdk.profile`: the profile to generate for.
 
 [`plugin-yaml.md`](plugin-yaml.md) explains the format with a complete
@@ -239,7 +247,12 @@ mmt-plugin -C demo generate --check
 ```
 
 Never edit `generated/`: `generate` refuses to overwrite a generated file
-that changed since it wrote it (exit 7) unless you pass `--force`.
+that changed since it wrote it (exit 7) unless you pass `--force`. An
+interrupted `generate` leaves its journal, `plugin.lock.pending`, next to
+`plugin.lock`: run `generate` again, with the old model or the new one, and
+it finishes without `--force` and removes the journal. `generate -o DIR`
+with a `DIR` outside the project writes its own `plugin.lock` in `DIR` and
+leaves the project's alone.
 
 ## Your code: the hooks
 
@@ -361,6 +374,88 @@ not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
 attached under its TCP or UDP. With `--sanitize`, its random packets run
 behind the same headers.
 
+### Session tests
+
+A packet test is one packet, with no session around it. When what your
+plugin reports depends on earlier packets of the connection (an opening
+handshake, a message over two segments, an answer linked to its
+request), write a session test: a file in `tests/` with `session` and
+`packets` instead of `bytes` and `expect`, the packets of one TCP
+connection, in order, each with what the plugin must report. `test`
+builds the frames for you (Ethernet, IPv4 and TCP, both directions, the
+sequence and acknowledgment numbers of a connection without loss) and
+runs them in one harness, through mmt-dpi's TCP and your plugin's parent
+classification, so the plugin keeps its session state from one packet to
+the next:
+
+```yaml
+schema: 1
+id: "chat/session-login"
+summary: "A login, then the server's answer, which reports the user of the session"
+session:
+  through: "tcp:dport=6667"
+  protocol: "CHAT"
+  proto_id: 970
+  attributes:
+    - name: "command"
+      type: "MMT_STRING_DATA"
+    - name: "user"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true
+  - from: "client"
+    bytes:
+      - "55 53 45 52 20 61 6c 69 63 65 0d 0a"
+    expect:
+      attributes:
+        - name: "command"
+          value: "55 53 45 52"
+        - name: "user"
+          value: "61 6c 69 63 65"
+  - from: "server"
+    expect: "none"
+  - from: "server"
+    bytes:
+      - "4f 4b 0d 0a"
+    expect:
+      attributes:
+        - name: "user"
+          value: "61 6c 69 63 65"
+```
+
+- `session.through` is the connection, `tcp` with the server's port
+  (`dport`) and optionally the client's (`sport`); `protocol` and
+  `proto_id` are the plugin's.
+- `session.attributes` lists attributes every packet of the plugin's
+  checks: one a packet does not list must be absent there.
+- Each step of `packets` is `open: true` (the three-way handshake),
+  `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
+  segment `from` the client or the server, its TCP payload in `bytes`
+  (none: a pure ACK), with `retransmit: true` to send it again at that
+  side's previous sequence number, `lost: N` for bytes the capture
+  lost before it, or `back: N` to send it `N` bytes before that side's
+  next sequence number (a segment that arrives late, or one sent over
+  bytes already sent; at most `N` bytes).
+- A segment's `expect` is `"none"` when it must not be your protocol's
+  packet, or the attributes it reports, as in a packet test (`offset`
+  and `length` are optional here, and so is `type` for an attribute the
+  session lists). Without `expect`, the segment is your protocol's with
+  every attribute of `session.attributes` absent. The packets of `open`
+  and `idle` steps must not be your protocol's.
+
+Every packet of your protocol's must be classified directly above TCP
+(`<parent>`). A session test is one entry of `result.packets`, with
+`session` (its packet count), and each failure names its step
+(`packet`, the index in `packets`). With `--sanitize`, `test` runs the
+session under the sanitizers as it is, then corrupted copies of it
+(payload bytes changed, segments cut short) until they make
+`--fuzz-count` packets; `--bench` measures the packet tests only. The
+format is in
+[`tests/corpus/README.md`](../tests/corpus/README.md#session-files);
+`examples/websocket/tests/session-*.yaml` and
+`examples/ocpp/tests/session-*.yaml` are session tests of the example
+projects.
+
 ## Install the plugin
 
 `install` copies `mmtp_demo.so` into `<prefix>/plugins/` and records it in
@@ -392,6 +487,67 @@ installed, unless you pass `--force`, and refuses a plugin whose id or name
 another installed plugin has (exit 3). `uninstall` removes only the files
 whose hash is still the one it recorded.
 
+## Use the plugin in mmt-security rules
+
+[mmt-security](https://github.com/Montimage/mmt-security) rules, which
+mmt-probe's security module runs, can test the attributes of a plugin's
+protocol. Two things differ from rules on the built-in protocols.
+
+**mmt-security must be built with the plugin installed.** It does not look
+protocols up at run time: its `make gen_dpi` writes `src/dpi/mmt_dpi.h`
+from the protocols mmt-dpi loads while mmt-security is built, and
+`compile_rule`, `libmmt_security2` and mmt-probe use that table. Install
+the plugin first, into the plugin directory mmt-dpi scans (above: `doctor`
+reports it; for a private one, `MMT_DPI_PLUGINS_DIR` must name it for the
+build too), then rebuild mmt-security from a clean tree in its checkout
+(`clean-all` removes the old header; `make install` writes
+`$MMT_BASE/security`, `/opt/mmt/security` by default):
+
+<!-- doc:skip needs an mmt-security checkout and its build dependencies -->
+```sh
+make clean-all && make && make install
+```
+
+With a build made without the plugin, `compile_rule` stops on a rule that
+names its protocol with `Protocol OCPP_EXAMPLE has not implemented yet`,
+even though mmt-probe loads the plugin and reports its attributes. The
+table holds the plugin's protocol id and attribute ids, so the probe must
+load the same `.so` at run time (from the plugin directory mmt-dpi scans),
+and mmt-security is rebuilt, and the rules compiled again, when the
+plugin's id or attributes change.
+
+**A rule names the protocol by its registered name, the label
+upper-cased:** `<LABEL>.<attribute>`, so `OCPP_EXAMPLE.action` for the
+label `ocpp_example`, `DEMO.kind` for this guide's `demo`. mmt-security
+compares names case-sensitively (`strcmp`); mmt-probe's reports go
+through mmt-dpi's lookup, which ignores case, so `ocpp_example.action`
+works there and not in a rule. The built-in protocols are lower case
+(`tcp.dest_port`), the plugins' upper case. An event of the OCPP example's
+rule `231.ocpp_charging_limit.xml`:
+
+```text
+<event description="OCPP SetChargingProfile CALL with a limit above the maximum"
+    boolean_expression="((OCPP_EXAMPLE.message_type_id == 2) &amp;&amp; ((OCPP_EXAMPLE.action == 'SetChargingProfile') &amp;&amp; (#em_ocpp_limit_too_high(OCPP_EXAMPLE.charging_limit_x10, OCPP_EXAMPLE.charging_rate_unit) == 1)))"/>
+```
+
+Compile the rule with mmt-security's `compile_rule`, then check with
+`rule_info` that its names were resolved: it lists each variable as
+`proto.att (proto_id.att_id)`, here `OCPP_EXAMPLE.action (993.3)` among
+them (993 is the plugin's id):
+
+<!-- doc:skip needs an mmt-security build with the OCPP example installed -->
+```sh
+./compile_rule rules/231.ocpp_charging_limit.so rules/properties_all/231.ocpp_charging_limit.xml
+./rule_info rules/231.ocpp_charging_limit.so
+```
+
+The OCPP example's two rules, `230.ocpp_heartbeat_flood.xml` and
+`231.ocpp_charging_limit.xml`, are proposed in
+[Montimage/mmt-security#25](https://github.com/Montimage/mmt-security/pull/25)
+(#97); its `doc/rule.md`, "Rules on a protocol plugin", is the
+mmt-security side of this section. Rules on plugins are not compiled by
+mmt-security's `make sample_rules`: compile them by hand, as above.
+
 ## Draft a model from a capture
 
 `scaffold --from-pcap` reads a pcap or pcapng capture, takes the payloads
@@ -402,11 +558,73 @@ one packet test per payload (`tests/<label>-pcap-<n>.yaml`, at most
 that every payload has, named `field_<offset>` (a length field is named
 `length`), with a comment saying what it saw. It never edits `plugin.yaml`.
 
+A byte whose bits vary independently (a flag that is set with several
+values of the rest of the byte, or one that the two directions of a
+connection set to opposite values beside bits that vary within a
+direction, such as WebSocket's MASK) is proposed as bit fields, `field_<offset>_b<bit>` (bits
+counted from the most significant), in a struct `bits_<offset>`. A byte
+whose varying bits form one number stays one field, and so does a byte
+that is constant within each direction (a per-flow identifier such as
+RTP's SSRC).
+
+With a TCP parent (`tcp:port=80`), `scaffold` follows each direction of
+each connection as a stream: the payloads are the segments' bytes in
+sequence order, a retransmitted segment is skipped and only the new bytes of
+an overlapping one are kept, and a segment after bytes the capture lacks is
+skipped (`gap`). Each payload is still what one segment carries: several
+messages in one segment, or one message over several, are not split or
+joined. `--skip-until HEX` skips each direction's bytes up to the end of a
+byte pattern, in every session: after an HTTP upgrade (WebSocket),
+`0d0a0d0a` skips the request and the answer, and a frame in the answer's
+segment becomes a payload of its own. A direction that never sends the
+pattern gives no payload.
+
+<!-- doc:skip needs a capture of a WebSocket session -->
+```sh
+mmt-plugin -C ws scaffold --from-pcap websocket.pcap --parent tcp:port=80 --skip-until 0d0a0d0a
+```
+
 <!-- doc:run no-sdk -->
 ```sh
 mmt-plugin init capture --id 961 --parent udp:dport=4433 --sdk-profile 1.10.2
 mmt-plugin -C capture scaffold --from-pcap tests/unit/scaffold/data/demo-tcpdump.pcap --parent udp:dport=4433
 ```
+
+### Draft from tshark's dissection
+
+When tshark (Wireshark's command line) knows the protocol, `--tshark`
+drafts the proposal from its dissection instead: `scaffold` runs tshark on
+the frames it read (`tshark -n -r PCAP -c N -T pdml`, TCP reassembly off,
+so each segment is dissected where it is), takes the protocol tshark
+dissects at the start of the payloads, and maps each of its fields that
+every payload has at the same offset to an attribute named after it
+(`dns.flags.response` is `flags_response`): an unsigned integer in network
+byte order (`MMT_U8_DATA` to `MMT_U64_DATA`), a bit field (a field with a
+bitmask, in a struct `bits_<offset>` of its 1-, 2- or 4-byte unit), an
+IPv4, IPv6 or MAC address, or bytes up to 64 (`MMT_BINARY_DATA`). A
+comment names each other field and why it is not proposed (in some
+payloads only, a length tshark computes, a signed or little-endian
+integer). The packet tests, one per payload tshark dissects, expect the
+values tshark decodes, and the proposal extracts them.
+
+When tshark dissects several protocols at the start of the payloads (an
+HTTP upgrade, then WebSocket), `scaffold` lists them and stops: choose one
+with `--protocol`. A protocol on a port tshark does not know needs a
+`--decode-as` rule, passed to tshark as `-d`: tshark runs without your
+Wireshark profile (preferences, decode-as entries, disabled protocols), so
+the draft is the same on every machine. Without tshark on `PATH`
+the command stops with `sdk.tshark-not-found` (exit 4), and without a
+dissector for the payloads with `model.no-dissector` (exit 3); nothing is
+written in either case.
+
+<!-- doc:skip needs tshark on PATH and the captures it names -->
+```sh
+mmt-plugin -C dns scaffold --from-pcap dns.pcap --parent udp:port=53 --tshark
+mmt-plugin -C ws scaffold --from-pcap websocket.pcap --parent tcp:port=80 --tshark --protocol websocket
+mmt-plugin -C demo scaffold --from-pcap capture.pcap --parent udp:port=4433 --tshark --decode-as udp.port==4433,dns
+```
+
+### Use the proposal
 
 The packet tests expect what the proposal extracts, so they pass against it.
 Rename the fields after the protocol's specification (in the model and in
@@ -425,6 +643,99 @@ mmt-plugin -C capture validate --no-sdk --sdk-profile 1.10.2
 ```sh
 mmt-plugin -C capture test
 ```
+
+## Run the plugin over a capture
+
+`run` shows what the plugin does on real traffic. It builds the plugin when
+it is stale, then runs it over a pcap or pcapng capture through mmt-dpi's
+own stack, with the SDK's plugins (`<sdk>/plugins/*.so`): nothing attaches
+it, so your parent classification (the generated `classify`, or
+`<label>_hook_register_parents`) must find its packets. It reports the
+protocol paths mmt-dpi gave the packets, with their counts, and, for each
+attribute of the plugin's protocol, how many of its packets have it:
+
+<!-- doc:run sdk -->
+```sh
+mmt-plugin -C demo run tests/unit/scaffold/data/demo-tcpdump.pcap
+mmt-plugin -C demo --json run tests/unit/scaffold/data/demo-tcpdump.pcap --strict > run.json
+python3 -c 'import json; r = json.load(open("run.json"))["result"]; print(r["summary"]["classified"], [p["path"] for p in r["paths"]])'
+```
+
+- `--plugin FILE` loads another plugin too, such as the one your protocol
+  sits on (one with the name of an SDK plugin replaces it); `--protocol
+  NAME` also counts that protocol's attributes:
+  `mmt-plugin -C examples/ocpp run ocpp.pcap --plugin
+  examples/websocket/build/mmtp_websocket_example.so --protocol
+  websocket_example`.
+- `--max-packets N` stops after the first N frames; `--timeout SECONDS`
+  stops a run that takes longer (a crash, exit 6).
+- The capture is read one frame at a time and the counts are bounded (at
+  most 1024 paths, the packets of the others in `result.paths_other`), so a
+  capture of several gigabytes runs in the same memory as a small one.
+  Frames keep their time stamps, so mmt-dpi expires sessions as it would
+  on the wire.
+- mmt-dpi 1.10.2 reads Ethernet and Linux cooked captures (`tcpdump -i
+  any`); a capture whose first frame has another link type is
+  `model.unsupported-linktype` (exit 3). It reads one link type per run,
+  the first frame's: frames of another one are counted in
+  `summary.skipped` (`test.other-linktype`).
+- No packet of the plugin's protocol is the warning `test.no-match`; a
+  plugin that does not load is `test.load-failed`, and a crash or a
+  `--timeout` is `test.crash` (exit 6): a crash names its frame, and the
+  counts of a run that stopped are only the frames before; a capture broken after its header is
+  `model.bad-pcap` (exit 3), reported with the counts of the frames before.
+  `--strict` fails on a warning.
+
+The runner is generated into `<build-dir>/run/` and loads the plugins from
+a directory of its own (`MMT_DPI_PLUGINS_DIR`), never the host's.
+
+## Check the plugin against tshark
+
+Packet tests check the values you wrote down; a capture shows whether the
+plugin agrees with another dissector on real traffic. Before you accept a
+plugin, run it over a capture of its protocol and compare what it
+classifies and extracts with tshark, the reference tool: every difference
+is a drift, to fix or to accept with a reason. The agent skill's
+`pcap_eval.py` does it (it needs a C compiler, the libpcap headers,
+`libpcap-dev`, and tshark):
+
+<!-- doc:run no-sdk -->
+```sh
+python3 skills/mmt-plugin-generator/scripts/pcap_eval.py --help
+```
+
+<!-- doc:skip needs tshark, libpcap-dev and a capture of the protocol -->
+```sh
+python3 skills/mmt-plugin-generator/scripts/pcap_eval.py --sdk <prefix> \
+    --plugin demo/build/mmtp_demo.so --label demo --parent udp:dport=4433 \
+    --capture demo.pcap --out demo-eval --field length=<tshark field>
+```
+
+It runs the capture through mmt-dpi without and with the plugin, then
+compares with tshark:
+
+- `missed`: frames tshark's filter for the parent selects (by default the
+  frames with a payload on the parent's port, EtherType or IP protocol)
+  that the plugin does not classify;
+- `foreign`: frames the plugin classifies outside that traffic;
+- each `--field <attribute>=<tshark field>`: the frames where the
+  attribute's value differs from tshark's field (`--decode-as` gives
+  tshark a dissector for an unusual port).
+
+`demo-eval/report.md` lists each drift and `demo-eval/drift.jsonl` each of
+its frames. Judge each one from the protocol's spec: when the plugin is
+wrong, it is a defect: write the frame's bytes as a packet test with the
+spec's values and fix the model. When tshark is wrong, or describes the
+field otherwise (another unit, a masked value), accept it with
+`--accept <key>=<reason>` (`<key>` an attribute, `missed` or `foreign`):
+it stays in the report, with the reason. The script exits 1 (FAIL) on any
+problem, a drift not accepted among them, and 0 when there is none.
+
+tshark is the only reference tool supported. Without it the evaluation
+still runs, but the drift is not checked: the report says so, and
+`--field` is an error. The
+[skill's evaluation guide](../skills/mmt-plugin-generator/references/evaluation.md#drift-against-tshark)
+has the details.
 
 ## Start from a PDL v1 model
 

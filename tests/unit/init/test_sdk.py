@@ -7,9 +7,10 @@ no ``--model``, since the project's ``plugin.yaml`` is the default model and
 pins the profile) builds the project (generate, compile with ``-Wall
 -Wextra -Werror``, link) and runs its packet test: exit 0, every packet
 passing, also under ``--sanitize``. A second ``init`` is a no-op. With a
-``--parent`` the generated code can attach (an EtherType, a UDP port), the
-packet test also runs ``through`` it, so the generated classification must
-find the protocol in a whole frame; a broken one fails that run (#65).
+``--parent`` the generated code can attach (an EtherType, a UDP port, TCP
+ports), the packet test also runs ``through`` it, so the generated
+classification must find the protocol in a whole frame; a broken one fails
+that run (#65, #100).
 The SDK is an extracted mmt-dpi package, a private prefix (never
 ``/opt/mmt``)::
 
@@ -139,10 +140,37 @@ def test_init_with_a_classified_parent_tests_green_through_it(
     assert failed == [(None, "pass"), (parent, "fail")]
 
 
+@pytest.mark.parametrize("parent", ["tcp:port=4840", "tcp:sport=1,dport=4840"])
+def test_init_with_a_tcp_parent_tests_green_through_its_ports(
+    work: Path, capsys: pytest.CaptureFixture[str], parent: str
+) -> None:
+    code, doc = _json(capsys, "init", "demo4", "--id", "979", "--parent", parent)
+    assert code == 0, doc["error"]
+    assert doc["diagnostics"] == []
+    argv = doc["result"]["next"][1:]
+    code, doc = _json(capsys, *argv, "--sanitize", "--fuzz-count", "20")
+    assert code == 0, doc["error"]
+    packets = doc["result"]["packets"]
+    assert [(p.get("through"), p["status"]) for p in packets] == [(None, "pass"), (parent, "pass")]
+    assert doc["result"]["sanitize"]["crashes"] == []
+
+    # The through run tests the generated classification by port: another
+    # port fails it, and only it.
+    model = work / "demo4" / "plugin.yaml"
+    text = model.read_text()
+    assert "port: 4840\n" in text
+    model.write_text(text.replace("port: 4840\n", "port: 4841\n"))
+    code, doc = _json(capsys, *argv)
+    assert code == 6
+    assert doc["error"]["code"] == "test.packet-failed"
+    failed = [(p.get("through"), p["status"]) for p in doc["result"]["packets"]]
+    assert failed == [(None, "pass"), (parent, "fail")]
+
+
 def test_init_with_a_hook_parent_tests_green(
     work: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, doc = _json(capsys, "init", "demo3", "--id", "978", "--parent", "tcp:port=102")
+    code, doc = _json(capsys, "init", "demo3", "--id", "978", "--parent", "udp:port=4433")
     assert code == 0, doc["error"]
     code, doc = _json(capsys, *doc["result"]["next"][1:])
     assert code == 0, doc["error"]

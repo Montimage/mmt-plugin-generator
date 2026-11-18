@@ -1,0 +1,334 @@
+F	Length	dns.length	FT_UINT16	dns	BASE_DEC	0x0	Length of DNS-over-TCP request or response
+F	Flags	dns.flags	FT_UINT16	dns	BASE_HEX	0x0	
+F	Response	dns.flags.response	FT_BOOLEAN	dns	16	0x8000	Is the message a response?
+F	Opcode	dns.flags.opcode	FT_UINT16	dns	BASE_DEC	0x7800	Operation code
+F	Authoritative	dns.flags.authoritative	FT_BOOLEAN	dns	16	0x400	Is the server is an authority for the domain?
+F	Conflict	dns.flags.conflict	FT_BOOLEAN	dns	16	0x400	Did we receive multiple responses to a query?
+F	Truncated	dns.flags.truncated	FT_BOOLEAN	dns	16	0x200	Is the message truncated?
+F	Recursion desired	dns.flags.recdesired	FT_BOOLEAN	dns	16	0x100	Do query recursively?
+F	Tentative	dns.flags.tentative	FT_BOOLEAN	dns	16	0x100	Is the responder authoritative for the name, but not yet verified the uniqueness?
+F	Recursion available	dns.flags.recavail	FT_BOOLEAN	dns	16	0x80	Can the server do recursive queries?
+F	Z	dns.flags.z	FT_BOOLEAN	dns	16	0x40	Z flag
+F	Answer authenticated	dns.flags.authenticated	FT_BOOLEAN	dns	16	0x20	Was the reply data authenticated by the server?
+F	Non-authenticated data	dns.flags.checkdisable	FT_BOOLEAN	dns	16	0x10	Is non-authenticated data acceptable?
+F	Reply code	dns.flags.rcode	FT_UINT16	dns	BASE_DEC	0xf	
+F	Transaction ID	dns.id	FT_UINT16	dns	BASE_HEX	0x0	Identification of transaction
+F	Type	dns.qry.type	FT_UINT16	dns	BASE_DEC	0x0	Query Type
+F	Class	dns.qry.class	FT_UINT16	dns	BASE_HEX	0x0	Query Class
+F	"QU" question	dns.qry.qu	FT_BOOLEAN	dns	16	0x8000	QU flag
+F	Name	dns.qry.name	FT_STRING	dns		0x0	Query Name
+F	Name Length	dns.qry.name.len	FT_UINT16	dns	BASE_DEC	0x0	Query Name Len
+F	Label Count	dns.count.labels	FT_UINT16	dns	BASE_DEC	0x0	Query Label Count
+F	Type	dns.resp.type	FT_UINT16	dns	BASE_DEC	0x0	Response Type
+F	Class	dns.resp.class	FT_UINT16	dns	BASE_HEX	0x0	Response Class
+F	Cache flush	dns.resp.cache_flush	FT_BOOLEAN	dns	16	0x8000	Cache flush flag
+F	Higher bits in extended RCODE	dns.resp.ext_rcode	FT_UINT8	dns	BASE_HEX	0x0	
+F	EDNS0 version	dns.resp.edns0_version	FT_UINT8	dns	BASE_DEC	0x0	
+F	Z	dns.resp.z	FT_UINT16	dns	BASE_HEX	0x0	
+F	DO bit	dns.resp.z.do	FT_BOOLEAN	dns	16	0x8000	DNSSEC OK
+F	Reserved	dns.resp.z.reserved	FT_UINT16	dns	BASE_HEX	0x7fff	
+F	Instance	dns.srv.instance	FT_STRING	dns		0x0	Desired service instance
+F	Service	dns.srv.service	FT_STRING	dns		0x0	Desired service
+F	Protocol	dns.srv.proto	FT_STRING	dns		0x0	Desired protocol
+F	Name	dns.srv.name	FT_STRING	dns		0x0	Domain this resource record refers to
+F	Priority	dns.srv.priority	FT_UINT16	dns	BASE_DEC	0x0	
+F	Weight	dns.srv.weight	FT_UINT16	dns	BASE_DEC	0x0	
+F	Port	dns.srv.port	FT_UINT16	dns	BASE_DEC	0x0	
+F	Target	dns.srv.target	FT_STRING	dns		0x0	
+F	Order	dns.naptr.order	FT_UINT16	dns	BASE_DEC	0x0	
+F	Preference	dns.naptr.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Flags Length	dns.naptr.flags_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Flags	dns.naptr.flags	FT_STRING	dns		0x0	
+F	Service Length	dns.naptr.service_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Service	dns.naptr.service	FT_STRING	dns		0x0	
+F	Regex Length	dns.naptr.regex_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Regex	dns.naptr.regex	FT_STRING	dns		0x0	
+F	Replacement Length	dns.naptr.replacement_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Replacement	dns.naptr.replacement	FT_STRING	dns		0x0	
+F	Name	dns.resp.name	FT_STRING	dns		0x0	Response Name
+F	Time to live	dns.resp.ttl	FT_UINT32	dns	BASE_DEC	0x0	Response TTL
+F	Data length	dns.resp.len	FT_UINT16	dns	BASE_DEC	0x0	Response Length
+F	Address	dns.a	FT_IPv4	dns		0x0	Response IPv4 Address
+F	Chaos Domain	dns.a.ch.domain	FT_STRING	dns		0x0	Response Chaos Domain
+F	Chaos Address	dns.a.ch.addr	FT_UINT16	dns	BASE_OCT	0x0	Response Chaos Address
+F	Mail Destination	dns.md	FT_STRING	dns		0x0	
+F	Mail Forwarder	dns.mf	FT_STRING	dns		0x0	
+F	MailBox Domain	dns.mb	FT_STRING	dns		0x0	
+F	Mail Group member	dns.mg	FT_STRING	dns		0x0	
+F	Mail Rename domain	dns.mr	FT_STRING	dns		0x0	
+F	Null (data)	dns.null	FT_BYTES	dns		0x0	
+F	AAAA Address	dns.aaaa	FT_IPv6	dns		0x0	AAAA Response Address
+F	CNAME	dns.cname	FT_STRING	dns		0x0	Response Primary Name
+F	UDP payload size	dns.rr.udp_payload_size	FT_UINT16	dns	BASE_HEX	0x7fff	
+F	Primary name server	dns.soa.mname	FT_STRING	dns		0x0	
+F	Responsible authority's mailbox	dns.soa.rname	FT_STRING	dns		0x0	
+F	Serial Number	dns.soa.serial_number	FT_UINT32	dns	BASE_DEC	0x0	
+F	Refresh Interval	dns.soa.refresh_interval	FT_UINT32	dns	BASE_DEC	0x0	
+F	Retry Interval	dns.soa.retry_interval	FT_UINT32	dns	BASE_DEC	0x0	
+F	Expire limit	dns.soa.expire_limit	FT_UINT32	dns	BASE_DEC	0x0	
+F	Minimum TTL	dns.soa.minimum_ttl	FT_UINT32	dns	BASE_DEC	0x0	
+F	Domain Name	dns.ptr.domain_name	FT_STRING	dns		0x0	
+F	Address	dns.wks.address	FT_IPv4	dns		0x0	
+F	Protocol	dns.wks.protocol	FT_UINT8	dns	BASE_DEC	0x0	
+F	Bits	dns.wks.bits	FT_UINT8	dns	BASE_HEX	0x0	
+F	CPU Length	dns.hinfo.cpu_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	CPU	dns.hinfo.cpu	FT_STRING	dns		0x0	
+F	OS Length	dns.hinfo.os_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	OS	dns.hinfo.os	FT_STRING	dns		0x0	
+F	Responsible Mailbox	dns.minfo.r	FT_STRING	dns		0x0	
+F	Error Mailbox	dns.minfo.e	FT_STRING	dns		0x0	
+F	Preference	dns.mx.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Mail Exchange	dns.mx.mail_exchange	FT_STRING	dns		0x0	
+F	TXT Length	dns.txt.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	TXT	dns.txt	FT_STRING	dns		0x0	
+F	OpenPGP Key	dns.openpgpkey	FT_STRING	dns		0x0	
+F	SOA	dns.csync.soa	FT_UINT32	dns	BASE_DEC	0x0	
+F	Flags	dns.csync.flags	FT_UINT16	dns	BASE_HEX	0x0	
+F	immediate	dns.csync.flags.immediate	FT_BOOLEAN	dns	16	0x1	
+F	soaminimum	dns.csync.flags.soaminimum	FT_BOOLEAN	dns	16	0x2	
+F	Type Bitmap	dns.csync.type_bitmap	FT_BYTES	dns		0x0	
+F	Serial	dns.zonemd.serial	FT_UINT32	dns	BASE_DEC	0x0	
+F	Scheme	dns.zonemd.scheme	FT_UINT8	dns	BASE_DEC	0x0	
+F	Hash Algorithm	dns.zonemd.hash_algo	FT_UINT8	dns	BASE_DEC	0x0	
+F	Digest	dns.zonemd.digest	FT_BYTES	dns		0x0	
+F	SvcPriority	dns.svcb.svcpriority	FT_UINT16	dns	BASE_DEC	0x0	
+F	TargetName	dns.svcb.targetname	FT_STRING	dns		0x0	
+F	SvcParamKey	dns.svcb.svcparam.key	FT_UINT16	dns	BASE_DEC	0x0	
+F	SvcParamValue length	dns.svcb.svcparam.value.length	FT_UINT16	dns	BASE_DEC	0x0	
+F	SvcParamValue	dns.svcb.svcparam.value	FT_BYTES	dns		0x0	
+F	SvcParam	dns.svcb.svcparam	FT_NONE	dns		0x0	
+F	Mandatory key	dns.svcb.svcparam.mandatory.key	FT_UINT16	dns	BASE_DEC	0x0	Mandatory keys in this RR
+F	ALPN length	dns.svcb.svcparam.alpn.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	ALPN	dns.svcb.svcparam.alpn	FT_STRING	dns		0x0	Additional supported protocols
+F	Port	dns.svcb.svcparam.port	FT_UINT16	dns	BASE_DEC	0x0	Port for alternative endpoint
+F	IP	dns.svcb.svcparam.ipv4hint.ip	FT_IPv4	dns		0x0	IPv4 address hints
+F	IP	dns.svcb.svcparam.ipv6hint.ip	FT_IPv6	dns		0x0	IPv6 address hints
+F	DoH path	dns.svcb.svcparam.dohpath	FT_STRING	dns		0x0	DoH URI template
+F	ODoHConfig	dns.svcb.svcparam.odohconfig	FT_BYTES	dns		0x0	Oblivious DoH keys
+F	SPF Length	dns.spf.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	SPF	dns.spf	FT_STRING	dns		0x0	
+F	Preference	dns.ilnp.nid.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	NodeID	dns.ilnp.nid	FT_BYTES	dns		0x0	
+F	Preference	dns.ilnp.l32.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Locator32	dns.ilnp.l32	FT_IPv4	dns		0x0	
+F	Preference	dns.ilnp.l64.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Locator64	dns.ilnp.l64	FT_BYTES	dns		0x0	
+F	Preference	dns.ilnp.lp.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Locator FQDN	dns.ilnp.lp	FT_STRING	dns		0x0	
+F	EUI48 Address	dns.eui48	FT_ETHER	dns		0x0	
+F	EUI64 Address	dns.eui64	FT_EUI64	dns		0x0	
+F	Type Covered	dns.rrsig.type_covered	FT_UINT16	dns	BASE_DEC	0x0	Identifies the type of the RRset that is covered by this RRSIG record
+F	Algorithm	dns.rrsig.algorithm	FT_UINT8	dns	BASE_DEC	0x0	Identifies the cryptographic algorithm used to create the signature
+F	Labels	dns.rrsig.labels	FT_UINT8	dns	BASE_DEC	0x0	Specifies the number of labels in the original RRSIG RR owner name
+F	Original TTL	dns.rrsig.original_ttl	FT_UINT32	dns	BASE_DEC	0x0	Specifies the TTL of the covered RRset as it appears in the authoritative zone
+F	Signature Expiration	dns.rrsig.signature_expiration	FT_ABSOLUTE_TIME	dns		0x0	Specify a validity period for the signature
+F	Signature Inception	dns.rrsig.signature_inception	FT_ABSOLUTE_TIME	dns		0x0	Specify a validity period for the signature
+F	Key Tag	dns.rrsig.key_tag	FT_UINT16	dns	BASE_DEC	0x0	Contains the key tag value of the DNSKEY RR that validates this signature
+F	Signer's name	dns.rrsig.signers_name	FT_STRING	dns		0x0	Identifies the owner name of the DNSKEY RR that a validator is supposed to use to validate this signature
+F	Signature	dns.rrsig.signature	FT_BYTES	dns		0x0	Contains the cryptographic signature that covers the RRSIG RDATA
+F	Flags	dns.dnskey.flags	FT_UINT16	dns	BASE_HEX	0x0	
+F	Zone Key	dns.dnskey.flags.zone_key	FT_BOOLEAN	dns	16	0x100	
+F	Key Revoked	dns.dnskey.flags.key_revoked	FT_BOOLEAN	dns	16	0x80	
+F	Key Signing Key	dns.dnskey.flags.secure_entry_point	FT_BOOLEAN	dns	16	0x1	
+F	Key Signing Key	dns.dnskey.flags.reserved	FT_UINT16	dns	BASE_HEX	0xfe7e	Must be zero
+F	Protocol	dns.dnskey.protocol	FT_UINT8	dns	BASE_DEC	0x0	Must be 3
+F	Algorithm	dns.dnskey.algorithm	FT_UINT8	dns	BASE_DEC	0x0	Identifies the public key's cryptographic algorithm and determines the format of the Public Key field
+F	Key id	dns.dnskey.key_id	FT_UINT16	dns	BASE_DEC	0x0	
+F	Public Key	dns.dnskey.public_key	FT_BYTES	dns		0x0	
+F	Flags	dns.key.flags	FT_UINT16	dns	BASE_HEX	0x0	
+F	Key allowed for authentication	dns.key.flags.authentication	FT_BOOLEAN	dns	16	0x8000	
+F	Key allowed for confidentiality	dns.key.flags.confidentiality	FT_BOOLEAN	dns	16	0x4000	
+F	Key required	dns.key.flags.required	FT_BOOLEAN	dns	16	0x2000	
+F	Key is associated with a user	dns.key.flags.associated_user	FT_BOOLEAN	dns	16	0x400	
+F	Key is associated with the named entity	dns.key.flags.associated_named_entity	FT_BOOLEAN	dns	16	0x200	
+F	Key use with IPSEC	dns.key.flags.ipsec	FT_BOOLEAN	dns	16	0x80	
+F	Key use with MIME security multiparts	dns.key.flags.mime	FT_BOOLEAN	dns	16	0x40	
+F	Signatory	dns.key.flags.signatory	FT_UINT16	dns	BASE_DEC	0xf	
+F	Protocol	dns.key.protocol	FT_UINT8	dns	BASE_DEC	0x0	
+F	Algorithm	dns.key.algorithm	FT_UINT8	dns	BASE_DEC	0x0	
+F	Key ID	dns.key.key_id	FT_UINT16	dns	BASE_DEC	0x0	
+F	Public Key	dns.key.public_key	FT_BYTES	dns		0x0	
+F	Preference	dns.px.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	MAP822	dns.px.map822	FT_STRING	dns		0x0	
+F	MAPX400	dns.px.map400	FT_STRING	dns		0x0	
+F	Algorithm name	dns.tkey.algo_name	FT_STRING	dns		0x0	
+F	Signature Expiration	dns.tkey.signature_expiration	FT_ABSOLUTE_TIME	dns		0x0	Specify a validity period for the signature
+F	Signature Inception	dns.tkey.signature_inception	FT_ABSOLUTE_TIME	dns		0x0	Specify a validity period for the signature
+F	Mode	dns.tkey.mode	FT_UINT16	dns	BASE_DEC	0x0	
+F	Error	dns.tkey.error	FT_UINT16	dns	BASE_DEC	0x0	
+F	Key Size	dns.tkey.key_size	FT_UINT16	dns	BASE_DEC	0x0	
+F	Key Data	dns.tkey.key_data	FT_BYTES	dns		0x0	
+F	Other Size	dns.tkey.other_size	FT_UINT16	dns	BASE_DEC	0x0	
+F	Other Data	dns.tkey.other_data	FT_BYTES	dns		0x0	
+F	Gateway Precedence	dns.ipseckey.gateway_precedence	FT_UINT8	dns	BASE_DEC	0x0	
+F	Gateway Algorithm	dns.ipseckey.gateway_algorithm	FT_UINT8	dns	BASE_DEC	0x0	
+F	Gateway Type	dns.ipseckey.gateway_type	FT_UINT8	dns	BASE_DEC	0x0	
+F	IPv4 Gateway	dns.ipseckey.gateway_ipv4	FT_IPv4	dns		0x0	
+F	IPv6 Gateway	dns.ipseckey.gateway_ipv6	FT_IPv6	dns		0x0	
+F	DNS Gateway	dns.ipseckey.gateway_dns	FT_STRING	dns		0x0	
+F	Public Key	dns.ipseckey.public_key	FT_BYTES	dns		0x0	
+F	IP Version	dns.xpf.ip_version	FT_UINT16	dns	BASE_DEC	0x0	
+F	Protocol	dns.xpf.protocol	FT_UINT8	dns	BASE_DEC	0x0	
+F	IPv4 Source	dns.xpf.source_ipv4	FT_IPv4	dns		0x0	
+F	IPv4 Destination	dns.xpf.destination_ipv4	FT_IPv4	dns		0x0	
+F	IPv6 Source	dns.xpf.source_ipv6	FT_IPv6	dns		0x0	
+F	IPv6 Destination	dns.xpf.destination_ipv6	FT_IPv6	dns		0x0	
+F	Source port	dns.xpf.sport	FT_UINT16	dns	BASE_DEC	0x0	
+F	Destination port	dns.xpf.dport	FT_UINT16	dns	BASE_DEC	0x0	
+F	Prefix len	dns.a6.prefix_len	FT_UINT8	dns	BASE_DEC	0x0	
+F	Address Suffix	dns.a6.address_suffix	FT_IPv6	dns		0x0	
+F	Prefix name	dns.a6.prefix_name	FT_STRING	dns		0x0	
+F	Dname	dns.dname	FT_STRING	dns		0x0	
+F	Version	dns.loc.version	FT_UINT8	dns	BASE_DEC	0x0	
+F	Size	dns.loc.size	FT_UINT8	dns	BASE_DEC	0x0	
+F	Horizontal Precision	dns.loc.horizontal_precision	FT_UINT8	dns	BASE_DEC	0x0	
+F	Vertical Precision	dns.loc.vertical_precision	FT_UINT8	dns	BASE_DEC	0x0	
+F	Latitude	dns.loc.latitude	FT_UINT32	dns	BASE_DEC	0x0	
+F	Longitude	dns.loc.longitude	FT_UINT32	dns	BASE_DEC	0x0	
+F	Altitude	dns.loc.altitude	FT_UINT32	dns	BASE_DEC	0x0	
+F	Unknown data	dns.loc.unknown_data	FT_BYTES	dns		0x0	
+F	Next Domain Name	dns.nxt.next_domain_name	FT_STRING	dns		0x0	
+F	Preference	dns.kx.preference	FT_UINT16	dns	BASE_DEC	0x0	
+F	Key Exchange	dns.kx.key_exchange	FT_STRING	dns		0x0	
+F	Type	dns.cert.type	FT_UINT16	dns	BASE_DEC	0x0	
+F	Key Tag	dns.cert.key_tag	FT_UINT16	dns	BASE_HEX	0x0	
+F	Algorithm	dns.cert.algorithm	FT_UINT8	dns	BASE_DEC	0x0	
+F	Certificate (or CRL)	dns.cert.certificate	FT_BYTES	dns		0x0	
+F	Next Domain Name	dns.nsec.next_domain_name	FT_STRING	dns		0x0	
+F	Name Server	dns.ns	FT_STRING	dns		0x0	
+F	Option	dns.opt	FT_NONE	dns		0x0	
+F	Option Code	dns.opt.code	FT_UINT16	dns	BASE_DEC	0x0	
+F	Option Length	dns.opt.len	FT_UINT16	dns	BASE_DEC	0x0	
+F	Option Data	dns.opt.data	FT_BYTES	dns		0x0	
+F	DAU	dns.opt.dau	FT_UINT8	dns	BASE_DEC	0x0	DNSSEC Algorithm Understood
+F	DHU	dns.opt.dhu	FT_UINT8	dns	BASE_DEC	0x0	DS Hash Understood
+F	N3U	dns.opt.n3u	FT_UINT8	dns	BASE_DEC	0x0	NSEC3 Hash Understood
+F	Family	dns.opt.client.family	FT_UINT16	dns	BASE_DEC	0x0	
+F	Source Netmask	dns.opt.client.netmask	FT_UINT8	dns	BASE_DEC	0x0	
+F	Scope Netmask	dns.opt.client.scope	FT_UINT8	dns	BASE_DEC	0x0	
+F	Client Subnet	dns.opt.client.addr	FT_BYTES	dns		0x0	
+F	Client Subnet	dns.opt.client.addr4	FT_IPv4	dns		0x0	
+F	Client Subnet	dns.opt.client.addr6	FT_IPv6	dns		0x0	
+F	Client Cookie	dns.opt.cookie.client	FT_BYTES	dns		0x0	
+F	Server Cookie	dns.opt.cookie.server	FT_BYTES	dns		0x0	
+F	Timeout	dns.opt.edns_tcp_keepalive.timeout	FT_UINT16	dns	BASE_DEC	0x0	an idle timeout value for the TCP connection, specified in units of 100 milliseconds
+F	Padding	dns.opt.padding	FT_BYTES	dns		0x0	The PADDING octets SHOULD be set to 0x00
+F	Closest Trust Point	dns.opt.chain.fqdn	FT_STRING	dns		0x0	A variable length Fully Qualified Domain Name (FQDN) in DNS wire format of the requested start point of the chain
+F	Info Code	dns.opt.ext_error.info_code	FT_UINT16	dns	BASE_DEC	0x0	
+F	Extra Text	dns.opt.ext_error.extra_text	FT_STRING	dns		0x0	
+F	Questions	dns.count.queries	FT_UINT16	dns	BASE_DEC	0x0	Number of queries in packet
+F	Zones	dns.count.zones	FT_UINT16	dns	BASE_DEC	0x0	Number of zones in packet
+F	Answer RRs	dns.count.answers	FT_UINT16	dns	BASE_DEC	0x0	Number of answers in packet
+F	Prerequisites	dns.count.prerequisites	FT_UINT16	dns	BASE_DEC	0x0	Number of prerequisites in packet
+F	Authority RRs	dns.count.auth_rr	FT_UINT16	dns	BASE_DEC	0x0	Number of authoritative records in packet
+F	Updates	dns.count.updates	FT_UINT16	dns	BASE_DEC	0x0	Number of updates records in packet
+F	Hash algorithm	dns.nsec3.algo	FT_UINT8	dns	BASE_DEC	0x0	
+F	NSEC3 flags	dns.nsec3.flags	FT_UINT8	dns	BASE_DEC	0x0	
+F	NSEC3 Opt-out flag	dns.nsec3.flags.opt_out	FT_BOOLEAN	dns	8	0x1	
+F	NSEC3 iterations	dns.nsec3.iterations	FT_UINT16	dns	BASE_DEC	0x0	Number of hashing iterations
+F	Salt length	dns.nsec3.salt_length	FT_UINT8	dns	BASE_DEC	0x0	Length of salt in bytes
+F	Salt value	dns.nsec3.salt_value	FT_BYTES	dns		0x0	
+F	Hash length	dns.nsec3.hash_length	FT_UINT8	dns	BASE_DEC	0x0	Length in bytes of next hashed owner
+F	Next hashed owner	dns.nsec3.hash_value	FT_STRING	dns		0x0	
+F	Certificate Usage	dns.tlsa.certificate_usage	FT_UINT8	dns	BASE_DEC	0x0	Specifies the provided association that will be used to match the certificate presented in the TLS handshake
+F	Selector	dns.tlsa.selector	FT_UINT8	dns	BASE_DEC	0x0	Specifies which part of the TLS certificate presented by the server will be matched against the association data
+F	Matching Type	dns.tlsa.matching_type	FT_UINT8	dns	BASE_DEC	0x0	Specifies how the certificate association is presented
+F	Certificate Association Data	dns.tlsa.certificate_association_data	FT_BYTES	dns		0x0	The data refers to the certificate in the association
+F	Algorithm Name	dns.tsig.algorithm_name	FT_STRING	dns		0x0	Name of algorithm used for the MAC
+F	Time Signed	dns.tsig.time_signed	FT_ABSOLUTE_TIME	dns		0x0	
+F	Original Id	dns.tsig.original_id	FT_UINT16	dns	BASE_DEC	0x0	
+F	Error	dns.tsig.error	FT_UINT16	dns	BASE_DEC	0x0	Expanded RCODE for TSIG
+F	Fudge	dns.tsig.fudge	FT_UINT16	dns	BASE_DEC	0x0	Number of bytes for the MAC
+F	MAC Size	dns.tsig.mac_size	FT_UINT16	dns	BASE_DEC	0x0	Number of bytes for the MAC
+F	Other Len	dns.tsig.other_len	FT_UINT16	dns	BASE_DEC	0x0	Number of bytes for Other Data
+F	MAC	dns.tsig.mac	FT_NONE	dns		0x0	
+F	Other Data	dns.tsig.other_data	FT_BYTES	dns		0x0	
+F	Response In	dns.response_in	FT_FRAMENUM	dns		0x0	The response to this DNS query is in this frame
+F	Request In	dns.response_to	FT_FRAMENUM	dns		0x0	This is a response to the DNS query in this frame
+F	Retransmission	dns.retransmission	FT_BOOLEAN	dns	0	0x0	This is a retransmission
+F	Retransmitted request. Original request in	dns.retransmit_request_in	FT_FRAMENUM	dns		0x0	This is a retransmitted DNS query
+F	Retransmitted response. Original response in	dns.retransmit_response_in	FT_FRAMENUM	dns		0x0	This is a retransmitted DNS response
+F	Time	dns.time	FT_RELATIVE_TIME	dns		0x0	The time between the Query and the Response
+F	Unsolicited	dns.unsolicited	FT_BOOLEAN	dns	0	0x0	This is an unsolicited response
+F	Additional RRs	dns.count.add_rr	FT_UINT16	dns	BASE_DEC	0x0	Number of additional records in packet
+F	Algorithm	dns.sshfp.algorithm	FT_UINT8	dns	BASE_DEC	0x0	
+F	Fingerprint type	dns.sshfp.fingerprint.type	FT_UINT8	dns	BASE_DEC	0x0	
+F	Fingerprint	dns.sshfp.fingerprint	FT_BYTES	dns		0x0	
+F	HIT length	dns.hip.hit.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	HIT length	dns.hip.hit.pk.algo	FT_UINT8	dns	BASE_DEC	0x0	
+F	PK length	dns.hip.pk.length	FT_UINT16	dns	BASE_DEC	0x0	
+F	Host Identity Tag	dns.hip.hit	FT_BYTES	dns		0x0	
+F	HIP Public Key	dns.hip.pk	FT_BYTES	dns		0x0	
+F	Rendezvous Server	dns.hip.rendezvous_server	FT_STRING	dns		0x0	
+F	DHCID Data	dns.dhcid.rdata	FT_BYTES	dns		0x0	
+F	Key id	dns.ds.key_id	FT_UINT16	dns	BASE_HEX	0x0	
+F	Algorithm	dns.ds.algorithm	FT_UINT8	dns	BASE_DEC	0x0	
+F	Digest Type	dns.ds.digest_type	FT_UINT8	dns	BASE_DEC	0x0	
+F	Digest	dns.ds.digest	FT_BYTES	dns		0x0	
+F	Address Family	dns.apl.address_family	FT_UINT16	dns	BASE_DEC	0x0	
+F	Prefix Length	dns.apl.coded_prefix	FT_UINT8	dns	BASE_DEC	0x0	
+F	Negation Flag	dns.apl.negation	FT_BOOLEAN	dns	8	0x80	
+F	Address Length	dns.apl.afdlength	FT_UINT8	dns	BASE_DEC	0x7f	in octets
+F	Address	dns.apl.afdpart.ipv4	FT_IPv4	dns		0x0	
+F	Address	dns.apl.afdpart.ipv6	FT_IPv6	dns		0x0	
+F	Address	dns.apl.afdpart.data	FT_BYTES	dns		0x0	
+F	Longitude length	dns.gpos.longitude_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Longitude	dns.gpos.longitude	FT_STRING	dns		0x0	
+F	Latitude length	dns.gpos.latitude_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Latitude	dns.gpos.latitude	FT_STRING	dns		0x0	
+F	Altitude length	dns.gpos.altitude_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Altitude	dns.gpos.altitude	FT_STRING	dns		0x0	
+F	Mailbox	dns.rp.mailbox	FT_STRING	dns		0x0	
+F	TXT RR	dns.rp.txt_rr	FT_STRING	dns		0x0	
+F	Subtype	dns.afsdb.subtype	FT_UINT16	dns	BASE_DEC	0x0	
+F	Hostname	dns.afsdb.hostname	FT_STRING	dns		0x0	
+F	Length	dns.x25.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	PSDN-Address	dns.x25.psdn_address	FT_STRING	dns		0x0	
+F	Length	dns.idsn.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	ISDN Address	dns.idsn.address	FT_STRING	dns		0x0	
+F	Length	dns.idsn.sa.length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Sub Address	dns.idsn.sa.address	FT_STRING	dns		0x0	
+F	Preference	dns.rt.subtype	FT_UINT16	dns	BASE_DEC	0x0	
+F	Intermediate Hostname	dns.rt.intermediate_host	FT_STRING	dns		0x0	
+F	NSAP Data	dns.nsap.rdata	FT_BYTES	dns		0x0	
+F	Owner	dns.nsap_ptr.owner	FT_STRING	dns		0x0	
+F	CAA Flags	dns.caa.flags	FT_UINT8	dns	BASE_HEX	0x0	
+F	Issuer Critical	dns.caa.flags.issuer_critical	FT_BOOLEAN	dns	8	0x80	Other CAs must not issue certificates
+F	Issue	dns.caa.issue	FT_STRING	dns		0x0	CA which is allowed to issue certificates
+F	Issue Wildcard	dns.caa.issuewild	FT_STRING	dns		0x0	CA which is allowed to issue wildcard certificates
+F	Report URL	dns.caa.iodef	FT_STRING	dns		0x0	URL or email address for certificate issue requests and violation reports
+F	Unknown tag	dns.caa.unknown	FT_STRING	dns		0x0	
+F	Tag length	dns.caa.tag_length	FT_UINT8	dns	BASE_DEC	0x0	
+F	Tag	dns.caa.tag	FT_STRING	dns		0x0	
+F	Value	dns.caa.value	FT_STRING	dns		0x0	
+F	Extraneous Data Bytes	dns.extraneous.data	FT_BYTES	dns		0x0	
+F	Extraneous Data Length	dns.extraneous.length	FT_INT32	dns	BASE_DEC	0x0	
+F	Local Flag	dns.wins.local_flag	FT_BOOLEAN	dns	32	0x1	
+F	Lookup timeout	dns.wins.lookup_timeout	FT_UINT32	dns	BASE_DEC	0x0	In seconds
+F	Cache timeout	dns.wins.cache_timeout	FT_UINT32	dns	BASE_DEC	0x0	In seconds
+F	Number of WINS servers	dns.wins.nb_wins_servers	FT_UINT32	dns	BASE_DEC	0x0	
+F	WINS Server Address	dns.wins.wins_server	FT_IPv4	dns		0x0	
+F	Local Flag	dns.winsr.local_flag	FT_BOOLEAN	dns	32	0x1	
+F	Lookup timeout	dns.winsr.lookup_timeout	FT_UINT32	dns	BASE_DEC	0x0	In seconds
+F	Cache timeout	dns.winsr.cache_timeout	FT_UINT32	dns	BASE_DEC	0x0	In seconds
+F	Name Result Domain	dns.winsr.name_result_domain	FT_STRING	dns		0x0	
+F	Data	dns.data	FT_BYTES	dns		0x0	
+F	DNS Stateful Operation	dns.dso	FT_NONE	dns		0x0	
+F	DSO TLV	dns.dso.tlv	FT_NONE	dns		0x0	
+F	Type	dns.dso.tlv.type	FT_UINT16	dns	BASE_DEC	0x0	
+F	Length	dns.dso.tlv.length	FT_UINT16	dns	BASE_DEC	0x0	
+F	Data	dns.dso.tlv.data	FT_BYTES	dns		0x0	
+F	Inactivity Timeout	dns.dso.tlv.keepalive.inactivity	FT_UINT32	dns	BASE_DEC	0x0	Inactivity Timeout (ms)
+F	Keepalive Interval	dns.dso.tlv.keepalive.interval	FT_UINT32	dns	BASE_DEC	0x0	Keepalive Interval (ms)
+F	Retry Delay	dns.dso.tlv.retrydelay.retrydelay	FT_UINT32	dns	BASE_DEC	0x0	Retry Delay (ms)
+F	Padding	dns.dso.tlv.encpad.padding	FT_BYTES	dns		0x0	
+F	Undecoded class	dns.a.class.undecoded	FT_NONE	dns		0x0	
+F	Length too long for any type of IP address.	dns.rr.opt.bad_length	FT_NONE	dns		0x0	
+F	Undecoded option	dns.undecoded.type	FT_NONE	dns		0x0	
+F	Deprecated opcode	dns.depr.opc	FT_NONE	dns		0x0	
+F	The uppermost bit of the TTL is set (RFC 2181, section 8)	dns.ttl.high_bit_set	FT_NONE	dns		0x0	
+F	No dissector for algorithm	dns.tsig.noalg	FT_NONE	dns		0x0	
+F	Buffer too short to compute a key id	dns.key_id_buffer_too_short	FT_NONE	dns		0x0	
+F	DNS query retransmission	dns.retransmit_request	FT_NONE	dns		0x0	
+F	DNS response retransmission	dns.retransmit_response	FT_NONE	dns		0x0	
+F	Extraneous data	dns.extraneous	FT_NONE	dns		0x0	

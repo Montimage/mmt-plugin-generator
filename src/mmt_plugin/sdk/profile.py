@@ -6,7 +6,10 @@ types, struct layouts, callback signatures, registration calls, helpers,
 constants and logger macros that the generator emits, each with the header
 that declares it, relative to ``<prefix>/dpi/include``. Every entry is one a
 generator uses; ``mmt_plugin.sdk.headercheck`` checks them against the real
-headers.
+headers. The plugin entry point (``entry_point``: the symbol mmt-dpi looks
+up, and the macro of a plugin built into the core) is declared by no
+header: loading a generated plugin with ``init_extraction()`` checks it
+(``tests/unit/generate/test_compile.py``).
 
 ``load_profile`` parses and checks a file into frozen dataclasses. The JSON
 Schema is the documentation and the test oracle; the loader repeats its
@@ -33,6 +36,7 @@ __all__ = [
     "Callback",
     "ClassProvider",
     "Constant",
+    "EntryPoint",
     "Field",
     "Function",
     "Header",
@@ -248,6 +252,18 @@ class ClassProvider:
 
 
 @dataclass(frozen=True)
+class EntryPoint:
+    """The function mmt-dpi looks up in a plugin it loads (``symbol``, of the
+    callback role ``callback``), and the macro defined when a plugin is built
+    into the core instead (``core_macro``), which leaves it out."""
+
+    callback: str
+    symbol: str
+    core_macro: str
+    doc: str
+
+
+@dataclass(frozen=True)
 class SdkProtocol:
     """A protocol an SDK plugin registers: its id macro, id, the header that
     defines both, and the name it registers (``PROTO_<X>_ALIAS``), or
@@ -262,8 +278,9 @@ class SdkProtocol:
 @dataclass(frozen=True)
 class ProtocolHeader:
     """The protocols one header of an SDK plugin defines, in header order.
-    ``not_ids`` are its other numeric ``PROTO_*`` macros, which are not
-    protocol ids."""
+    ``not_ids`` are its other ``PROTO_*`` macros, whatever their value,
+    which are neither protocol ids nor the ``PROTO_<X>_ALIAS`` of a listed id
+    (``PROTO_CLASS_*`` macros need not be listed)."""
 
     header: str
     doc: str
@@ -320,6 +337,7 @@ class Profile:
     macros: tuple[Macro, ...]
     logger: Logger
     class_provider: ClassProvider
+    entry_point: EntryPoint
     parents: Parents
 
     def callback(self, role: str) -> Callback:
@@ -368,12 +386,14 @@ class _Reader:
     def __init__(self, value: Any, where: str, keys: Sequence[str], optional: Sequence[str] = ()):
         if not isinstance(value, dict):
             raise ProfileError(f"{where}: expected an object")
-        unknown = sorted(set(value) - set(keys) - set(optional) - {"$comment"})
+        unknown = sorted(set(value) - set(keys) - set(optional))
         if unknown:
             raise ProfileError(f"{where}: unknown key {unknown[0]!r}")
         missing = [k for k in keys if k not in value]
         if missing:
             raise ProfileError(f"{where}: missing key {missing[0]!r}")
+        if "$comment" in value and not isinstance(value["$comment"], str):
+            raise ProfileError(f"{where}.$comment: expected a string")
         self.value: dict[str, Any] = value
         self.where = where
 
@@ -456,8 +476,10 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
             "macros",
             "logger",
             "class_provider",
+            "entry_point",
             "parents",
         ),
+        ("$comment",),
     )
     schema_version = top.value["schema_version"]
     if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
@@ -566,6 +588,17 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         unknown=cp.text("unknown", _IDENT),
         doc=cp.text("doc"),
     )
+    ep = _Reader(
+        top.value["entry_point"],
+        f"{source}.entry_point",
+        ("callback", "symbol", "core_macro", "doc"),
+    )
+    entry_point = EntryPoint(
+        callback=ep.text("callback", _IDENT),
+        symbol=ep.text("symbol", _IDENT),
+        core_macro=ep.text("core_macro", _IDENT),
+        doc=ep.text("doc"),
+    )
     pa = _Reader(
         top.value["parents"],
         f"{source}.parents",
@@ -603,6 +636,7 @@ def parse_profile(data: Any, source: str = "<profile>") -> Profile:
         macros=tuple(macros),
         logger=logger,
         class_provider=class_provider,
+        entry_point=entry_point,
         parents=parents,
     )
     _check_references(profile, source)
@@ -719,6 +753,10 @@ def _check_references(p: Profile, source: str) -> None:
     ):
         if macros.get(name) != lg.header:
             raise ProfileError(f"{source}.logger.{level}: {name!r} is not a macro of {lg.header}")
+    if p.entry_point.callback not in roles:
+        raise ProfileError(
+            f"{source}.entry_point.callback: {p.entry_point.callback!r} is not a callback role"
+        )
     cp = p.class_provider
     refs = (
         ("struct", cp.struct, {s.name: s.header for s in p.structs}),

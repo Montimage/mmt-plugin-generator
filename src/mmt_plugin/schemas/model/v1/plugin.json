@@ -85,7 +85,7 @@
       "properties": {
         "label": {
           "$ref": "#/$defs/name",
-          "description": "The protocol's label: the plugin is mmtp_<label>.so, and its registered name is the label upper-cased."
+          "description": "The protocol's label: the plugin is mmtp_<label>.so, and its registered name is the label upper-cased, the name mmt-security rules use (DEMO.kind for the label demo, never demo.kind)."
         },
         "id": {
           "type": "integer",
@@ -119,29 +119,67 @@
           "description": "The classification weight: a parent runs its classification functions in increasing weight; mmt-dpi documents 0 to 9 and 90 to 100."
         },
         "classify": {
-          "type": "object",
-          "description": "The generated classification: the protocol is classified when every match holds, at offset bytes after the start of the parent. Needs a parent of the SDK profile.",
-          "required": ["match", "offset"],
-          "additionalProperties": false,
-          "properties": {
-            "match": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "required": ["offset", "length", "value"],
-                "additionalProperties": false,
-                "properties": {
-                  "offset": {"type": "integer", "minimum": 0, "description": "From the start of the parent, in bytes."},
-                  "length": {"type": "integer", "minimum": 1, "maximum": 8, "description": "In bytes."},
-                  "value": {"type": "integer", "minimum": 0, "description": "The unsigned integer of length bytes, in network byte order."}
-                }
-              }
-            },
-            "offset": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Where the protocol starts, in bytes from the start of the parent (the parent's header length)."
+          "description": "The generated classification: by a TCP port (classify_tcp) when it has port, sport or dport, else at fixed offsets of the parent (classify_fixed). Needs a parent of the SDK profile.",
+          "if": {"type": "object", "required": ["port"]},
+          "then": {"$ref": "#/$defs/classify_tcp"},
+          "else": {
+            "if": {"type": "object", "required": ["sport"]},
+            "then": {"$ref": "#/$defs/classify_tcp"},
+            "else": {
+              "if": {"type": "object", "required": ["dport"]},
+              "then": {"$ref": "#/$defs/classify_tcp"},
+              "else": {"$ref": "#/$defs/classify_fixed"}
+            }
+          }
+        }
+      }
+    },
+    "classify_fixed": {
+      "type": "object",
+      "description": "A parent's generated classification at fixed offsets: the protocol is classified when every match holds, at offset bytes after the start of the parent.",
+      "required": ["match", "offset"],
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["offset", "length", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "offset": {"type": "integer", "minimum": 0, "description": "From the start of the parent, in bytes."},
+              "length": {"type": "integer", "minimum": 1, "maximum": 8, "description": "In bytes."},
+              "value": {"type": "integer", "minimum": 0, "description": "The unsigned integer of length bytes, in network byte order."}
+            }
+          }
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Where the protocol starts, in bytes from the start of the parent (the parent's header length)."
+        }
+      }
+    },
+    "classify_tcp": {
+      "type": "object",
+      "description": "A tcp parent's generated classification by port: the protocol is classified in a segment with a payload when every port and every match holds, and starts with the payload, after the TCP header and its options (the header's data offset). Give port, sport or dport, or several: all of them must hold. Only under protocol tcp (model.classify-port otherwise).",
+      "additionalProperties": false,
+      "properties": {
+        "port": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The source or the destination port."},
+        "sport": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The source port."},
+        "dport": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The destination port."},
+        "match": {
+          "type": "array",
+          "description": "Fixed-offset tests of the payload, the protocol's first bytes.",
+          "items": {
+            "type": "object",
+            "required": ["offset", "length", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "offset": {"type": "integer", "minimum": 0, "description": "From the start of the TCP payload (where the protocol starts), in bytes."},
+              "length": {"type": "integer", "minimum": 1, "maximum": 8, "description": "In bytes."},
+              "value": {"type": "integer", "minimum": 0, "description": "The unsigned integer of length bytes, in network byte order."}
             }
           }
         }

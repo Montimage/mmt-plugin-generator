@@ -15,8 +15,10 @@ Every key of `plugin.yaml`, generated from its JSON Schema, [`src/mmt_plugin/sch
 - [`number_or_name`](#number_or_name)
 - [`protocol`](#protocol)
 - [`parent`](#parent)
-- [`parent.classify`](#parentclassify)
-- [`parent.classify.match[]`](#parentclassifymatch)
+- [`classify_fixed`](#classify_fixed)
+- [`classify_fixed.match[]`](#classify_fixedmatch)
+- [`classify_tcp`](#classify_tcp)
+- [`classify_tcp.match[]`](#classify_tcpmatch)
 - [`elements`](#elements)
 - [`element`](#element)
 - [`attribute`](#attribute)
@@ -104,7 +106,7 @@ A mapping with only these keys (any other key is an error). Required: `label`, `
 
 | Key | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| `label` | [`name`](#name) | yes |  |  | The protocol's label: the plugin is mmtp_&lt;label&gt;.so, and its registered name is the label upper-cased. |
+| `label` | [`name`](#name) | yes |  |  | The protocol's label: the plugin is mmtp_&lt;label&gt;.so, and its registered name is the label upper-cased, the name mmt-security rules use (DEMO.kind for the label demo, never demo.kind). |
 | `id` | integer | yes |  | at least 1 | The protocol id; third-party plugins use 950 to 999. |
 | `context` | boolean | no | `false` |  | Generate the context hooks. |
 | `session_context` | boolean | no | `false` |  | Generate the session data hooks. |
@@ -120,26 +122,49 @@ A mapping with only these keys (any other key is an error). Required: `protocol`
 |---|---|---|---|---|---|
 | `protocol` | [`name`](#name) | yes |  |  | The parent's registered name, case-insensitively (ethernet, udp, ...): an SDK protocol or an installed plugin's. |
 | `weight` | integer | no | `5` | 0 to 100 | The classification weight: a parent runs its classification functions in increasing weight; mmt-dpi documents 0 to 9 and 90 to 100. |
-| `classify` | [`parent.classify`](#parentclassify) | no |  |  | The generated classification: the protocol is classified when every match holds, at offset bytes after the start of the parent. Needs a parent of the SDK profile. |
+| `classify` | [`classify_tcp`](#classify_tcp) when it has `port`; [`classify_tcp`](#classify_tcp) when it has `sport`; [`classify_tcp`](#classify_tcp) when it has `dport`; [`classify_fixed`](#classify_fixed) otherwise | no |  |  | The generated classification: by a TCP port (classify_tcp) when it has port, sport or dport, else at fixed offsets of the parent (classify_fixed). Needs a parent of the SDK profile. |
 
-## `parent.classify`
+## `classify_fixed`
 
-The generated classification: the protocol is classified when every match holds, at offset bytes after the start of the parent. Needs a parent of the SDK profile.
+A parent's generated classification at fixed offsets: the protocol is classified when every match holds, at offset bytes after the start of the parent.
 
 A mapping with only these keys (any other key is an error). Required: `match`, `offset`.
 
 | Key | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| `match` | list of [`parent.classify.match[]`](#parentclassifymatch) | yes |  | at least 1 item(s) |  |
+| `match` | list of [`classify_fixed.match[]`](#classify_fixedmatch) | yes |  | at least 1 item(s) |  |
 | `offset` | integer | yes |  | at least 0 | Where the protocol starts, in bytes from the start of the parent (the parent's header length). |
 
-## `parent.classify.match[]`
+## `classify_fixed.match[]`
 
 A mapping with only these keys (any other key is an error). Required: `offset`, `length`, `value`.
 
 | Key | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
 | `offset` | integer | yes |  | at least 0 | From the start of the parent, in bytes. |
+| `length` | integer | yes |  | 1 to 8 | In bytes. |
+| `value` | integer | yes |  | at least 0 | The unsigned integer of length bytes, in network byte order. |
+
+## `classify_tcp`
+
+A tcp parent's generated classification by port: the protocol is classified in a segment with a payload when every port and every match holds, and starts with the payload, after the TCP header and its options (the header's data offset). Give port, sport or dport, or several: all of them must hold. Only under protocol tcp (model.classify-port otherwise).
+
+A mapping with only these keys (any other key is an error).
+
+| Key | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `port` | integer | no |  | 0 to 65535 | The source or the destination port. |
+| `sport` | integer | no |  | 0 to 65535 | The source port. |
+| `dport` | integer | no |  | 0 to 65535 | The destination port. |
+| `match` | list of [`classify_tcp.match[]`](#classify_tcpmatch) | no |  |  | Fixed-offset tests of the payload, the protocol's first bytes. |
+
+## `classify_tcp.match[]`
+
+A mapping with only these keys (any other key is an error). Required: `offset`, `length`, `value`.
+
+| Key | Type | Required | Default | Constraints | Description |
+|---|---|---|---|---|---|
+| `offset` | integer | yes |  | at least 0 | From the start of the TCP payload (where the protocol starts), in bytes. |
 | `length` | integer | yes |  | 1 to 8 | In bytes. |
 | `value` | integer | yes |  | at least 0 | The unsigned integer of length bytes, in network byte order. |
 

@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "75eb41dd2123a0b425c0b2cdab0b6fc434cfdb476e4ca5f9359330e30b51a679"
+  },
+  "files": [
+    {
+      "path": "generated/ocip_mmt_plugin.c",
+      "sha256": "fdedbfce8a244eea6d06bbb149a4a7e73b0eda43351a416534c0b2d20f4d8d1c"
+    },
+    {
+      "path": "generated/ocip_mmt_plugin.h",
+      "sha256": "82e1f492c07ebe36d7dc795961476d8bb11f43c77a9d9850489615f3306fe210"
+    }
+  ]
+}

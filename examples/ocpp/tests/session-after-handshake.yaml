@@ -1,0 +1,84 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications and RFC 6455 (not a port: the corpus has no OCPP model):
+# its packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-after-handshake"
+model: "ocpp"
+summary: "A capture that starts after the handshake: the array shape claims the session, whose CALLs are linked from there"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49206"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - from: "server"
+    bytes:
+      - "81 46 5b 32 2c 22 6d 31 22 2c 22 52 65 6d 6f 74"
+      - "65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f"
+      - "6e 22 2c 7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64"
+      - "22 3a 31 2c 22 69 64 54 61 67 22 3a 22 42 34 46"
+      - "36 32 43 45 46 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "52 65 6d 6f 74 65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+          text: "RemoteStartTransaction"
+        - name: "connector_id"
+          value: 1
+        - name: "id_tag"
+          value: "42 34 46 36 32 43 45 46"
+          text: "B4F62CEF"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 31 2c 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 7d"
+          text: "{\"connectorId\":1,\"idTag\":\"B4F62CEF\"}"
+        - name: "unique_id"
+          value: "6d 31"
+          text: "m1"
+  - from: "client"
+    bytes:
+      - "81 9e 37 fa 21 3d 6c c9 0d 1f 5a cb 03 11 4c d8"
+      - "52 49 56 8e 54 4e 15 c0 03 7c 54 99 44 4d 43 9f"
+      - "45 1f 4a a7"
+    expect:
+      attributes:
+        - name: "action"
+          value: "52 65 6d 6f 74 65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+          text: "RemoteStartTransaction"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74 65 64 22 7d"
+          text: "{\"status\":\"Accepted\"}"
+        - name: "unique_id"
+          value: "6d 31"
+          text: "m1"

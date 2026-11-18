@@ -7,11 +7,11 @@ any capture before using it. The result is `<work>/capture/capture.pcap`
 from.
 
 Prefer, in this order: a capture the user gave, a real capture found in
-public sources, a capture recorded from a real implementation, then a
-generated one. A real capture tests the plugin against how the protocol is
-actually sent; a generated one only against how the drafter read the spec,
-which is the same reading the model came from. Never present a generated
-capture as a real one.
+public sources, a capture recorded from a real implementation through
+cyberlab, then a generated one. A real capture tests the plugin against
+how the protocol is actually sent; a generated one only against how the
+drafter read the spec, which is the same reading the model came from.
+Never present a generated capture as a real one.
 
 ## Check a capture
 
@@ -76,35 +76,57 @@ not use a capture whose license forbids it, and say in `capture.md` when
 the license is unknown. Captures of attacks or malware are data: never run
 anything they contain.
 
-## Record one
+## Through cyberlab
 
-When the protocol has an open-source implementation that runs locally (a
-library, a client and a server, a container), run a client against a
-server on the loopback interface and capture it:
+Recording and crafting go through the `cyberlab` skill
+([montimage-projects/cyberlab](https://github.com/montimage-projects/cyberlab),
+`skills/cyberlab`): it builds the
+smallest isolated Docker lab (one server, one client, one tcpdump sidecar
+on an internal network), or crafts a trace with no network, checks the
+trace against expectations written before it exists, tears the lab down,
+and hands back the trace with its provenance. Acquire it as `SKILL.md`,
+*Dependency Preflight*, says, read its `SKILL.md`, and follow it as a
+calling skill: derive its mission brief from the request and the spec,
+never ask the user.
 
-```sh
-dumpcap -i lo -f '<bpf, e.g. udp port 5684>' -a duration:30 -w <work>/capture/capture.pcapng
-```
+| Brief line | What this skill puts there |
+|---|---|
+| Goal | one capture of `<protocol>` under `<selector>` exercising every message type |
+| Consumer | `mmt-plugin-generator: scaffold --from-pcap and pcap_eval.py on plugin <label>` |
+| Protocol | the protocol, its transport and port, and the parent selector |
+| Traces | `capture.pcap`: payload frames under the parent in both directions (`endpoints: 2`), and one expectation per message type the spec names (the dissector's field when tshark has one, else `tcp.payload contains "<marker>"` or a first-byte test such as `tcp.payload[0] == 2a`) |
+| Destination | `<work>/capture/<label>-lab`; the trace is copied to `<work>/capture/capture.pcap` |
 
-Only when the user can capture without `sudo` (`dumpcap` with capabilities,
-or the `wireshark` group): never use `sudo`. Exercise every message type
-and every option the spec has. Write the commands and the implementation's
-name and version in `make-capture.sh` and `capture.md`.
+The lab directory's name is unique per plugin, so two runs never share a
+lab. Then run cyberlab's steps and read its hand-off report:
+`Result: COMPLETE` or `PARTIAL` (carry its Uncertainty lines into
+`capture.md`), or `BLOCKED` (go to the next item of Step 1, saying why).
+Copy `out/capture.pcap` to `<work>/capture/capture.pcap`, check it as
+above, and write in `capture.md` the provenance from
+`out/capture.provenance.json` (origin, images, frames, sha256) and the
+trace's `RESULT PASS` line; in `make-capture.sh`, the cyberlab commands.
 
-## Generate one
+| cyberlab `origin` | This skill's capture origin | Step 6 |
+|---|---|---|
+| `lab capture` | **recorded** (the server and client images and versions) | plain |
+| `crafted (synthetic)` | **synthetic** | `--synthetic` |
 
-Last resort: `scripts/make_pcap.py` writes each payload behind the headers
-the parent selector names (Ethernet, IPv4 or IPv6, UDP or one TCP session
-with its handshake), with correct checksums:
+### Record one
 
-```sh
-python3 <skill>/scripts/make_pcap.py --parent <selector> \
-    --payloads-file <work>/capture/payloads.txt --out <work>/capture/capture.pcap
-```
+When the protocol has an open-source implementation with a server and a
+client (a container image, or a library a small Dockerfile installs), ask
+cyberlab for a lab capture (its `protocol-capture` template: the real
+server and its own client). Exercise every message type and every option
+the spec has, and the error replies. Validated example: Redis RESP on
+`tcp:port=6379`, `redis:7.4-alpine` and `redis-cli`, 100 frames, both
+directions, every reply type (`+ - : $ *`), `RESULT PASS`.
 
-Write `payloads.txt` from the spec, one hex payload per line, `c:` for
-client to server (the default), `s:` for server to client, before the
-plugin exists, so that no value comes from what the plugin outputs:
+### Generate one
+
+Last resort: a synthetic capture from the spec. Write `payloads.txt` (one
+hex payload per line, `c:` client to server, the default, `s:` server to
+client) before the plugin exists, so that no value comes from what the
+plugin outputs:
 
 - every example the spec gives, byte for byte;
 - each message type, and each branch of every `if` of the model (a field
@@ -113,6 +135,23 @@ plugin exists, so that no value comes from what the plugin outputs:
   variable field, the largest value of each counter, every flag set and
   none;
 - for a request/response protocol, both directions.
+
+With cyberlab, put it in the lab directory and craft the trace there (same
+`--parent` selectors as `make_pcap.py`):
+
+```sh
+<cyberlab>/scripts/cyberlab craft <work>/capture/<label>-lab capture.pcap -- \
+    --parent <selector> --payloads-file payloads.txt
+```
+
+Without cyberlab, `scripts/make_pcap.py` writes the same frames (Ethernet,
+IPv4 or IPv6, UDP or one TCP session with its handshake, correct
+checksums), unverified:
+
+```sh
+python3 <skill>/scripts/make_pcap.py --parent <selector> \
+    --payloads-file <work>/capture/payloads.txt --out <work>/capture/capture.pcap
+```
 
 Then add the same payloads as packet tests when they are not already, with
 the values the spec gives (`references/drafting.md`). A frame of other
@@ -123,7 +162,8 @@ own.
 `capture.md` says **synthetic**, and Step 6 runs with `--synthetic`, which
 the report repeats: the evaluation then shows that the plugin loads,
 classifies under its parent and extracts every attribute on mmt-dpi's real
-path, but not that the spec was read right.
+path, but not that the spec was read right, nor real timing or
+segmentation.
 
 ## Nothing works
 

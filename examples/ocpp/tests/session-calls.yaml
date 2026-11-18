@@ -1,0 +1,1651 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications and RFC 6455 (not a port: the corpus has no OCPP model):
+# its packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-calls"
+model: "ocpp"
+summary: "An OCPP 1.6-J session on port 9000: answers linked to their CALL's action by UniqueId and direction, two messages in a segment, typed fields, a frame over two segments, more than 40 packets, the 16-CALL table and its oldest entry evicted"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49200"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET /webServices/ocpp/CP3211 HTTP/1.1\r\nHost: some.server.com:33033\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\nSec-WebSocket-Protocol: ocpp1.6, ocpp1.5\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 77 65 62 53 65 72 76 69 63 65 73"
+      - "2f 6f 63 70 70 2f 43 50 33 32 31 31 20 48 54 54"
+      - "50 2f 31 2e 31 0d 0a 48 6f 73 74 3a 20 73 6f 6d"
+      - "65 2e 73 65 72 76 65 72 2e 63 6f 6d 3a 33 33 30"
+      - "33 33 0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62"
+      - "73 6f 63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69"
+      - "6f 6e 3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63"
+      - "2d 57 65 62 53 6f 63 6b 65 74 2d 4b 65 79 3a 20"
+      - "78 33 4a 4a 48 4d 62 44 4c 31 45 7a 4c 6b 68 39"
+      - "47 42 68 58 44 77 3d 3d 0d 0a 53 65 63 2d 57 65"
+      - "62 53 6f 63 6b 65 74 2d 50 72 6f 74 6f 63 6f 6c"
+      - "3a 20 6f 63 70 70 31 2e 36 2c 20 6f 63 70 70 31"
+      - "2e 35 0d 0a 53 65 63 2d 57 65 62 53 6f 63 6b 65"
+      - "74 2d 56 65 72 73 69 6f 6e 3a 20 31 33 0d 0a 0d"
+      - "0a"
+  - from: "server"
+  - from: "server"
+    text: "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=\r\nSec-WebSocket-Protocol: ocpp1.6\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 48 53 6d 72 63 30 73 4d 6c 59 55 6b 41 47 6d"
+      - "6d 35 4f 50 70 47 32 48 61 47 57 6b 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72 6f"
+      - "74 6f 63 6f 6c 3a 20 6f 63 70 70 31 2e 36 0d 0a"
+      - "0d 0a"
+  - from: "client"
+    bytes:
+      - "81 e3 37 fa 21 3d 6c c8 0d 1f 06 d8 0d 1f 75 95"
+      - "4e 49 79 95 55 54 51 93 42 5c 43 93 4e 53 15 d6"
+      - "5a 1f 54 92 40 4f 50 9f 71 52 5e 94 55 6b 52 94"
+      - "45 52 45 d8 1b 1f 61 9f 4f 59 58 88 79 1f 1b d8"
+      - "42 55 56 88 46 58 67 95 48 53 43 b7 4e 59 52 96"
+      - "03 07 15 a9 48 53 50 96 44 6e 58 99 4a 58 43 b9"
+      - "49 5c 45 9d 44 4f 15 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "42 6f 6f 74 4e 6f 74 69 66 69 63 61 74 69 6f 6e"
+          text: "BootNotification"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 63 68 61 72 67 65 50 6f 69 6e 74 56 65 6e 64 6f 72 22 3a 22 56 65 6e 64 6f 72 58 22 2c 22 63 68 61 72 67 65 50 6f 69 6e 74 4d 6f 64 65 6c 22 3a 22 53 69 6e 67 6c 65 53 6f 63 6b 65 74 43 68 61 72 67 65 72 22 7d"
+          text: "{\"chargePointVendor\":\"VendorX\",\"chargePointModel\":\"SingleSocketCharger\"}"
+        - name: "unique_id"
+          value: "31"
+          text: "1"
+  - from: "server"
+    bytes:
+      - "81 55 5b 33 2c 22 31 22 2c 7b 22 73 74 61 74 75"
+      - "73 22 3a 22 41 63 63 65 70 74 65 64 22 2c 22 63"
+      - "75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31"
+      - "33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32"
+      - "2e 34 38 36 5a 22 2c 22 69 6e 74 65 72 76 61 6c"
+      - "22 3a 33 30 30 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "42 6f 6f 74 4e 6f 74 69 66 69 63 61 74 69 6f 6e"
+          text: "BootNotification"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74 65 64 22 2c 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 2c 22 69 6e 74 65 72 76 61 6c 22 3a 33 30 30 7d"
+          text: "{\"status\":\"Accepted\",\"currentTime\":\"2013-02-01T20:53:32.486Z\",\"interval\":300}"
+        - name: "unique_id"
+          value: "31"
+          text: "1"
+  - from: "server"
+    bytes:
+      - "81 55 5b 33 2c 22 31 22 2c 7b 22 73 74 61 74 75"
+      - "73 22 3a 22 41 63 63 65 70 74 65 64 22 2c 22 63"
+      - "75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31"
+      - "33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32"
+      - "2e 34 38 36 5a 22 2c 22 69 6e 74 65 72 76 61 6c"
+      - "22 3a 33 30 30 7d 5d"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74 65 64 22 2c 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 2c 22 69 6e 74 65 72 76 61 6c 22 3a 33 30 30 7d"
+          text: "{\"status\":\"Accepted\",\"currentTime\":\"2013-02-01T20:53:32.486Z\",\"interval\":300}"
+        - name: "unique_id"
+          value: "31"
+          text: "1"
+  - from: "client"
+    bytes:
+      - "81 a8 37 fa 21 3d 6c c8 0d 1f 05 d8 0d 1f 76 8f"
+      - "55 55 58 88 48 47 52 d8 0d 46 15 93 45 69 56 9d"
+      - "03 07 15 b8 15 7b 01 c8 62 78 71 d8 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "41 75 74 68 6f 72 69 7a 65"
+          text: "Authorize"
+        - name: "id_tag"
+          value: "42 34 46 36 32 43 45 46"
+          text: "B4F62CEF"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 7d"
+          text: "{\"idTag\":\"B4F62CEF\"}"
+        - name: "unique_id"
+          value: "32"
+          text: "2"
+  - from: "server"
+    bytes:
+      - "81 7e 00 82 5b 34 2c 22 32 22 2c 22 49 6e 74 65"
+      - "72 6e 61 6c 45 72 72 6f 72 22 2c 22 41 6e 20 69"
+      - "6e 74 65 72 6e 61 6c 20 65 72 72 6f 72 20 6f 63"
+      - "63 75 72 72 65 64 20 61 6e 64 20 74 68 65 20 72"
+      - "65 63 65 69 76 65 72 20 77 61 73 20 6e 6f 74 20"
+      - "61 62 6c 65 20 74 6f 20 70 72 6f 63 65 73 73 20"
+      - "74 68 65 20 72 65 71 75 65 73 74 65 64 20 41 63"
+      - "74 69 6f 6e 20 73 75 63 63 65 73 73 66 75 6c 6c"
+      - "79 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "41 75 74 68 6f 72 69 7a 65"
+          text: "Authorize"
+        - name: "error_code"
+          value: "49 6e 74 65 72 6e 61 6c 45 72 72 6f 72"
+          text: "InternalError"
+        - name: "error_description"
+          value: "41 6e 20 69 6e 74 65 72 6e 61 6c 20 65 72 72 6f 72 20 6f 63 63 75 72 72 65 64 20 61 6e 64 20 74 68 65 20 72 65 63 65 69 76 65 72 20 77 61 73 20 6e 6f 74 20 61 62 6c 65 20 74 6f 20 70 72 6f"
+          text: "An internal error occurred and the receiver was not able to pro"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 4
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "32"
+          text: "2"
+  - from: "server"
+    bytes:
+      - "81 45 5b 32 2c 22 37 22 2c 22 52 65 6d 6f 74 65"
+      - "53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+      - "22 2c 7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22"
+      - "3a 31 2c 22 69 64 54 61 67 22 3a 22 42 34 46 36"
+      - "32 43 45 46 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "52 65 6d 6f 74 65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+          text: "RemoteStartTransaction"
+        - name: "connector_id"
+          value: 1
+        - name: "id_tag"
+          value: "42 34 46 36 32 43 45 46"
+          text: "B4F62CEF"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 31 2c 22 69 64 54 61 67 22 3a 22 42 34 46 36 32 43 45 46 22 7d"
+          text: "{\"connectorId\":1,\"idTag\":\"B4F62CEF\"}"
+        - name: "unique_id"
+          value: "37"
+          text: "7"
+  - from: "client"
+    bytes:
+      - "81 d9 37 fa 21 3d 6c c8 0d 1f 00 d8 0d 1f 64 8e"
+      - "40 49 42 89 6f 52 43 93 47 54 54 9b 55 54 58 94"
+      - "03 11 4c d8 42 52 59 94 44 5e 43 95 53 74 53 d8"
+      - "1b 0c 1b d8 44 4f 45 95 53 7e 58 9e 44 1f 0d d8"
+      - "6f 52 72 88 53 52 45 d8 0d 1f 44 8e 40 49 42 89"
+      - "03 07 15 aa 53 58 47 9b 53 54 59 9d 03 40 6a"
+    expect:
+      attributes:
+        - name: "action"
+          value: "53 74 61 74 75 73 4e 6f 74 69 66 69 63 61 74 69 6f 6e"
+          text: "StatusNotification"
+        - name: "connector_id"
+          value: 1
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 31 2c 22 65 72 72 6f 72 43 6f 64 65 22 3a 22 4e 6f 45 72 72 6f 72 22 2c 22 73 74 61 74 75 73 22 3a 22 50 72 65 70 61 72 69 6e 67 22 7d"
+          text: "{\"connectorId\":1,\"errorCode\":\"NoError\",\"status\":\"Preparing\"}"
+        - name: "unique_id"
+          value: "37"
+          text: "7"
+  - from: "client"
+    bytes:
+      - "81 9d 37 fa 21 3d 6c c9 0d 1f 00 d8 0d 46 15 89"
+      - "55 5c 43 8f 52 1f 0d d8 60 5e 54 9f 51 49 52 9e"
+      - "03 40 6a"
+    expect:
+      attributes:
+        - name: "action"
+          value: "52 65 6d 6f 74 65 53 74 61 72 74 54 72 61 6e 73 61 63 74 69 6f 6e"
+          text: "RemoteStartTransaction"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 73 74 61 74 75 73 22 3a 22 41 63 63 65 70 74 65 64 22 7d"
+          text: "{\"status\":\"Accepted\"}"
+        - name: "unique_id"
+          value: "37"
+          text: "7"
+  - from: "server"
+    bytes:
+      - "81 0a 5b 33 2c 22 37 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "53 74 61 74 75 73 4e 6f 74 69 66 69 63 61 74 69 6f 6e"
+          text: "StatusNotification"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "37"
+          text: "7"
+  - from: "client"
+    bytes:
+      - "81 96 37 fa 21 3d 6c c8 0d 1f 0f d8 0d 1f 7f 9f"
+      - "40 4f 43 98 44 5c 43 d8 0d 46 4a a7"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "38"
+          text: "8"
+  - from: "client"
+    bytes:
+      - "81 8a 37 fa 21 3d 6c c9 0d 1f 0f d8 0d 46 4a a7"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "38"
+          text: "8"
+  - from: "server"
+    bytes:
+      - "81 32 5b 33 2c 22 38 22 2c 7b 22 63 75 72 72 65"
+      - "6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32"
+      - "2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36"
+      - "5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "38"
+          text: "8"
+  - from: "server"
+    bytes:
+      - "81 0b 5b 33 2c 22 39 39 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "39 39"
+          text: "99"
+  - from: "client"
+    bytes:
+      - "81 96 37 fa 21 3d 6c c8 0d 1f 56 d8 0d 1f 7f 9f"
+      - "40 4f 43 98 44 5c 43 d8 0d 46 4a a7 81 96 37 fa"
+      - "21 3d 6c c8 0d 1f 55 d8 0d 1f 7f 9f 40 4f 43 98"
+      - "44 5c 43 d8 0d 46 4a a7"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 2
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "61"
+          text: "a"
+  - from: "server"
+    bytes:
+      - "81 32 5b 33 2c 22 61 22 2c 7b 22 63 75 72 72 65"
+      - "6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32"
+      - "2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36"
+      - "5a 22 7d 5d 81 0a 5b 33 2c 22 62 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 2
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "61"
+          text: "a"
+  - from: "server"
+    bytes:
+      - "81 0a 5b 33 2c 22 62 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "62"
+          text: "b"
+  - from: "server"
+    bytes:
+      - "81 7e 01 1e 5b 32 2c 22 63 22 2c 22 53 65 74 43"
+      - "68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 22 2c"
+      - "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 32"
+      - "2c 22 63 73 43 68 61 72 67 69 6e 67 50 72 6f 66"
+      - "69 6c 65 73 22 3a 7b 22 63 68 61 72 67 69 6e 67"
+      - "50 72 6f 66 69 6c 65 49 64 22 3a 33 2c 22 73 74"
+      - "61 63 6b 4c 65 76 65 6c 22 3a 30 2c 22 63 68 61"
+      - "72 67 69 6e 67 50 72 6f 66 69 6c 65 50 75 72 70"
+      - "6f 73 65 22 3a 22 54 78 44 65 66 61 75 6c 74 50"
+      - "72 6f 66 69 6c 65 22 2c 22 63 68 61 72 67 69 6e"
+      - "67 50 72 6f 66 69 6c 65 4b 69 6e 64 22 3a 22 41"
+      - "62 73 6f 6c 75 74 65 22 2c 22 63 68 61 72 67 69"
+      - "6e 67 53 63 68 65 64 75 6c 65 22 3a 7b 22 63 68"
+      - "61 72 67 69 6e 67 52 61 74 65 55 6e 69 74 22 3a"
+      - "22 41 22 2c 22 63 68 61 72 67 69 6e 67 53 63 68"
+      - "65 64 75 6c 65 50 65 72 69 6f 64 22 3a 5b 7b 22"
+      - "73 74 61 72 74 50 65 72 69 6f 64 22 3a 30 2c 22"
+      - "6c 69 6d 69 74 22 3a 33 32 2e 32 35 7d 5d 7d 7d"
+      - "7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "53 65 74 43 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65"
+          text: "SetChargingProfile"
+        - name: "charging_limit_x10"
+          value: 322
+        - name: "charging_rate_unit"
+          value: "41"
+          text: "A"
+        - name: "connector_id"
+          value: 2
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 32 2c 22 63 73 43 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 73 22 3a 7b 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 49 64 22 3a 33 2c 22 73 74 61 63 6b 4c 65 76 65 6c 22 3a 30 2c 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 50 75 72 70 6f 73 65 22 3a 22 54 78 44 65 66 61 75 6c 74 50 72 6f 66 69 6c 65 22 2c 22 63 68 61 72 67 69 6e 67 50 72 6f 66 69 6c 65 4b 69 6e 64 22 3a 22 41 62 73 6f 6c 75 74 65 22 2c 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 22 3a 7b 22 63 68 61 72 67 69 6e 67 52 61 74 65 55 6e 69 74 22 3a 22 41 22 2c 22 63 68 61 72 67 69 6e 67 53 63 68 65 64 75 6c 65 50 65 72 69 6f 64 22 3a 5b 7b 22 73 74 61 72 74 50 65 72 69 6f 64 22 3a 30 2c 22 6c 69 6d 69 74 22 3a 33 32 2e 32 35 7d 5d 7d 7d 7d"
+          text: "{\"connectorId\":2,\"csChargingProfiles\":{\"chargingProfileId\":3,\"stackLevel\":0,\"chargingProfilePurpose\":\"TxDefaultProfile\",\"chargingProfileKind\":\"Absolute\",\"chargingSchedule\":{\"chargingRateUnit\":\"A\",\"chargingSchedulePeriod\":[{\"startPeriod\":0,\"limit\":32.25}]}}}"
+        - name: "unique_id"
+          value: "63"
+          text: "c"
+  - from: "client"
+    bytes:
+      - "81 ec 37 fa 21 3d 6c c8 0d 1f 53 d8 0d 1f 73 9b"
+      - "55 5c 63 88 40 53 44 9c 44 4f 15 d6 5a 1f 41 9f"
+      - "4f 59 58 88 68 59 15 c0 03 5e 58 97 0f 58 4f 9b"
+      - "4c 4d 5b 9f 03 11 15 97 44 4e 44 9b 46 58 7e 9e"
+      - "03 07 15 81 7d 1f 54 95 4f 53 52 99 55 52 45 b3"
+      - "45 61 15 c0 15 40 15 d6 03 50 52 8e 40 1f 0d 81"
+      - "03 5e 58 94 4f 58 54 8e 4e 4f 7e 9e 03 07 02 87"
+      - "5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "44 61 74 61 54 72 61 6e 73 66 65 72"
+          text: "DataTransfer"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 76 65 6e 64 6f 72 49 64 22 3a 22 63 6f 6d 2e 65 78 61 6d 70 6c 65 22 2c 22 6d 65 73 73 61 67 65 49 64 22 3a 22 7b 5c 22 63 6f 6e 6e 65 63 74 6f 72 49 64 5c 22 3a 34 7d 22 2c 22 6d 65 74 61 22 3a 7b 22 63 6f 6e 6e 65 63 74 6f 72 49 64 22 3a 35 7d 7d"
+          text: "{\"vendorId\":\"com.example\",\"messageId\":\"{\\\"connectorId\\\":4}\",\"meta\":{\"connectorId\":5}}"
+        - name: "unique_id"
+          value: "64"
+          text: "d"
+  - from: "client"
+    bytes:
+      - "81 99 37 fa 21 3d 6c c8 0d 1f 52 a6 03 0c 15 d6"
+      - "03 75 52 9b 53 49 55 9f 40 49 15 d6 5a 40 6a"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "65 5c 22 31"
+          text: "e\\\"1"
+  - from: "server"
+    bytes:
+      - "81 0d 5b 33 2c 22 65 5c 22 31 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "65 5c 22 31"
+          text: "e\\\"1"
+  - from: "client"
+    bytes:
+      - "81 bd 37 fa 21 3d 6c c8 0d 1f 4f 82 59 45 4f 82"
+      - "59 45 4f 82 59 45 4f 82 59 45 4f 82 59 45 4f 82"
+      - "59 45 4f 82 59 45 4f 82 59 45 4f 82 59 45 4f 82"
+      - "59 45 15 d6 03 75 52 9b 53 49 55 9f 40 49 15 d6"
+      - "5a 40 6a"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78"
+          text: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  - from: "server"
+    bytes:
+      - "81 31 5b 33 2c 22 78 78 78 78 78 78 78 78 78 78"
+      - "78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78"
+      - "78 78 78 78 78 78 78 78 78 78 78 78 78 78 22 2c"
+      - "7b 7d 5d"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78 78"
+          text: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  - from: "client"
+    bytes:
+      - "81 b9 37 fa 21 3d 6c c8 0d 1f 4e 83 58 44 4e 83"
+      - "58 44 4e 83 58 44 4e 83 58 44 4e 83 58 44 4e 83"
+      - "58 44 4e 83 58 44 4e 83 58 44 4e 83 58 44 15 d6"
+      - "03 75 52 9b 53 49 55 9f 40 49 15 d6 5a 40 6a"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79"
+          text: "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  - from: "server"
+    bytes:
+      - "81 2d 5b 33 2c 22 79 79 79 79 79 79 79 79 79 79"
+      - "79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79"
+      - "79 79 79 79 79 79 79 79 79 79 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79 79"
+          text: "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  - from: "client"
+    bytes:
+      - "81 fe 01 67 37 fa 21 3d 6c c8 0d 1f 51 d8 0d 1f"
+      - "73 9b 55 5c 63 88 40 53 44 9c 44 4f 15 d6 5a 1f"
+      - "41 9f 4f 59 58 88 68 59 15 c0 03 5e 58 97 0f 58"
+      - "4f 9b 4c 4d 5b 9f 03 11 15 9e 40 49 56 d8 1b 1f"
+      - "07 cb 13 0e 03 cf 17 0a 0f c3 11 0c 05 c9 15 08"
+      - "01 cd 19 04 07 cb 13 0e 03 cf 17 0a 0f c3 11 0c"
+      - "05 c9 15 08"
+    expect:
+      attributes:
+        - name: "action"
+          value: "44 61 74 61 54 72 61 6e 73 66 65 72"
+          text: "DataTransfer"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 22 76 65 6e 64 6f 72 49 64 22 3a 22 63 6f 6d 2e 65 78 61 6d 70 6c 65 22 2c 22 64 61 74 61 22 3a 22 30 31 32 33 34 35 36 37 38 39 30 31 32 33 34 35 36 37 38 39 30 31 32 33 34 35 36 37 38 39 30 31 32 33 34 35"
+          text: "{\"vendorId\":\"com.example\",\"data\":\"012345678901234567890123456789012345"
+        - name: "unique_id"
+          value: "66"
+          text: "f"
+  - from: "client"
+    bytes:
+      - "01 cd 19 04 07 cb 13 0e 03 cf 17 0a 0f c3 11 0c"
+      - "05 c9 15 08 01 cd 19 04 07 cb 13 0e 03 cf 17 0a"
+      - "0f c3 11 0c 05 c9 15 08 01 cd 19 04 07 cb 13 0e"
+      - "03 cf 17 0a 0f c3 11 0c 05 c9 15 08 01 cd 19 04"
+      - "07 cb 13 0e 03 cf 17 0a 0f c3 11 0c 05 c9 15 08"
+      - "01 cd 19 04 07 cb 13 0e 03 cf 17 0a 0f c3 11 0c"
+      - "05 c9 15 08 01 cd 19 04 07 cb 13 0e 03 cf 17 0a"
+      - "0f c3 11 0c 05 c9 15 08 01 cd 19 04 07 cb 13 0e"
+      - "03 cf 17 0a 0f c3 11 0c 05 c9 15 08 01 cd 19 04"
+      - "07 cb 13 0e 03 cf 17 0a 0f c3 11 0c 05 c9 15 08"
+      - "01 cd 19 04 07 cb 13 0e 03 cf 17 0a 0f c3 11 0c"
+      - "05 c9 15 08 01 cd 19 04 07 cb 13 0e 03 cf 17 0a"
+      - "0f c3 11 0c 05 c9 15 08 01 cd 19 04 07 cb 13 0e"
+      - "03 cf 17 0a 0f c3 11 0c 05 c9 15 08 01 cd 19 04"
+      - "07 cb 13 0e 03 cf 17 0a 0f c3 11 0c 05 c9 15 08"
+      - "01 cd 19 04 07 cb 13 0e 03 cf 17 0a 0f c3 11 0c"
+      - "05 c9 15 08 01 cd 19 04 15 87 7c 81 96 37 fa 21"
+      - "3d 6c c8 0d 1f 50 d8 0d 1f 7f 9f 40 4f 43 98 44"
+      - "5c 43 d8 0d 46 4a a7"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "67"
+          text: "g"
+  - from: "server"
+    bytes:
+      - "81 0a 5b 33 2c 22 66 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "44 61 74 61 54 72 61 6e 73 66 65 72"
+          text: "DataTransfer"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "66"
+          text: "f"
+  - from: "server"
+    bytes:
+      - "89 00"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f ca 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 30"
+          text: "h0"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 30 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 30"
+          text: "h0"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f cb 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31"
+          text: "h1"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 31 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31"
+          text: "h1"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f c8 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 32"
+          text: "h2"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 32 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 32"
+          text: "h2"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f c9 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 33"
+          text: "h3"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 33 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 33"
+          text: "h3"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f ce 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 34"
+          text: "h4"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 34 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 34"
+          text: "h4"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f cf 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 35"
+          text: "h5"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 35 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 35"
+          text: "h5"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f cc 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 36"
+          text: "h6"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 36 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 36"
+          text: "h6"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f cd 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 37"
+          text: "h7"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 37 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 37"
+          text: "h7"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f c2 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 38"
+          text: "h8"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 38 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 38"
+          text: "h8"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 5f c3 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 39"
+          text: "h9"
+  - from: "server"
+    bytes:
+      - "81 33 5b 33 2c 22 68 39 22 2c 7b 22 63 75 72 72"
+      - "65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30"
+      - "32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38"
+      - "36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 39"
+          text: "h9"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 5f cb 11 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31 30"
+          text: "h10"
+  - from: "server"
+    bytes:
+      - "81 34 5b 33 2c 22 68 31 30 22 2c 7b 22 63 75 72"
+      - "72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d"
+      - "30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34"
+      - "38 36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31 30"
+          text: "h10"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 5f cb 10 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31 31"
+          text: "h11"
+  - from: "server"
+    bytes:
+      - "81 34 5b 33 2c 22 68 31 31 22 2c 7b 22 63 75 72"
+      - "72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d"
+      - "30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34"
+      - "38 36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31 31"
+          text: "h11"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 5f cb 13 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31 32"
+          text: "h12"
+  - from: "server"
+    bytes:
+      - "81 34 5b 33 2c 22 68 31 32 22 2c 7b 22 63 75 72"
+      - "72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d"
+      - "30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34"
+      - "38 36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31 32"
+          text: "h12"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 5f cb 12 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31 33"
+          text: "h13"
+  - from: "server"
+    bytes:
+      - "81 34 5b 33 2c 22 68 31 33 22 2c 7b 22 63 75 72"
+      - "72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d"
+      - "30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34"
+      - "38 36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31 33"
+          text: "h13"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 5f cb 15 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "68 31 34"
+          text: "h14"
+  - from: "server"
+    bytes:
+      - "81 34 5b 33 2c 22 68 31 34 22 2c 7b 22 63 75 72"
+      - "72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d"
+      - "30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34"
+      - "38 36 5a 22 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 75 72 72 65 6e 74 54 69 6d 65 22 3a 22 32 30 31 33 2d 30 32 2d 30 31 54 32 30 3a 35 33 3a 33 32 2e 34 38 36 5a 22 7d"
+          text: "{\"currentTime\":\"2013-02-01T20:53:32.486Z\"}"
+        - name: "unique_id"
+          value: "68 31 34"
+          text: "h14"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 ca 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 30"
+          text: "o0"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 cb 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31"
+          text: "o1"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 c8 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 32"
+          text: "o2"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 c9 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 33"
+          text: "o3"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 ce 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 34"
+          text: "o4"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 cf 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 35"
+          text: "o5"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 cc 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 36"
+          text: "o6"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 cd 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 37"
+          text: "o7"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 c2 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 38"
+          text: "o8"
+  - from: "client"
+    bytes:
+      - "81 97 37 fa 21 3d 6c c8 0d 1f 58 c3 03 11 15 b2"
+      - "44 5c 45 8e 43 58 56 8e 03 11 4c 87 7c"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 39"
+          text: "o9"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 11 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 30"
+          text: "o10"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 10 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 31"
+          text: "o11"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 13 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 32"
+          text: "o12"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 12 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 33"
+          text: "o13"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 15 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 34"
+          text: "o14"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 14 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 35"
+          text: "o15"
+  - from: "client"
+    bytes:
+      - "81 98 37 fa 21 3d 6c c8 0d 1f 58 cb 17 1f 1b d8"
+      - "69 58 56 88 55 5f 52 9b 55 1f 1b 81 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 36"
+          text: "o16"
+  - from: "server"
+    bytes:
+      - "81 0b 5b 33 2c 22 6f 30 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 30"
+          text: "o0"
+  - from: "server"
+    bytes:
+      - "81 0b 5b 33 2c 22 6f 31 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31"
+          text: "o1"
+  - from: "server"
+    bytes:
+      - "81 0c 5b 33 2c 22 6f 31 36 22 2c 7b 7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "48 65 61 72 74 62 65 61 74"
+          text: "Heartbeat"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "6f 31 36"
+          text: "o16"

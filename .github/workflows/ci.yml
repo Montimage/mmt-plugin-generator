@@ -286,6 +286,25 @@ jobs:
           for cc in gcc clang; do
             bash tests/check_headercheck_mutations.sh "$SDK_PREFIX" "$cc"
           done
+      - name: Check the profile's ids against the run-time registry
+        # tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile
+        # (#50, #115): with every plugin of the package loaded, mmt-dpi
+        # registers exactly the profile's ids, each under its alias. The test
+        # skips on an SDK without a bundled profile or without all four
+        # plugins, so the step also requires its PASSED line.
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          out="$RUNNER_TEMP/registry.txt"
+          status=0
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider \
+            tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile \
+            > "$out" || status=$?
+          cat "$out"
+          [ "$status" -eq 0 ] || exit "$status"
+          grep -qxF 'PASSED tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile' "$out" \
+            || { echo "the run-time registry check did not pass"; exit 1; }
 
   generated-code:
     # T1.7 (#16): the generated C of every corpus model that generate accepts
@@ -379,6 +398,22 @@ jobs:
           [ -f /usr/include/pcap.h ] \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcap-dev; }
           uv sync
+      - name: Install tshark
+        # The scaffold --tshark test (#125) and the skill's drift check
+        # against tshark (#123) need the real tshark: the distribution's
+        # package, installed without prompts (wireshark-common's setuid
+        # question answered no: the tests only read capture files). The
+        # scaffold and skill steps below set MMT_REQUIRE_TSHARK, so a
+        # missing tshark fails them instead of skipping (#128).
+        run: |
+          echo 'wireshark-common wireshark-common/install-setuid boolean false' \
+            | sudo debconf-set-selections
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y --no-install-recommends tshark
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' tshark
+          command -v tshark
+          tshark --version | head -n 1
       - name: Compile, build and load the generated C of every corpus model
         # tests/unit/generate/test_compile.py: -fsyntax-only -Wall -Wextra
         # -Werror, registration with libmmt_core, and a plugin built -O2
@@ -424,6 +459,17 @@ jobs:
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py
+      - name: Build and test the OCI-P plugin project
+        # tests/unit/ocip/test_sdk.py: ocip-plugin/project (#134, #138),
+        # copied to a temporary directory: validate against the SDK, build
+        # from the committed generated/ (no regeneration), then test
+        # --sanitize on its packet and session tests.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/ocip/test_sdk.py
       - name: Create a project with mmt-plugin init and test it
         # tests/unit/init/test_sdk.py: mmt-plugin init (#23) in a temporary
         # directory, its id from the SDK's registry, then mmt-plugin test
@@ -450,13 +496,27 @@ jobs:
         # tests/unit/scaffold/test_sdk.py: mmt-plugin init, then scaffold
         # --from-pcap (#26) on sample captures under UDP and Ethernet
         # parents; the proposed plugin.yaml passes every packet test
-        # scaffold wrote, also under ASan and UBSan.
+        # scaffold wrote, also under ASan and UBSan. With the real tshark,
+        # scaffold --tshark (#125) drafts DNS, ARP and WebSocket plugins
+        # that read the values tshark decodes (MMT_REQUIRE_TSHARK, #128).
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
+      - name: Run plugins over captures with mmt-plugin run
+        # tests/unit/run/test_sdk.py: mmt-plugin run (#103, #115) over
+        # captures written by the test: the DNS example's counts, a second
+        # plugin with --plugin and --protocol, a file that is not a plugin, a
+        # broken capture, and the same memory for a ten times larger capture.
         env:
           MMT_GOLDEN_CC: ${{ matrix.cc }}
           MMT_REQUIRE_GOLDEN_COMPILE: '1'
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
-            uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/run/test_sdk.py
       - name: Run the mmt-plugin-generator skill's evals
         # tests/unit/skill/test_sdk.py: every case of
         # skills/mmt-plugin-generator/evals/ (#27), from a spec, a capture and
@@ -464,10 +524,13 @@ jobs:
         # test loop with --json until green; each command has no stdin data
         # and no terminal, and every envelope keeps the skill's contract.
         # Then the spec-telem plugin is evaluated on a capture that
-        # scripts/make_pcap.py writes, with scripts/pcap_eval.py.
+        # scripts/make_pcap.py writes, with scripts/pcap_eval.py, with and
+        # without the real tshark: with it, a field without drift, one with
+        # a drift, then that drift accepted (#123; MMT_REQUIRE_TSHARK, #128).
         env:
           MMT_GOLDEN_CC: ${{ matrix.cc }}
           MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
         run: |
           MMT_GOLDEN_SDK="$SDK_PREFIX" \
             uv run pytest -v -rA -p no:cacheprovider tests/unit/skill/test_sdk.py

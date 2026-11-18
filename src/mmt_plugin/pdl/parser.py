@@ -74,6 +74,7 @@ from mmt_plugin.pdl.model import (
     StructType,
     Switch,
     ValueOf,
+    is_c_type_word,
 )
 
 __all__ = ["STDIN", "PdlSyntaxError", "parse", "parse_element_type", "parse_expression"]
@@ -336,7 +337,10 @@ class _Parser:
 
         An error inside the value is recorded and parsing goes on after the
         value's closing quote, when that quote is on the same line; a missing
-        closing quote stops the parse.
+        closing quote stops the parse. The quotes left on the line decide
+        which (``skip_to_closing_quote``): with an even number the closing
+        quote is taken to be missing, so ``offset="BAD scope="p"`` gives one
+        diagnostic, at ``BAD``, not a second one at ``p`` (#48).
         """
         opening = self.expect(
             '"',
@@ -370,15 +374,28 @@ class _Parser:
         )
 
     def skip_to_closing_quote(self, opening: Token) -> bool:
-        """Move past the next ``"`` if it is on ``opening``'s line."""
+        """Move past the next ``"`` if it closes the value ``opening`` opened.
+
+        It is taken to when it is on ``opening``'s line and an odd number of
+        quotes is left on that line. An even number is read as the closing
+        quote missing, the next one opening another value (``scope="p"``),
+        and the parse stops at the first error. The count cannot tell that
+        from a closed value followed by an unclosed one (``offset="BAD"
+        scope="p``), which also stops there and loses the later
+        ``model.syntax.unterminated-string``: only the number of diagnostics
+        differs, never what is accepted.
+        """
+        quotes = []
         for ahead in range(len(self.tokens) - self.i):
             token = self.peek(ahead)
-            if token.span.line != opening.span.line:
-                return False
+            if token.span.line != opening.span.line or token.kind is Kind.EOF:
+                break
             if token.is_punct('"'):
-                self.i += ahead + 1
-                return True
-        return False
+                quotes.append(ahead)
+        if len(quotes) % 2 == 0:
+            return False
+        self.i += quotes[0] + 1
+        return True
 
     def quoted_word(self, what: str, hint: str) -> Token:
         token = self.peek()
@@ -772,7 +789,8 @@ class _Parser:
                     base,
                 )
             self.advance()
-        if base.text not in C_TYPE_WORDS:
+        word = base.text
+        if not is_c_type_word(word):
             self.fail(
                 "model.syntax.unknown-type",
                 f"`{base.text}` is not a PDL type",
@@ -798,7 +816,7 @@ class _Parser:
                 base,
             )
         end = star if pointer else base
-        return CType(base.text, unsigned, pointer, start.span.to(end.span))
+        return CType(word, unsigned, pointer, start.span.to(end.span))
 
     # --- if / else (G:314-380) --------------------------------------------------
 

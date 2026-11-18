@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TextIO
 
-__all__ = ["ColorTier", "StreamStyle", "decide"]
+__all__ = ["MAX_WIDTH", "ColorTier", "StreamStyle", "decide"]
+
+#: The widest stream width used, whatever ``COLUMNS`` or the terminal says:
+#: a box or a table is never drawn wider.
+MAX_WIDTH = 500
 
 
 class ColorTier(str, Enum):
@@ -66,7 +70,8 @@ def _is_utf8(stream: TextIO) -> bool:
 
 
 def _width(stream: TextIO, env: Mapping[str, str], tty: bool) -> int:
-    """``COLUMNS`` when it is a positive number, else the terminal's width, else 80.
+    """``COLUMNS`` when it is a positive number, else the terminal's width, else 80;
+    at most ``MAX_WIDTH``.
 
     ``str.isdigit()`` is also true for characters ``int()`` rejects (``²``,
     ``③``), and ``int()`` refuses over 4300 digits, so whatever it cannot
@@ -79,14 +84,14 @@ def _width(stream: TextIO, env: Mapping[str, str], tty: bool) -> int:
         except ValueError:
             value = 0
         if value > 0:
-            return value
+            return min(value, MAX_WIDTH)
     if tty:
         try:
             size = os.get_terminal_size(stream.fileno()).columns
         except (AttributeError, ValueError, OSError):
             size = 0
         if size > 0:
-            return size
+            return min(size, MAX_WIDTH)
     return 80
 
 
@@ -107,7 +112,7 @@ def decide(
       16 otherwise.
     - Unicode glyphs when the stream's encoding is UTF-8, ASCII otherwise.
     - Width: ``COLUMNS`` when set to a positive number, else the terminal's
-      width, else 80.
+      width, else 80; at most ``MAX_WIDTH`` (500) cells.
     """
     unicode = _is_utf8(stream)
     tty = _isatty(stream)

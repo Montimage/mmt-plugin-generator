@@ -568,6 +568,41 @@ def test_a_missing_closing_quote_is_not_recovered() -> None:
     assert [d.code for d in errors_of(text)] == ["model.syntax.unexpected-token"]
 
 
+def test_an_error_before_a_missing_closing_quote_is_reported_once() -> None:
+    # #48: the recovery stopped at the next key's quote and reported a second,
+    # spurious error at `packet`; the Java tool cascaded too.
+    text = build(attr(ATTR + ' offset="BAD scope="packet"'))
+    (d,) = errors_of(text)
+    assert d.code == "model.syntax.invalid-expression"
+    at = Case(text, "", "BAD", "")
+    assert d.location is not None
+    assert (d.location.line, d.location.column) == at.position()
+
+
+@pytest.mark.parametrize("value", ['"BAD = 2"', '"BAD =" scope="packet"'])
+def test_an_equals_sign_inside_a_closed_value_is_recovered(value: str) -> None:
+    # The quotes left on the line, not an `=`, tell whether the value is closed.
+    text = build(attr(ATTR + f" offset={value}") + attr(ATTR + ' offset="B"'))
+    codes = [(d.code, d.location and d.location.line) for d in errors_of(text)]
+    assert codes == [
+        ("model.syntax.invalid-expression", 7),
+        ("model.syntax.invalid-expression", 8),
+    ]
+
+
+def test_an_unclosed_later_value_after_an_error_is_not_reported() -> None:
+    # The cost of deciding by the quotes left on the line: a closed first
+    # value followed by an unclosed one leaves an even number, read as the
+    # first value's closing quote missing, so the parse stops at `BAD` and
+    # the `model.syntax.unterminated-string` of `scope` is not reported.
+    text = build(attr(ATTR + ' offset="BAD" scope="packet') + attr(ATTR + ' offset="B"'))
+    (d,) = errors_of(text)
+    assert d.code == "model.syntax.invalid-expression"
+    at = Case(text, "", "BAD", "")
+    assert d.location is not None
+    assert (d.location.line, d.location.column) == at.position()
+
+
 def test_diagnostics_carry_related_locations() -> None:
     (d,) = errors_of(build(properties='label = "p" id = "1" label = "q"'))
     assert [(r.message, r.location and r.location.line) for r in d.related] == [

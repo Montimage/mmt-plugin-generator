@@ -24,6 +24,7 @@ from mmt_plugin.sdk.detect import (
     parse_pc,
     read_version,
     require_sdk,
+    strip_comments,
 )
 
 MakePrefix = Callable[..., Path]
@@ -282,6 +283,30 @@ def test_version_comes_from_mmt_core_h(tmp_path: Path, make_prefix: MakePrefix) 
     spaced = make_prefix(tmp_path / "e", core=False) / "dpi" / "include" / "mmt_core.h"
     spaced.write_text('  #  define\tVERSION   "1.10.3" \n')
     assert read_version(str(tmp_path / "e")) == "1.10.3"
+
+
+def test_read_version_ignores_comments(tmp_path: Path, make_prefix: MakePrefix) -> None:
+    # A commented-out definition before the real one is not it (#50, F6).
+    header = make_prefix(tmp_path / "a", core=False) / "dpi" / "include" / "mmt_core.h"
+    header.write_text(
+        "/* History:\n"
+        '#define VERSION "0.9"\n'
+        "*/\n"
+        '// #define VERSION "0.8"\n'
+        "// a line comment continued \\\n"
+        '#define VERSION "0.7"\n'
+        '#define GREETING "/* not a comment"\n'
+        '#define VERSION "1.10.2" ///< SDK version string\n'
+    )
+    assert read_version(str(tmp_path / "a")) == "1.10.2"
+    only = make_prefix(tmp_path / "b", core=False) / "dpi" / "include" / "mmt_core.h"
+    only.write_text('/*\n#define VERSION "0.9"\n*/\n// #define VERSION "0.8"\n/* unterminated\n')
+    assert read_version(str(tmp_path / "b")) is None
+
+
+def test_strip_comments() -> None:
+    text = 'a /* x\ny */ b // z\nc "/* s */" \'"\' d /* open'
+    assert strip_comments(text) == 'a  \n b  \nc "/* s */" \'"\' d  '
 
 
 def test_an_sdk_with_an_unknown_version(tmp_path: Path, make_prefix: MakePrefix) -> None:

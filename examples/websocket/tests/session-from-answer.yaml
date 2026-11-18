@@ -1,0 +1,139 @@
+# Session test of examples/websocket, written from RFC 6455 (not a port:
+# the corpus has no WebSocket model): its packets run in order, one TCP
+# connection. Format and rules: tests/corpus/README.md, Session files
+schema: 1
+id: "websocket/session-from-answer"
+model: "websocket"
+summary: "A capture that starts at the server's 101 answer, with a frame after it in the segment"
+source: "RFC 6455 section 1.2, 4 (the opening handshake) and 5 (framing); the WebSocket layer's session state, examples/README.md, WebSocket"
+session:
+  through: "tcp:dport=8080,sport=49155"
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  attributes:
+    - name: "accept"
+      type: "MMT_STRING_DATA"
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+    - name: "close_code"
+      type: "MMT_U16_DATA"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+    - name: "key"
+      type: "MMT_STRING_DATA"
+    - name: "mask"
+      type: "MMT_U8_DATA"
+    - name: "masking_key"
+      type: "MMT_U32_DATA"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+    - name: "payload_offset"
+      type: "MMT_U32_DATA"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+    - name: "rsv2"
+      type: "MMT_U8_DATA"
+    - name: "rsv3"
+      type: "MMT_U8_DATA"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+    - name: "subprotocol"
+      type: "MMT_STRING_DATA"
+packets:
+  - from: "server"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59"
+      - "47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72 6f"
+      - "74 6f 63 6f 6c 3a 20 63 68 61 74 0d 0a 0d 0a 81"
+      - "05 48 65 6c 6c 6f"
+    expect:
+      attributes:
+        - name: "accept"
+          value: "73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59 47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d"
+          text: "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 2
+        - name: "mask"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65 6c 6c 6f"
+          text: "Hello"
+        - name: "payload_len"
+          value: 5
+        - name: "payload_offset"
+          value: 161
+        - name: "rsv1"
+          value: 0
+        - name: "rsv2"
+          value: 0
+        - name: "rsv3"
+          value: 0
+        - name: "status_code"
+          value: 101
+        - name: "subprotocol"
+          value: "63 68 61 74"
+          text: "chat"
+  - from: "client"
+    bytes:
+      - "81 85 37 fa 21 3d 7f 9f 4d 51 58"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "mask"
+          value: 1
+        - name: "masking_key"
+          value: 939139389
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65 6c 6c 6f"
+          text: "Hello"
+        - name: "payload_len"
+          value: 5
+        - name: "payload_offset"
+          value: 6
+        - name: "rsv1"
+          value: 0
+        - name: "rsv2"
+          value: 0
+        - name: "rsv3"
+          value: 0
+        - name: "subprotocol"
+          value: "63 68 61 74"
+          text: "chat"

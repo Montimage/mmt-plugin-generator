@@ -13,6 +13,7 @@ from mmt_plugin.codegen import DIAGNOSTIC_CODES as GENERATION_CODES
 from mmt_plugin.commands.generate import DIAGNOSTIC_CODES as GENERATE_CODES
 from mmt_plugin.commands.import_pdl import DIAGNOSTIC_CODES as IMPORT_CODES
 from mmt_plugin.commands.init import DIAGNOSTIC_CODES as INIT_CODES
+from mmt_plugin.commands.run import DIAGNOSTIC_CODES as RUN_CODES
 from mmt_plugin.commands.scaffold import DIAGNOSTIC_CODES as SCAFFOLD_CODES
 from mmt_plugin.commands.test import DIAGNOSTIC_CODES as TEST_CODES
 from mmt_plugin.commands.validate import DIAGNOSTIC_CODES as VALIDATE_CODES
@@ -21,7 +22,7 @@ from mmt_plugin.exitcodes import ExitCode, for_class
 from mmt_plugin.pluginyaml import DIAGNOSTIC_CODES as PLUGIN_YAML_CODES
 from mmt_plugin.semantics import HINTS
 
-from .conftest import attr, build, classify, covered, ok, run, u8, whole
+from .conftest import attr, blob, build, classify, covered, ok, run, u8, whole
 
 E, W = Severity.ERROR, Severity.WARNING
 
@@ -182,14 +183,25 @@ CASES: dict[str, Case] = {
         severity=W,
     ),
     "branch-offset-mismatch": Case(
-        u8("k", "0")
-        + cond("val(k) == 1", u8("c", "0"), u8("d", "0", length="2"))
-        + u8("after", "0"),
+        u8("k", "0") + cond("val(k) == 1", u8("c", "0"), blob("d", "0", "2")) + u8("after", "0"),
         "after",
         "the offset of `after` adds the running offset left by an if/else whose branches end "
         "at different offsets; PDL keeps the else branch's",
         severity=W,
         related=(("its then branch ends at 2, its else branch at 3", None),),
+    ),
+    "define-sdk-name": Case(
+        build(u8("a", "0"), defines="\tdefine PROTO_IP = 15\n"),
+        "PROTO_IP",
+        "define `PROTO_IP` has the name of the SDK protocol macro PROTO_IP (= 178): the "
+        "generated header would redefine it",
+        related=(("PROTO_IP is declared in tcpip/mmt_tcpip_protocols.h", None),),
+    ),
+    "data-len-width": Case(
+        attr('alias="a" data_type="MMT_U16_DATA" data_len="4" offset="0" scope="packet"'),
+        "4",
+        "`a` has data_len 4, but MMT_U16_DATA is 2 bytes wide",
+        severity=W,
     ),
 }
 
@@ -244,6 +256,7 @@ LATER = {
     *PLUGIN_YAML_CODES,
     *IMPORT_CODES,
     *SCAFFOLD_CODES,
+    *RUN_CODES,
 } - set(HINTS)
 SEMANTIC = [
     c

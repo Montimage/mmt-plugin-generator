@@ -13,6 +13,9 @@ SDK is an extracted mmt-dpi package, a private prefix (never
 
 Without ``MMT_GOLDEN_SDK`` the tests skip, unless
 ``MMT_REQUIRE_GOLDEN_COMPILE=1`` (CI's "Generated code" job) makes them fail.
+The capture evaluation with tshark also needs tshark on ``PATH``: without it,
+it skips, unless ``MMT_REQUIRE_TSHARK=1`` (the same job, which installs
+tshark, #128) makes it fail.
 """
 
 from __future__ import annotations
@@ -33,12 +36,22 @@ from .test_evals import CASES, validate_schemas
 SDK_ENV = "MMT_GOLDEN_SDK"
 CC_ENV = "MMT_GOLDEN_CC"
 REQUIRE_ENV = "MMT_REQUIRE_GOLDEN_COMPILE"
+REQUIRE_TSHARK_ENV = "MMT_REQUIRE_TSHARK"
 
 
 def _skip_or_fail(why: str) -> None:
     if os.environ.get(REQUIRE_ENV) == "1":
         pytest.fail(f"{REQUIRE_ENV}=1 but {why}")
     pytest.skip(why)
+
+
+def _need_tshark() -> None:
+    """Skip when tshark is not on ``PATH``, or fail when
+    ``MMT_REQUIRE_TSHARK=1`` (CI's "Generated code" job installs it, #128)."""
+    if shutil.which("tshark") is None:
+        if os.environ.get(REQUIRE_TSHARK_ENV) == "1":
+            pytest.fail(f"{REQUIRE_TSHARK_ENV}=1 but tshark is not installed")
+        pytest.skip("tshark is not installed")
 
 
 def _sdk() -> Path:
@@ -79,8 +92,8 @@ def test_the_capture_evaluation_passes_on_a_synthetic_capture(
     one whose port is not TELEM's; with tshark, and without it (the expected
     frames then come from mmt_plugin.pcap)."""
     sdk, cc = _sdk(), _cc()
-    if tshark and shutil.which("tshark") is None:
-        pytest.skip("tshark is not installed")
+    if tshark:
+        _need_tshark()
     if not tshark:
         real_which = shutil.which
         monkeypatch.setattr(
@@ -112,6 +125,29 @@ def test_the_capture_evaluation_passes_on_a_synthetic_capture(
     assert (out / "report.md").read_text("utf-8").startswith("# Capture evaluation: telem — PASS")
     lines = (out / "frames.jsonl").read_text("utf-8").splitlines()
     assert [json.loads(line)["frame"] for line in lines] == [1, 2, 3, 4]
+    if tshark:
+        assert report["drift"]["checked"] and report["drift"]["items"] == []
+        # The drift check against tshark: the message length agrees with
+        # tshark's data.len (no drift), never with udp.length (8 bytes more
+        # in every frame: a drift, a defect until accepted).
+        same = ["--decode-as", "udp.port==5684,data", "--field", "length=data.len"]
+        assert pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *same]) == 0
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        assert report["fields"]["length"]["agreement"] == 1.0
+        assert report["drift"]["items"] == []
+        drift = ["--field", "length=udp.length"]
+        assert pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *drift]) == 1
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        (item,) = report["drift"]["items"]
+        assert (item["key"], item["frames"], item["status"]) == ("length", 4, "defect")
+        accept = [*drift, "--accept", "length=udp.length counts the UDP header"]
+        assert (
+            pcap_eval.main([*common, "--capture", str(capture), "--out", str(out), *accept]) == 0
+        )
+        report = json.loads((out / "report.json").read_text("utf-8"))
+        assert report["drift"]["items"][0]["status"] == "accepted"
+    else:
+        assert not report["drift"]["checked"]
 
     other = tmp_path / "other.pcap"
     assert (
@@ -123,3 +159,25 @@ def test_the_capture_evaluation_passes_on_a_synthetic_capture(
     failed = json.loads((out2 / "report.json").read_text("utf-8"))
     assert failed["verdict"] == "FAIL"
     assert failed["claimed"] == 0
+
+
+@pytest.mark.parametrize("required", [True, False], ids=["required", "optional"])
+def test_a_missing_tshark_fails_only_when_required(
+    required: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#128: without tshark the tshark test skips, unless
+    ``MMT_REQUIRE_TSHARK=1``, which CI's "Generated code" job sets, makes it
+    fail; with tshark it runs. No SDK needed."""
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which", lambda name: None if name == "tshark" else real_which(name)
+    )
+    if required:
+        monkeypatch.setenv(REQUIRE_TSHARK_ENV, "1")
+    else:
+        monkeypatch.delenv(REQUIRE_TSHARK_ENV, raising=False)
+    outcome = pytest.fail.Exception if required else pytest.skip.Exception
+    with pytest.raises(outcome, match="tshark is not installed"):
+        _need_tshark()
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    _need_tshark()

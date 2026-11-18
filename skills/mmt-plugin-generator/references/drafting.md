@@ -67,8 +67,11 @@ attributes:
   `src/<label>_impl.c`. `build` fails with `build.missing-hook` until you
   define it; its hint gives the declaration.
 - **Parents.** Use `classify` when the parent's header says it is this
-  protocol (a UDP or TCP port, an EtherType): the match reads the parent's
-  header, in network byte order. Without `classify`, attach the protocol
+  protocol (a UDP port, an EtherType): the match reads the parent's
+  header, in network byte order. Under `tcp`, `classify` names the port
+  instead (`port`, either one, `sport` or `dport`), with optional `match`es
+  whose offsets count from the start of the payload; the generated code
+  reads the TCP header's length. Without `classify`, attach the protocol
   yourself in `<label>_hook_register_parents`. `validate` checks that the
   parent exists.
 - **Next protocol**: `classify_next` with `protocol.encapsulation: true`.
@@ -117,14 +120,38 @@ classified) when the parent's classification does not match the packet and
 `parents:` (or the hook), not the selector, unless the selector contradicts
 the spec. That run does not check `next`.
 
+When a value depends on earlier packets of the connection (a handshake, a
+message over two segments, an answer linked to its request), write a
+session test, `tests/<label>-session-<case>.yaml`, from the spec's
+exchange: `session` (`through: "tcp:dport=N"`, the protocol, its id, and
+the `attributes` every packet of the plugin's checks, absent where a
+packet does not list them) and `packets`, the steps in order: `open: true`
+(the handshake), `from: client` or `from: server` with the segment's
+`bytes` and its `expect` (`"none"`, or its `attributes`, without
+`offset`/`length` when the value comes from an earlier packet),
+`retransmit: true`, `lost: N`, `back: N` (a segment that arrives late,
+`N` bytes before that side's next sequence number), and `idle: N` seconds. `test` builds the
+TCP frames and runs them in one harness, through the plugin's parent;
+each failure names its step (`packet`). The format is in
+`tests/corpus/README.md`, "Session files".
+
 ## From a capture
 
 `scaffold --from-pcap` writes `<project>/plugin.proposed.yaml` and one
 packet test per payload, `<project>/tests/<label>-pcap-<n>.yaml`, whose
 values are what the proposal extracts. It never edits `plugin.yaml`.
+Under a `tcp` parent the payloads are each segment's new bytes in stream
+order; when each session starts with a text handshake (an HTTP upgrade),
+pass `--skip-until 0d0a0d0a` so that only the protocol's own bytes are
+sliced. When tshark is on `PATH` and dissects the protocol, `--tshark`
+drafts the fields from tshark's dissection instead, named after its fields
+(`--protocol` when it dissects several at the payloads' start,
+`--decode-as` for a port it does not know), and the tests expect the
+values tshark decodes: still a draft, to check against the spec.
 
 1. Read the proposal: each field has a comment with what was seen
-   (constant, varies, the payload length).
+   (constant, varies, the payload length). A byte cut into bit fields is a
+   struct `bits_<offset>` of `field_<offset>_b<bit>` fields.
 2. Match the fields with what you know of the protocol (a spec, a
    description, the port). Rename them (`field_0` to `version`), merge or
    split them, and delete those that are payload, not header.

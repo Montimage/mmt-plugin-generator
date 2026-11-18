@@ -37,7 +37,10 @@ protocol model. A Python rewrite is planned in
   plugin made the same way: directly above TCP (mmt-dpi 1.10.2 does not
   classify a layer above `websocket_example`), it claims a session whose
   handshake offers `ocpp1.6`, parses the WebSocket framing itself and
-  links each answer to its CALL's action. Labels are `<protocol>_example`,
+  links each answer to its CALL's action. Both inflate permessage-deflate
+  messages (RFC 7692, #107) with one decoder, `src/ws_inflate.c` and
+  `src/ws_inflate.h`, copied byte for byte into each project (a project
+  builds only its own `src/`). Labels are `<protocol>_example`,
   ids 976-993, profile 1.10.2 pinned. All 18 build and pass their packet
   tests against
   mmt-dpi 1.10.2; `examples/README.md` lists each one's label, id,
@@ -46,11 +49,30 @@ protocol model. A Python rewrite is planned in
   says. Tests in `tests/unit/examples/`: `test_examples.py` (the models,
   `generate --check`, the ports' packet tests against the corpus, a source
   for every value of the others', one `through` test per example with a
-  parent) and `test_sdk.py` (`validate`, `build` and `test --sanitize` on
-  each one, then each parent's classification broken, which fails only the
-  run through it, and the WebSocket and OCPP examples' TCP sessions, built
-  by `tcpsession.py`, replayed through the harness `test` built, then the
-  OCPP one's next to the WebSocket plugin; needs `MMT_GOLDEN_SDK`).
+  parent, a source for every session test, `tests/session-*.yaml`, and
+  the two `ws_inflate` copies identical)
+  and `test_sdk.py` (`validate`, `build` and `test --sanitize` on each
+  one, then each parent's classification broken, which fails only the
+  run through it and the session tests; the WebSocket and OCPP examples'
+  session tests (#99, #107), 24 and 23, under the sanitizers with corrupted
+  copies, and one without its CALL; then an OCPP session through the
+  harness `test` built, next to the WebSocket plugin; needs
+  `MMT_GOLDEN_SDK`).
+- `ocip-plugin/` (#134): the work folder of the Cisco BroadWorks OCI-P
+  plugin for mmt-security rule 231 (`README.md`, `REPORT.md`,
+  `request.md`, `inputs/`, `runs/`, the synthetic capture and its
+  evaluation). Its project, `ocip-plugin/project` (label `ocip`, id 960,
+  registered name `OCIP`, parent `tcp` port 2208 in its hook), is not an
+  example: rule 231 reads `OCIP.*`, so it keeps its label and is not
+  under `examples/`. It is kept current (#138, option 1 of the three the
+  issue weighed): regenerate it with the examples after a generator change
+  or a version bump (`examples/README.md`, "Regenerating"; the release's
+  `verify` job runs `generate --check` on it). Its packet and session
+  tests are written by `ocip-plugin/inputs/make_tests.py` (stdlib only)
+  from the wire format, never by hand. Tests in `tests/unit/ocip/`:
+  `test_project.py` (`validate --no-sdk`, `generate --check`, the tests
+  load and are what `make_tests.py` writes) and `test_sdk.py` (`validate`,
+  `build` and `test --sanitize` on a copy; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example, and scans
   the directories of its `SCAN_DIRS` for the macros mmt-dpi 1.10.0 made
@@ -103,8 +125,9 @@ protocol model. A Python rewrite is planned in
   default layout) and its unit tests in `tests/unit/`. The `mmt-plugin` CLI
   has the contract core of `docs/design/cli.md` (exit codes in
   `exitcodes.py`, diagnostic codes in `diagnostics.py`, the `--json`
-  envelope and its schema) and eleven commands, `init` (T2.7), `import`
-  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4), `install`,
+  envelope and its schema) and twelve commands, `init` (T2.7), `import`
+  (T3.2), `validate` (T2.1), `generate` (T1.5), `build` (T2.3), `test` (T2.4),
+  `run` (#103), `install`,
   `uninstall` and `doctor` (T2.5), `scaffold` (T4.1) and
   `completion {bash,zsh,fish}` (T2.6); each other
   command registers itself in `src/mmt_plugin/commands/` with its own issue,
@@ -141,7 +164,10 @@ protocol model. A Python rewrite is planned in
   run-time dependency) into the plugin header and source, in memory; every
   SDK name comes from the profile. `mmt-plugin generate`
   (`commands/generate.py`) writes them and `plugin.lock` (`lock.py`, schema
-  `schemas/lock/v1/plugin-lock.json`). Tests in `tests/unit/generate/`, with
+  `schemas/lock/v1/plugin-lock.json`; in the output directory when that is
+  outside the project), with its journal `plugin.lock.pending` written
+  first and removed last, so an interrupted run recovers without `--force`
+  (#56). Tests in `tests/unit/generate/`, with
   golden C for every corpus model that generates in
   `tests/unit/generate/golden/` (regenerate with
   `MMT_UPDATE_GOLDEN=1 uv run pytest tests/unit/generate`).
@@ -218,14 +244,28 @@ protocol model. A Python rewrite is planned in
   (with `through`), a `<parent>` failure when the plugin is not directly
   above that protocol where the layers end, `next` not checked (mmt-dpi
   1.10.2's TCP and UDP stop at a plugin's layer); the harness's records
-  are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A mismatch is
+  are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A
+  session test (#99, `session.py`: `session` and `packets` instead of
+  `bytes` and `expect`; `tests/corpus/README.md`, "Session files") is the
+  packets of one TCP connection (`open`, `idle` and client or server
+  segments, with `retransmit`, `lost` and `back`, a late segment;
+  sequence numbers, checksums and
+  padding built by `session.py`), run in order in a harness of its own,
+  each checked directly above TCP (`<parent>`), the attributes of
+  `session.attributes` it does not list absent: one `result.packets`
+  entry with `session` (its packet count), each failure with `packet` (its
+  step). A mismatch is
   `test.packet-failed`, a crash `test.crash` (exit 6), each failure with
   its attribute, expected and actual value. `--sanitize` builds
   `build/sanitize/` with ASan/UBSan and runs truncated and random packets
-  (`fuzz.py`, `--seed`, `--fuzz-count`); `--bench` compares packets per
-  second with an empty plugin (`templates/baseline.c.j2`) and never changes
-  the exit code. Tests in `tests/unit/packettest/`: `test_testing.py`,
-  `test_frames.py` and `test_command.py` (fake SDK, compiler and harness
+  (`fuzz.py`, `--seed`, `--fuzz-count`), and each session test as it is,
+  then corrupted copies of it (`mutate_frames`) until they make
+  `--fuzz-count` packets, each in a harness of its own (a crash has its
+  copy as `index` and its step as `packet`); `--bench` compares packets
+  per second over the packet tests with an empty plugin
+  (`templates/baseline.c.j2`) and never changes the exit code. Tests in
+  `tests/unit/packettest/`: `test_testing.py`, `test_frames.py`,
+  `test_session.py` and `test_command.py` (fake SDK, compiler and harness
   run), and `test_sdk.py`
   (every corpus model under the sanitizers, a broken model, against a real
   SDK; needs `MMT_GOLDEN_SDK`).
@@ -260,8 +300,8 @@ protocol model. A Python rewrite is planned in
   header, the profile pinned in `sdk.profile`, `--parent` as its `parents`
   entry, #65), the scaffold `src/<label>_impl.c`, the packet test
   `tests/<label>-basic.yaml` and a `.gitignore` with `build/`. A parent the
-  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`)
-  gets a `classify`, the one `scaffold` proposes
+  generated code can attach (`ethernet:ethertype=`, `udp:sport=`/`dport=`,
+  `tcp:` with `port=`, `sport=` or `dport=`, #100) gets a `classify`, the one `scaffold` proposes
   (`pcap/skeleton.py:parent_yaml`), and the packet test also runs
   `through` it; any other is left to `<label>_hook_register_parents`.
   `--name` is only the label upper-cased (`plugin.yaml` has no other). `--id` defaults to the lowest id in 950-999
@@ -291,11 +331,17 @@ protocol model. A Python rewrite is planned in
   as `plugin.yaml`. Every command reads both formats; `sdk.profile` pins the
   profile below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE`. A parent with
   `classify` gets a generated classification function that the init
-  registers before calling `<label>_hook_register_parents`. Tests in
+  registers before calling `<label>_hook_register_parents`: matches at
+  fixed offsets of the parent (`classify_fixed`), or, under `tcp`, ports
+  (`port`, `sport`, `dport`) and matches on the payload, which starts after
+  the TCP header's data offset (`classify_tcp`, #100; a port under another
+  parent is `model.classify-port`). Tests in
   `tests/unit/pluginyaml/`: `test_nodes.py`, `test_schema.py`, `test_load.py`,
   `test_roundtrip.py` (every corpus model round-trips in both offset modes
   and generates the same C) and `test_sdk.py` (a packet test that passes
-  only through the generated parent classification; needs `MMT_GOLDEN_SDK`).
+  only through the generated parent classification, and frames with TCP
+  options, other ports and padding through the TCP one; needs
+  `MMT_GOLDEN_SDK`).
 - `src/mmt_plugin/commands/import_pdl.py` (T3.2): `mmt-plugin import PDL`
   (`-` is stdin) converts a PDL v1 model to `plugin.yaml`
   (`pluginyaml/convert.py`): `-o FILE` (default `<project>/plugin.yaml`; `-o -`
@@ -319,16 +365,63 @@ protocol model. A Python rewrite is planned in
   `<project>/plugin.proposed.yaml`, whose values the tests expect; it never
   edits `plugin.yaml`. The label and id come from `--model` (default
   `<project>/plugin.yaml`). `--max-packets` (default 20), `--dry-run`,
-  `--force`. A malformed pcap is `model.bad-pcap`, none under the parent
+  `--force`. Under a `tcp` parent each payload is a segment's new bytes in
+  its stream's order (retransmissions dropped, a gap given up), and
+  `--skip-until HEX` skips each direction's bytes of each session up to the
+  end of that pattern (an HTTP upgrade's `0d0a0d0a`), #102. A byte whose
+  bits vary independently is proposed as bit fields (a struct
+  `bits_<offset>`), with a role flag a direction sets its own way.
+  `--tshark` (#125, `pcap/tshark.py`) drafts the fields from tshark's
+  dissection instead (`tshark -T pdml` on the frames read, `-G fields`
+  for types and bitmasks): the protocol at the payloads' start
+  (`Payload.start`; `--protocol` when several, `--decode-as` as `-d`),
+  each field every payload has at one offset as an attribute named after
+  it, the tests expecting tshark's values; no tshark is
+  `sdk.tshark-not-found`, tshark failing `sdk.tshark-failed` (exit 4), no
+  dissector `model.no-dissector`, no field `model.no-fields` (exit 3),
+  nothing written. A malformed pcap is `model.bad-pcap`, none under the parent
   `model.no-payloads` (exit 3); an output with other content is
   `state.output-differs` (exit 7) unless `--force`. `src/mmt_plugin/pcap/`:
   `reader.py` (pcap and pcapng, no dependency), `layers.py` (Ethernet,
-  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons) and `skeleton.py` (the field
-  rules, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
-  `samples.py` builds captures, `data/` holds two written by tcpdump and
+  802.1Q, IPv4, IPv6, UDP, TCP; skip reasons), `streams.py` (TCP stream
+  order) and `skeleton.py` (the field
+  rules, the bit groups, the proposal, the packet tests). Tests in `tests/unit/scaffold/`:
+  `samples.py` builds captures (a WebSocket session among them), `test_streams.py`, `data/` holds two written by tcpdump and
   editcap, `test_reader.py`, `test_layers.py`, `test_skeleton.py`,
-  `test_command.py`, and `test_sdk.py` (`init`, `scaffold`, then the
-  proposal passes `test`; needs `MMT_GOLDEN_SDK`).
+  `test_command.py`, `test_tshark.py` (a fake tshark on `PATH` printing
+  `data/tshark/`, what tshark 4.2.2 printed for `samples.dns_capture()`),
+  and `test_sdk.py` (`init`, `scaffold`, then the proposal passes `test`;
+  with `--tshark` too when tshark is installed, and failing without it
+  when `MMT_REQUIRE_TSHARK=1`, #128; needs `MMT_GOLDEN_SDK`).
+- `src/mmt_plugin/commands/run.py` (#103): `mmt-plugin run PCAP` runs the
+  plugin of `--model` (as `test`'s) over a pcap or pcapng capture through
+  mmt-dpi's stack and counts what it reports. Stages `build` (`build` when
+  stale; `--no-deps` exits 7 instead), `runner` and `capture`.
+  `src/mmt_plugin/capture/`: `runner.py` renders the C runner
+  (`templates/runner.c.j2`, into `<build-dir>/run/`, `build.runner-failed`
+  exit 5), which loads, from a plugin directory of its own
+  (`MMT_DPI_PLUGINS_DIR`), every `*.so` of the SDK's `plugins/`, the plugin
+  and each `--plugin` (one named as an SDK plugin replaces it), opens a
+  handler for the first frame's link type and processes the frames it
+  reads on stdin through mmt-dpi's stack (nothing attaches the plugin: its
+  own parent classification runs); `run` streams the capture's frames to
+  it (`mmt_plugin.pcap.reader`, record by record, with their time stamps,
+  which the reader now gives in nanoseconds) in batches while threads read
+  its report and the tail of its stderr: constant memory whatever the
+  capture's size. `result`: `summary` (frames, processed, skipped,
+  classified), `paths` (protocol names and ids, packets; at most 1024, the
+  rest in `paths_other`), `protocols` (the plugin's, then each
+  `--protocol`: packets, and per attribute the packets that have it).
+  Ethernet and Linux cooked captures only (mmt-dpi's stacks 1 and 624;
+  another link type is `model.unsupported-linktype`, exit 3).
+  Warnings `test.no-match`, `test.other-linktype`, `test.unknown-protocol`;
+  `test.load-failed` and `test.crash` (the frame; `--timeout`) exit 6; a
+  capture broken after its header `model.bad-pcap` (exit 3) with the
+  counts so far; `--max-packets`, `--dry-run`, `--strict`. Tests in
+  `tests/unit/run/`: `test_runner.py` and `test_command.py` (a fake runner,
+  `fakes.py`, with build's fakes) and `test_sdk.py` (a real runner against
+  a real SDK, including its memory on a small and a large capture; needs
+  `MMT_GOLDEN_SDK`).
 - `skills/mmt-plugin-generator/` (T4.2; `skills/mmt-plugin-author/` before
   it was renamed): the agent skill that writes a plugin
   from a protocol spec, a capture or a legacy PDL v1 model, or updates an
@@ -337,12 +430,17 @@ protocol model. A Python rewrite is planned in
   request, the inputs and their sources, the capture, each loop run's
   envelopes and notes, the evaluation, `REPORT.md`, `manifest.json`), gets
   a capture of the protocol when the user gave none
-  (`references/capture.md`: found, recorded, or generated with
-  `scripts/make_pcap.py`, stdlib only) and evaluates the green plugin on it
+  (`references/capture.md`: found, recorded or crafted through the
+  `cyberlab` skill, a frontmatter dependency acquired with `asm` at first
+  use, or, without it, generated with `scripts/make_pcap.py`, stdlib only) and evaluates the green plugin on it
   (`references/evaluation.md`: `scripts/pcap_eval.py` compiles
   `scripts/pcap_eval.c` against the SDK and libpcap, runs the capture
   through mmt-dpi without and with the plugin, and reports recall, foreign
-  frames and, with tshark, field agreement). `SKILL.md` gives the entry commands (`init`, then `import` or
+  frames and, with tshark, field agreement, and the drift against tshark,
+  the only reference tool (#123): each `--field` attribute that differs,
+  `missed` and `foreign` frames, every frame in `drift.jsonl`; a drift is a
+  defect, and the verdict FAIL, unless `--accept <key>=<reason>` accepts
+  it; without tshark it is not checked). `SKILL.md` gives the entry commands (`init`, then `import` or
   `scaffold --from-pcap`; for an existing project, `validate --no-sdk`, then
   the loop once before any edit, which must be green) and the loop
   (`validate`, `generate`, `build`, `test`, each with `--json`) in fenced
@@ -366,10 +464,14 @@ protocol model. A Python rewrite is planned in
   (every case without an SDK, the envelopes against the JSON Schemas, the
   tables against `exitcodes.py` and `CODES`, the blocks, and evals that must
   fail), `test_scripts.py` (`make_pcap.py`'s captures sliced back by
-  `mmt_plugin.pcap`, `pcap_eval.py`'s filters, comparisons and report) and
+  `mmt_plugin.pcap`, `pcap_eval.py`'s filters, comparisons, drift and
+  report, a drift and a no-drift run through `main` with the runner and
+  tshark faked) and
   `test_sdk.py` (every case green with a real SDK, and `pcap_eval.py` on the
-  spec-telem plugin with and without tshark; needs `MMT_GOLDEN_SDK` and
-  `libpcap-dev`).
+  spec-telem plugin with and without tshark, with tshark a field without
+  drift and one with, open then accepted; needs `MMT_GOLDEN_SDK` and
+  `libpcap-dev`, and tshark for its tshark run, which skips without it
+  unless `MMT_REQUIRE_TSHARK=1`).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
@@ -406,18 +508,28 @@ protocol model. A Python rewrite is planned in
   the only job that runs `check_ndn_plugin.sh`), the Python
   checks below (Python 3.10, 3.12 and 3.14; the 3.12 job installs zsh and
   fish and sets `MMT_REQUIRE_SHELLS=1`, so their completion tests fail
-  instead of skipping), the SDK profile header check (amd64 and arm64), and
-  the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
+  instead of skipping), the SDK profile header check (amd64 and arm64; it
+  also runs `test_sdk_registry.py::test_the_real_registry_is_the_profile`,
+  the profile's ids against the run-time registry, and requires it to
+  pass), and the generated code matrix: `test_compile.py` per mmt-dpi (the oldest and
   newest with a bundled profile, both v1.10.2 for now), per compiler (gcc,
   clang) and per arch (amd64, arm64), then `tests/unit/build/test_sdk.py`
   (`build` on every corpus model), `tests/unit/packettest/test_sdk.py`
   (`test` on every corpus model), `tests/unit/examples/test_sdk.py`
   (`build` and `test` on every example, and the WebSocket and OCPP
-  session replays), `tests/unit/init/test_sdk.py` (`init` then `test`),
+  session tests), `tests/unit/ocip/test_sdk.py` (`build` and
+  `test --sanitize` on `ocip-plugin/project`, #138), `tests/unit/init/test_sdk.py` (`init` then `test`),
   `tests/unit/pluginyaml/test_sdk.py` (a `plugin.yaml` project classified
   by its generated parent code), `tests/unit/scaffold/test_sdk.py`
   (`scaffold` on sample pcaps, then `test` on the proposal),
+  `tests/unit/run/test_sdk.py` (`run` over captures the test writes),
   `tests/unit/skill/test_sdk.py` (the mmt-plugin-generator evals, green),
+  the scaffold and skill ones with the real tshark: every leg of this job
+  installs the distribution's tshark (step "Install tshark", #128) and
+  sets `MMT_REQUIRE_TSHARK=1` on those two steps, so `scaffold --tshark`
+  and `pcap_eval.py`'s drift check against tshark run there and fail
+  instead of skipping when tshark is missing (the Python jobs have no
+  tshark and skip them),
   `tests/unit/docs/test_commands.py` (every `doc:run` block of the user
   docs, with `MMT_DOCS_INSTALL=1`; the Python 3.12 job also runs the
   install blocks),
@@ -491,7 +603,10 @@ uv run python -m mmt_plugin.sdk.headercheck --sdk <dir>/opt/mmt --cc gcc
 ```
 
 Check that it fails on broken scratch copies of those headers (an
-unprototyped declaration, a wrong `Max_Alias_Len`); same output and exit:
+unprototyped declaration, a wrong `Max_Alias_Len`, `PROTO_MAX_IDENTIFIER`
+or `PROTO_META`, a plugin id or alias changed, a protocol id that
+`parents.ids` does not list, also as an expression or on a continued line);
+same output and exit:
 
 ```
 bash tests/check_headercheck_mutations.sh <dir>/opt/mmt gcc
@@ -679,7 +794,9 @@ Follow `skills/mmt-plugin-generator/SKILL.md`. In short:
   change its expected values to what the plugin outputs.
 - Keep a work folder with everything that made the plugin, get a capture
   (found, recorded, or generated and marked synthetic) and evaluate the
-  green plugin on it with `scripts/pcap_eval.py`.
+  green plugin on it with `scripts/pcap_eval.py`. Judge every drift against
+  tshark from the spec: fix it, or accept it with `--accept <key>=<reason>`;
+  never report a plugin done while a drift is a defect.
 - To update an existing project, check it (`validate --no-sdk`) and run the
   loop once before any edit; stop and report if it is not green. Keep its
   label, id, `sdk.profile` and `parents:` unless the request changes them,

@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "label": "ocip",
+  "id": 960,
+  "parent": "tcp:port=2208",
+  "sdk_profile": "1.10.2",
+  "created": "2026-11-17T15:24:14Z",
+  "updated": "2026-11-17T23:43:48Z",
+  "tools": {
+    "mmt-plugin": "0.1.0 (plugin_generator origin/dev 1b54ba6, branch feat/ocip-plugin; runs 5-10 for #137)",
+    "sdk": "/sdk/mmt in mmt-plugin-dev:local (mmt-dpi 1.10.2)",
+    "cc": "gcc 13.3.0 (Ubuntu 24.04)",
+    "tshark": "4.2.2 (mmt-plugin-dev-tshark:local, evaluation only)"
+  },
+  "files": {
+    "inputs/ocip-plugin-brief.md": "556d9eaf8964969ac58eded13d418352b638a5503ec1b8df262e21fb17fd7936",
+    "inputs/dpi-request-231.md": "bd357c7c4157a3d9c34097192b9332f0967e7fcafcd7af161127819aba53abf9",
+    "inputs/gen_pcaps.py": "0fad694631b1583b815bb9cc57efd1b9a7c4877822beb4012ab1584fdf667491",
+    "inputs/make_tests.py": "c6925eda70f7426b6a21309b3dc4859684c28df4f2b7c2b7919ee65a67968279",
+    "capture/capture.pcap": "0688efc704f01b331a28650280deb4fa000e495e57ccddf37428bd266a47f045",
+    "project/plugin.yaml": "75eb41dd2123a0b425c0b2cdab0b6fc434cfdb476e4ca5f9359330e30b51a679",
+    "project/src/ocip_impl.c": "25859051d7e015cfc852b1eeede7d453b87788c9a590fcba58aa8bfd63a4268b",
+    "project/build/mmtp_ocip.so": "ac5f07e8458b7d764c45f0865a368bb0fa042517a41eac01519f1d13096ffcdc",
+    "inputs/SOURCES.md": "bc7e5f39b3571b7cc65e37a2bbadd07fe7cd97fb9b0f21a21346e5c4aea6b58f"
+  },
+  "loop_runs": 10,
+  "eval": {
+    "verdict": "PASS",
+    "recall": 1.0,
+    "report": "eval/report.md",
+    "drift": {
+      "checked": true,
+      "open": 0,
+      "accepted": 0
+    }
+  }
+}

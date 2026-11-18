@@ -113,12 +113,18 @@ CODES: Mapping[str, str] = MappingProxyType(
         "model.pointer-field": "warning: a `T*` struct field (4 bytes, read as MMT_DATA_POINTER)",
         "model.branch-offset-mismatch": "warning: an aligned attribute follows an if/else whose "
         "branches advance the running offset differently",
+        "model.define-sdk-name": "a define has the name of an SDK macro, constant or type that "
+        "the SDK profile records (case-sensitive)",
+        "model.data-len-width": "warning: an attribute's constant data_len is not its "
+        "fixed-width type's width",
         # Code generation and `generate` (mmt_plugin.codegen, mmt_plugin.commands.generate, #14).
         "model.unreadable": "the model file cannot be read, or is not UTF-8 text",
         # plugin.yaml (mmt_plugin.pluginyaml, #24).
         "model.yaml-syntax": "a plugin.yaml file is not in the YAML subset mmt-plugin reads",
         "model.schema": "a plugin.yaml file does not follow its JSON Schema "
         "(schemas/model/v1/plugin.json)",
+        "model.classify-port": "a parent's classify by port (port, sport, dport) under a parent "
+        "that is not tcp",
         "model.name-collision": "two names of the generated C are the same identifier, or a "
         "model define would replace a name the generated C uses",
         "model.hook-value": "val(), or len() computed per packet, of an attribute without an "
@@ -136,8 +142,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "state.stale": "generate --check: a generated file or plugin.lock is not what generate "
         "would write",
         "state.modified": "a generated file was edited since generate wrote it (its sha256 is "
-        "not plugin.lock's); it is not overwritten or removed without --force",
-        "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin knows",
+        "not plugin.lock's); it is not overwritten or removed without --force (a directory "
+        "where a generated file goes, never)",
+        "state.invalid-lock": "plugin.lock cannot be read, or is not a lock this mmt-plugin "
+        "knows; --force ignores it (a directory there, never)",
         "state.kept": "warning: a file generate no longer writes is kept, not removed",
         # `validate` (mmt_plugin.commands.validate, mmt_plugin.sdk.registry, #17).
         "model.unknown-parent": "a parent protocol of the model is not in the SDK profile and "
@@ -160,10 +168,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         "build.harness-failed": "the generated test harness does not compile against the SDK",
         "test.packet-failed": "a packet test failed: the classification, the next protocol or "
         "an attribute value is not the one the test expects",
-        "test.crash": "the harness crashed, timed out or a sanitizer (ASan, UBSan) reported an "
-        "error on a packet",
-        "test.load-failed": "the harness cannot run the plugin: init_extraction() fails or the "
-        "protocol is not registered",
+        "test.crash": "the harness (test) or the capture runner (run) crashed or timed out, or a "
+        "sanitizer (ASan, UBSan) reported an error on a packet",
+        "test.load-failed": "the harness (test) or the capture runner (run) cannot run the "
+        "plugin: init_extraction() fails or the protocol is not registered",
         "test.no-packets": "warning: no packet test was found, so nothing was tested",
         "test.bench-failed": "warning: --bench could not measure (advisory: the exit code does "
         "not change)",
@@ -228,10 +236,29 @@ CODES: Mapping[str, str] = MappingProxyType(
         "state.output-differs": "import, scaffold: an output file exists with other content, or "
         "is not a regular file; they do not replace it without --force (a directory, never)",
         # `scaffold` (mmt_plugin.commands.scaffold, mmt_plugin.pcap, #26).
-        "model.bad-pcap": "scaffold: the --from-pcap file cannot be read, or is not a pcap or "
+        "model.bad-pcap": "scaffold, run: the capture file cannot be read, or is not a pcap or "
         "pcapng capture, or its structure is broken (a truncated record or block)",
         "model.no-payloads": "scaffold: no frame of the capture has a non-empty payload under "
         "--parent",
+        # `scaffold --tshark` (mmt_plugin.pcap.tshark, #125).
+        "sdk.tshark-not-found": "scaffold --tshark: tshark is not on PATH",
+        "sdk.tshark-failed": "scaffold --tshark: tshark does not run, fails (a bad --decode-as "
+        "rule, a capture it cannot read), or its PDML output does not parse",
+        "model.no-dissector": "scaffold --tshark: tshark dissects no protocol (only data) at "
+        "the start of the payloads under --parent, or not the --protocol asked for",
+        "model.no-fields": "scaffold --tshark: no field of the protocol tshark dissects maps to "
+        "an attribute (in every payload, at one offset, with a type the tool can extract)",
+        # `run` (mmt_plugin.commands.run, mmt_plugin.capture, #103).
+        "model.unsupported-linktype": "run: the capture's first frame has a link type mmt-dpi "
+        "reads no stack for (it reads Ethernet and Linux cooked capture)",
+        "build.runner-failed": "the generated capture runner of run does not compile against "
+        "the SDK",
+        "test.no-match": "warning: run: no packet of the capture has the plugin's protocol in "
+        "its path",
+        "test.other-linktype": "warning: run: frames of another link type than the capture's "
+        "first frame were not processed (mmt-dpi reads one link type per handler)",
+        "test.unknown-protocol": "warning: run: a --protocol that no loaded plugin registers; "
+        "it was not counted",
     }
 )
 

@@ -1,0 +1,68 @@
+# Packet test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format,
+# not from the plugin's output. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ocip/error-response"
+model: "ocip"
+summary: "A server's c:ErrorResponse: the xsi:type as sent, with its prefix"
+through: "tcp:dport=2208"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 2208 (OCI-P, cleartext)"
+  source: "OCI-P wire format: lukebeer/broadworks-ocip Builder.php (XML_HEAD + BroadsoftDocument, sessionId, command xsi:type) and TCPTransport.php (one document per message, newline-terminated, TCP 2208)"
+bytes:
+  - "3c 3f 78 6d 6c 20 76 65 72 73 69 6f 6e 3d 22 31"
+  - "2e 30 22 20 65 6e 63 6f 64 69 6e 67 3d 22 55 54"
+  - "46 2d 38 22 3f 3e 3c 42 72 6f 61 64 73 6f 66 74"
+  - "44 6f 63 75 6d 65 6e 74 20 70 72 6f 74 6f 63 6f"
+  - "6c 3d 22 4f 43 49 22 20 78 6d 6c 6e 73 3d 22 43"
+  - "22 20 78 6d 6c 6e 73 3a 78 73 69 3d 22 68 74 74"
+  - "70 3a 2f 2f 77 77 77 2e 77 33 2e 6f 72 67 2f 32"
+  - "30 30 31 2f 58 4d 4c 53 63 68 65 6d 61 2d 69 6e"
+  - "73 74 61 6e 63 65 22 3e 3c 73 65 73 73 69 6f 6e"
+  - "49 64 20 78 6d 6c 6e 73 3d 22 22 3e 61 31 62 32"
+  - "63 33 64 34 65 35 66 36 3c 2f 73 65 73 73 69 6f"
+  - "6e 49 64 3e 3c 63 6f 6d 6d 61 6e 64 20 78 73 69"
+  - "3a 74 79 70 65 3d 22 63 3a 45 72 72 6f 72 52 65"
+  - "73 70 6f 6e 73 65 22 20 78 6d 6c 6e 73 3a 63 3d"
+  - "22 43 22 20 78 6d 6c 6e 73 3d 22 22 3e 3c 73 75"
+  - "6d 6d 61 72 79 3e 5b 45 72 72 6f 72 20 34 39 36"
+  - "32 5d 20 49 6e 76 61 6c 69 64 20 70 61 73 73 77"
+  - "6f 72 64 3c 2f 73 75 6d 6d 61 72 79 3e 3c 2f 63"
+  - "6f 6d 6d 61 6e 64 3e 3c 2f 42 72 6f 61 64 73 6f"
+  - "66 74 44 6f 63 75 6d 65 6e 74 3e 0a"
+bytes_source: "gen_pcaps.py ERR, the server's reply in every attack pcap"
+expect:
+  protocol: "OCIP"
+  proto_id: 960
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "has_dtd"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 316
+      value: 0
+      source: "no <!DOCTYPE in the message"
+    - name: "command_type"
+      type: "MMT_STRING_DATA"
+      offset: 199
+      length: 15
+      value: "63 3a 45 72 72 6f 72 52 65 73 70 6f 6e 73 65"
+      text: "c:ErrorResponse"
+      source: "the <command>'s xsi:type, prefix included"
+    - name: "session_id"
+      type: "MMT_STRING_DATA"
+      offset: 156
+      length: 12
+      value: "61 31 62 32 63 33 64 34 65 35 66 36"
+      text: "a1b2c3d4e5f6"
+      source: "the <sessionId> text"
+    - name: "dtd"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "no DOCTYPE declaration"

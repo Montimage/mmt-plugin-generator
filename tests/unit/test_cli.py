@@ -412,6 +412,63 @@ def test_help_after_version_prints_the_help(
     assert capsys.readouterr().out.startswith("usage: mmt-plugin")
 
 
+@pytest.mark.parametrize(
+    ("argv", "usage"),
+    [
+        (["--help", "-vx"], "usage: mmt-plugin [-h]"),
+        (["--help", "--"], "usage: mmt-plugin [-h]"),
+        (["--help", "--", "dummy"], "usage: mmt-plugin [-h]"),
+        (["-h", "-qvx", "dummy"], "usage: mmt-plugin [-h]"),
+        (["-vh", "-vx"], "usage: mmt-plugin [-h]"),
+        (["dummy", "--help", "-vx"], "usage: mmt-plugin dummy"),
+        (["dummy", "-h", "--json=1"], "usage: mmt-plugin dummy"),
+        (["-v", "dummy", "-qh", "-vx"], "usage: mmt-plugin dummy"),
+    ],
+)
+def test_help_wins_over_a_later_cluster_error_or_double_dash(
+    dummy: Command, argv: list[str], usage: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--help`` acts left to right: what follows it does not win (#92)."""
+    assert _code(argv, [dummy]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert captured.out.startswith(usage)
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    ("argv", "code"),
+    [
+        (["--help=1"], "usage.invalid-value"),
+        (["-hx"], "usage.invalid-value"),
+        (["dummy", "-vhx"], "usage.invalid-value"),
+    ],
+)
+def test_a_help_flag_with_a_value_is_still_a_usage_error(
+    dummy: Command, argv: list[str], code: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _code(argv, [dummy]) == EXIT_USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"[{code}]" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("argv", "usage"),
+    [
+        (["--help", "-vx"], "usage: mmt-plugin [-h]"),
+        (["validate", "--help", "-vx"], "usage: mmt-plugin validate"),
+        (["--help", "--"], "usage: mmt-plugin [-h]"),
+    ],
+)
+def test_help_wins_with_the_real_commands(
+    argv: list[str], usage: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == EXIT_OK
+    assert capsys.readouterr().out.startswith(usage)
+
+
 def test_usage_error_in_human_mode_is_compiler_style_on_stderr(
     dummy: Command, capsys: pytest.CaptureFixture[str]
 ) -> None:

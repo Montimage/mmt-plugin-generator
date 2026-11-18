@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "build",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "ocip-plugin/project",
+    "sdk": {
+      "prefix": "/sdk/mmt",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "profile": "1.10.2",
+    "build_dir": "build",
+    "stages": [
+      {
+        "name": "generate",
+        "status": "up-to-date"
+      },
+      {
+        "name": "compile",
+        "status": "up-to-date"
+      },
+      {
+        "name": "hooks",
+        "status": "up-to-date"
+      },
+      {
+        "name": "link",
+        "status": "up-to-date"
+      }
+    ],
+    "artifact": {
+      "path": "build/mmtp_ocip.so",
+      "sha256": "e42c28937efdfc3c542f86c66400f9dbf0487a2784f3ee7af0e09072b6018aee"
+    },
+    "cc": {
+      "path": "/usr/bin/gcc",
+      "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "cflags": [
+      "-std=gnu11",
+      "-O2",
+      "-fPIC",
+      "-fstack-protector-strong",
+      "-U_FORTIFY_SOURCE",
+      "-D_FORTIFY_SOURCE=2",
+      "-Wall",
+      "-Wextra",
+      "-Werror"
+    ],
+    "ldflags": [
+      "-shared",
+      "-Wl,-z,relro",
+      "-Wl,-z,now",
+      "-Wl,-z,defs"
+    ],
+    "commands": [],
+    "up_to_date": true,
+    "dry_run": false
+  }
+}

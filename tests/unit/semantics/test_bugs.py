@@ -10,7 +10,7 @@ from mmt_plugin.diagnostics import Severity
 from mmt_plugin.pdl.model import DataType, Scope
 from mmt_plugin.semantics.model import Binary, Const, LengthRef, OffsetRef, ValueRef
 
-from .conftest import attr, build, codes, covered, errors, ok, run, u8
+from .conftest import attr, blob, build, codes, covered, errors, ok, run, u8
 
 
 def struct(name: str, *lines: str) -> str:
@@ -86,9 +86,7 @@ def test_bug_7_sizeof_char_is_one() -> None:
     types = ("char", "short", "int", "long", "uint8_t*", "MMT_U16_DATA", "MMT_DATA_MAC_ADDR")
     model = ok(
         struct("in2", "uint8_t a, b;")
-        + "".join(
-            u8(f"s{i}", "0", length=f"sizeof({t})") for i, t in enumerate((*types, "struct in2"))
-        )
+        + "".join(blob(f"s{i}", "0", f"sizeof({t})") for i, t in enumerate((*types, "struct in2")))
     )
     lengths = [model.attribute(f"s{i}").length_value for i in range(8)]
     assert lengths == [1, 2, 4, 4, 4, 2, 6, 2]
@@ -164,7 +162,7 @@ def test_bug_19_offset_and_len_are_the_attribute_s() -> None:
     # Java emitted calls to offset() and len() C functions that do not exist.
     model = ok(
         u8("n", "0")
-        + u8("x", "4", length="2")
+        + blob("x", "4", "2")
         + u8("y", "offset(x) + len(x)")
         + attr('alias="v" data_type="MMT_BINARY_DATA" data_len="val(n)" offset="8" scope="packet"')
         + u8("z", "len(v)")

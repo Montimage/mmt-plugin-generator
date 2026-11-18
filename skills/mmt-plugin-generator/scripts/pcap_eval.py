@@ -248,6 +248,9 @@ def fallback_frames(capture: Path, selector: str) -> set[int]:
 
 def normalize(value: str) -> str:
     text = value.strip()
+    # tshark 4.x prints a boolean field (a flag bit) as True or False
+    if text.lower() in ("true", "false"):
+        return "1" if text.lower() == "true" else "0"
     try:
         return str(int(text, 0))
     except ValueError:

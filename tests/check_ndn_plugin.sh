@@ -74,7 +74,7 @@ pass "compile ndn_mmt_plugin.c with -DMMT_LOG_ENABLE_DEBUG"
 #    scanned too. Any new directory of maintained C sources or C templates
 #    must be added to SCAN_DIRS: tests/unit/test_ndn_check.py fails until
 #    every tracked *.c, *.h, *.c.j2 and *.h.j2 file lies under one of them.
-SCAN_DIRS=(docs ndn_src examples skills src tests)
+SCAN_DIRS=(docs ndn_src examples ocip-plugin skills src tests)
 rc=0
 (cd "$REPO_ROOT" && grep -rnE '\b(debug|log_err|likely|unlikely)[[:space:]]*\(' \
         --include='*.c' --include='*.h' --include='*.c.j2' --include='*.h.j2' \

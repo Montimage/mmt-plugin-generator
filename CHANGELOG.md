@@ -256,8 +256,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   package's version, with its headers where `mmt-dpi.pc` says. CI's
   runner-based NDN job is gone: the container job, `make test-container` on
   amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
-  `docs/`, `skills/` and the C templates in `src/`, and a unit test fails when a
-  tracked C source or C template lies outside the directories it scans (#42).
+  `docs/`, `skills/`, `ocip-plugin/` and the C templates in `src/`, and a unit
+  test fails when a tracked C source or C template lies outside the
+  directories it scans (#42).
 - Styled output (#54, N5): the width that boxes and tables are drawn to is
   at most 500 cells (`ui.streams.MAX_WIDTH`), whatever `COLUMNS` or the
   terminal says; `COLUMNS=100000` draws a 500-cell box

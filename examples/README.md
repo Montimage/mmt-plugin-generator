@@ -442,6 +442,16 @@ then corrupted and cut short. `tests/unit/examples/test_sdk.py` also loads `mmtp
 session is `OCPP_EXAMPLE`, the chat session `WEBSOCKET_EXAMPLE`, both
 directly above TCP.
 
+mmt-security rules on these attributes are in that repository:
+`230.ocpp_heartbeat_flood.xml` (a Heartbeat flood from one charge point)
+and `231.ocpp_charging_limit.xml` (a SetChargingProfile limit above the
+site maximum), proposed in
+[Montimage/mmt-security#25](https://github.com/Montimage/mmt-security/pull/25)
+(#97). They name the protocol `OCPP_EXAMPLE`, the registered name (the
+label upper-cased), and need an mmt-security built with this plugin
+installed: the user guide,
+[Use the plugin in mmt-security rules](../docs/user-guide.md#use-the-plugin-in-mmt-security-rules).
+
 Not covered, or open:
 
 - Not a child of `websocket_example` until mmt-dpi processes a layer above
@@ -466,8 +476,8 @@ Not covered, or open:
   Zenodo record 14887131 of #41, against tshark) is a manual run, not CI:
   the run of #39 is in
   [`docs/use-cases/websocket-ocpp.md`](../docs/use-cases/websocket-ocpp.md)
-  (and its findings in #104); the mmt-security rule on these attributes
-  is in that repository, not here (#97).
+  (and its findings in #104); the mmt-security rules on these attributes
+  are in that repository, not here (above; #97).
 
 ## What the packet tests do not cover
 

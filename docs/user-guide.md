@@ -17,6 +17,7 @@ machine-readable output.
 - [Build](#build)
 - [Packet tests](#packet-tests)
 - [Install the plugin](#install-the-plugin)
+- [Use the plugin in mmt-security rules](#use-the-plugin-in-mmt-security-rules)
 - [Draft a model from a capture](#draft-a-model-from-a-capture)
 - [Run the plugin over a capture](#run-the-plugin-over-a-capture)
 - [Check the plugin against tshark](#check-the-plugin-against-tshark)
@@ -141,7 +142,10 @@ mmt-plugin init demo --id 960 --parent udp:dport=4433 --sdk-profile 1.10.2
 
 The label (`demo`) names the plugin, `mmtp_demo.so`, and the registered
 protocol name, `DEMO` (always the label upper-cased: `--name` accepts no
-other). Third-party plugins use ids 950 to 999; with an SDK, `init` picks
+other). mmt-security rules name the protocol that way, `DEMO.kind`, never
+`demo.kind`
+([Use the plugin in mmt-security rules](#use-the-plugin-in-mmt-security-rules)).
+Third-party plugins use ids 950 to 999; with an SDK, `init` picks
 the lowest free one when you leave out `--id`. Re-running `init` changes
 nothing; it never replaces a file with other content unless you pass
 `--force`. A project that an older `init` created, with a PDL v1
@@ -482,6 +486,67 @@ to replace a file that no manifest lists or that changed since it was
 installed, unless you pass `--force`, and refuses a plugin whose id or name
 another installed plugin has (exit 3). `uninstall` removes only the files
 whose hash is still the one it recorded.
+
+## Use the plugin in mmt-security rules
+
+[mmt-security](https://github.com/Montimage/mmt-security) rules, which
+mmt-probe's security module runs, can test the attributes of a plugin's
+protocol. Two things differ from rules on the built-in protocols.
+
+**mmt-security must be built with the plugin installed.** It does not look
+protocols up at run time: its `make gen_dpi` writes `src/dpi/mmt_dpi.h`
+from the protocols mmt-dpi loads while mmt-security is built, and
+`compile_rule`, `libmmt_security2` and mmt-probe use that table. Install
+the plugin first, into the plugin directory mmt-dpi scans (above: `doctor`
+reports it; for a private one, `MMT_DPI_PLUGINS_DIR` must name it for the
+build too), then rebuild mmt-security from a clean tree in its checkout
+(`clean-all` removes the old header; `make install` writes
+`$MMT_BASE/security`, `/opt/mmt/security` by default):
+
+<!-- doc:skip needs an mmt-security checkout and its build dependencies -->
+```sh
+make clean-all && make && make install
+```
+
+With a build made without the plugin, `compile_rule` stops on a rule that
+names its protocol with `Protocol OCPP_EXAMPLE has not implemented yet`,
+even though mmt-probe loads the plugin and reports its attributes. The
+table holds the plugin's protocol id and attribute ids, so the probe must
+load the same `.so` at run time (from the plugin directory mmt-dpi scans),
+and mmt-security is rebuilt, and the rules compiled again, when the
+plugin's id or attributes change.
+
+**A rule names the protocol by its registered name, the label
+upper-cased:** `<LABEL>.<attribute>`, so `OCPP_EXAMPLE.action` for the
+label `ocpp_example`, `DEMO.kind` for this guide's `demo`. mmt-security
+compares names case-sensitively (`strcmp`); mmt-probe's reports go
+through mmt-dpi's lookup, which ignores case, so `ocpp_example.action`
+works there and not in a rule. The built-in protocols are lower case
+(`tcp.dest_port`), the plugins' upper case. An event of the OCPP example's
+rule `231.ocpp_charging_limit.xml`:
+
+```text
+<event description="OCPP SetChargingProfile CALL with a limit above the maximum"
+    boolean_expression="((OCPP_EXAMPLE.message_type_id == 2) &amp;&amp; ((OCPP_EXAMPLE.action == 'SetChargingProfile') &amp;&amp; (#em_ocpp_limit_too_high(OCPP_EXAMPLE.charging_limit_x10, OCPP_EXAMPLE.charging_rate_unit) == 1)))"/>
+```
+
+Compile the rule with mmt-security's `compile_rule`, then check with
+`rule_info` that its names were resolved: it lists each variable as
+`proto.att (proto_id.att_id)`, here `OCPP_EXAMPLE.action (993.3)` among
+them (993 is the plugin's id):
+
+<!-- doc:skip needs an mmt-security build with the OCPP example installed -->
+```sh
+./compile_rule rules/231.ocpp_charging_limit.so rules/properties_all/231.ocpp_charging_limit.xml
+./rule_info rules/231.ocpp_charging_limit.so
+```
+
+The OCPP example's two rules, `230.ocpp_heartbeat_flood.xml` and
+`231.ocpp_charging_limit.xml`, are proposed in
+[Montimage/mmt-security#25](https://github.com/Montimage/mmt-security/pull/25)
+(#97); its `doc/rule.md`, "Rules on a protocol plugin", is the
+mmt-security side of this section. Rules on plugins are not compiled by
+mmt-security's `make sample_rules`: compile them by hand, as above.
 
 ## Draft a model from a capture
 

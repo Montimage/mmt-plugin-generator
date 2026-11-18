@@ -66,7 +66,7 @@ classify_next:
 | Key | Required | Meaning |
 |---|---|---|
 | `schema` | yes | `1`, the format's version. A reader refuses another one. |
-| `protocol` | yes | `label` (a C identifier), `id` (a positive integer), and the optional flags `context`, `session_context`, `session`, `encapsulation` (`false` by default) and `encoding` (`network`, `host` or its alias `little`, `ASCII`, `UNICODE`): PDL v1's Properties block. |
+| `protocol` | yes | `label` (a C identifier: the plugin is `mmtp_<label>.so`, and its registered name is the label upper-cased, `DEMO`, the name mmt-security rules use, `DEMO.kind`, never `demo.kind`), `id` (a positive integer), and the optional flags `context`, `session_context`, `session`, `encapsulation` (`false` by default) and `encoding` (`network`, `host` or its alias `little`, `ASCII`, `UNICODE`): PDL v1's Properties block. |
 | `sdk.profile` | no | The SDK profile to generate for, below `--sdk-profile` and `MMT_PLUGIN_SDK_PROFILE` (`docs/design/cli.md`, section 9). Quote it: `"1.10.2"`. |
 | `offsets` | no | `absolute` (the default) or `running`, below. |
 | `defines` | no | Named numbers, in order: a number, or the name of an earlier define or of an SDK protocol id macro (`PROTO_TCP`). A case value or a `next` may name one; an expression may not (PDL v1). |

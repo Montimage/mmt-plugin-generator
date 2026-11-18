@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugin Generator Brand</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --amber: #E9AB34; --amber-mid: #C98B1E; --amber-deep: #8F6212; --amber-ink: #9A6410;
+    --bg-dark: #0A0A0A; --surface: #111111; --border: #262626; --muted: #A1A1A1;
+    --text-light: #FAFAFA; --ink: #141414; --bg-light: #FAFAFA; --line: #E7E5E4;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: var(--sans); background: var(--bg-light); color: var(--ink); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 88px 0; border-bottom: 1px solid var(--line); }
+  .label { font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--amber-ink); margin-bottom: 14px; }
+  h2 { font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; margin-bottom: 40px; }
+  code, .mono { font-family: var(--mono); }
+
+  /* Hero */
+  .hero { background: var(--bg-dark); color: var(--text-light); text-align: center; padding: 120px 0 108px; border: 0; position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px); background-size: 48px 48px; opacity: .35; mask-image: radial-gradient(circle at 50% 40%, #000 0, transparent 65%); -webkit-mask-image: radial-gradient(circle at 50% 40%, #000 0, transparent 65%); }
+  .hero > * { position: relative; }
+  .hero svg { width: 148px; height: 148px; filter: drop-shadow(0 0 28px rgba(233,171,52,.28)); }
+  .hero .label { color: var(--amber); margin: 36px 0 12px; }
+  .hero h1 { font-size: clamp(36px, 6vw, 60px); font-weight: 700; letter-spacing: -.035em; line-height: 1.05; }
+  .hero h1 span { color: var(--amber); }
+  .hero p { color: var(--muted); font-size: 18px; max-width: 560px; margin: 20px auto 0; }
+
+  /* Concept */
+  .concept { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+  .annot { background: var(--bg-dark); border-radius: 20px; padding: 40px 28px; }
+  .annot svg { width: 100%; height: auto; display: block; }
+  .prose p { color: #44403C; margin-bottom: 18px; font-size: 16.5px; }
+  .prose strong { color: var(--ink); }
+
+  /* Variants */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { position: relative; border-radius: 16px; min-height: 240px; display: flex; align-items: center; justify-content: center; padding: 56px 32px; transition: transform .2s ease; }
+  .card:hover { transform: translateY(-3px); }
+  .card.light { background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(20,20,20,.04), 0 8px 24px rgba(20,20,20,.05); }
+  .card.dark { background: var(--surface); border: 1px solid var(--border); }
+  .card.wide { grid-column: 1 / -1; }
+  .card .tag { position: absolute; top: 16px; left: 18px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #78716C; }
+  .card.dark .tag { color: var(--muted); }
+  .card .file { position: absolute; bottom: 14px; right: 18px; font-family: var(--mono); font-size: 12px; color: #A8A29E; }
+  .card.dark .file { color: #737373; }
+  .card img { display: block; max-width: 100%; }
+  .card.wide img { width: 420px; }
+  .fav { display: flex; align-items: center; gap: 28px; }
+  .fav .cap { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* Palette */
+  .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .chip { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
+  .chip .sw { height: 112px; display: flex; align-items: flex-end; padding: 12px 14px; font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .chip .meta { padding: 12px 14px 14px; }
+  .chip b { display: block; font-size: 14px; font-weight: 600; }
+  .chip span { font-size: 13px; color: #78716C; line-height: 1.45; display: block; }
+
+  /* Type */
+  .type { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+  .spec { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 36px; }
+  .spec .big { font-size: 64px; font-weight: 700; letter-spacing: -.035em; line-height: 1; }
+  .spec .row { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--line); padding: 14px 0; gap: 16px; }
+  .spec .row:first-of-type { margin-top: 28px; }
+  .spec .row small { font-family: var(--mono); font-size: 12px; color: #A8A29E; white-space: nowrap; }
+
+  /* Dev */
+  .dev { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  pre { background: var(--bg-dark); color: #D4D4D4; border-radius: 16px; padding: 28px; font-family: var(--mono); font-size: 13px; line-height: 1.75; overflow-x: auto; border: 1px solid var(--border); }
+  .k { color: #7DD3FC; } .s { color: var(--amber); } .c { color: #737373; } .p { color: #A1A1A1; }
+
+  footer { background: var(--bg-dark); color: var(--muted); padding: 40px 0; font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  footer img { height: 40px; }
+
+  @media (max-width: 820px) {
+    section { padding: 64px 0; }
+    .concept, .grid, .type, .dev { grid-template-columns: 1fr; }
+    .swatches { grid-template-columns: repeat(2, 1fr); }
+    .wrap { padding: 0 16px; }
+    .spec .big { font-size: 48px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <svg viewBox="0 0 64 64" aria-label="MMT Plugin Generator mark">
+      <path d="M23,10 A3,3 0 0 1 29,10 V19 H23 Z M35,10 A3,3 0 0 1 41,10 V19 H35 Z" fill="#E9AB34"/>
+      <path d="M15,19 H49 V29 A4,4 0 0 1 45,33 H19 A4,4 0 0 1 15,29 Z" fill="#E9AB34"/>
+      <path d="M12,37 H22 V45 H12 A3,3 0 0 1 9,42 V40 A3,3 0 0 1 12,37 Z M26,37 H52 A3,3 0 0 1 55,40 V42 A3,3 0 0 1 52,45 H26 Z" fill="#C98B1E"/>
+      <path d="M12,49 H38 V57 H12 A3,3 0 0 1 9,54 V52 A3,3 0 0 1 12,49 Z M42,49 H52 A3,3 0 0 1 55,52 V54 A3,3 0 0 1 52,57 H42 Z" fill="#8F6212"/>
+    </svg>
+    <div class="label">Brand Identity</div>
+    <h1><span>MMT</span> Plugin Generator</h1>
+    <p>A new layer, plugged into the protocol stack. Describe a protocol once and generate the parser that MMT-DPI loads.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="label">Design Concept</div>
+    <h2>Packet layers, one of them pluggable</h2>
+    <div class="concept">
+      <div class="annot">
+        <svg viewBox="0 0 300 200" role="img" aria-label="Annotated mark">
+          <g transform="translate(18,20) scale(2.5)">
+            <path d="M23,10 A3,3 0 0 1 29,10 V19 H23 Z M35,10 A3,3 0 0 1 41,10 V19 H35 Z" fill="#E9AB34"/>
+            <path d="M15,19 H49 V29 A4,4 0 0 1 45,33 H19 A4,4 0 0 1 15,29 Z" fill="#E9AB34"/>
+            <path d="M12,37 H22 V45 H12 A3,3 0 0 1 9,42 V40 A3,3 0 0 1 12,37 Z M26,37 H52 A3,3 0 0 1 55,40 V42 A3,3 0 0 1 52,45 H26 Z" fill="#C98B1E"/>
+            <path d="M12,49 H38 V57 H12 A3,3 0 0 1 9,54 V52 A3,3 0 0 1 12,49 Z M42,49 H52 A3,3 0 0 1 55,52 V54 A3,3 0 0 1 52,57 H42 Z" fill="#8F6212"/>
+          </g>
+          <g fill="none" stroke="#525252" stroke-width="1" stroke-dasharray="3 3">
+            <path d="M126,52 H178"/><path d="M162,89 H178"/><path d="M158,125 H178"/><path d="M150,155 H178"/>
+          </g>
+          <g font-family="Inter, system-ui, sans-serif" font-size="11.5">
+            <circle cx="126" cy="52" r="2.5" fill="#E9AB34"/>
+            <text x="184" y="49" fill="#FAFAFA" font-weight="600">Plug prongs</text>
+            <text x="184" y="63" fill="#A1A1A1">loads into MMT-DPI</text>
+            <circle cx="162" cy="89" r="2.5" fill="#E9AB34"/>
+            <text x="184" y="86" fill="#FAFAFA" font-weight="600">Generated layer</text>
+            <text x="184" y="100" fill="#A1A1A1">your protocol parser</text>
+            <circle cx="158" cy="125" r="2.5" fill="#C98B1E"/>
+            <text x="184" y="122" fill="#FAFAFA" font-weight="600">Header fields</text>
+            <text x="184" y="136" fill="#A1A1A1">fields to extract</text>
+            <circle cx="150" cy="155" r="2.5" fill="#8F6212"/>
+            <text x="184" y="160" fill="#FAFAFA" font-weight="600">Lower layers</text>
+            <text x="184" y="174" fill="#A1A1A1">TCP/IP, Ethernet…</text>
+          </g>
+        </svg>
+      </div>
+      <div class="prose">
+        <p><strong>The symbol.</strong> Each bar is one header of a packet's protocol stack. The top layer has become a plug: it is the parser you describe and generate, and its prongs say that it loads into MMT-DPI at run time. The gaps in the lower bars cut them into header fields, the attributes a plugin pulls out.</p>
+        <p><strong>The colour.</strong> Montimage amber marks the new, generated layer. The lower layers step down through two deeper ambers, so the eye goes straight to the plug. The dark base matches the terminal and network-monitoring tools this generator sits next to.</p>
+        <p><strong>The type.</strong> Inter Display, outlined to paths so every file renders the same with or without the font installed. "MMT" is a small, widely tracked Bold label. "Plugin Generator" is SemiBold with slightly tight tracking, which keeps it compact in narrow headers.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="label">Logo Variants</div>
+    <h2>Eight files, one geometry</h2>
+    <div class="grid">
+      <div class="card light wide"><span class="tag">Primary · Light</span><img src="logo-full.svg" alt="Full logo on light"><span class="file">logo-full.svg</span></div>
+      <div class="card dark wide"><span class="tag">Primary · Dark</span><img src="logo-full-dark.svg" alt="Full logo on dark"><span class="file">logo-full-dark.svg</span></div>
+      <div class="card dark wide"><span class="tag">Reversed · Mono White</span><img src="logo-white.svg" alt="White logo on dark"><span class="file">logo-white.svg</span></div>
+      <div class="card dark"><span class="tag">Mark</span><img src="logo-mark.svg" alt="Mark" width="120" height="120"><span class="file">logo-mark.svg</span></div>
+      <div class="card light"><span class="tag">App Icon</span><img src="logo-icon.svg" alt="App icon" width="140" height="140"><span class="file">logo-icon.svg</span></div>
+      <div class="card light"><span class="tag">Wordmark</span><img src="logo-wordmark.svg" alt="Wordmark" width="270"><span class="file">logo-wordmark.svg</span></div>
+      <div class="card dark"><span class="tag">Favicon</span><div class="fav"><img src="favicon.svg" alt="Favicon at 64px" width="64" height="64"><img src="favicon.svg" alt="Favicon at 16px" width="16" height="16"><span class="cap">16×16px</span></div><span class="file">favicon.svg</span></div>
+      <div class="card light wide"><span class="tag">Monochrome · Black</span><img src="logo-black.svg" alt="Black logo on light"><span class="file">logo-black.svg</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="label">Color Palette</div>
+    <h2>Amber on dark</h2>
+    <div class="swatches">
+      <div class="chip"><div class="sw" style="background:#E9AB34;color:#141414">#E9AB34</div><div class="meta"><b>Amber</b><span>Accent: the generated layer, highlights, CTAs</span></div></div>
+      <div class="chip"><div class="sw" style="background:#C98B1E;color:#141414">#C98B1E</div><div class="meta"><b>Amber Mid</b><span>Mark layer 2</span></div></div>
+      <div class="chip"><div class="sw" style="background:#8F6212;color:#FAFAFA">#8F6212</div><div class="meta"><b>Amber Deep</b><span>Mark layer 3</span></div></div>
+      <div class="chip"><div class="sw" style="background:#9A6410;color:#FAFAFA">#9A6410</div><div class="meta"><b>Amber Ink</b><span>Amber text on light backgrounds (4.6:1)</span></div></div>
+      <div class="chip"><div class="sw" style="background:#0A0A0A;color:#FAFAFA">#0A0A0A</div><div class="meta"><b>Background</b><span>Dark base, hero, icons</span></div></div>
+      <div class="chip"><div class="sw" style="background:#111111;color:#FAFAFA">#111111</div><div class="meta"><b>Surface</b><span>Cards and raised elements</span></div></div>
+      <div class="chip"><div class="sw" style="background:#262626;color:#FAFAFA">#262626</div><div class="meta"><b>Border</b><span>Dividers and outlines on dark</span></div></div>
+      <div class="chip"><div class="sw" style="background:#A1A1A1;color:#141414">#A1A1A1</div><div class="meta"><b>Muted</b><span>Secondary text on dark</span></div></div>
+      <div class="chip"><div class="sw" style="background:#FAFAFA;color:#141414;box-shadow:inset 0 -1px 0 #E7E5E4">#FAFAFA</div><div class="meta"><b>Text / Light BG</b><span>Text on dark, light background</span></div></div>
+      <div class="chip"><div class="sw" style="background:#141414;color:#FAFAFA">#141414</div><div class="meta"><b>Ink</b><span>Wordmark and body text on light</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="label">Typography</div>
+    <h2>Inter, in two weights</h2>
+    <div class="type">
+      <div class="spec">
+        <div class="big">Aa Plugin</div>
+        <div class="row"><span style="font-weight:700;font-size:22px;letter-spacing:-.02em">Generate the parser</span><small>Bold 700 · headings</small></div>
+        <div class="row"><span style="font-weight:600;font-size:18px">Plugin Generator</span><small>SemiBold 600 · wordmark</small></div>
+        <div class="row"><span style="font-weight:400;font-size:16px;color:#44403C">Describe the protocol model; compile the plugin.</span><small>Regular 400 · body</small></div>
+        <div class="row"><span style="font-weight:700;font-size:12px;letter-spacing:.22em;color:#9A6410">MMT</span><small>Bold · +0.22em · label</small></div>
+      </div>
+      <div class="spec" style="background:#0A0A0A;border-color:#262626;color:#FAFAFA">
+        <div class="big mono" style="font-size:44px;font-weight:500;letter-spacing:-.02em">{ }</div>
+        <div class="row" style="border-color:#262626"><span class="mono" style="font-size:14px">init_proto()</span><small style="color:#737373">JetBrains Mono · code</small></div>
+        <div class="row" style="border-color:#262626"><span class="mono" style="font-size:14px;color:#E9AB34">lmmt_quic.so</span><small style="color:#737373">filenames</small></div>
+        <div class="row" style="border-color:#262626"><span class="mono" style="font-size:14px;color:#A1A1A1">PROTO_NDN_EXAMPLE</span><small style="color:#737373">identifiers</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="label">Developer Reference</div>
+    <h2>Drop-in tokens and files</h2>
+    <div class="dev">
+<pre><span class="c">// tailwind.config.js</span>
+<span class="k">theme</span>: { <span class="k">extend</span>: { <span class="k">colors</span>: {
+  <span class="k">brand</span>: {
+    <span class="k">amber</span>:   <span class="s">'#E9AB34'</span>,
+    <span class="k">mid</span>:     <span class="s">'#C98B1E'</span>,
+    <span class="k">deep</span>:    <span class="s">'#8F6212'</span>,
+    <span class="k">ink</span>:     <span class="s">'#9A6410'</span>,
+    <span class="k">bg</span>:      <span class="s">'#0A0A0A'</span>,
+    <span class="k">surface</span>: <span class="s">'#111111'</span>,
+    <span class="k">border</span>:  <span class="s">'#262626'</span>,
+    <span class="k">muted</span>:   <span class="s">'#A1A1A1'</span>,
+    <span class="k">text</span>:    <span class="s">'#FAFAFA'</span>,
+  },
+}}}</pre>
+<pre><span class="p">assets/logo/</span>
+├── <span class="s">logo-mark.svg</span>      <span class="c"># 64×64 canonical mark</span>
+├── <span class="s">logo-full.svg</span>      <span class="c"># 320×72 for light themes</span>
+├── <span class="s">logo-full-dark.svg</span> <span class="c"># 320×72 for dark themes</span>
+├── <span class="s">logo-wordmark.svg</span>  <span class="c"># 180×40 text only</span>
+├── <span class="s">logo-icon.svg</span>      <span class="c"># 512×512 app icon</span>
+├── <span class="s">favicon.svg</span>        <span class="c"># 16×16, 2 layers</span>
+├── <span class="s">logo-white.svg</span>     <span class="c"># 320×72 for dark bg</span>
+├── <span class="s">logo-black.svg</span>     <span class="c"># 320×72 for light bg</span>
+└── <span class="s">brand-showcase.html</span>
+
+<span class="c">&lt;!-- README: follows the GitHub theme --&gt;</span>
+<span class="k">&lt;picture&gt;</span>
+  <span class="k">&lt;source</span> media=<span class="s">"(prefers-color-scheme: dark)"</span>
+          srcset=<span class="s">"assets/logo/logo-full-dark.svg"</span><span class="k">&gt;</span>
+  <span class="k">&lt;img</span> src=<span class="s">"assets/logo/logo-full.svg"</span> alt=<span class="s">"MMT Plugin Generator"</span><span class="k">&gt;</span>
+<span class="k">&lt;/picture&gt;</span></pre>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <img src="logo-full-dark.svg" alt="MMT Plugin Generator">
+    <span>Brand Identity · Montimage</span>
+  </div>
+</footer>
+
+</body>
+</html>

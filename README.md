@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/logo-full-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo/logo-full.svg">
+    <img src="assets/logo/logo-full.svg" alt="MMT Plugin Generator" width="360">
+  </picture>
+</p>
+
 # MMT plugin generator
 
 `mmt-plugin` generates, builds, tests and installs protocol plugins for

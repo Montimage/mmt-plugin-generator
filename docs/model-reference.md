@@ -106,7 +106,7 @@ A mapping with only these keys (any other key is an error). Required: `label`, `
 
 | Key | Type | Required | Default | Constraints | Description |
 |---|---|---|---|---|---|
-| `label` | [`name`](#name) | yes |  |  | The protocol's label: the plugin is mmtp_&lt;label&gt;.so, and its registered name is the label upper-cased. |
+| `label` | [`name`](#name) | yes |  |  | The protocol's label: the plugin is mmtp_&lt;label&gt;.so, and its registered name is the label upper-cased, the name mmt-security rules use (DEMO.kind for the label demo, never demo.kind). |
 | `id` | integer | yes |  | at least 1 | The protocol id; third-party plugins use 950 to 999. |
 | `context` | boolean | no | `false` |  | Generate the context hooks. |
 | `session_context` | boolean | no | `false` |  | Generate the session data hooks. |

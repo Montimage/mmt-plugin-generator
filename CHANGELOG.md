@@ -9,6 +9,18 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- The user guide has a section "Use the plugin in mmt-security rules"
+  (#108): mmt-security must be rebuilt with the plugin installed (`make
+  gen_dpi` writes its protocol table, `src/dpi/mmt_dpi.h`, at build time;
+  `make clean-all && make && make install`), the probe must load the same
+  `.so`, and a rule names the protocol by its registered name, the label
+  upper-cased (`OCPP_EXAMPLE.action`), which mmt-security compares
+  case-sensitively; `rule_info` shows the resolved ids. The registered
+  name stays the label upper-cased; `docs/plugin-yaml.md` and the model
+  schema's `protocol.label` description say so, and `examples/README.md`
+  points to the OCPP example's mmt-security rules
+  (Montimage/mmt-security#25).
+
 - A session test's segment can arrive late (#137): `back: N` sends it `N`
   bytes before that side's next sequence number without moving it, so a
   test can send the second half of a message before the first, or a

@@ -85,7 +85,7 @@
       "properties": {
         "label": {
           "$ref": "#/$defs/name",
-          "description": "The protocol's label: the plugin is mmtp_<label>.so, and its registered name is the label upper-cased."
+          "description": "The protocol's label: the plugin is mmtp_<label>.so, and its registered name is the label upper-cased, the name mmt-security rules use (DEMO.kind for the label demo, never demo.kind)."
         },
         "id": {
           "type": "integer",

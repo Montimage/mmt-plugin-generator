@@ -245,6 +245,11 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Fixed
 
+- The mmt-plugin-generator skill's `scripts/pcap_eval.py` compares a
+  tshark boolean field (a flag bit, which tshark 4.x prints as `True` or
+  `False`) with the plugin's `1` or `0` by value, so a correct flag
+  attribute is no longer reported as drift. Seen on the DNS example's
+  header flags against a recorded capture.
 - `mmt-plugin scaffold --tshark` (#129) reports a tshark that its timer
   killed as a timeout ("tshark did not finish ... in N seconds", with its
   hint), not as "tshark's PDML output does not parse" when the output the

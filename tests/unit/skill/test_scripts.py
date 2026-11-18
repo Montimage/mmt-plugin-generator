@@ -149,10 +149,23 @@ def test_a_parent_without_a_default_filter_is_a_usage_error(selector: str) -> No
 
 @pytest.mark.parametrize(
     ("a", "b"),
-    [("12", "0x000c"), ("de:ad:be:ef", "deadbeef"), ("DE AD", "dead"), ("text", "text")],
+    [
+        ("12", "0x000c"),
+        ("de:ad:be:ef", "deadbeef"),
+        ("DE AD", "dead"),
+        ("text", "text"),
+        ("True", "1"),
+        ("False", "0"),
+        ("true", "0x1"),
+    ],
 )
 def test_values_compare_by_meaning(a: str, b: str) -> None:
     assert pcap_eval.normalize(a) == pcap_eval.normalize(b)
+
+
+@pytest.mark.parametrize(("a", "b"), [("True", "0"), ("False", "1")])
+def test_a_tshark_boolean_differs_from_the_other_bit(a: str, b: str) -> None:
+    assert pcap_eval.normalize(a) != pcap_eval.normalize(b)
 
 
 def test_fields_are_compared_on_the_expected_frames_only() -> None:

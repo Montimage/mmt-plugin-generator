@@ -33,8 +33,12 @@ it is, re-run every step, and pick the work up where it stopped.
   capture/
     capture.pcap       the capture the plugin is evaluated on (or .pcapng)
     capture.md         how it was obtained (given, found, recorded, generated)
-    payloads.txt       generated only: the make_pcap.py input
+    payloads.txt       generated without cyberlab only: the make_pcap.py input
     make-capture.sh    the commands that rebuild or re-trim capture.pcap
+    <label>-lab/       recorded or crafted through cyberlab: mission.md,
+                       expect.json, the lab files (payloads.txt when crafted),
+                       out/ (the trace, its provenance.json, verify.json)
+    cyberlab-session   the asm lease id, released once the capture is in place
   project/             new plugin only: the mmt-plugin project
   runs/
     run-<n>/

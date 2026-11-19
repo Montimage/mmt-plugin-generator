@@ -394,3 +394,8 @@ were removed in #78 (several did not build against mmt-dpi 1.10.x, mostly
 because they redeclare protocols that mmt-dpi now ships);
 [`examples/README.md`](examples/README.md#the-java-tools-c-sources) says
 where they are and what replaced them.
+
+## License
+
+Copyright Montimage. Licensed under the [Apache License 2.0](LICENSE), like
+mmt-dpi.

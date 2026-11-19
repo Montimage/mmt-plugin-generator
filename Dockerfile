@@ -116,6 +116,7 @@ ARG REVISION=
 LABEL org.opencontainers.image.title="mmt-plugin" \
     org.opencontainers.image.description="Generate, build and test mmt-dpi protocol plugins (gcc, clang, mmt-dpi in /opt/mmt)" \
     org.opencontainers.image.source="https://github.com/Montimage/mmt-plugin-generator" \
+    org.opencontainers.image.licenses="Apache-2.0" \
     org.opencontainers.image.version="$VERSION" \
     org.opencontainers.image.revision="$REVISION"
 

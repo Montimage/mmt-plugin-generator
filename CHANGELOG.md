@@ -92,6 +92,10 @@ plugin, from a new project to a plugin that mmt-dpi loads:
 - Documentation: the [user guide](docs/user-guide.md), the
   [migration guide](docs/migration.md) from the Java tool, and
   [releasing](docs/releasing.md).
+- The Apache License 2.0 (`LICENSE`), as for mmt-dpi: in the package
+  metadata (`License-Expression`, with `README.md` as the long
+  description) and in the image's `org.opencontainers.image.licenses`
+  label.
 - Release assets: a wheel and an sdist, a tarball of every JSON Schema,
   `SHA256SUMS` with a provenance attestation, and the container image
   `ghcr.io/montimage/mmt-plugin` (gcc, clang and mmt-dpi 1.10.2, amd64

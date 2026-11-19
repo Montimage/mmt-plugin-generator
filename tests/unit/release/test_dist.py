@@ -101,6 +101,9 @@ def test_the_wheel_metadata_and_console_script(dist: Path) -> None:
     assert metadata["Name"] == "mmt-plugin"
     assert metadata["Version"] == __version__
     assert metadata["Requires-Python"] == ">=3.10"
+    assert metadata["License-Expression"] == "Apache-2.0"
+    assert metadata.get_all("License-File") == ["LICENSE"]
+    assert metadata["Description-Content-Type"] == "text/markdown"
     assert [r.split(">")[0].split("<")[0] for r in metadata.get_all("Requires-Dist", [])] == [
         "jinja2"
     ]

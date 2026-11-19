@@ -125,11 +125,10 @@ Once, by a repository admin:
 3. **Container image.** After the first push, make the package
    `mmt-plugin` public (organization Packages, Package settings) and link it
    to this repository if GitHub did not.
-4. **License.** The repository has no license yet, so the package has no
-   license metadata and the image no license label; the image also
-   redistributes the mmt-dpi package. Choose one (a `LICENSE` file, then
-   `license` and `readme` in `pyproject.toml`) before the first release,
-   and keep `PYPI_PUBLISH` unset and the image private until then.
+4. **License.** Done: the project is under the Apache License 2.0
+   (`LICENSE`, `license = "Apache-2.0"` in `pyproject.toml`, the image's
+   `org.opencontainers.image.licenses` label), the same license as
+   mmt-dpi, whose package the image redistributes.
 
 No secret is needed: the workflow uses its `GITHUB_TOKEN` and OIDC.
 

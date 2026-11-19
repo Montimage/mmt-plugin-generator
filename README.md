@@ -91,6 +91,38 @@ The [user guide](docs/user-guide.md) goes on from here: writing the model, the h
 
 Every option, the `--json` output and the exit codes are in the [user guide](docs/user-guide.md); the full command contract is in [`docs/design/cli.md`](docs/design/cli.md).
 
+### Write a plugin with an AI agent
+
+The `--json` envelope and the exit codes are a contract an agent can drive.
+The [mmt-plugin-generator](skills/mmt-plugin-generator/SKILL.md) agent skill
+uses it to write a plugin for you — from a protocol specification, a pcap
+capture or a legacy PDL v1 model, or to change an existing project. It
+drafts `plugin.yaml`, the packet tests and the hooks the model needs, runs
+`validate`, `generate`, `build` and `test` to green, finds or crafts a
+capture of the protocol, evaluates the plugin on it against tshark, and
+keeps the inputs, each run's envelopes and a report in a work folder,
+`<label>-plugin/`.
+
+Copy or link `skills/mmt-plugin-generator/` into your agent's skills
+directory (`.claude/skills/` for Claude Code), or give the agent the path of
+`SKILL.md`. It needs `mmt-plugin` on `PATH` (`uv run mmt-plugin` in this
+checkout), a C compiler, and an SDK prefix (`MMT_BASE` or `--sdk`) for the
+build, the tests and the evaluation; with tshark on `PATH` the evaluation
+also checks the plugin's output against the reference dissector.
+
+A request for the TELEM protocol of the skill's eval case (a sensor sends to
+UDP destination port 5684):
+
+```text
+Follow skills/mmt-plugin-generator/SKILL.md to write an mmt-dpi plugin for
+the TELEM protocol described in spec.md: UDP destination port 5684, label
+telem, id 963.
+```
+
+The other entries — from a capture (`pcap-demo`), from a PDL v1 model
+(`pdl-rfc1006`), an update of an existing project (`telem-update`) — are the
+eval inputs of [`skills/mmt-plugin-generator/evals/cases/`](skills/mmt-plugin-generator/evals/cases/).
+
 ## Configuration
 
 An option wins over an environment variable, which wins over `plugin.yaml`, which wins over the default.

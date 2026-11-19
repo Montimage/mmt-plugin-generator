@@ -1,6 +1,6 @@
-# MMT-DPI request: ocip ocip.has_dtd, ocip.dtd, ocip.command_type, ocip.session_id for mmt-security rule 231
+# MMT-DPI request: ocip ocip.has_dtd, ocip.dtd, ocip.command_type, ocip.session_id for mmt-security rule 232
 
-**Requested by:** mmt-security rule `231.broadworks_oci_xxe` (Cisco BroadWorks OCI-P XXE, CVE-2026-20320, initial access of "Operation Snowball")
+**Requested by:** mmt-security rule `232.broadworks_oci_xxe` (Cisco BroadWorks OCI-P XXE, CVE-2026-20320, initial access of "Operation Snowball")
 **MMT-DPI version checked:** `/* This code is generated automatically on 2026-01-29 23:08:49 using MMT-DPI v1.7.10 (fd93012d). */` (installed library: libmmt_core 1.10.2)
 **Status in mmt-security:** rule shipped with workaround (bounded byte scan of `tcp.p_payload` for `<!DOCTYPE` on TCP destination port 2208, ASCII/UTF-16, plus `processOCIMessage` ... `!DOCTYPE` for OCI over SOAP)
 
@@ -26,8 +26,8 @@ CVE-2026-20320 is an unauthenticated, out-of-band blind XXE in the BroadWorks Op
 
 ## Evidence
 
-- pcap: `check/pcap/231.broadworks_oci_xxe.pcap` (SHA-256 `a4b1b05ee88ffb80d2e9bd07ec348fe813d6eb469a7f3487a3ced3ea8ecb8560`), crafted with `check/lab/231.broadworks_oci_xxe/gen_pcaps.py`; more variants in `check/lab/231.broadworks_oci_xxe/pcaps/` (benign session: `benign_ocip.pcap`; segmentation: `attack_v7_split.pcap`; UTF-16: `attack_v6_utf16.pcap`).
-- Packets: frame 4 (198.51.100.23 -> 192.0.2.10:2208, 385 bytes) - `tshark -r check/pcap/231.broadworks_oci_xxe.pcap -Y 'tcp.dstport==2208 && tcp.len>0' -x` excerpt:
+- pcap: `check/pcap/232.broadworks_oci_xxe.pcap` (SHA-256 `a4b1b05ee88ffb80d2e9bd07ec348fe813d6eb469a7f3487a3ced3ea8ecb8560`), crafted with `check/lab/232.broadworks_oci_xxe/gen_pcaps.py`; more variants in `check/lab/232.broadworks_oci_xxe/pcaps/` (benign session: `benign_ocip.pcap`; segmentation: `attack_v7_split.pcap`; UTF-16: `attack_v6_utf16.pcap`).
+- Packets: frame 4 (198.51.100.23 -> 192.0.2.10:2208, 385 bytes) - `tshark -r check/pcap/232.broadworks_oci_xxe.pcap -Y 'tcp.dstport==2208 && tcp.len>0' -x` excerpt:
 
 ```
 0030  20 00 1c 22 00 00 3c 3f 78 6d 6c 20 76 65 72 73    .."..<?xml vers
@@ -43,11 +43,11 @@ Expected values for frame 4: `ocip.has_dtd = 1`, `ocip.command_type = Authentica
 
 ## Intended rule
 
-Grammar check: this draft, with `ocip.has_dtd` replaced by `tcp.src_port` and `ocip.command_type` by `http.uri`, gave `PASS compile` and `PASS lint` with `scripts/test_rule.sh --id 231`.
+Grammar check: this draft, with `ocip.has_dtd` replaced by `tcp.src_port` and `ocip.command_type` by `http.uri`, gave `PASS compile` and `PASS lint` with `scripts/test_rule.sh --id 232`.
 
 ```xml
 <beginning>
-<property value="THEN" delay_units="s" delay_min="0" delay_max="0" property_id="231" type_property="ATTACK"
+<property value="THEN" delay_units="s" delay_min="0" delay_max="0" property_id="232" type_property="ATTACK"
     description="Cisco BroadWorks OCI-P XXE attempt (CVE-2026-20320): DTD in an OCI-P message">
     <event value="COMPUTE" event_id="1" description="OCI-P request whose XML prolog declares a DTD"
            boolean_expression="((ocip.has_dtd == 1)&amp;&amp;(ocip.command_type != ''))"/>
@@ -62,8 +62,8 @@ Grammar check: this draft, with `ocip.has_dtd` replaced by `tcp.src_port` and `o
 With the new MMT-DPI installed and `make gen_dpi` run in mmt-security:
 
 ```bash
-skills/mmt-rule-generator/scripts/probe_attrs.sh check/pcap/231.broadworks_oci_xxe.pcap ocip.has_dtd ocip.dtd ocip.command_type ocip.session_id
-skills/mmt-rule-generator/scripts/probe_attrs.sh check/lab/231.broadworks_oci_xxe/pcaps/attack_v7_split.pcap ocip.has_dtd
+skills/mmt-rule-generator/scripts/probe_attrs.sh check/pcap/232.broadworks_oci_xxe.pcap ocip.has_dtd ocip.dtd ocip.command_type ocip.session_id
+skills/mmt-rule-generator/scripts/probe_attrs.sh check/lab/232.broadworks_oci_xxe/pcaps/attack_v7_split.pcap ocip.has_dtd
 ```
 
 reports a count > 0 for every attribute, with the example values above (`ocip.has_dtd` = 1 also on the split-segment pcap, i.e. after reassembly).

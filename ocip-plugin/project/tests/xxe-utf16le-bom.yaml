@@ -1,4 +1,4 @@
-# Packet test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format,
+# Packet test of the ocip plugin (mmt-security rule 232), written from the OCI-P wire format,
 # not from the plugin's output. Format and rules: tests/corpus/README.md
 schema: 1
 id: "ocip/xxe-utf16le-bom"

@@ -1,5 +1,5 @@
 # Cisco BroadWorks OCI-P (Open Client Interface - Provisioning) over TCP,
-# cleartext, port 2208. Created with mmt-plugin init for mmt-security rule 231
+# cleartext, port 2208. Created with mmt-plugin init for mmt-security rule 232
 # (CVE-2026-20320, XXE in the OCI-P XML parser). Each OCI-P message is one XML
 # document, <?xml ...?><BroadsoftDocument protocol="OCI" ...><sessionId>..
 # </sessionId><command xsi:type="X">..</command></BroadsoftDocument>, ended by

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic (crafted) pcaps for rule 231 - Cisco BroadWorks OCI-P XXE (CVE-2026-20320).
+"""Synthetic (crafted) pcaps for rule 232 - Cisco BroadWorks OCI-P XXE (CVE-2026-20320).
 
 No public PoC or capture exists (Malbear Labs / Cisco withhold payloads).
 Message framing follows lukebeer/broadworks-ocip (Builder.php: XML_HEAD +

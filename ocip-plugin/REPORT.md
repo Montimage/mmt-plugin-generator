@@ -1,13 +1,15 @@
 # ocip plugin — 2026-11-17
 
-Cisco BroadWorks OCI-P over TCP 2208, for mmt-security rule 231 (CVE-2026-20320 XXE). Green and evaluated: PASS.
+> Renumbered 2026-11-19: this rule was id 231 when the experiment ran; it is now 232 because 231 is used by the OCPP 1.6-J charging-limit rule (Montimage/mmt-security PR #25). Logs and directory names keep the original id.
+
+Cisco BroadWorks OCI-P over TCP 2208, for mmt-security rule 232 (CVE-2026-20320 XXE). Green and evaluated: PASS.
 
 - Work folder: `ocip-plugin/` (this folder) in the worktree `plugin_generator-ocip` (branch `feat/ocip-plugin` from
   `origin/dev` d91ba5f, uncommitted). Project: `ocip-plugin/project`.
 - Label `ocip`, id 960, parent `tcp` port 2208 (either side), classified by `ocip_hook_register_parents` (weight 4), SDK
   profile 1.10.2. Registered name in mmt-dpi: `OCIP` (mmt-plugin upper-cases the label; mmt-security resolves names
   case-sensitively, so rules write `OCIP.has_dtd`).
-- Entry: spec (`init`), the attributes of `inputs/dpi-request-231.md` plus `is_request`; every attribute is a hook in
+- Entry: spec (`init`), the attributes of `inputs/dpi-request-232.md` plus `is_request`; every attribute is a hook in
   `src/ocip_impl.c` (per-direction stream state, the `examples/ocpp` pattern).
 
 ## Loop runs
@@ -55,7 +57,7 @@ sees no DOCTYPE and the plugin does.
 
 - No real OCI-P capture or BroadWorks server (none public); every value comes from the wire format of
   lukebeer/broadworks-ocip.
-- OCI-P over TLS (2209), OCI over SOAP (HTTP; rule 231 keeps a payload scan for it), OCI-P on another port.
+- OCI-P over TLS (2209), OCI over SOAP (HTTP; rule 232 keeps a payload scan for it), OCI-P on another port.
 - Encodings other than UTF-8/ASCII and UTF-16 (UTF-32, EBCDIC).
 - `dtd`, `session_id`, `command_type` of a message are from the first one that ends in the segment; `dtd` keeps the
   declaration's first 63 bytes.
@@ -67,5 +69,5 @@ sees no DOCTYPE and the plugin does.
   that arrive later (`session-reordered-short-after-edge` pins the miss), or bytes of another late segment
   (`session-reordered-two-late-halves`). An in-order filler
   that the server drops (a bad checksum) followed by the real bytes at the same sequence number puts the scan out of
-  step with the server's stream: the real segment is a retransmission, searched alone. The old payload-scan rule 231
+  step with the server's stream: the real segment is a retransmission, searched alone. The old payload-scan rule 232
   misses these too.

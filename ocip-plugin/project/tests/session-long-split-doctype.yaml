@@ -1,4 +1,4 @@
-# Session test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format:
+# Session test of the ocip plugin (mmt-security rule 232), written from the OCI-P wire format:
 # its packets run in order, one TCP connection. Format and rules: tests/corpus/README.md, Session files
 schema: 1
 id: "ocip/session-long-split-doctype"

@@ -1,19 +1,19 @@
-# Brief — OCI-P mmt-dpi plugin + rule 231 end-to-end experiment
+# Brief — OCI-P mmt-dpi plugin + rule 232 end-to-end experiment
 
 ## Goal
 Build an MMT-DPI plugin for Cisco BroadWorks OCI-P with plugin_generator's **dev** branch (`mmt-plugin` Python CLI + its
-`skills/mmt-plugin-generator` skill), install it, rewrite mmt-security rule 231 to use the plugin's attributes instead of a raw
+`skills/mmt-plugin-generator` skill), install it, rewrite mmt-security rule 232 to use the plugin's attributes instead of a raw
 payload scan, and test end to end. Success = the new rule alerts on all 8 attack variants **including V7 (`<!DOCTYPE` split
 across two TCP segments, which the current rule misses)** and 0 on all benign pcaps.
 
 ## Background (already done — read, don't redo)
-- Rule 231 run (PARTIAL, payload-scan workaround): `/Users/montimage/workspace/montimage/mmt/mmt-security-rule-generator-skill/experiments/2026-11-17-broadworks-oci-xxe/`
-  — read `README.md`, `report.md`, `rules/231.broadworks_oci_xxe.xml`, and especially `docs/dpi-requests/231.broadworks_oci_xxe.md`
+- Rule 232 run (PARTIAL, payload-scan workaround): `/Users/montimage/workspace/montimage/mmt/mmt-security-rule-generator-skill/experiments/2026-11-17-broadworks-oci-xxe/`
+  — read `README.md`, `report.md`, `rules/232.broadworks_oci_xxe.xml`, and especially `docs/dpi-requests/232.broadworks_oci_xxe.md`
   (the requested attributes: `has_dtd` U8, `dtd` string, `command_type` string, `session_id` string; OCI-P wire format; acceptance check).
 - Pcaps + Scapy generator: that bundle's `lab/gen_pcaps.py` and `lab/pcaps/` (attack_v1..v7, benign_ocip, benign_soap, benign_html_doctype).
 - OCI-P wire format: XML doc `<?xml ...?><BroadsoftDocument protocol="OCI" xmlns="C" ...><sessionId>..</sessionId><command xsi:type="X">..</command></BroadsoftDocument>`
   terminated by `\n`, TCP 2208 cleartext (source: github.com/lukebeer/broadworks-ocip Builder.php / TCPTransport.php).
-- Sandbox mmt-security (upstream main a78a4fd, rule 231 already added and registered in check/):
+- Sandbox mmt-security (upstream main a78a4fd, rule 232 already added and registered in check/):
   `/Users/montimage/.cache/mmt-rule-generator/20261117-153111/mmt-security`. Docker image `mmt-rulegen-dev:local`
   (FROM mmt/mmt-security:e2e-probe18, MMT-DPI 1.10.2 in /opt/mmt, has python3/scapy/xmllint/valgrind/tshark). Run it as:
   `docker run -d --name rulegen -v /Users/montimage/.cache/mmt-rule-generator/20261117-153111:/work -v <rule-skill>/mmt-rule-generator:/skill:ro -w /work/mmt-security --entrypoint sleep mmt-rulegen-dev:local infinity`
@@ -34,8 +34,8 @@ across two TCP segments, which the current rule misses)** and 0 on all benign pc
   follow the dev branch's Dockerfile / AGENTS.md). Include packet tests and session tests (split DOCTYPE, benign session, UTF-16), `test --sanitize`.
 - Install the plugin into the `rulegen` container's mmt-dpi plugin dir (or via `MMT_DPI_PLUGINS_DIR`), run `make gen_dpi` in the sandbox,
   confirm `dpi_lookup.py check ocip.has_dtd ...` prints OK and `probe_attrs.sh` shows the expected values on the pcaps.
-- Write the plugin-based rule as a **new file next to the old one for comparison** (e.g. `rules/231.broadworks_oci_xxe.xml` updated in a copy
-  of the sandbox, or keep the old one as `..._payload.xml` in the bundle) — keep id 231. Run `test_rule.sh` (last run `--valgrind`) with all 8
+- Write the plugin-based rule as a **new file next to the old one for comparison** (e.g. `rules/232.broadworks_oci_xxe.xml` updated in a copy
+  of the sandbox, or keep the old one as `..._payload.xml` in the bundle) — keep id 232. Run `test_rule.sh` (last run `--valgrind`) with all 8
   attack + 5 benign pcaps (V7 now in `--attack`), compare old vs new rule alert counts, then `add_check.sh` (refresh expect) + `regression.sh`.
 - Do not commit, push or open PRs. Never put "Co-Authored-By: Claude" anywhere. Don't touch `/Users/montimage/workspace/montimage/mmt/mmt-security`.
 

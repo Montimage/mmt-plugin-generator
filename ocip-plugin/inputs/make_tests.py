@@ -112,7 +112,7 @@ def strval(msg, needle, name, src, typ="MMT_STRING_DATA", limit=63):
 
 def write_packet(stem, summary, msg, attrs, bytes_source, note=None):
     y = (
-        "# Packet test of the ocip plugin (mmt-security rule 231), written from the "
+        "# Packet test of the ocip plugin (mmt-security rule 232), written from the "
         "OCI-P wire format,\n"
         "# not from the plugin's output. Format and rules: tests/corpus/README.md\n"
         "schema: 1\n"
@@ -395,7 +395,7 @@ def step(frm, data, expect=None, retransmit=False, lost=0, text=None, back=0):
 
 def write_session(stem, summary, steps, source):
     y = (
-        "# Session test of the ocip plugin (mmt-security rule 231), written from the "
+        "# Session test of the ocip plugin (mmt-security rule 232), written from the "
         "OCI-P wire format:\n"
         "# its packets run in order, one TCP connection. Format and rules: "
         "tests/corpus/README.md, Session files\n"
@@ -610,7 +610,7 @@ write_session(
 srv_dtd = HEAD + b'<!DOCTYPE BroadsoftDocument SYSTEM "oci.dtd">' + AUTH_RESP[len(HEAD) :]
 write_session(
     "session-server-doctype",
-    "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 231 ignores it)",
+    "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 232 ignores it)",
     [
         step("client", oci(AUTH), ok(b"AuthenticationRequest", 1)),
         step(

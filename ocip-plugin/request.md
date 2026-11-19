@@ -3,10 +3,10 @@
 Verbatim (orchestrator task, 2026-11-17):
 
 > run the end-to-end experiment described in ocip-plugin-brief.md — build a Cisco BroadWorks OCI-P plugin with
-> plugin_generator's dev branch (in a separate worktree), install it, rewrite mmt-security rule 231 to use ocip.*
+> plugin_generator's dev branch (in a separate worktree), install it, rewrite mmt-security rule 232 to use ocip.*
 > attributes, and test it end to end (all 8 attack variants including the split-segment V7, plus 5 benign pcaps).
 
-The brief is `inputs/ocip-plugin-brief.md`; the attributes requested are those of `inputs/dpi-request-231.md`.
+The brief is `inputs/ocip-plugin-brief.md`; the attributes requested are those of `inputs/dpi-request-232.md`.
 
 ## Decisions
 
@@ -21,11 +21,11 @@ The brief is `inputs/ocip-plugin-brief.md`; the attributes requested are those o
 | Install target | the `rulegen` container (Ubuntu 22.04, glibc 2.35, MMT-DPI 1.10.2): `mmt-plugin install --prefix project/build/prefix`, then the same `.so` copied into the container's `/opt/mmt/plugins/` | `objdump -T` shows only `GLIBC_2.17`, so the tested 24.04 build loads there; no rebuild |
 | `has_dtd` | U8 on every payload segment of the plugin: 1 on the segment where a `<!DOCTYPE` (ASCII case-insensitive, UTF-16LE, UTF-16BE) completes, with a carried per-direction tail of 17 bytes; else 0. A segment with no new bytes (retransmission, or an earlier segment arriving late) is searched alone and reports `has_dtd` and `is_request` only (changed in run 3: it reported nothing, and a reordered attack evaded it); one that falls in the direction's latest hole is also searched across the hole's edges (run 7, #137: a `<!DOCTYPE` split across two reordered segments evaded it) | never weaker than the old payload scan, independent of the XML parse and of the encoding guess |
 | `dtd`, `session_id`, `command_type` | strings (63 bytes), from a bounded per-direction streaming XML tokenizer (no XML library, no entity resolution), reported on the segment where each one completes | values that span segments are rebuilt |
-| `is_request` | U8 (extra attribute, not in the DPI request): 1 when the TCP destination port is 2208, 0 otherwise; absent without TCP below | rule 231 must alert on client messages only (benign server reply with a DOCTYPE) |
-| OCI over SOAP (V5) | not covered by the plugin | it is HTTP on port 80; rule 231 keeps its payload-scan branch for it |
+| `is_request` | U8 (extra attribute, not in the DPI request): 1 when the TCP destination port is 2208, 0 otherwise; absent without TCP below | rule 232 must alert on client messages only (benign server reply with a DOCTYPE) |
+| OCI over SOAP (V5) | not covered by the plugin | it is HTTP on port 80; rule 232 keeps its payload-scan branch for it |
 | Project place | `ocip-plugin/project` at the worktree root, not under `examples/` | `tests/unit/examples` enumerates `examples/` and expects `*_example` labels |
 
 ## Assumptions
 
-- Legitimate OCI-P never carries a DTD (same assumption as rule 231).
+- Legitimate OCI-P never carries a DTD (same assumption as rule 232).
 - Message framing: a message ends with `</BroadsoftDocument>`; the tokenizer then re-detects the encoding of the next one.

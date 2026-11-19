@@ -3,7 +3,7 @@
 
 It is not an example (``tests/unit/examples`` enumerates ``examples/`` and
 expects ``*_example`` labels; its label ``ocip`` registers the name ``OCIP``
-that mmt-security rule 231 reads), so these tests keep it current
+that mmt-security rule 232 reads), so these tests keep it current
 instead: its ``plugin.yaml`` validates with the profile it pins,
 ``generate --check`` finds the committed ``generated/`` and ``plugin.lock``
 up to date (a generator change or a version bump makes it stale, as it

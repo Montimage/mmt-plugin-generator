@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="t">
+  <title id="t">MMT Plugin Generator mark</title>
+    <path id="prongs" d="M23,10 A3,3 0 0 1 29,10 V19 H23 Z M35,10 A3,3 0 0 1 41,10 V19 H35 Z" fill="#E9AB34"/>
+    <path id="plug" d="M15,19 H49 V29 A4,4 0 0 1 45,33 H19 A4,4 0 0 1 15,29 Z" fill="#E9AB34"/>
+    <path id="layer2" d="M12,37 H22 V45 H12 A3,3 0 0 1 9,42 V40 A3,3 0 0 1 12,37 Z M26,37 H52 A3,3 0 0 1 55,40 V42 A3,3 0 0 1 52,45 H26 Z" fill="#C98B1E"/>
+    <path id="layer3" d="M12,49 H38 V57 H12 A3,3 0 0 1 9,54 V52 A3,3 0 0 1 12,49 Z M42,49 H52 A3,3 0 0 1 55,52 V54 A3,3 0 0 1 52,57 H42 Z" fill="#8F6212"/>
+</svg>

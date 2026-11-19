@@ -1,0 +1,109 @@
+# Corpus packet cam/header. Format and rules: tests/corpus/README.md
+schema: 1
+id: "cam/header"
+model: "cam"
+summary: "CAM ItsPduHeader and generationDeltaTime, followed by 16 filler bytes"
+constructs:
+  - "attribute.full"
+  - "expr.sizeof.type"
+  - "type.MMT_U8_DATA"
+  - "type.MMT_U16_DATA"
+  - "type.MMT_U32_DATA"
+  - "scope.SCOPE_PACKET"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP payload starting 02 02 (protocolVersion 2, messageID cam(2))"
+  source: "plugins/cam_plugin_src/cam_mmt_plugin.c (hand-written classification on UDP); ETSI's own transport is BTP-B (ETSI EN 302 636-5-1)"
+bytes:
+  - "02 02 00 01 e2 40 7d 00 40 05 05 1a 2b 3c 4d 5e"
+  - "6f 70 81 92 a3 b4 c5 d6"
+bytes_source: "ETSI EN 302 637-2 V1.4.1 Annex A: CAM ::= SEQUENCE { header ItsPduHeader, cam CoopAwareness }, CoopAwareness starts with generationDeltaTime; bytes 8-23 are filler, not a valid CamParameters encoding"
+expect:
+  protocol: "CAM"
+  proto_id: 700
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "protocolVersion"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "ETSI TS 102 894-2 V1.3.1 ItsPduHeader, UPER: protocolVersion INTEGER (0..255), 8 bits at bit 0; value 2 as plugins/cam_plugin_src expects"
+    - name: "messageID"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "ETSI TS 102 894-2 V1.3.1 ItsPduHeader, UPER: messageID INTEGER (0..255), 8 bits at bit 8; cam(2)"
+    - name: "stationID"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 123456
+      source: "ETSI TS 102 894-2 V1.3.1 ItsPduHeader, UPER: StationID INTEGER (0..4294967295), 32 bits at bit 16"
+    - name: "generationTime"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 32000
+      source: "ETSI EN 302 637-2 V1.4.1 Annex A: GenerationDeltaTime INTEGER (0..65535), 16 bits at bit 48"
+    - name: "mobileItsStation"
+      type: "MMT_U8_DATA"
+      offset: 10
+      length: 1
+      value: 5
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "privateItsStation"
+      type: "MMT_U8_DATA"
+      offset: 10
+      length: 1
+      value: 5
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "physicalRelevantItsStation"
+      type: "MMT_U8_DATA"
+      offset: 10
+      length: 1
+      value: 5
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "longitude_hem"
+      type: "MMT_U32_DATA"
+      offset: 11
+      length: 4
+      value: 439041101
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "longitude_deg"
+      type: "MMT_U32_DATA"
+      offset: 11
+      length: 4
+      value: 439041101
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "latitude_hem"
+      type: "MMT_U32_DATA"
+      offset: 15
+      length: 4
+      value: 1584361601
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "latitude_deg"
+      type: "MMT_U32_DATA"
+      offset: 15
+      length: 4
+      value: 1584361601
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "elevation"
+      type: "MMT_U32_DATA"
+      offset: 19
+      length: 4
+      value: 2460202181
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning"
+    - name: "direction"
+      type: "MMT_U16_DATA"
+      offset: 22
+      length: 2
+      value: 50646
+      source: "model-declared: the model reads these bytes at a fixed offset, but in ETSI EN 302 637-2 V1.4.1 they are part of the UPER bit-packed CamParameters (an extension bit and two optional bits, then BasicContainer), so the value has no ETSI meaning; it overlaps elevation"

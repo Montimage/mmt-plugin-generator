@@ -1,0 +1,101 @@
+# Corpus packet radius/access-request. Format and rules: tests/corpus/README.md
+schema: 1
+id: "radius/access-request"
+model: "radius"
+summary: "Access-Request for user nemo (the RFC 2865 section 7.1 example)"
+constructs:
+  - "struct.plain"
+  - "expr.sizeof.struct"
+  - "attribute.full"
+  - "attribute.no_offset_len"
+  - "type.MMT_BINARY_DATA"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP port 1812"
+  source: "RFC 2865 section 3"
+bytes:
+  - "01 00 00 38 0f 40 3f 94 73 97 80 57 bd 83 d5 cb"
+  - "98 f4 22 7a 01 06 6e 65 6d 6f 02 12 0d be 70 8d"
+  - "93 d4 13 ce 31 96 e4 3f 78 2a 0a ee 04 06 c0 a8"
+  - "01 10 05 06 00 00 00 03"
+bytes_source: "RFC 2865 section 7.1, the Access-Request hex dump, byte for byte"
+expect:
+  protocol: "RADIUS"
+  proto_id: 11
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "code"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "RFC 2865 section 3 Code, byte 0"
+    - name: "rid"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 0
+      source: "RFC 2865 section 3 Identifier, byte 1"
+    - name: "rlen"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 56
+      source: "RFC 2865 section 3 Length, bytes 2-3"
+    - name: "authenticator"
+      type: "MMT_BINARY_DATA"
+      offset: 4
+      length: 16
+      value: "0f 40 3f 94 73 97 80 57 bd 83 d5 cb 98 f4 22 7a"
+      source: "RFC 2865 section 3 Request Authenticator, 16 octets at sizeof(struct radiushdr) = 4"
+    - name: "User_Name"
+      type: "MMT_BINARY_DATA"
+      status: "undefined"
+      reason: "no offset or data_len: a TLV attribute whose extraction is a user hook"
+      spec:
+        offset: 22
+        length: 4
+        value: "6e 65 6d 6f"
+        text: "nemo"
+        byte_order: "none"
+        source: "RFC 2865 section 7.1: User-Name = \"nemo\", value after the type and length octets at bytes 20-21"
+      source: "RFC 2865 section 5.1 User-Name (type 1)"
+    - name: "User_Password"
+      type: "MMT_BINARY_DATA"
+      status: "undefined"
+      reason: "no offset or data_len: a TLV attribute whose extraction is a user hook"
+      spec:
+        offset: 28
+        length: 16
+        value: "0d be 70 8d 93 d4 13 ce 31 96 e4 3f 78 2a 0a ee"
+        byte_order: "none"
+        source: "RFC 2865 section 7.1: 16 encrypted octets after type and length at bytes 26-27"
+      source: "RFC 2865 section 5.2 User-Password (type 2)"
+    - name: "NAS_IP_Address"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "no offset or data_len: a TLV attribute whose extraction is a user hook"
+      spec:
+        offset: 46
+        length: 4
+        value: 3232235792
+        byte_order: "big"
+        source: "RFC 2865 section 7.1: NAS-IP-Address = 192.168.1.16, network order"
+      source: "RFC 2865 section 5.4 NAS-IP-Address (type 4)"
+    - name: "NAS_Port"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "no offset or data_len: a TLV attribute whose extraction is a user hook"
+      spec:
+        offset: 52
+        length: 4
+        value: 3
+        byte_order: "big"
+        source: "RFC 2865 section 7.1: NAS-Port = 3"
+      source: "RFC 2865 section 5.5 NAS-Port (type 5)"

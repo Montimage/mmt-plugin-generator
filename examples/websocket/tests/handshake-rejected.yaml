@@ -1,0 +1,51 @@
+# Packet test of examples/websocket, written from RFC 6455 (not a port: the
+# corpus has no WebSocket model). Format and rules: tests/corpus/README.md
+schema: 1
+id: "websocket/handshake-rejected"
+model: "websocket"
+summary: "The server refuses the upgrade (the RFC 6455 section 4.4 example)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, after an HTTP Upgrade to websocket (any port)"
+  source: "RFC 6455 section 1.7 (over TCP) and section 4 (the opening handshake)"
+bytes:
+  - "48 54 54 50 2f 31 2e 31 20 34 30 30 20 42 61 64"
+  - "20 52 65 71 75 65 73 74 0d 0a 53 65 63 2d 57 65"
+  - "62 53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a"
+  - "20 31 33 0d 0a 0d 0a"
+bytes_source: "RFC 6455 section 4.4, the answer to an unsupported Sec-WebSocket-Version, CR LF line ends"
+expect:
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 8
+      value: 2
+      source: "RFC 6455 section 4.2.2: the server's answer"
+    - name: "status_code"
+      type: "MMT_U16_DATA"
+      offset: 9
+      length: 3
+      value: 400
+      source: "RFC 6455 section 4.2.2 and 4.4: a status other than 101 refuses the upgrade; 400 with the versions the server supports"
+    - name: "accept"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "RFC 6455 section 4.2.2: only a 101 answer has Sec-WebSocket-Accept"
+    - name: "subprotocol"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "RFC 6455 section 4.4: the answer has no Sec-WebSocket-Protocol"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "RFC 6455 section 4.1: no WebSocket frames after a refused handshake"

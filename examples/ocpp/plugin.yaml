@@ -1,0 +1,45 @@
+# OCPP 1.6-J (OCPP 1.6 over WebSocket, the OCPP-J 1.6 specification), written
+# for issue #41 with mmt-plugin init (not a port of a Java tool model). The
+# messages are JSON arrays in WebSocket text frames, whose place in a TCP
+# segment depends on the session (the opening handshake, a frame begun in an
+# earlier segment), so every attribute is extracted by a hook:
+# src/ocpp_example_impl.c parses each segment with its session's state.
+# mmt-dpi 1.10.2 does not classify a protocol above a plugin above TCP, so
+# this plugin sits directly above TCP and parses the WebSocket framing itself
+# (examples/README.md, "OCPP 1.6-J").
+schema: 1
+protocol:
+  label: "ocpp_example"
+  id: 993
+  session_context: true   # the session data hooks keep the per-session state
+  encoding: network       # big-endian integers
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: tcp    # any port, after an Upgrade offering ocpp1.6: ocpp_example_hook_register_parents
+attributes:
+  # The first OCPP-J message whose frame header ends in the segment
+  # (OCPP-J 1.6 section 4.2): [type, uniqueId, ...].
+  - name: message_type_id
+    type: MMT_U8_DATA       # 2: CALL, 3: CALLRESULT, 4: CALLERROR
+  - name: unique_id
+    type: MMT_STRING_DATA   # the message's UniqueId, as sent, at most 63 bytes
+  - name: action
+    type: MMT_STRING_DATA   # a CALL's Action; on an answer, the Action of the CALL it answers
+  - name: error_code
+    type: MMT_STRING_DATA   # a CALLERROR's errorCode
+  - name: error_description
+    type: MMT_STRING_DATA   # a CALLERROR's errorDescription, at most 63 bytes
+  - name: payload
+    type: MMT_BINARY_VAR_DATA   # the Payload (a CALLERROR's errorDetails) JSON text, at most 1024 bytes
+  # Typed fields of a CALL's payload (OCPP 1.6 section 6).
+  - name: connector_id
+    type: MMT_U32_DATA      # the payload's top-level connectorId
+  - name: id_tag
+    type: MMT_STRING_DATA   # idTag of Authorize, StartTransaction, RemoteStartTransaction
+  - name: charging_limit_x10
+    type: MMT_U32_DATA      # the first chargingSchedulePeriod's limit, in tenths of the unit
+  - name: charging_rate_unit
+    type: MMT_STRING_DATA   # its chargingSchedule's chargingRateUnit, A or W
+  - name: message_count
+    type: MMT_U32_DATA      # OCPP-J messages whose frame header ends in the segment

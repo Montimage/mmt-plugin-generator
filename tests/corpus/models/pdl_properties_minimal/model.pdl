@@ -1,0 +1,15 @@
+Protocol {
+	Properties {
+		label = "pdl_props_min"
+		id = "963"
+	}
+	Attributes {
+		struct pdl_min_hdr {
+			uint8_t version;
+			uint8_t code;
+		}
+		attribute {
+			alias="payload" data_type="MMT_BINARY_DATA" data_len="4" offset="0" scope="SCOPE_PACKET"
+		}
+	}
+}

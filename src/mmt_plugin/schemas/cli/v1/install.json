@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin install --json result, schema_version 1",
+  "description": "The result of install (docs/design/cli.md, section 6): the model, the plugin's label and protocol, the install prefix, the build stage, the installed files and the manifest <prefix>/plugins/.mmt-plugin/<label>.json. label and protocol are null when the build failed. A dry run whose plugin is not built yet reports sha256 null.",
+  "type": "object",
+  "required": ["model", "label", "protocol", "prefix", "build", "manifest", "files", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path."},
+    "label": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]*$"},
+    "protocol": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["id", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type": "integer"},
+            "name": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "prefix": {"type": "string", "minLength": 1, "description": "The install prefix (absolute); the plugin goes to <prefix>/plugins/."},
+    "build": {"enum": ["ran", "up-to-date", "would-run", "stale", "failed", "skipped"], "description": "The build stage: mmt-plugin build, run when the plugin is stale."},
+    "manifest": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/file"}]},
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+    "dry_run": {"type": "boolean"}
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "required": ["path", "action", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "action": {"enum": ["created", "updated", "unchanged", "would-create", "would-update"]},
+        "sha256": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]{64}$"}]}
+      }
+    }
+  }
+}

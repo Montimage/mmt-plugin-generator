@@ -1,0 +1,31 @@
+Protocol {
+	Properties {
+		label = "pdl_struct_types"
+		id = "967"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_inner {
+			uint8_t in_a;
+			uint8_t in_b;
+		}
+		struct pdl_types_hdr {
+			int f_int;
+			long f_long;
+			uint32_t f_u32;
+			short f_short;
+			uint16_t f_u16;
+			char f_char;
+			u_char f_uchar;
+			uint8_t f_u8;
+			unsigned int f_uint;
+			unsigned short f_ushort, f_ushort2;
+			unsigned char f_uc;
+			uint8_t* f_ptr;
+			MMT_DATA_MAC_ADDR f_mac;
+			MMT_DATA_IP_ADDR f_ip;
+			struct pdl_inner f_inner;
+			uint8_t f_last;
+		}
+	}
+}

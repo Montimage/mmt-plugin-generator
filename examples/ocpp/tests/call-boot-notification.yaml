@@ -1,0 +1,91 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-boot-notification"
+model: "ocpp"
+summary: "A CALL, BootNotification, from the Charge Point (a masked client frame), the OCPP-J 1.6 example"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+through: "tcp:dport=80"
+bytes:
+  - "81 f0 37 fa 21 3d 6c c8 0d 1d 15 cb 18 0f 05 c9"
+  - "13 0d 06 d8 0d 1d 15 b8 4e 52 43 b4 4e 49 5e 9c"
+  - "48 5e 56 8e 48 52 59 d8 0d 1d 4c d8 42 55 56 88"
+  - "46 58 67 95 48 53 43 ac 44 53 53 95 53 1f 0d da"
+  - "03 6b 52 94 45 52 45 a2 03 11 17 d8 42 55 56 88"
+  - "46 58 67 95 48 53 43 b7 4e 59 52 96 03 07 17 d8"
+  - "72 54 59 9d 4d 58 64 95 42 56 52 8e 62 55 56 88"
+  - "46 58 45 d8 5c 60"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL example, BootNotification from the Charge Point (OCPP 1.6 section 4.2, BootNotification.req, section 6.3), in one masked text frame (RFC 6455 section 5.2, 5.3; the masking key of section 5.7, 37 fa 21 3d: a client's frames are masked, section 5.1)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 11
+      length: 8
+      value: "31 39 32 32 33 32 30 31"
+      text: "19223201"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 23
+      length: 16
+      value: "42 6f 6f 74 4e 6f 74 69 66 69 63 61 74 69 6f 6e"
+      text: "BootNotification"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.2.3: only a CALLERROR has an errorCode"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP-J 1.6 section 4.2.3: only a CALLERROR has an errorDescription"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 42
+      length: 75
+      value: "7b 22 63 68 61 72 67 65 50 6f 69 6e 74 56 65 6e 64 6f 72 22 3a 20 22 56 65 6e 64 6f 72 58 22 2c 20 22 63 68 61 72 67 65 50 6f 69 6e 74 4d 6f 64 65 6c 22 3a 20 22 53 69 6e 67 6c 65 53 6f 63 6b 65 74 43 68 61 72 67 65 72 22 7d"
+      text: "{\"chargePointVendor\": \"VendorX\", \"chargePointModel\": \"SingleSocketCharger\"}"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, a JSON object, the fourth element of a CALL, as sent; unmasked (RFC 6455 section 5.3)"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: the payload has no top-level connectorId (BootNotification.req, section 6.3)"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: only Authorize, StartTransaction and RemoteStartTransaction requests have the idTag read here"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 7.8: no ChargingProfile in the payload"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 7.13: no ChargingSchedule in the payload"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 118
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"
+note: "the run through TCP is one segment of its own session, with no opening handshake: the OCPP-J array shape claims it; port 80 is the default port of a ws URI (RFC 6455 section 3), the connection URL of OCPP-J 1.6 section 3.1.1"

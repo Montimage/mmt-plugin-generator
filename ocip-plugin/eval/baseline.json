@@ -1,0 +1,15 @@
+{
+  "capture": "ocip-plugin/capture/capture.pcap",
+  "label": "ocip",
+  "registered": false,
+  "proto_id": 0,
+  "frames": 101,
+  "label_packets": 0,
+  "paths": {
+    "meta.ethernet.ip.tcp.unknown": 86,
+    "meta.ethernet.ip.tcp.http": 15
+  },
+  "paths_other": 0,
+  "attributes": {},
+  "crashed": false
+}

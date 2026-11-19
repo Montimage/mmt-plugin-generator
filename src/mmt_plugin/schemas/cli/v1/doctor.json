@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin doctor --json result, schema_version 1",
+  "description": "The result of doctor (docs/design/cli.md, section 6): every check, in run order, with a stable id, a status and a detail; the toolchain; the plugin directory mmt-dpi scans and the install prefix's; the plugins of those directories in load order; and the id/name clashes among the installed plugins and the project's model.",
+  "type": "object",
+  "required": ["checks", "toolchain", "plugin_dirs", "load_order", "clashes"],
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"enum": ["python", "compiler", "sdk", "sdk-profile", "plugin-dir", "install-dir", "load-order", "registry", "project", "clashes"]},
+          "status": {"enum": ["pass", "warn", "fail", "skip"]},
+          "detail": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["python", "cc"],
+      "additionalProperties": false,
+      "properties": {
+        "python": {
+          "type": "object",
+          "required": ["version", "path"],
+          "additionalProperties": false,
+          "properties": {"version": {"type": "string"}, "path": {"type": "string"}}
+        },
+        "cc": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["name", "path", "version"],
+              "additionalProperties": false,
+              "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "version": {"type": "string"}}
+            }
+          ]
+        }
+      }
+    },
+    "plugin_dirs": {
+      "type": "object",
+      "required": ["scanned", "install"],
+      "additionalProperties": false,
+      "properties": {
+        "scanned": {
+          "description": "The one directory mmt-dpi scans: MMT_DPI_PLUGINS_DIR, else the one compiled into libmmt_core; null when neither tells.",
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["path", "source"],
+              "additionalProperties": false,
+              "properties": {"path": {"type": "string", "minLength": 1}, "source": {"enum": ["MMT_DPI_PLUGINS_DIR", "libmmt_core"]}}
+            }
+          ]
+        },
+        "install": {
+          "type": "object",
+          "required": ["path", "source", "plugins", "scanned", "writable"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {"type": "string", "minLength": 1, "description": "The install prefix."},
+            "source": {"enum": ["--prefix", "--system", "MMT_PLUGIN_PREFIX", "default"]},
+            "plugins": {"type": "string", "minLength": 1, "description": "<prefix>/plugins."},
+            "scanned": {"type": ["boolean", "null"], "description": "Whether mmt-dpi scans <prefix>/plugins; null when the scanned directory is not known."},
+            "writable": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "load_order": {
+      "type": "array",
+      "description": "The scanned and the install directory (each once, when it exists), with their *.so files in load order (C byte order).",
+      "items": {
+        "type": "object",
+        "required": ["path", "plugins"],
+        "additionalProperties": false,
+        "properties": {"path": {"type": "string"}, "plugins": {"type": "array", "items": {"type": "string"}}}
+      }
+    },
+    "clashes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value", "plugins"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {"enum": ["id", "name"]},
+          "value": {"type": "string"},
+          "plugins": {"type": "array", "minItems": 2, "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

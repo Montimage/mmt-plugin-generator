@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Montimage/mmt-plugin-generator/schemas/model/v1/plugin.json",
+  "title": "mmt-plugin plugin.yaml, schema 1",
+  "description": "A protocol model for mmt-plugin (docs/plugin-yaml.md): the protocol, its attributes and structs, the classification of the next protocol, and the parents it attaches to. Everything a PDL v1 model says, plus parents, absolute offsets and the SDK profile. A committed file: nothing machine-specific (an SDK prefix, a compiler) belongs here. Expressions are PDL v1 expressions written as strings: numbers, + - * /, comparisons, AND, OR, parentheses, val(x), sizeof(T), offset(x), len(x), ntohs(n), ntohl(n).",
+  "type": "object",
+  "required": ["schema", "protocol"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "The version of this format. A reader refuses a version it does not know."
+    },
+    "protocol": {"$ref": "#/$defs/protocol"},
+    "sdk": {
+      "type": "object",
+      "description": "The SDK the model is written for.",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+.][0-9A-Za-z.-]+)?$",
+          "description": "The SDK profile to generate for (for example 1.10.2), when no --sdk-profile or MMT_PLUGIN_SDK_PROFILE is given. It must be a profile mmt-plugin bundles."
+        }
+      }
+    },
+    "offsets": {
+      "enum": ["absolute", "running"],
+      "default": "absolute",
+      "description": "absolute (the default): every offset counts from the start of the protocol. running: PDL v1's running offset, where a constant attribute's or struct's offset is relative to the end of the constant ones before it, until the first attribute that is not constant (tests/corpus/README.md, Offsets and alignment); a struct then has no offset key."
+    },
+    "defines": {
+      "type": "object",
+      "description": "Named numbers, in order: each is a number, or the name of an earlier define or of an SDK protocol id macro (PROTO_TCP). Expressions, case values and next protocols use them.",
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {
+        "type": ["integer", "string"],
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      }
+    },
+    "parents": {
+      "type": "array",
+      "description": "The protocols this one runs on. Each one is checked by validate (parents-exist); one with classify is attached by the generated code, one without by the hook <label>_hook_register_parents in src/<label>_impl.c.",
+      "items": {"$ref": "#/$defs/parent"}
+    },
+    "attributes": {
+      "description": "The attributes, structs and conditionals, in packet order.",
+      "$ref": "#/$defs/elements"
+    },
+    "classify_next": {"$ref": "#/$defs/classify_next"}
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "A C identifier."
+    },
+    "expression": {
+      "type": ["integer", "string"],
+      "minLength": 1,
+      "description": "A number, or a PDL v1 expression as a string."
+    },
+    "offset": {
+      "type": ["integer", "string"],
+      "minimum": 0,
+      "minLength": 1,
+      "description": "A byte offset: a number, or a PDL v1 expression as a string."
+    },
+    "length": {
+      "type": ["integer", "string"],
+      "minimum": 1,
+      "minLength": 1,
+      "description": "A length in bytes: a number, or a PDL v1 expression as a string. An expression that reads the packet (val(len) - 4) makes a variable-length attribute, of type MMT_BINARY_DATA, MMT_BINARY_VAR_DATA or MMT_STRING_DATA."
+    },
+    "number_or_name": {
+      "type": ["integer", "string"],
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "description": "A number, or the name of a define or of an SDK protocol id macro."
+    },
+    "protocol": {
+      "type": "object",
+      "description": "The protocol: what PDL v1's Properties block says.",
+      "required": ["label", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/name",
+          "description": "The protocol's label: the plugin is mmtp_<label>.so, and its registered name is the label upper-cased, the name mmt-security rules use (DEMO.kind for the label demo, never demo.kind)."
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The protocol id; third-party plugins use 950 to 999."
+        },
+        "context": {"type": "boolean", "default": false, "description": "Generate the context hooks."},
+        "session_context": {"type": "boolean", "default": false, "description": "Generate the session data hooks."},
+        "session": {"type": "boolean", "default": false, "description": "Generate the sessionizer hooks."},
+        "encapsulation": {"type": "boolean", "default": false, "description": "The protocol carries another one (classify_next, or the classify_next hook)."},
+        "encoding": {
+          "enum": ["network", "host", "little", "ASCII", "UNICODE"],
+          "description": "How integers are read: network is big-endian, host (alias little) little-endian. ASCII, UNICODE or no encoding: no byte order (a warning)."
+        }
+      }
+    },
+    "parent": {
+      "type": "object",
+      "required": ["protocol"],
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "$ref": "#/$defs/name",
+          "description": "The parent's registered name, case-insensitively (ethernet, udp, ...): an SDK protocol or an installed plugin's."
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5,
+          "description": "The classification weight: a parent runs its classification functions in increasing weight; mmt-dpi documents 0 to 9 and 90 to 100."
+        },
+        "classify": {
+          "description": "The generated classification: by a TCP port (classify_tcp) when it has port, sport or dport, else at fixed offsets of the parent (classify_fixed). Needs a parent of the SDK profile.",
+          "if": {"type": "object", "required": ["port"]},
+          "then": {"$ref": "#/$defs/classify_tcp"},
+          "else": {
+            "if": {"type": "object", "required": ["sport"]},
+            "then": {"$ref": "#/$defs/classify_tcp"},
+            "else": {
+              "if": {"type": "object", "required": ["dport"]},
+              "then": {"$ref": "#/$defs/classify_tcp"},
+              "else": {"$ref": "#/$defs/classify_fixed"}
+            }
+          }
+        }
+      }
+    },
+    "classify_fixed": {
+      "type": "object",
+      "description": "A parent's generated classification at fixed offsets: the protocol is classified when every match holds, at offset bytes after the start of the parent.",
+      "required": ["match", "offset"],
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["offset", "length", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "offset": {"type": "integer", "minimum": 0, "description": "From the start of the parent, in bytes."},
+              "length": {"type": "integer", "minimum": 1, "maximum": 8, "description": "In bytes."},
+              "value": {"type": "integer", "minimum": 0, "description": "The unsigned integer of length bytes, in network byte order."}
+            }
+          }
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Where the protocol starts, in bytes from the start of the parent (the parent's header length)."
+        }
+      }
+    },
+    "classify_tcp": {
+      "type": "object",
+      "description": "A tcp parent's generated classification by port: the protocol is classified in a segment with a payload when every port and every match holds, and starts with the payload, after the TCP header and its options (the header's data offset). Give port, sport or dport, or several: all of them must hold. Only under protocol tcp (model.classify-port otherwise).",
+      "additionalProperties": false,
+      "properties": {
+        "port": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The source or the destination port."},
+        "sport": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The source port."},
+        "dport": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "The destination port."},
+        "match": {
+          "type": "array",
+          "description": "Fixed-offset tests of the payload, the protocol's first bytes.",
+          "items": {
+            "type": "object",
+            "required": ["offset", "length", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "offset": {"type": "integer", "minimum": 0, "description": "From the start of the TCP payload (where the protocol starts), in bytes."},
+              "length": {"type": "integer", "minimum": 1, "maximum": 8, "description": "In bytes."},
+              "value": {"type": "integer", "minimum": 0, "description": "The unsigned integer of length bytes, in network byte order."}
+            }
+          }
+        }
+      }
+    },
+    "elements": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/element"}
+    },
+    "element": {
+      "description": "An attribute; a struct when it has a struct key; a conditional when it has an if key.",
+      "if": {"type": "object", "required": ["struct"]},
+      "then": {"$ref": "#/$defs/struct"},
+      "else": {
+        "if": {"type": "object", "required": ["if"]},
+        "then": {"$ref": "#/$defs/conditional"},
+        "else": {"$ref": "#/$defs/attribute"}
+      }
+    },
+    "attribute": {
+      "type": "object",
+      "description": "An attribute. Without offset, its extraction is a user hook.",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/name", "description": "The attribute's name (case-insensitive in expressions)."},
+        "type": {"$ref": "#/$defs/data_type"},
+        "offset": {"$ref": "#/$defs/offset"},
+        "length": {
+          "$ref": "#/$defs/length",
+          "description": "Defaults to the type's width for a fixed-width type."
+        },
+        "scope": {"enum": ["packet", "session"], "default": "packet"}
+      }
+    },
+    "struct": {
+      "type": "object",
+      "description": "A struct: its fields are packed in order, without padding, and each one is a packet attribute.",
+      "required": ["struct", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "struct": {"$ref": "#/$defs/name", "description": "The struct's name (sizeof(struct X), a struct X field)."},
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "The offset of the struct's first byte. Not with offsets: running."
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/field"}
+        }
+      }
+    },
+    "field": {
+      "description": "A field; a run of bitfields when it has a bits key.",
+      "if": {"type": "object", "required": ["bits"]},
+      "then": {"$ref": "#/$defs/bitfields"},
+      "else": {
+        "type": "object",
+        "required": ["name", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"$ref": "#/$defs/name"},
+          "type": {"$ref": "#/$defs/element_type"}
+        }
+      }
+    },
+    "bitfields": {
+      "type": "object",
+      "description": "One storage unit of type, split into bitfields from its most significant bit, read in the model's byte order.",
+      "required": ["type", "bits"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"$ref": "#/$defs/element_type"},
+        "bits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "width"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"$ref": "#/$defs/name"},
+              "width": {"type": "integer", "minimum": 1, "description": "In bits."}
+            }
+          }
+        }
+      }
+    },
+    "element_type": {
+      "type": "string",
+      "pattern": "^((unsigned )?(int|long|uint32_t|short|uint16_t|char|u_char|uint8_t)\\*?|(unsigned )?void\\*|MMT_[A-Z0-9_]+|struct [A-Za-z_][A-Za-z0-9_]*)$",
+      "description": "A struct field's type: int, long, uint32_t (4 bytes), short, uint16_t (2), char, u_char, uint8_t (1), any of them or void followed by * (a 4-byte pointer), a fixed-width MMT_* type, or struct X."
+    },
+    "data_type": {
+      "enum": [
+        "MMT_U8_DATA", "MMT_U16_DATA", "MMT_U32_DATA", "MMT_U64_DATA", "MMT_DATA_POINTER",
+        "MMT_STRING_DATA", "MMT_DATA_IP_NET", "MMT_DATA_MAC_ADDR", "MMT_DATA_IP_ADDR",
+        "MMT_DATA_PATH", "MMT_DATA_TIMEVAL", "MMT_BINARY_DATA", "MMT_DATA_BUFFER",
+        "MMT_DATA_CHAR", "MMT_DATA_IP6_ADDR", "MMT_DATA_PORT", "MMT_DATA_POINT",
+        "MMT_DATA_PORT_RANGE", "MMT_DATA_DATE", "MMT_DATA_TIMEARG", "MMT_DATA_STRING_INDEX",
+        "MMT_DATA_FLOAT", "MMT_DATA_LAYERID", "MMT_DATA_FILTER_STATE", "MMT_DATA_PARENT",
+        "MMT_BINARY_VAR_DATA"
+      ],
+      "description": "The attribute's mmt-dpi data type."
+    },
+    "conditional": {
+      "type": "object",
+      "description": "The then elements exist when the condition holds, the else elements when it does not.",
+      "required": ["if", "then"],
+      "additionalProperties": false,
+      "properties": {
+        "if": {"$ref": "#/$defs/expression"},
+        "then": {"$ref": "#/$defs/elements"},
+        "else": {"$ref": "#/$defs/elements"}
+      }
+    },
+    "classify_next": {
+      "type": "object",
+      "description": "The classification of the next protocol: a C switch on an expression.",
+      "required": ["switch"],
+      "additionalProperties": false,
+      "properties": {
+        "switch": {"$ref": "#/$defs/expression"},
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["case"],
+            "additionalProperties": false,
+            "properties": {
+              "case": {"$ref": "#/$defs/number_or_name", "description": "The value of switch this case is for."},
+              "next": {"$ref": "#/$defs/next"},
+              "offset": {"$ref": "#/$defs/next_offset"},
+              "fallthrough": {"$ref": "#/$defs/fallthrough"}
+            }
+          }
+        },
+        "default": {
+          "type": "object",
+          "description": "When no case matches.",
+          "additionalProperties": false,
+          "properties": {
+            "next": {"$ref": "#/$defs/next"},
+            "offset": {"$ref": "#/$defs/next_offset"},
+            "fallthrough": {"$ref": "#/$defs/fallthrough"}
+          }
+        }
+      }
+    },
+    "next": {
+      "$ref": "#/$defs/number_or_name",
+      "description": "The next protocol's id; setting it classifies the next protocol."
+    },
+    "next_offset": {
+      "$ref": "#/$defs/expression",
+      "description": "The next protocol's offset from the start of this one."
+    },
+    "fallthrough": {
+      "type": "boolean",
+      "default": false,
+      "description": "Go on to the next case, as a C case without break."
+    }
+  }
+}

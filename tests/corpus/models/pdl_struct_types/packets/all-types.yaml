@@ -1,0 +1,154 @@
+# Corpus packet pdl_struct_types/all-types. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_struct_types/all-types"
+model: "pdl_struct_types"
+summary: "One field of every struct element type, packed"
+constructs:
+  - "struct.plain"
+  - "struct.multi_name"
+  - "struct.type.int"
+  - "struct.type.long"
+  - "struct.type.uint32_t"
+  - "struct.type.short"
+  - "struct.type.uint16_t"
+  - "struct.type.char"
+  - "struct.type.u_char"
+  - "struct.type.uint8_t"
+  - "struct.type.unsigned"
+  - "struct.type.pointer"
+  - "struct.type.mmt"
+  - "struct.type.nested"
+  - "type.MMT_DATA_IP_ADDR"
+  - "type.MMT_DATA_POINTER"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "0a 0b ff ff ff fe 01 02 03 04 05 06 07 08 ff fe"
+  - "09 10 ff 11 12 80 00 00 01 13 14 15 16 17 ca fe"
+  - "f0 0d 00 00 5e 00 53 0c c0 00 02 4d c1 c2 99"
+bytes_source: "model-declared: struct pdl_inner at byte 0, struct pdl_types_hdr from byte 2"
+expect:
+  protocol: "PDL_STRUCT_TYPES"
+  proto_id: 967
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "in_a"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 10
+      source: "corpus rule (README.md, Semantics): struct element type uint8_t is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "in_b"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 11
+      source: "corpus rule (README.md, Semantics): struct element type uint8_t is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "f_int"
+      type: "MMT_U32_DATA"
+      offset: 2
+      length: 4
+      value: 4294967294
+      source: "corpus rule (README.md, Semantics): struct element type int is MMT_U32_DATA (4 bytes), unsigned, network order"
+    - name: "f_long"
+      type: "MMT_U32_DATA"
+      offset: 6
+      length: 4
+      value: 16909060
+      source: "corpus rule (README.md, Semantics): struct element type long is MMT_U32_DATA (4 bytes), unsigned, network order"
+    - name: "f_u32"
+      type: "MMT_U32_DATA"
+      offset: 10
+      length: 4
+      value: 84281096
+      source: "corpus rule (README.md, Semantics): struct element type uint32_t is MMT_U32_DATA (4 bytes), unsigned, network order"
+    - name: "f_short"
+      type: "MMT_U16_DATA"
+      offset: 14
+      length: 2
+      value: 65534
+      source: "corpus rule (README.md, Semantics): struct element type short is MMT_U16_DATA (2 bytes), unsigned, network order"
+    - name: "f_u16"
+      type: "MMT_U16_DATA"
+      offset: 16
+      length: 2
+      value: 2320
+      source: "corpus rule (README.md, Semantics): struct element type uint16_t is MMT_U16_DATA (2 bytes), unsigned, network order"
+    - name: "f_char"
+      type: "MMT_U8_DATA"
+      offset: 18
+      length: 1
+      value: 255
+      source: "corpus rule (README.md, Semantics): struct element type char is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "f_uchar"
+      type: "MMT_U8_DATA"
+      offset: 19
+      length: 1
+      value: 17
+      source: "corpus rule (README.md, Semantics): struct element type u_char is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "f_u8"
+      type: "MMT_U8_DATA"
+      offset: 20
+      length: 1
+      value: 18
+      source: "corpus rule (README.md, Semantics): struct element type uint8_t is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "f_uint"
+      type: "MMT_U32_DATA"
+      offset: 21
+      length: 4
+      value: 2147483649
+      source: "corpus rule (README.md, Semantics): struct element type unsigned int is MMT_U32_DATA (4 bytes), unsigned, network order"
+    - name: "f_ushort"
+      type: "MMT_U16_DATA"
+      offset: 25
+      length: 2
+      value: 4884
+      source: "corpus rule (README.md, Semantics): struct element type unsigned short is MMT_U16_DATA (2 bytes), unsigned, network order"
+    - name: "f_ushort2"
+      type: "MMT_U16_DATA"
+      offset: 27
+      length: 2
+      value: 5398
+      source: "corpus rule (README.md, Semantics): struct element type unsigned short is MMT_U16_DATA (2 bytes), unsigned, network order"
+    - name: "f_uc"
+      type: "MMT_U8_DATA"
+      offset: 29
+      length: 1
+      value: 23
+      source: "corpus rule (README.md, Semantics): struct element type unsigned char is MMT_U8_DATA (1 bytes), unsigned, network order"
+    - name: "f_ptr"
+      type: "MMT_DATA_POINTER"
+      offset: 30
+      length: 4
+      value: 30
+      source: "corpus rule (README.md, Semantics): a T* field is 4 bytes; the value points at its first byte"
+    - name: "f_mac"
+      type: "MMT_DATA_MAC_ADDR"
+      offset: 34
+      length: 6
+      value: "00:00:5e:00:53:0c"
+      source: "corpus rule (README.md, Semantics): MMT_DATA_MAC_ADDR in a struct is 6 bytes, copied"
+    - name: "f_ip"
+      type: "MMT_DATA_IP_ADDR"
+      offset: 40
+      length: 4
+      value: "192.0.2.77"
+      source: "corpus rule (README.md, Semantics): MMT_DATA_IP_ADDR in a struct is 4 bytes, copied"
+    - name: "f_inner"
+      type: "MMT_BINARY_DATA"
+      offset: 44
+      length: 2
+      value: "c1 c2"
+      source: "corpus rule (README.md, Semantics): a struct X field covers sizeof(struct X) = 2 bytes and reads as MMT_BINARY_DATA"
+    - name: "f_last"
+      type: "MMT_U8_DATA"
+      offset: 46
+      length: 1
+      value: 153
+      source: "corpus rule (README.md, Semantics): fields are packed: f_last follows f_inner"
+note: "struct pdl_inner is an Attributes element itself, so in_a and in_b are attributes at bytes 0-1 and pdl_types_hdr starts at the running offset 2."

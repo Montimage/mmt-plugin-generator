@@ -1,0 +1,22 @@
+{
+  "lock_version": 1,
+  "generator": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "sdk_profile": "1.10.2",
+  "model": {
+    "format": "yaml",
+    "sha256": "ff924489742c41573d1fa29310493d3c26cb12f7382e52da4adc0bf02316ee66"
+  },
+  "files": [
+    {
+      "path": "generated/cpm_example_mmt_plugin.c",
+      "sha256": "c3d0a6b08c47621c8c99895901839f0a5254d5a836ddbb605e806e1cf660b62d"
+    },
+    {
+      "path": "generated/cpm_example_mmt_plugin.h",
+      "sha256": "2f474fec3abce786294ce525d6bc94251554db671c6c4f23be56be6e8f4b71f7"
+    }
+  ]
+}

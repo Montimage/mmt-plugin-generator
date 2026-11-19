@@ -1,0 +1,77 @@
+[project]
+name = "mmt-plugin"
+version = "0.1.0"
+description = "Generate, build and test mmt-dpi protocol plugins from a protocol model."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Montimage" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+dependencies = [
+    "jinja2>=3.1.6,<4",
+]
+
+[project.urls]
+Homepage = "https://github.com/Montimage/mmt-plugin-generator"
+Documentation = "https://github.com/Montimage/mmt-plugin-generator/blob/main/docs/user-guide.md"
+Issues = "https://github.com/Montimage/mmt-plugin-generator/issues"
+
+[project.scripts]
+mmt-plugin = "mmt_plugin.cli:main"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26",
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "ruff>=0.17",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Supply-chain cooldown: resolve only releases at least two weeks old when
+# this was set. Move it forward on purpose when upgrading (`uv lock --upgrade`).
+exclude-newer = "2026-10-30T00:00:00Z"
+
+[tool.ruff]
+# Only the Python package, its tests and the skills' eval runners and scripts;
+# tests/corpus/validate.py is a stdlib-only script with its own style. A
+# custom include replaces ruff's default, so stubs (*.pyi) are listed
+# explicitly.
+include = ["src/**/*.py", "src/**/*.pyi", "tests/unit/**/*.py", "skills/**/*.py"]
+src = ["src", "tests/unit", "skills/mmt-plugin-generator/evals", "skills/mmt-plugin-generator/scripts"]
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+files = [
+    "src/mmt_plugin",
+    "tests/unit",
+    "skills/mmt-plugin-generator/evals",
+    "skills/mmt-plugin-generator/scripts",
+]
+# The skill's eval runner and capture scripts are scripts (run_evals,
+# make_pcap, pcap_eval), which tests/unit/skill imports.
+mypy_path = "src:skills/mmt-plugin-generator/evals:skills/mmt-plugin-generator/scripts"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# jsonschema (dev group, tests only) ships no type information.
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true

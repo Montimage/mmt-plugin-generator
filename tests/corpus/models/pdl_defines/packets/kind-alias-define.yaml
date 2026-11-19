@@ -1,0 +1,38 @@
+# Corpus packet pdl_defines/kind-alias-define. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_defines/kind-alias-define"
+model: "pdl_defines"
+summary: "kind 3 matches T_KIND_C, a define naming another define"
+constructs:
+  - "define.alias"
+  - "classifynext.case.define"
+  - "classifynext.nextencaps.define"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "03 02 aa bb"
+bytes_source: "model-declared: kind, hlen = 2, two payload bytes"
+expect:
+  protocol: "PDL_DEFINES"
+  proto_id: 960
+  next:
+    kind: "proto"
+    proto_id: 951
+    offset: 2
+    source: "model-declared: case T_KIND_C (define = T_KIND_BASE = 3) -> nextencaps T_NEXT_C (define = T_NEXT_A = 951)"
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 3
+      source: "model-declared: struct pdl_defines_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_defines_hdr byte 1"

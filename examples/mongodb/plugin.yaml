@@ -1,0 +1,33 @@
+# Port of plugins/mongodb_plugin (MongoDB wire protocol, standard message
+# header). The model's offsets were "POSITION_NOT_KNOWN", not an
+# expression: the header is four little-endian int32 at bytes 0, 4, 8, 12,
+# so the encoding is host (fixed little-endian), not network.
+schema: 1
+protocol:
+  label: mongodb_example
+  id: 985
+  context: false
+  session: false
+  encapsulation: false
+  encoding: host
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: tcp   # port 27017: src/mongodb_example_impl.c
+attributes:
+  - name: message_length
+    type: MMT_U32_DATA
+    offset: 0
+    length: sizeof(int)
+  - name: request_id
+    type: MMT_U32_DATA
+    offset: 4
+    length: sizeof(int)
+  - name: response_to
+    type: MMT_U32_DATA
+    offset: 8
+    length: sizeof(int)
+  - name: op_code
+    type: MMT_U32_DATA
+    offset: 12
+    length: sizeof(int)

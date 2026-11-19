@@ -1,0 +1,40 @@
+# Corpus packet cotp/dt-s7. Format and rules: tests/corpus/README.md
+schema: 1
+id: "cotp/dt-s7"
+model: "cotp"
+summary: "COTP DT TPDU (class 0, EOT) carrying an S7comm job"
+constructs:
+  - "struct.plain"
+  - "struct.type.uint8_t"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+    - "tpkt"
+  selector: "the TPDU carried by a TPKT"
+  source: "RFC 1006 section 6; plugins/cotp registers under PROTO_TPKT"
+bytes:
+  - "02 f0 80 32 01 00 00 04 00 00 08 00 00 f0 00 00"
+  - "01 00 01 01 e0"
+bytes_source: "RFC 905 section 13.7 (DT TPDU: LI, code 1111 0000, TPDU-NR and EOT); user data is the s7com/setup-communication fixture"
+expect:
+  protocol: "COTP"
+  proto_id: 637
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "length"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "RFC 905 section 13.2.1: length indicator, octet 1; a class 0 DT header is 2 octets after LI"
+    - name: "pdu_type"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 240
+      source: "RFC 905 section 13.2.2.2 and Table 8: TPDU code in octet 2, DT = 1111 0000"

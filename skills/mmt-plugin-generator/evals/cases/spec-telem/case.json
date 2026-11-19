@@ -1,0 +1,49 @@
+{
+  "id": "spec-telem",
+  "summary": "From a protocol specification (spec.md): a schema error, a missing hook and a bit order mistake, each fixed in its own loop run.",
+  "entry": "spec",
+  "input": "spec.md",
+  "params": {"label": "telem", "id": "963", "selector": "udp:dport=5684"},
+  "runs": [
+    {
+      "note": "Draft plugin.yaml and one packet test per example of the spec; drop init's sample model and test. The draft says big-endian where the schema wants network.",
+      "edits": [
+        {"remove": "tests/telem-basic.yaml"},
+        {"write": "plugin.yaml", "from": "plugin-1.yaml"},
+        {"write": "tests/telem-reading.yaml", "from": "telem-reading.yaml"},
+        {"write": "tests/telem-ack.yaml", "from": "telem-ack.yaml"}
+      ],
+      "expect": {"stop": "validate", "exit_code": 3, "error_code": "model.schema"}
+    },
+    {
+      "note": "model.schema at protocol.encoding: the hint lists network.",
+      "edits": [
+        {"replace": "plugin.yaml", "old": "encoding: big-endian", "new": "encoding: network"}
+      ],
+      "expect": {"stop": "build", "exit_code": 5, "error_code": "build.missing-hook"}
+    },
+    {
+      "note": "build.missing-hook: define the hook the hint declares in src/telem_impl.c.",
+      "edits": [
+        {"append": "src/telem_impl.c", "from": "hook.c"}
+      ],
+      "expect": {
+        "stop": "test",
+        "exit_code": 6,
+        "error_code": "test.packet-failed",
+        "failures": {"telem/ack": ["flags", "version"], "telem/reading": ["flags", "version"]}
+      }
+    },
+    {
+      "note": "version and flags are swapped: the spec puts version in the high 4 bits, and bits are numbered from the most significant one.",
+      "edits": [
+        {
+          "replace": "plugin.yaml",
+          "old": "          - {name: flags, width: 4}\n          - {name: version, width: 4}\n",
+          "new": "          - {name: version, width: 4}\n          - {name: flags, width: 4}\n"
+        }
+      ],
+      "expect": {"stop": null}
+    }
+  ]
+}

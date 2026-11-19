@@ -1,0 +1,35 @@
+# Corpus packet pdl_defines/kind-no-match. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_defines/kind-no-match"
+model: "pdl_defines"
+summary: "kind 9 matches no case"
+constructs:
+  - "classifynext.no_match"
+  - "classifynext.default"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "09 02 aa bb"
+bytes_source: "model-declared: kind, hlen = 2, two payload bytes"
+expect:
+  protocol: "PDL_DEFINES"
+  proto_id: 960
+  next:
+    kind: "none"
+    source: "model-declared: no case matches 9 and the default only breaks"
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 9
+      source: "model-declared: struct pdl_defines_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_defines_hdr byte 1"

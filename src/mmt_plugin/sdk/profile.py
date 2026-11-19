@@ -1,0 +1,823 @@
+"""SDK profiles: what generated code uses from one mmt-dpi version.
+
+A profile is a JSON file bundled in ``mmt_plugin/sdk/profiles/<version>.json``
+(schema: ``mmt_plugin/schemas/sdk/v1/profile.json``). It lists the headers,
+types, struct layouts, callback signatures, registration calls, helpers,
+constants and logger macros that the generator emits, each with the header
+that declares it, relative to ``<prefix>/dpi/include``. Every entry is one a
+generator uses; ``mmt_plugin.sdk.headercheck`` checks them against the real
+headers. The plugin entry point (``entry_point``: the symbol mmt-dpi looks
+up, and the macro of a plugin built into the core) is declared by no
+header: loading a generated plugin with ``init_extraction()`` checks it
+(``tests/unit/generate/test_compile.py``).
+
+``load_profile`` parses and checks a file into frozen dataclasses. The JSON
+Schema is the documentation and the test oracle; the loader repeats its
+checks by hand (there are no run-time dependencies) and adds the
+cross-references a schema cannot express.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from functools import cache
+from importlib import resources
+from pathlib import Path
+from typing import Any
+
+__all__ = [
+    "DATA_TYPE_GROUP",
+    "SCHEMA_RESOURCE",
+    "SCHEMA_VERSION",
+    "Callback",
+    "ClassProvider",
+    "Constant",
+    "EntryPoint",
+    "Field",
+    "Function",
+    "Header",
+    "Logger",
+    "Macro",
+    "Param",
+    "Parents",
+    "Profile",
+    "ProfileError",
+    "ProtocolHeader",
+    "SdkProtocol",
+    "Struct",
+    "TypeName",
+    "bundled_versions",
+    "get_bundled",
+    "load_profile",
+    "load_schema",
+    "parse_profile",
+    "version_key",
+]
+
+#: The ``schema_version`` this loader reads.
+SCHEMA_VERSION = 1
+
+#: The profile schema's path inside the package.
+SCHEMA_RESOURCE = "schemas/sdk/v1/profile.json"
+
+#: The bundled profiles' directory inside the package.
+PROFILES_RESOURCE = "sdk/profiles"
+
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_HEADER = re.compile(r"^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\.h$")
+_VERSION = re.compile(r"^[0-9]+(\.[0-9]+)*$")
+_LAYOUTS = ("complete", "partial")
+_ID_MACRO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\{LABEL\}[A-Za-z0-9_]*$")
+_SDK_NAME = "mmt-dpi"
+
+#: The group of the ``MMT_*`` data type constants, the ones with a ``size``.
+DATA_TYPE_GROUP = "data_type"
+#: An alias is copied into a C string literal as is.
+_ALIAS = re.compile(r'^[^"\\\s]+$')
+
+
+class ProfileError(ValueError):
+    """A profile file that is not valid JSON or does not follow the schema."""
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    """The sort key of a dotted numeric version: ``"1.10.2"`` -> ``(1, 10, 2)``.
+
+    Trailing zeros do not count (``1.10`` and ``1.10.0`` are equal). Raises
+    ``ValueError`` for anything but dot-separated digits.
+    """
+    if not _VERSION.match(version):
+        raise ValueError(f"not a dotted numeric version: {version!r}")
+    parts = [int(p) for p in version.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+@dataclass(frozen=True)
+class Header:
+    """A header, relative to ``<prefix>/dpi/include``."""
+
+    name: str
+    doc: str
+
+
+@dataclass(frozen=True)
+class TypeName:
+    """A type generated code names; ``definition`` is set for a scalar or
+    pointer typedef, ``None`` for an opaque or enum type."""
+
+    name: str
+    header: str
+    definition: str | None
+    doc: str
+
+
+@dataclass(frozen=True)
+class Field:
+    """A struct field and its C type name."""
+
+    name: str
+    type: str
+
+
+@dataclass(frozen=True)
+class Struct:
+    """A struct type. A ``complete`` layout lists every field in order (it is
+    written as a positional initializer); a ``partial`` one only the fields
+    generated code reads."""
+
+    name: str
+    header: str
+    layout: str
+    fields: tuple[Field, ...]
+    doc: str
+
+
+@dataclass(frozen=True)
+class Param:
+    """A parameter: its name and C type name (never a function or array
+    declarator, so ``f"{type} {name}"`` declares it)."""
+
+    name: str
+    type: str
+
+    @property
+    def declaration(self) -> str:
+        """``type name``, as in a function definition."""
+        sep = "" if self.type.endswith("*") else " "
+        return f"{self.type}{sep}{self.name}"
+
+
+def _args(params: Sequence[Param]) -> str:
+    return ", ".join(p.type for p in params) or "void"
+
+
+@dataclass(frozen=True)
+class Callback:
+    """A callback the generated code implements, by role, and the SDK typedef
+    it must convert to."""
+
+    role: str
+    typedef: str
+    header: str
+    returns: str
+    params: tuple[Param, ...]
+    doc: str
+
+    @property
+    def function_type(self) -> str:
+        """The C function type, ``int (const ipacket_t *, ...)``."""
+        return f"{self.returns} ({_args(self.params)})"
+
+    @property
+    def pointer_type(self) -> str:
+        """The C pointer-to-function type, ``int (*)(const ipacket_t *, ...)``."""
+        return f"{self.returns} (*)({_args(self.params)})"
+
+
+@dataclass(frozen=True)
+class Function:
+    """An SDK function generated code calls (a registration call or a helper).
+
+    ``implements`` names the callback role a helper can stand in for (the
+    ``general_*`` extraction functions are attribute extraction callbacks).
+    """
+
+    name: str
+    header: str
+    returns: str
+    params: tuple[Param, ...]
+    doc: str
+    implements: str | None = None
+
+    @property
+    def function_type(self) -> str:
+        """The C function type, ``bool (protocol_t *, mmt_proto_id_t)``."""
+        return f"{self.returns} ({_args(self.params)})"
+
+
+@dataclass(frozen=True)
+class Constant:
+    """An integer constant (a macro or an enumerator), with its group, and its
+    value when the profile records it. A ``data_type`` constant also has its
+    ``size``: what the SDK's ``get_data_size_by_data_type()`` returns, the
+    largest ``data_len`` an attribute of that type registers with (0: only
+    ``data_len`` 0 registers)."""
+
+    name: str
+    header: str
+    group: str
+    doc: str
+    value: int | None = None
+    size: int | None = None
+
+
+@dataclass(frozen=True)
+class Macro:
+    """A function-like macro generated code calls."""
+
+    name: str
+    header: str
+    doc: str
+
+
+@dataclass(frozen=True)
+class Logger:
+    """The logger: one macro per level, and the define that enables debug."""
+
+    header: str
+    error: str
+    warn: str
+    info: str
+    debug: str
+    debug_opt_in: str
+    doc: str
+
+
+@dataclass(frozen=True)
+class ClassProvider:
+    """The class provider: its struct, its registration call and the class
+    of an unknown key."""
+
+    header: str
+    struct: str
+    register: str
+    unknown: str
+    doc: str
+
+
+@dataclass(frozen=True)
+class EntryPoint:
+    """The function mmt-dpi looks up in a plugin it loads (``symbol``, of the
+    callback role ``callback``), and the macro defined when a plugin is built
+    into the core instead (``core_macro``), which leaves it out."""
+
+    callback: str
+    symbol: str
+    core_macro: str
+    doc: str
+
+
+@dataclass(frozen=True)
+class SdkProtocol:
+    """A protocol an SDK plugin registers: its id macro, id, the header that
+    defines both, and the name it registers (``PROTO_<X>_ALIAS``), or
+    ``None`` when the header defines no alias."""
+
+    macro: str
+    id: int
+    header: str
+    alias: str | None
+
+
+@dataclass(frozen=True)
+class ProtocolHeader:
+    """The protocols one header of an SDK plugin defines, in header order.
+    ``not_ids`` are its other ``PROTO_*`` macros, whatever their value,
+    which are neither protocol ids nor the ``PROTO_<X>_ALIAS`` of a listed id
+    (``PROTO_CLASS_*`` macros need not be listed)."""
+
+    header: str
+    doc: str
+    protocols: tuple[SdkProtocol, ...]
+    not_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Parents:
+    """How generated code names a libmmt_tcpip parent protocol's id.
+
+    ``ids`` lists, per header, every protocol of the plugins the SDK
+    installs; it is empty when the profile records none.
+    """
+
+    header: str
+    declared_in: str
+    id_macro: str
+    examples: tuple[str, ...]
+    doc: str
+    ids: tuple[ProtocolHeader, ...] = ()
+
+    def id_for(self, label: str) -> str:
+        """The id macro of a parent label: ``"tcp"`` -> ``"PROTO_TCP"``."""
+        return self.id_macro.replace("{LABEL}", label.upper())
+
+    def protocols(self) -> tuple[SdkProtocol, ...]:
+        """Every protocol of ``ids``, sorted by id."""
+        return tuple(sorted((p for h in self.ids for p in h.protocols), key=lambda p: p.id))
+
+    def id_of(self, macro: str) -> int | None:
+        """The id of a protocol macro (``"PROTO_TCP"`` -> 354), or ``None``."""
+        for header in self.ids:
+            for p in header.protocols:
+                if p.macro == macro:
+                    return p.id
+        return None
+
+
+@dataclass(frozen=True)
+class Profile:
+    """One SDK profile. ``version`` is the mmt-dpi version it describes."""
+
+    version: str
+    sdk: str
+    c_std: str
+    headers: tuple[Header, ...]
+    types: tuple[TypeName, ...]
+    structs: tuple[Struct, ...]
+    callbacks: tuple[Callback, ...]
+    registrations: tuple[Function, ...]
+    helpers: tuple[Function, ...]
+    constants: tuple[Constant, ...]
+    macros: tuple[Macro, ...]
+    logger: Logger
+    class_provider: ClassProvider
+    entry_point: EntryPoint
+    parents: Parents
+
+    def callback(self, role: str) -> Callback:
+        """The callback of a role; ``KeyError`` if the profile has none."""
+        for cb in self.callbacks:
+            if cb.role == role:
+                return cb
+        raise KeyError(role)
+
+    def function(self, name: str) -> Function:
+        """A registration call or helper by name; ``KeyError`` if absent."""
+        for fn in (*self.registrations, *self.helpers):
+            if fn.name == name:
+                return fn
+        raise KeyError(name)
+
+    def struct(self, name: str) -> Struct:
+        """A struct by name; ``KeyError`` if absent."""
+        for st in self.structs:
+            if st.name == name:
+                return st
+        raise KeyError(name)
+
+    def constant(self, name: str) -> Constant:
+        """A constant by name; ``KeyError`` if absent."""
+        for c in self.constants:
+            if c.name == name:
+                return c
+        raise KeyError(name)
+
+    def data_size(self, name: str) -> int:
+        """The SDK size of a data type (``size`` of its ``data_type``
+        constant); ``KeyError`` if the profile has no such type."""
+        c = self.constant(name)
+        if c.group != DATA_TYPE_GROUP or c.size is None:
+            raise KeyError(name)
+        return c.size
+
+
+# --- parsing -----------------------------------------------------------------
+
+
+class _Reader:
+    """Typed access to one JSON object, with the path for error messages."""
+
+    def __init__(self, value: Any, where: str, keys: Sequence[str], optional: Sequence[str] = ()):
+        if not isinstance(value, dict):
+            raise ProfileError(f"{where}: expected an object")
+        unknown = sorted(set(value) - set(keys) - set(optional))
+        if unknown:
+            raise ProfileError(f"{where}: unknown key {unknown[0]!r}")
+        missing = [k for k in keys if k not in value]
+        if missing:
+            raise ProfileError(f"{where}: missing key {missing[0]!r}")
+        if "$comment" in value and not isinstance(value["$comment"], str):
+            raise ProfileError(f"{where}.$comment: expected a string")
+        self.value: dict[str, Any] = value
+        self.where = where
+
+    def text(self, key: str, pattern: re.Pattern[str] | None = None) -> str:
+        value = self.value[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ProfileError(f"{self.where}.{key}: expected a non-empty string")
+        if pattern is not None and not pattern.match(value):
+            raise ProfileError(f"{self.where}.{key}: {value!r} does not match {pattern.pattern}")
+        return value
+
+    def opt_text(self, key: str) -> str | None:
+        return self.text(key) if key in self.value else None
+
+    def opt_integer(self, key: str) -> int | None:
+        """An optional integer; like JSON Schema's ``integer``, ``64.0`` is 64."""
+        if key not in self.value:
+            return None
+        value = self.value[key]
+        if type(value) is float and value.is_integer():
+            return int(value)
+        if type(value) is not int:
+            raise ProfileError(f"{self.where}.{key}: expected an integer")
+        return value
+
+    def array(self, key: str) -> list[Any]:
+        value = self.value[key]
+        if not isinstance(value, list):
+            raise ProfileError(f"{self.where}.{key}: expected an array")
+        return value
+
+
+def _params(r: _Reader) -> tuple[Param, ...]:
+    params = []
+    for i, item in enumerate(r.array("params")):
+        p = _Reader(item, f"{r.where}.params[{i}]", ("name", "type"))
+        ptype = p.text("type")
+        if "(" in ptype or "[" in ptype:
+            raise ProfileError(
+                f"{p.where}.type: {ptype!r} has a function or array declarator; use its typedef"
+            )
+        params.append(Param(p.text("name", _IDENT), ptype))
+    return tuple(params)
+
+
+def _function(item: Any, where: str) -> Function:
+    r = _Reader(item, where, ("name", "header", "returns", "params", "doc"), ("implements",))
+    return Function(
+        name=r.text("name", _IDENT),
+        header=r.text("header", _HEADER),
+        returns=r.text("returns"),
+        params=_params(r),
+        doc=r.text("doc"),
+        implements=r.opt_text("implements"),
+    )
+
+
+def _items(r: _Reader, key: str) -> list[tuple[Any, str]]:
+    return [(item, f"{r.where}.{key}[{i}]") for i, item in enumerate(r.array(key))]
+
+
+def parse_profile(data: Any, source: str = "<profile>") -> Profile:
+    """Build a ``Profile`` from parsed JSON; raise ``ProfileError`` if it is
+    not a valid profile of this schema version."""
+    top = _Reader(
+        data,
+        source,
+        (
+            "schema_version",
+            "profile",
+            "sdk",
+            "c_std",
+            "headers",
+            "types",
+            "structs",
+            "callbacks",
+            "registrations",
+            "helpers",
+            "constants",
+            "macros",
+            "logger",
+            "class_provider",
+            "entry_point",
+            "parents",
+        ),
+        ("$comment",),
+    )
+    schema_version = top.value["schema_version"]
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+        raise ProfileError(
+            f"{source}.schema_version: {top.value['schema_version']!r} is not {SCHEMA_VERSION}"
+        )
+    headers = []
+    for item, where in _items(top, "headers"):
+        h = _Reader(item, where, ("name", "doc"))
+        headers.append(Header(h.text("name", _HEADER), h.text("doc")))
+    types = []
+    for item, where in _items(top, "types"):
+        t = _Reader(item, where, ("name", "header", "doc"), ("definition",))
+        types.append(
+            TypeName(
+                t.text("name", _IDENT),
+                t.text("header", _HEADER),
+                t.opt_text("definition"),
+                t.text("doc"),
+            )
+        )
+    structs = []
+    for item, where in _items(top, "structs"):
+        s = _Reader(item, where, ("name", "header", "layout", "fields", "doc"))
+        layout = s.text("layout")
+        if layout not in _LAYOUTS:
+            raise ProfileError(f"{where}.layout: {layout!r} is not one of {_LAYOUTS}")
+        fields = []
+        for fitem, fwhere in _items(s, "fields"):
+            f = _Reader(fitem, fwhere, ("name", "type"))
+            fields.append(Field(f.text("name", _IDENT), f.text("type")))
+        if not fields:
+            raise ProfileError(f"{where}.fields: a struct lists at least one field")
+        structs.append(
+            Struct(
+                s.text("name", _IDENT),
+                s.text("header", _HEADER),
+                layout,
+                tuple(fields),
+                s.text("doc"),
+            )
+        )
+    callbacks = []
+    for item, where in _items(top, "callbacks"):
+        c = _Reader(item, where, ("role", "typedef", "header", "returns", "params", "doc"))
+        callbacks.append(
+            Callback(
+                role=c.text("role", _IDENT),
+                typedef=c.text("typedef", _IDENT),
+                header=c.text("header", _HEADER),
+                returns=c.text("returns"),
+                params=_params(c),
+                doc=c.text("doc"),
+            )
+        )
+    registrations = [_function(item, where) for item, where in _items(top, "registrations")]
+    helpers = [_function(item, where) for item, where in _items(top, "helpers")]
+    constants = []
+    for item, where in _items(top, "constants"):
+        k = _Reader(item, where, ("name", "header", "group", "doc"), ("value", "size"))
+        group = k.text("group", _IDENT)
+        size = k.opt_integer("size")
+        if (size is None) == (group == DATA_TYPE_GROUP):
+            raise ProfileError(
+                f"{where}.size: a {DATA_TYPE_GROUP} constant needs a size, and only it has one"
+            )
+        if size is not None and size < 0:
+            raise ProfileError(f"{where}.size: {size} is negative")
+        constants.append(
+            Constant(
+                k.text("name", _IDENT),
+                k.text("header", _HEADER),
+                group,
+                k.text("doc"),
+                k.opt_integer("value"),
+                size,
+            )
+        )
+    macros = []
+    for item, where in _items(top, "macros"):
+        m = _Reader(item, where, ("name", "header", "doc"))
+        macros.append(Macro(m.text("name", _IDENT), m.text("header", _HEADER), m.text("doc")))
+    lg = _Reader(
+        top.value["logger"],
+        f"{source}.logger",
+        ("header", "error", "warn", "info", "debug", "debug_opt_in", "doc"),
+    )
+    logger = Logger(
+        header=lg.text("header", _HEADER),
+        error=lg.text("error", _IDENT),
+        warn=lg.text("warn", _IDENT),
+        info=lg.text("info", _IDENT),
+        debug=lg.text("debug", _IDENT),
+        debug_opt_in=lg.text("debug_opt_in", _IDENT),
+        doc=lg.text("doc"),
+    )
+    cp = _Reader(
+        top.value["class_provider"],
+        f"{source}.class_provider",
+        ("header", "struct", "register", "unknown", "doc"),
+    )
+    class_provider = ClassProvider(
+        header=cp.text("header", _HEADER),
+        struct=cp.text("struct", _IDENT),
+        register=cp.text("register", _IDENT),
+        unknown=cp.text("unknown", _IDENT),
+        doc=cp.text("doc"),
+    )
+    ep = _Reader(
+        top.value["entry_point"],
+        f"{source}.entry_point",
+        ("callback", "symbol", "core_macro", "doc"),
+    )
+    entry_point = EntryPoint(
+        callback=ep.text("callback", _IDENT),
+        symbol=ep.text("symbol", _IDENT),
+        core_macro=ep.text("core_macro", _IDENT),
+        doc=ep.text("doc"),
+    )
+    pa = _Reader(
+        top.value["parents"],
+        f"{source}.parents",
+        ("header", "declared_in", "id_macro", "examples", "doc"),
+        ("ids",),
+    )
+    examples = []
+    for i, ex in enumerate(pa.array("examples")):
+        if not isinstance(ex, str) or not _IDENT.match(ex):
+            raise ProfileError(f"{source}.parents.examples[{i}]: expected a C identifier")
+        examples.append(ex)
+    id_macro = pa.text("id_macro")
+    if not _ID_MACRO.match(id_macro):
+        raise ProfileError(f"{source}.parents.id_macro: {id_macro!r} needs one {{LABEL}}")
+    parents = Parents(
+        header=pa.text("header", _HEADER),
+        declared_in=pa.text("declared_in", _HEADER),
+        id_macro=id_macro,
+        examples=tuple(examples),
+        doc=pa.text("doc"),
+        ids=_parent_ids(pa),
+    )
+    version = top.text("profile", _VERSION)
+    profile = Profile(
+        version=version,
+        sdk=_sdk_name(top),
+        c_std=top.text("c_std"),
+        headers=tuple(headers),
+        types=tuple(types),
+        structs=tuple(structs),
+        callbacks=tuple(callbacks),
+        registrations=tuple(registrations),
+        helpers=tuple(helpers),
+        constants=tuple(constants),
+        macros=tuple(macros),
+        logger=logger,
+        class_provider=class_provider,
+        entry_point=entry_point,
+        parents=parents,
+    )
+    _check_references(profile, source)
+    return profile
+
+
+def _parent_ids(pa: _Reader) -> tuple[ProtocolHeader, ...]:
+    """``parents.ids``: per header, its protocols; each header, macro, id and
+    alias (case-insensitively) once."""
+    if "ids" not in pa.value:
+        return ()
+    headers = []
+    for item, where in _items(pa, "ids"):
+        h = _Reader(item, where, ("header", "doc", "protocols"), ("not_ids",))
+        header = h.text("header", _HEADER)
+        raw = h.value["protocols"]
+        if not isinstance(raw, dict):
+            raise ProfileError(f"{where}.protocols: expected an object")
+        protocols = []
+        for name, value in raw.items():
+            if not _IDENT.match(name):
+                raise ProfileError(f"{where}.protocols: {name!r} is not a C identifier")
+            entry = _Reader(value, f"{where}.protocols.{name}", ("id",), ("alias",))
+            pid = entry.value["id"]
+            if type(pid) is float and pid.is_integer():
+                pid = int(pid)
+            if type(pid) is not int or pid < 0:
+                raise ProfileError(f"{entry.where}.id: expected a non-negative integer")
+            alias = entry.opt_text("alias")
+            if alias is not None and not _ALIAS.match(alias):
+                raise ProfileError(
+                    f"{entry.where}.alias: {alias!r} holds a quote, a backslash or a space"
+                )
+            protocols.append(SdkProtocol(name, pid, header, alias))
+        not_ids = []
+        for i, name in enumerate(h.array("not_ids") if "not_ids" in h.value else []):
+            if not isinstance(name, str) or not _IDENT.match(name):
+                raise ProfileError(f"{where}.not_ids[{i}]: expected a C identifier")
+            not_ids.append(name)
+        headers.append(ProtocolHeader(header, h.text("doc"), tuple(protocols), tuple(not_ids)))
+    _unique([h.header for h in headers], "parents.ids header", pa.where)
+    every = [p for h in headers for p in h.protocols]
+    _unique(
+        [*(p.macro for p in every), *(n for h in headers for n in h.not_ids)], "macro", pa.where
+    )
+    by_id = sorted(every, key=lambda p: (p.id, p.macro))
+    for a, b in itertools.pairwise(by_id):
+        if a.id == b.id:
+            raise ProfileError(f"{pa.where}.ids: {a.macro} and {b.macro} are both {a.id}")
+    _unique([p.alias.lower() for p in every if p.alias is not None], "alias", pa.where)
+    return tuple(headers)
+
+
+def _sdk_name(top: _Reader) -> str:
+    sdk = top.text("sdk")
+    if sdk != _SDK_NAME:
+        raise ProfileError(f"{top.where}.sdk: {sdk!r} is not {_SDK_NAME!r}")
+    return sdk
+
+
+def _unique(names: Sequence[str], what: str, source: str) -> None:
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            raise ProfileError(f"{source}: {what} {name!r} is listed twice")
+        seen.add(name)
+
+
+def _check_references(p: Profile, source: str) -> None:
+    """The cross-references the schema cannot express."""
+    header_names = [h.name for h in p.headers]
+    _unique(header_names, "header", source)
+    functions = [*p.registrations, *p.helpers]
+    symbols = [
+        *(t.name for t in p.types),
+        *(s.name for s in p.structs),
+        *(c.typedef for c in p.callbacks),
+        *(f.name for f in functions),
+        *(c.name for c in p.constants),
+        *(m.name for m in p.macros),
+    ]
+    _unique(symbols, "symbol", source)
+    _unique([c.role for c in p.callbacks], "callback role", source)
+    for struct in p.structs:
+        _unique([f.name for f in struct.fields], f"field of {struct.name}", source)
+    known = set(header_names)
+    entries: list[tuple[str, str]] = [
+        *((t.name, t.header) for t in p.types),
+        *((s.name, s.header) for s in p.structs),
+        *((c.typedef, c.header) for c in p.callbacks),
+        *((f.name, f.header) for f in functions),
+        *((c.name, c.header) for c in p.constants),
+        *((m.name, m.header) for m in p.macros),
+        ("logger", p.logger.header),
+        ("class_provider", p.class_provider.header),
+        ("parents", p.parents.header),
+    ]
+    for name, header in entries:
+        if header not in known:
+            raise ProfileError(f"{source}: {name}: header {header!r} is not in headers")
+    roles = {c.role for c in p.callbacks}
+    for fn in functions:
+        if fn.implements is not None and fn.implements not in roles:
+            raise ProfileError(
+                f"{source}: {fn.name}: implements {fn.implements!r}, which is not a callback role"
+            )
+    macros = {m.name: m.header for m in p.macros}
+    lg = p.logger
+    for level, name in (
+        ("error", lg.error),
+        ("warn", lg.warn),
+        ("info", lg.info),
+        ("debug", lg.debug),
+    ):
+        if macros.get(name) != lg.header:
+            raise ProfileError(f"{source}.logger.{level}: {name!r} is not a macro of {lg.header}")
+    if p.entry_point.callback not in roles:
+        raise ProfileError(
+            f"{source}.entry_point.callback: {p.entry_point.callback!r} is not a callback role"
+        )
+    cp = p.class_provider
+    refs = (
+        ("struct", cp.struct, {s.name: s.header for s in p.structs}),
+        ("register", cp.register, {f.name: f.header for f in p.registrations}),
+        ("unknown", cp.unknown, {c.name: c.header for c in p.constants}),
+    )
+    for key, name, table in refs:
+        if table.get(name) != cp.header:
+            raise ProfileError(
+                f"{source}.class_provider.{key}: {name!r} is not declared in {cp.header}"
+            )
+
+
+def load_profile(path: str | Path) -> Profile:
+    """Read and parse a profile file; ``ProfileError`` if it is not valid."""
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ProfileError(f"{path}: {exc.strerror or exc}") from exc
+    return _parse_text(text, str(path))
+
+
+def _parse_text(text: str, source: str) -> Profile:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProfileError(f"{source}: not JSON: {exc}") from exc
+    return parse_profile(data, source)
+
+
+@cache
+def _bundled() -> Mapping[str, Profile]:
+    folder = resources.files("mmt_plugin").joinpath(PROFILES_RESOURCE)
+    found: dict[str, Profile] = {}
+    for entry in folder.iterdir():
+        if not entry.name.endswith(".json"):
+            continue
+        profile = _parse_text(
+            entry.read_text(encoding="utf-8"), f"{PROFILES_RESOURCE}/{entry.name}"
+        )
+        if entry.name != f"{profile.version}.json":
+            raise ProfileError(
+                f"{PROFILES_RESOURCE}/{entry.name}: holds profile {profile.version}"
+            )
+        found[profile.version] = profile
+    return {v: found[v] for v in sorted(found, key=version_key)}
+
+
+def bundled_versions() -> list[str]:
+    """The versions of the bundled profiles, oldest first."""
+    return list(_bundled())
+
+
+def get_bundled(version: str) -> Profile | None:
+    """The bundled profile of exactly this version, or ``None``."""
+    return _bundled().get(version)
+
+
+def load_schema() -> dict[str, Any]:
+    """Return the profile's JSON Schema, as shipped in the package."""
+    path = resources.files("mmt_plugin").joinpath(SCHEMA_RESOURCE)
+    schema: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return schema

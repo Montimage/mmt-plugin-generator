@@ -1,0 +1,46 @@
+Protocol {
+	Properties {
+		label = "pdl_conditionals"
+		id = "971"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+			alias="kind" data_type="MMT_U8_DATA" data_len="sizeof(char)" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="sub" data_type="MMT_U8_DATA" data_len="1" offset="1" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="size" data_type="MMT_U16_DATA" data_len="2" offset="2" scope="SCOPE_PACKET"
+		}
+		if (val(kind) == 1) {
+			attribute {
+				alias="one_val" data_type="MMT_U16_DATA" data_len="2" offset="4" scope="SCOPE_PACKET"
+			}
+			if (val(sub) > 7) {
+				attribute {
+					alias="one_big" data_type="MMT_U8_DATA" data_len="1" offset="6" scope="SCOPE_PACKET"
+				}
+			}
+		} else {
+			attribute {
+				alias="other_val" data_type="MMT_U8_DATA" data_len="1" offset="4" scope="SCOPE_PACKET"
+			}
+			if (val(sub) <= 7 AND val(size) != 0) {
+				attribute {
+					alias="other_small" data_type="MMT_U8_DATA" data_len="1" offset="5" scope="SCOPE_PACKET"
+				}
+			} else {
+				attribute {
+					alias="other_alt" data_type="MMT_U8_DATA" data_len="1" offset="6" scope="SCOPE_PACKET"
+				}
+			}
+		}
+		if (val(kind) >= 5 OR val(sub) < 2) {
+			attribute {
+				alias="tail" data_type="MMT_U8_DATA" data_len="1" offset="7" scope="SCOPE_PACKET"
+			}
+		}
+	}
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "dummy result (test-only command)",
+  "type": "object",
+  "required": ["value", "project", "json", "quiet", "verbose", "no_color"],
+  "additionalProperties": false,
+  "properties": {
+    "value": {"type": "string"},
+    "project": {"type": "string"},
+    "json": {"type": "boolean"},
+    "quiet": {"type": "boolean"},
+    "verbose": {"type": "integer", "minimum": 0},
+    "no_color": {"type": "boolean"}
+  }
+}

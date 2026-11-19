@@ -1,0 +1,74 @@
+# Corpus packet mongodb/op-msg-ping. Format and rules: tests/corpus/README.md
+schema: 1
+id: "mongodb/op-msg-ping"
+model: "mongodb"
+summary: "OP_MSG carrying the command { ping: 1, $db: \"admin\" }"
+constructs:
+  - "properties.label"
+  - "properties.id"
+  - "properties.encoding.network"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 27017"
+  source: "MongoDB documentation, default port 27017; plugins/mongodb_src registers under PROTO_TCP"
+bytes:
+  - "33 00 00 00 07 00 00 00 00 00 00 00 dd 07 00 00"
+  - "00 00 00 00 00 1e 00 00 00 10 70 69 6e 67 00 01"
+  - "00 00 00 02 24 64 62 00 06 00 00 00 61 64 6d 69"
+  - "6e 00 00"
+bytes_source: "MongoDB Wire Protocol: Standard Message Header (four little-endian int32) and OP_MSG (opCode 2013: flagBits, one kind 0 section holding a BSON document per bsonspec.org)"
+expect:
+  protocol: "MONGODB"
+  proto_id: 640
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_length"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "offset POSITION_NOT_KNOWN is not an expression"
+      spec:
+        offset: 0
+        length: 4
+        value: 51
+        byte_order: "little"
+        source: "MongoDB Wire Protocol, Standard Message Header: messageLength, int32 little-endian at byte 0"
+      source: "MongoDB Wire Protocol, Standard Message Header: message_length"
+    - name: "request_id"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "offset POSITION_NOT_KNOWN is not an expression"
+      spec:
+        offset: 4
+        length: 4
+        value: 7
+        byte_order: "little"
+        source: "MongoDB Wire Protocol, Standard Message Header: requestID, int32 little-endian at byte 4"
+      source: "MongoDB Wire Protocol, Standard Message Header: request_id"
+    - name: "response_to"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "offset POSITION_NOT_KNOWN is not an expression"
+      spec:
+        offset: 8
+        length: 4
+        value: 0
+        byte_order: "little"
+        source: "MongoDB Wire Protocol, Standard Message Header: responseTo, int32 little-endian at byte 8"
+      source: "MongoDB Wire Protocol, Standard Message Header: response_to"
+    - name: "op_code"
+      type: "MMT_U32_DATA"
+      status: "undefined"
+      reason: "offset POSITION_NOT_KNOWN is not an expression"
+      spec:
+        offset: 12
+        length: 4
+        value: 2013
+        byte_order: "little"
+        source: "MongoDB Wire Protocol, Standard Message Header: opCode (OP_MSG = 2013), int32 little-endian at byte 12"
+      source: "MongoDB Wire Protocol, Standard Message Header: op_code"

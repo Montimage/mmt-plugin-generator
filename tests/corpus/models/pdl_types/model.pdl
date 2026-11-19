@@ -1,0 +1,87 @@
+Protocol {
+	Properties {
+		label = "pdl_types"
+		id = "969"
+		encoding = "network"
+	}
+	Attributes {
+		attribute {
+			alias="t_u8" data_type="MMT_U8_DATA" data_len="sizeof(char)" offset="0" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_u16" data_type="MMT_U16_DATA" data_len="2" offset="1" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_u32" data_type="MMT_U32_DATA" data_len="4" offset="3" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_u64" data_type="MMT_U64_DATA" data_len="8" offset="7" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_pointer" data_type="MMT_DATA_POINTER" data_len="4" offset="15" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_string" data_type="MMT_STRING_DATA" data_len="4" offset="19" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_ip_net" data_type="MMT_DATA_IP_NET" data_len="4" offset="23" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_mac" data_type="MMT_DATA_MAC_ADDR" data_len="6" offset="27" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_ip_addr" data_type="MMT_DATA_IP_ADDR" data_len="4" offset="33" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_path" data_type="MMT_DATA_PATH" data_len="8" offset="37" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_timeval" data_type="MMT_DATA_TIMEVAL" data_len="8" offset="45" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_binary" data_type="MMT_BINARY_DATA" data_len="6" offset="53" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_buffer" data_type="MMT_DATA_BUFFER" data_len="4" offset="59" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_char" data_type="MMT_DATA_CHAR" data_len="1" offset="63" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_ip6" data_type="MMT_DATA_IP6_ADDR" data_len="16" offset="64" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_port" data_type="MMT_DATA_PORT" data_len="2" offset="80" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_point" data_type="MMT_DATA_POINT" data_len="4" offset="82" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_port_range" data_type="MMT_DATA_PORT_RANGE" data_len="4" offset="86" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_date" data_type="MMT_DATA_DATE" data_len="4" offset="90" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_timearg" data_type="MMT_DATA_TIMEARG" data_len="4" offset="94" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_string_index" data_type="MMT_DATA_STRING_INDEX" data_len="4" offset="98" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_float" data_type="MMT_DATA_FLOAT" data_len="4" offset="102" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_layerid" data_type="MMT_DATA_LAYERID" data_len="1" offset="106" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_filter_state" data_type="MMT_DATA_FILTER_STATE" data_len="2" offset="107" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_parent" data_type="MMT_DATA_PARENT" data_len="2" offset="109" scope="SCOPE_PACKET"
+		}
+		attribute {
+			alias="t_binary_var" data_type="MMT_BINARY_VAR_DATA" data_len="5" offset="111" scope="SCOPE_PACKET"
+		}
+	}
+}

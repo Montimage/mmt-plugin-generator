@@ -1,0 +1,32 @@
+# Port of plugins/tpkt_plugin (RFC 1006 section 6). A TPKT packet carries a
+# TPDU, the cotp example.
+schema: 1
+protocol:
+  label: tpkt_example
+  id: 991
+  context: false
+  session: false
+  encapsulation: true
+  encoding: network
+sdk:
+  profile: "1.10.2"
+defines:
+  TPKT_VERSION: 3          # RFC 1006 section 6: vrsn
+  COTP_EXAMPLE: 979        # the cotp example's id
+parents:
+  - protocol: tcp   # port 102: src/tpkt_example_impl.c
+attributes:
+  - struct: tpkt_hdr
+    fields:
+      - name: version
+        type: uint8_t
+      - name: reserved
+        type: uint8_t
+      - name: length
+        type: uint16_t
+classify_next:
+  switch: val(version)
+  cases:
+    - case: TPKT_VERSION
+      next: COTP_EXAMPLE
+      offset: 4

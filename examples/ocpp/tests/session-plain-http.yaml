@@ -1,0 +1,56 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications and RFC 6455 (not a port: the corpus has no OCPP model):
+# its packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-plain-http"
+model: "ocpp"
+summary: "Plain HTTP on the same port: not OCPP"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49205"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET / HTTP/1.1\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 20 48 54 54 50 2f 31 2e 31 0d 0a"
+      - "0d 0a"
+    expect: "none"
+  - from: "server"
+    text: "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 32 30 30 20 4f 4b 0d"
+      - "0a 43 6f 6e 74 65 6e 74 2d 4c 65 6e 67 74 68 3a"
+      - "20 30 0d 0a 0d 0a"
+    expect: "none"
+  - from: "client"
+    bytes:
+      - "81 96 37 fa 21 3d 6c c8 0d 1f 06 d8 0d 1f 7f 9f"
+      - "40 4f 43 98 44 5c 43 d8 0d 46 4a a7"
+    expect: "none"

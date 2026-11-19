@@ -1,0 +1,34 @@
+# Corpus packet ndn/data. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ndn/data"
+model: "ndn"
+summary: "Data for /ndn/test with a DigestSha256 signature"
+constructs:
+  - "attribute.full"
+  - "expr.sizeof.type"
+  - "properties.session"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+  selector: "ethertype 0x8624"
+  source: "NDN Ethernet face EtherType 0x8624 (NFD Developer's Guide); ndn_src/ndn_mmt_plugin.c"
+bytes:
+  - "06 38 07 0b 08 03 6e 64 6e 08 04 74 65 73 74 15"
+  - "02 68 69 16 03 1b 01 00 17 20 38 b3 64 9d 3c 75"
+  - "24 a8 83 8b d7 44 9e 7f 75 85 44 58 6a af cd f8"
+  - "d1 0e e0 dd b3 80 05 47 fd 3f"
+bytes_source: "NDN Packet Format 0.3, Data packet: Name /ndn/test, Content \"hi\", SignatureType DigestSha256 (0), SignatureValue = SHA-256 of the Name, Content and SignatureInfo TLVs"
+expect:
+  protocol: "NDN_EXAMPLE"
+  proto_id: 980
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "packet_type"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 6
+      source: "NDN Packet Format 0.3: the outermost TLV-TYPE is the packet type; Data = 6"

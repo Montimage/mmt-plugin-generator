@@ -1,0 +1,28 @@
+# Port of plugins/s7com_plugin (S7comm header, de-facto layout of the
+# Wireshark dissector). The cotp example classifies it in a DT TPDU's user
+# data.
+schema: 1
+protocol:
+  label: s7comm_example
+  id: 988
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+attributes:
+  - struct: s7comm_hdr
+    fields:
+      - name: proto_id
+        type: uint8_t
+      - name: rosctr
+        type: uint8_t
+      - name: reserved
+        type: uint16_t
+      - name: pdur
+        type: uint16_t
+      - name: param_length
+        type: uint16_t
+      - name: data_length
+        type: uint16_t

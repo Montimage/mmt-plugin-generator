@@ -1,0 +1,137 @@
+# Corpus packet topo_ind_sch/two-channels-one-station. Format and rules: tests/corpus/README.md
+schema: 1
+id: "topo_ind_sch/two-channels-one-station"
+model: "topo_ind_sch"
+summary: "Two LC channels and one LP station"
+constructs:
+  - "struct.bitfield"
+  - "struct.bitfield.followed"
+  - "expr.val"
+  - "expr.mul"
+  - "expr.add"
+  - "layout.align.stop"
+  - "attribute.full"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "3a b9 04 01 02 03 02 11 12 13 21 22 23 01 31 32"
+  - "33"
+bytes_source: "model-declared: struct attrs (7 bytes), then lc_channels_nb 3-byte channels, a station count and 3-byte stations; values chosen for the fixture"
+expect:
+  protocol: "MSG_TOPO_IND_SCH"
+  proto_id: 500
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "management_status"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 3
+      bit_offset: 0
+      bit_width: 4
+      source: "model-declared: struct attrs byte 0, high nibble"
+    - name: "reserve_bloc0_byte1"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 10
+      bit_offset: 4
+      bit_width: 4
+      source: "model-declared: byte 0, low nibble"
+    - name: "reserve_bloc0_byte2"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 5
+      bit_offset: 0
+      bit_width: 3
+      source: "model-declared: byte 1, top 3 bits"
+    - name: "channel_presence"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      bit_offset: 3
+      bit_width: 1
+      source: "model-declared: byte 1, bit 3"
+    - name: "status"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      bit_offset: 4
+      bit_width: 2
+      source: "model-declared: byte 1, bits 4-5"
+    - name: "mandatory"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      bit_offset: 6
+      bit_width: 2
+      source: "model-declared: byte 1, bits 6-7"
+    - name: "neighbors_nb"
+      type: "MMT_U8_DATA"
+      offset: 2
+      length: 1
+      value: 4
+      source: "model-declared: byte 2"
+    - name: "elem_k_alloc"
+      type: "MMT_U8_DATA"
+      offset: 3
+      length: 1
+      value: 1
+      source: "model-declared: byte 3"
+    - name: "elem_j_alloc"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 2
+      source: "model-declared: byte 4"
+    - name: "elem_c_alloc"
+      type: "MMT_U8_DATA"
+      offset: 5
+      length: 1
+      value: 3
+      source: "model-declared: byte 5"
+    - name: "lc_channels_nb"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 1
+      value: 2
+      source: "model-declared: byte 6"
+    - name: "LP_STATIONS_NB"
+      type: "MMT_U8_DATA"
+      offset: 13
+      length: 1
+      value: 1
+      source: "model-declared: offset 7 + val(lc_channels_nb) * 3 = 13"
+    - name: "BLOC0"
+      type: "MMT_BINARY_DATA"
+      offset: 0
+      length: 3
+      value: "3a b9 04"
+      source: "model-declared: offset 0, length 3"
+    - name: "BLOC1"
+      type: "MMT_BINARY_DATA"
+      offset: 3
+      length: 3
+      value: "01 02 03"
+      source: "model-declared: offset 3, length 3"
+    - name: "BLOC2"
+      type: "MMT_BINARY_DATA"
+      offset: 6
+      length: 7
+      value: "02 11 12 13 21 22 23"
+      source: "model-declared: offset 6, length 1 + val(lc_channels_nb) * 3 = 7"
+    - name: "BLOC3"
+      type: "MMT_BINARY_DATA"
+      offset: 13
+      length: 4
+      value: "01 31 32 33"
+      source: "model-declared: offset 7 + val(lc_channels_nb) * 3 = 13, length 1 + val(LP_STATIONS_NB) * 3 = 4"

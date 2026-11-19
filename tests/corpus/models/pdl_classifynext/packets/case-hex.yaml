@@ -1,0 +1,45 @@
+# Corpus packet pdl_classifynext/case-hex. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_classifynext/case-hex"
+model: "pdl_classifynext"
+summary: "type 2: hex case label and hex nextencaps"
+constructs:
+  - "classifynext.case.hex"
+  - "classifynext.nextencaps.number"
+  - "expr.sizeof.struct"
+  - "expr.literal.hex"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "02 01 00 08 a0 a1 a2 a3"
+bytes_source: "model-declared: struct pdl_cn_hdr then filler bytes"
+expect:
+  protocol: "PDL_CLASSIFYNEXT"
+  proto_id: 961
+  next:
+    kind: "proto"
+    proto_id: 956
+    offset: 4
+    source: "model-declared: case 0x02 -> nextencaps 0x3BC = 956, nextoffset sizeof(struct pdl_cn_hdr) = 1 + 1 + 2"
+  attributes:
+    - name: "type"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_cn_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+      source: "model-declared: struct pdl_cn_hdr byte 1"
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 8
+      source: "model-declared: struct pdl_cn_hdr bytes 2-3"

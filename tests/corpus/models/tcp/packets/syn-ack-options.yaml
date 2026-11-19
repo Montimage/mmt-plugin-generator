@@ -1,0 +1,139 @@
+# Corpus packet tcp/syn-ack-options. Format and rules: tests/corpus/README.md
+schema: 1
+id: "tcp/syn-ack-options"
+model: "tcp"
+summary: "TCP SYN-ACK with MSS, SACK-permitted, timestamps and window scale options"
+constructs:
+  - "struct.multi_name"
+  - "struct.bitfield"
+  - "struct.bitfield.mixed_line"
+  - "struct.bitfield.followed"
+  - "struct.type.uint16_t"
+  - "struct.type.uint32_t"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+  selector: "IPv4 protocol 6"
+  source: "RFC 9293 section 3.1; RFC 791 protocol numbers"
+bytes:
+  - "00 50 c0 00 9a 8b 7c 6d 1a 2b 3c 4e a0 12 fe 88"
+  - "1b ca 00 00 02 04 05 b4 04 02 08 0a 00 00 0b b8"
+  - "00 00 07 d0 01 03 03 07"
+bytes_source: "RFC 9293 section 3.1: source port 80, destination port 49152, data offset 10, SYN and ACK, window 65160, checksum over the RFC 9293 section 3.1 pseudo-header for 198.51.100.10 -> 192.0.2.20 (RFC 5737); options MSS 1460, SACK-permitted, timestamps 3000/2000, NOP, window scale 7 (RFC 9293 section 3.2, RFC 2018, RFC 7323)"
+expect:
+  protocol: "TCP"
+  proto_id: 19
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "source"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 80
+      source: "RFC 9293 section 3.1 Source Port, bytes 0-1"
+    - name: "dest"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 49152
+      source: "RFC 9293 section 3.1 Destination Port, bytes 2-3"
+    - name: "a"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 39563
+      source: "model-declared (struct tcphdr): bytes 4-5; RFC 9293 puts the high half of Sequence Number there"
+    - name: "b"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 7
+      bit_offset: 0
+      bit_width: 4
+      source: "model-declared (struct tcphdr): top 4 bits of bytes 6-7 (low half of Sequence Number)"
+    - name: "c"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 12
+      bit_offset: 4
+      bit_width: 4
+      source: "model-declared (struct tcphdr): next 4 bits of bytes 6-7"
+    - name: "d"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 109
+      bit_offset: 8
+      bit_width: 8
+      source: "model-declared (struct tcphdr): low 8 bits of bytes 6-7"
+    - name: "e"
+      type: "MMT_U16_DATA"
+      offset: 8
+      length: 2
+      value: 6699
+      source: "model-declared (struct tcphdr): bytes 8-9; RFC 9293 puts the high half of Acknowledgment Number there"
+    - name: "f"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 3
+      bit_offset: 0
+      bit_width: 4
+      source: "model-declared (struct tcphdr): top 4 bits of bytes 10-11"
+    - name: "g"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 196
+      bit_offset: 4
+      bit_width: 8
+      source: "model-declared (struct tcphdr): middle 8 bits of bytes 10-11"
+    - name: "h"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 14
+      bit_offset: 12
+      bit_width: 4
+      source: "model-declared (struct tcphdr): low 4 bits of bytes 10-11"
+    - name: "seq"
+      type: "MMT_U32_DATA"
+      offset: 12
+      length: 4
+      value: 2685599368
+      source: "model-declared (struct tcphdr): bytes 12-15; RFC 9293 puts Data Offset, flags and Window there (Sequence Number is at byte 4)"
+    - name: "ack_seq"
+      type: "MMT_U32_DATA"
+      offset: 16
+      length: 4
+      value: 466223104
+      source: "model-declared (struct tcphdr): bytes 16-19; RFC 9293 puts Checksum and Urgent Pointer there"
+    - name: "flags"
+      type: "MMT_U16_DATA"
+      offset: 20
+      length: 2
+      value: 516
+      source: "model-declared (struct tcphdr): bytes 20-21: the first option bytes (MSS kind and length)"
+    - name: "window"
+      type: "MMT_U16_DATA"
+      offset: 22
+      length: 2
+      value: 1460
+      source: "model-declared (struct tcphdr): bytes 22-23: the MSS value 1460"
+    - name: "check"
+      type: "MMT_U16_DATA"
+      offset: 24
+      length: 2
+      value: 1026
+      source: "model-declared (struct tcphdr): bytes 24-25: the SACK-permitted option"
+    - name: "urg_ptr"
+      type: "MMT_U16_DATA"
+      offset: 26
+      length: 2
+      value: 2058
+      source: "model-declared (struct tcphdr): bytes 26-27: the timestamps option kind and length"

@@ -1,0 +1,28 @@
+# Port of plugins/quic_plugin. Both attributes read bytes 0-3, as the model
+# declares: no QUIC version has this layout (RFC 9000 section 17.2 puts the
+# first header byte and the Version field there).
+schema: 1
+protocol:
+  label: quic_example
+  id: 986
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: udp
+    classify:
+      match:
+        - {offset: 2, length: 2, value: 443}   # the UDP destination port
+      offset: 8
+attributes:
+  - name: connection_id
+    type: MMT_U32_DATA
+    offset: 0
+    length: sizeof(int)
+  - name: sequence
+    type: MMT_U32_DATA
+    offset: 0
+    length: sizeof(int)

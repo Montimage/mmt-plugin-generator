@@ -1,0 +1,41 @@
+# Corpus packet quic/initial-prefix. Format and rules: tests/corpus/README.md
+schema: 1
+id: "quic/initial-prefix"
+model: "quic"
+summary: "First 37 bytes of a QUIC v1 Initial packet (truncated)"
+constructs:
+  - "attribute.full"
+  - "expr.sizeof.type"
+  - "type.MMT_U32_DATA"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP port 443"
+  source: "plugins/quic_src/quic_mmt_plugin.c (ports 80 and 443)"
+bytes:
+  - "c3 00 00 00 01 08 83 94 c8 f0 3e 51 57 08 00 00"
+  - "14 00 00 00 02 10 11 12 13 14 15 16 17 18 19 1a"
+  - "1b 1c 1d 1e 1f"
+bytes_source: "RFC 9000 section 17.2.2: first byte 0xc3 (long header, fixed bit, Initial, 4-byte packet number), Version 1, DCID length 8, SCID length 0, Token Length 0, Length 20 (one-byte varint, section 16), packet number, 16 payload bytes; below the 1200-byte minimum of section 14.1, so truncated"
+expect:
+  protocol: "QUIC"
+  proto_id: 630
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "connection_id"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 4
+      value: 3271557120
+      source: "model-declared: a U32 at byte 0; RFC 9000 section 17.2 puts the header form byte and the first three Version bytes there, not a connection ID or sequence number"
+    - name: "sequence"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 4
+      value: 3271557120
+      source: "model-declared: a U32 at byte 0; RFC 9000 section 17.2 puts the header form byte and the first three Version bytes there, not a connection ID or sequence number"

@@ -1,0 +1,87 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications and RFC 6455 (not a port: the corpus has no OCPP model):
+# its packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-from-answer"
+model: "ocpp"
+summary: "A capture that starts at the 101 answer selecting ocpp1.6, a CALL after it in the segment"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49207"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - from: "server"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 48 53 6d 72 63 30 73 4d 6c 59 55 6b 41 47 6d"
+      - "6d 35 4f 50 70 47 32 48 61 47 57 6b 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 50 72 6f"
+      - "74 6f 63 6f 6c 3a 20 6f 63 70 70 31 2e 36 0d 0a"
+      - "0d 0a 81 1e 5b 32 2c 22 73 31 22 2c 22 47 65 74"
+      - "43 6f 6e 66 69 67 75 72 61 74 69 6f 6e 22 2c 7b"
+      - "7d 5d"
+    expect:
+      attributes:
+        - name: "action"
+          value: "47 65 74 43 6f 6e 66 69 67 75 72 61 74 69 6f 6e"
+          text: "GetConfiguration"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 2
+        - name: "payload"
+          value: "7b 7d"
+          text: "{}"
+        - name: "unique_id"
+          value: "73 31"
+          text: "s1"
+  - from: "client"
+    bytes:
+      - "81 a0 37 fa 21 3d 6c c9 0d 1f 44 cb 03 11 4c d8"
+      - "42 52 59 9c 48 5a 42 88 40 49 5e 95 4f 76 52 83"
+      - "03 07 6c a7 5c 60"
+    expect:
+      attributes:
+        - name: "action"
+          value: "47 65 74 43 6f 6e 66 69 67 75 72 61 74 69 6f 6e"
+          text: "GetConfiguration"
+        - name: "message_count"
+          value: 1
+        - name: "message_type_id"
+          value: 3
+        - name: "payload"
+          value: "7b 22 63 6f 6e 66 69 67 75 72 61 74 69 6f 6e 4b 65 79 22 3a 5b 5d 7d"
+          text: "{\"configurationKey\":[]}"
+        - name: "unique_id"
+          value: "73 31"
+          text: "s1"

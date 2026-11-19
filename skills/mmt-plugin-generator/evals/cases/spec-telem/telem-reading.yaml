@@ -1,0 +1,42 @@
+# Packet test telem/reading: spec.md, example 1 (an eval fixture).
+schema: 1
+id: "telem/reading"
+summary: "A reading: version 1, flags 2, sequence 42, a 4-byte payload"
+bytes:
+  - "12 01 00 0c 00 00 00 2a de ad be ef"
+expect:
+  protocol: "TELEM"
+  proto_id: 963
+  next:
+    kind: "none"
+  attributes:
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+    - name: "flags"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+    - name: "msg_type"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 1
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 12
+    - name: "sequence"
+      type: "MMT_U32_DATA"
+      offset: 4
+      length: 4
+      value: 42
+    - name: "payload"
+      type: "MMT_BINARY_DATA"
+      offset: 8
+      length: 4
+      value: "de ad be ef"

@@ -1,0 +1,61 @@
+# Session test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications, RFC 6455 and RFC 7692 (permessage-deflate, #107): its
+# packets run in order, one TCP connection. Format and rules:
+# tests/corpus/README.md, Session files
+schema: 1
+id: "ocpp/session-deflate-not-ocpp"
+model: "ocpp"
+summary: "A capture that starts after the handshake with compressed frames that are no OCPP-J message: a JSON object, bytes that are no DEFLATE data, a compressed CALL whose frame ends in the next segment: none claims the session"
+source: "OCPP-J 1.6 section 3 (the ocpp1.6 subprotocol) and 4 (CALL, CALLRESULT, CALLERROR), OCPP 1.6 section 6, RFC 6455; RFC 7692 section 7 (permessage-deflate), section 6 (RSV1); the JSON object Python zlib's raw DEFLATE (wbits=-15) of its text; 0xff starts a block of BTYPE 11, reserved (RFC 1951 section 3.2.3); the layer's session state, examples/README.md, OCPP 1.6-J"
+session:
+  through: "tcp:dport=9000,sport=49239"
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  attributes:
+    - name: "action"
+      type: "MMT_STRING_DATA"
+    - name: "charging_limit_x10"
+      type: "MMT_U32_DATA"
+    - name: "charging_rate_unit"
+      type: "MMT_STRING_DATA"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+    - name: "error_code"
+      type: "MMT_STRING_DATA"
+    - name: "error_description"
+      type: "MMT_STRING_DATA"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+packets:
+  - from: "server"
+    text: "{\"op\":\"subscribe\",\"channel\":\"ticker\",\"args\":[\"BTC-USD\",\"ETH-USD\"]}"
+    note: "compressed, not an OCPP-J array"
+    bytes:
+      - "c1 3d aa 56 ca 2f 50 b2 52 2a 2e 4d 2a 4e 2e ca"
+      - "4c 4a 55 d2 51 4a ce 48 cc cb 4b cd 01 8a 96 64"
+      - "26 67 a7 16 01 85 12 8b d2 8b 95 ac a2 95 9c 42"
+      - "9c 75 43 83 5d 80 22 ae 21 1e 60 56 6c 2d 00"
+    expect: "none"
+  - from: "server"
+    note: "not DEFLATE data"
+    bytes:
+      - "c1 04 ff ff ff ff"
+    expect: "none"
+  - from: "server"
+    note: "a compressed CALL whose frame ends in the next segment"
+    bytes:
+      - "c1 1a 8a 36"
+    expect: "none"
+  - from: "server"
+    bytes:
+      - "d2 51 2a d4 35 54 d2 51 f2 48 4d 2c 2a 49 4a 4d"
+      - "2c 51 d2 a9 ae 8d 05 00"
+    expect: "none"

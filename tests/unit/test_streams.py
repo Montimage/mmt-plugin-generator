@@ -1,0 +1,141 @@
+"""Tests for the per-stream decisions (``docs/design/cli.md``, section 10)."""
+
+from __future__ import annotations
+
+import fcntl
+import io
+import os
+import pty
+import struct
+import termios
+
+import pytest
+
+from mmt_plugin.ui.streams import MAX_WIDTH, ColorTier, StreamStyle, decide
+
+
+class FakeStream(io.TextIOWrapper):
+    def __init__(self, *, tty: bool, encoding: str = "utf-8") -> None:
+        super().__init__(io.BytesIO(), encoding=encoding)
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+TTY = FakeStream(tty=True)
+PIPE = FakeStream(tty=False)
+TERM = {"TERM": "xterm"}
+
+
+@pytest.mark.parametrize(
+    ("stream", "env", "options", "expected"),
+    [
+        (PIPE, TERM, {}, (False, ColorTier.NONE)),
+        (PIPE, {**TERM, "FORCE_COLOR": ""}, {}, (False, ColorTier.NONE)),
+        (PIPE, {**TERM, "FORCE_COLOR": "0"}, {}, (False, ColorTier.NONE)),
+        (PIPE, {**TERM, "FORCE_COLOR": "1"}, {}, (True, ColorTier.ANSI16)),
+        (TTY, TERM, {}, (True, ColorTier.ANSI16)),
+        (TTY, {"TERM": "dumb", "FORCE_COLOR": "1"}, {}, (False, ColorTier.NONE)),
+        (TTY, {**TERM, "FORCE_COLOR": "1"}, {"json": True}, (False, ColorTier.NONE)),
+        (TTY, {**TERM, "NO_COLOR": "1"}, {}, (True, ColorTier.NONE)),
+        (TTY, {**TERM, "NO_COLOR": ""}, {}, (True, ColorTier.ANSI16)),
+        (PIPE, {**TERM, "FORCE_COLOR": "1", "NO_COLOR": "1"}, {}, (True, ColorTier.NONE)),
+        (TTY, TERM, {"no_color": True}, (True, ColorTier.NONE)),
+        (TTY, {"TERM": "xterm-256color"}, {}, (True, ColorTier.ANSI256)),
+        (
+            TTY,
+            {"TERM": "xterm-256color", "COLORTERM": "truecolor"},
+            {},
+            (True, ColorTier.TRUECOLOR),
+        ),
+        (TTY, {**TERM, "COLORTERM": "24bit"}, {}, (True, ColorTier.TRUECOLOR)),
+    ],
+)
+def test_decision_table(
+    stream: FakeStream,
+    env: dict[str, str],
+    options: dict[str, bool],
+    expected: tuple[bool, ColorTier],
+) -> None:
+    style = decide(stream, env=env, **options)
+    assert (style.styled, style.color) == expected
+    assert style.escapes == (expected[0] and expected[1] is not ColorTier.NONE)
+
+
+@pytest.mark.parametrize(
+    ("encoding", "unicode"),
+    [("utf-8", True), ("UTF8", True), ("ascii", False), ("latin-1", False)],
+)
+def test_glyphs_follow_the_stream_encoding(encoding: str, unicode: bool) -> None:
+    assert decide(FakeStream(tty=True, encoding=encoding), env=TERM).unicode is unicode
+
+
+def test_a_stream_without_isatty_is_plain() -> None:
+    class Bare(io.StringIO):
+        def isatty(self) -> bool:
+            raise ValueError("closed")
+
+    # StringIO has no encoding: ASCII glyphs.
+    assert decide(Bare(), env=TERM) == StreamStyle(False, ColorTier.NONE, False)
+
+
+@pytest.mark.parametrize(
+    ("columns", "width"),
+    [
+        ("120", 120),
+        ("1", 1),
+        ("0", 80),
+        ("-5", 80),
+        ("wide", 80),
+        ("abc", 80),
+        (" 40", 80),
+        ("", 80),
+        ("\u0664\u0660", 40),  # Arabic-Indic digits: int() reads them
+        # isdigit() is true, but int() rejects them (review W1).
+        ("\u00b2", 80),  # superscript two
+        ("\u2462", 80),  # circled digit three
+        ("4\u00b2", 80),
+        # At most MAX_WIDTH (#54, N5).
+        ("500", MAX_WIDTH),
+        ("501", MAX_WIDTH),
+        ("100000", MAX_WIDTH),
+        ("9" * 4300, MAX_WIDTH),
+    ],
+)
+def test_width_comes_from_columns_else_80(columns: str, width: int) -> None:
+    assert decide(PIPE, env={**TERM, "COLUMNS": columns}).width == width
+    assert decide(PIPE, env=TERM).width == 80
+
+
+def test_the_width_limit_is_the_documented_one() -> None:
+    assert MAX_WIDTH == 500  # docs/design/cli.md, section 10
+
+
+def test_a_terminal_reports_its_own_width_and_is_a_tty() -> None:
+    leader, follower = pty.openpty()
+    try:
+        fcntl.ioctl(follower, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 101, 0, 0))
+        with open(follower, "w", encoding="utf-8", closefd=False) as stream:
+            style = decide(stream, env=TERM)
+            assert (style.tty, style.width) == (True, 101)
+            assert decide(stream, env={**TERM, "COLUMNS": "50"}).width == 50
+            assert decide(stream, env={**TERM, "COLUMNS": "\u00b2"}).width == 101
+        fcntl.ioctl(follower, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 9999, 0, 0))
+        with open(follower, "w", encoding="utf-8", closefd=False) as stream:
+            assert decide(stream, env=TERM).width == MAX_WIDTH
+        assert decide(PIPE, env=TERM).tty is False
+    finally:
+        os.close(leader)
+        os.close(follower)
+
+
+@pytest.mark.parametrize(
+    "name", ["TERM", "COLORTERM", "NO_COLOR", "FORCE_COLOR", "CLICOLOR_FORCE"]
+)
+@pytest.mark.parametrize("value", ["²", "③", "İ", "\udcff", "a\tb\x1b", ""])
+def test_odd_style_variables_never_raise(name: str, value: str) -> None:
+    # Only string comparisons: no value of these can raise (review W1).
+    for stream in (TTY, PIPE):
+        style = decide(stream, env={**TERM, name: value})
+        assert style.width == 80

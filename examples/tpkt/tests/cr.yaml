@@ -1,0 +1,46 @@
+# Packet test of examples/tpkt, ported from tests/corpus/models/tpkt/packets/cr.yaml.
+# Format and rules: tests/corpus/README.md
+schema: 1
+id: "tpkt/cr"
+model: "tpkt"
+summary: "TPKT carrying a COTP CR TPDU"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 102"
+  source: "RFC 1006 section 5 (TCP port 102)"
+through: "tcp:dport=102"
+bytes:
+  - "03 00 00 16 11 e0 00 00 00 01 00 c1 02 01 00 c2"
+  - "02 01 02 c0 01 0a"
+bytes_source: "RFC 1006 section 6: version 3, reserved 0, packet length including the 4-byte header; the TPDU is the cotp/cr fixture"
+expect:
+  protocol: "TPKT_EXAMPLE"
+  proto_id: 991
+  next:
+    kind: "proto"
+    proto_id: 979
+    offset: 4
+    source: "RFC 1006 section 6: version 3, the TPDU follows the 4-byte TPKT header; the TPDU is COTP, the cotp example (979)"
+  attributes:
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 3
+      source: "RFC 1006 section 6: vrsn, 8 bits, always 3"
+    - name: "reserved"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 0
+      source: "RFC 1006 section 6: reserved, 8 bits"
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 22
+      source: "RFC 1006 section 6: packet length, 16 bits, the whole TPKT including the header"

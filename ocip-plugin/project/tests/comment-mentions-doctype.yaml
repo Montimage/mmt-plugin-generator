@@ -1,0 +1,71 @@
+# Packet test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format,
+# not from the plugin's output. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ocip/comment-mentions-doctype"
+model: "ocip"
+summary: "A comment that holds the bytes <!DOCTYPE: has_dtd counts the bytes, no declaration is parsed"
+through: "tcp:dport=2208"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP port 2208 (OCI-P, cleartext)"
+  source: "OCI-P wire format: lukebeer/broadworks-ocip Builder.php (XML_HEAD + BroadsoftDocument, sessionId, command xsi:type) and TCPTransport.php (one document per message, newline-terminated, TCP 2208)"
+bytes:
+  - "3c 3f 78 6d 6c 20 76 65 72 73 69 6f 6e 3d 22 31"
+  - "2e 30 22 20 65 6e 63 6f 64 69 6e 67 3d 22 55 54"
+  - "46 2d 38 22 3f 3e 3c 21 2d 2d 20 3c 21 44 4f 43"
+  - "54 59 50 45 20 69 73 20 6f 6e 6c 79 20 6e 61 6d"
+  - "65 64 20 69 6e 20 74 68 69 73 20 63 6f 6d 6d 65"
+  - "6e 74 3f 20 6e 6f 3a 20 74 68 65 20 62 79 74 65"
+  - "73 20 61 72 65 20 74 68 65 72 65 20 2d 2d 3e 3c"
+  - "21 45 4e 54 49 54 59 2d 6c 69 6b 65 3e 3c 42 72"
+  - "6f 61 64 73 6f 66 74 44 6f 63 75 6d 65 6e 74 20"
+  - "70 72 6f 74 6f 63 6f 6c 3d 22 4f 43 49 22 20 78"
+  - "6d 6c 6e 73 3d 22 43 22 20 78 6d 6c 6e 73 3a 78"
+  - "73 69 3d 22 68 74 74 70 3a 2f 2f 77 77 77 2e 77"
+  - "33 2e 6f 72 67 2f 32 30 30 31 2f 58 4d 4c 53 63"
+  - "68 65 6d 61 2d 69 6e 73 74 61 6e 63 65 22 3e 3c"
+  - "73 65 73 73 69 6f 6e 49 64 20 78 6d 6c 6e 73 3d"
+  - "22 22 3e 61 31 3c 2f 73 65 73 73 69 6f 6e 49 64"
+  - "3e 3c 63 6f 6d 6d 61 6e 64 20 78 73 69 3a 74 79"
+  - "70 65 3d 22 41 75 74 68 65 6e 74 69 63 61 74 69"
+  - "6f 6e 52 65 71 75 65 73 74 22 20 78 6d 6c 6e 73"
+  - "3d 22 22 3e 3c 75 73 65 72 49 64 3e 61 64 6d 69"
+  - "6e 3c 2f 75 73 65 72 49 64 3e 3c 2f 63 6f 6d 6d"
+  - "61 6e 64 3e 3c 2f 42 72 6f 61 64 73 6f 66 74 44"
+  - "6f 63 75 6d 65 6e 74 3e 0a"
+bytes_source: "crafted: a message whose comment holds the keyword"
+expect:
+  protocol: "OCIP"
+  proto_id: 960
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "has_dtd"
+      type: "MMT_U8_DATA"
+      offset: 43
+      length: 9
+      value: 1
+      source: "the bytes <!DOCTYPE are in the segment (byte search, by design)"
+    - name: "dtd"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "inside a comment: no declaration"
+    - name: "session_id"
+      type: "MMT_STRING_DATA"
+      offset: 243
+      length: 2
+      value: "61 31"
+      text: "a1"
+      source: "the <sessionId> text, after the comment"
+    - name: "command_type"
+      type: "MMT_STRING_DATA"
+      offset: 276
+      length: 21
+      value: "41 75 74 68 65 6e 74 69 63 61 74 69 6f 6e 52 65 71 75 65 73 74"
+      text: "AuthenticationRequest"
+      source: "the <command>'s xsi:type"

@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "verdict": "PASS",
+  "problems": [],
+  "warnings": [
+    "synthetic capture: its bytes come from the spec as read by the drafter, not from a real implementation"
+  ],
+  "capture": {
+    "path": "ocip-plugin/capture/capture.pcap",
+    "sha256": "0688efc704f01b331a28650280deb4fa000e495e57ccddf37428bd266a47f045",
+    "synthetic": true
+  },
+  "plugin": {
+    "path": "ocip-plugin/project/build/mmtp_ocip.so",
+    "sha256": "ac5f07e8458b7d764c45f0865a368bb0fa042517a41eac01519f1d13096ffcdc",
+    "label": "ocip"
+  },
+  "parent": "tcp:port=2208",
+  "expected": {
+    "source": "tshark",
+    "filter": "tcp.port==2208 && tcp.len>0",
+    "scope_filter": "tcp.port==2208",
+    "frames": 23
+  },
+  "frames": 101,
+  "claimed": 50,
+  "hit": 23,
+  "recall": 1.0,
+  "missed_frames": [],
+  "foreign_frames": [],
+  "hollow_frames": [],
+  "fields": {},
+  "drift": {
+    "reference": "tshark",
+    "checked": true,
+    "open": 0,
+    "accepted": 0,
+    "items": [],
+    "file": "drift.jsonl"
+  },
+  "attributes": {
+    "dtd": {
+      "present": 8,
+      "values": {
+        "<!DOCTYPE BroadsoftDocument [<!ENTITY xxe SYSTEM \"file:///usr/l": 1,
+        "<!DOCTYPE BroadsoftDocument [<!ENTITY % ext SYSTEM \"http://203.": 1,
+        "<!DOCTYPE BroadsoftDocument SYSTEM \"http://203.0.113.50:8000/oc": 1,
+        "<!DOCTYPE\tBroadsoftDocument\n  PUBLIC \"-//x//y\" \n \"ftp://203.0.1": 1,
+        "<!DOCTYPE BroadsoftDocument [<!ENTITY % a \"&#x3C;!ENTITY &#x25;": 1,
+        "<!DOCTYPE BroadsoftDocument SYSTEM \"http://203.0.113.50/oci.dtd": 2,
+        "<!DOCTYPE BroadsoftDocument SYSTEM \"oci.dtd\">": 1
+      },
+      "other_values": 0
+    },
+    "has_dtd": {
+      "present": 23,
+      "values": {
+        "1": 8,
+        "0": 15
+      },
+      "other_values": 0
+    },
+    "command_type": {
+      "present": 22,
+      "values": {
+        "AuthenticationRequest": 9,
+        "c:ErrorResponse": 7,
+        "AuthenticationResponse": 2,
+        "LoginRequest22V5": 1,
+        "LoginResponse22V5": 1,
+        "UserGetRequest22": 1,
+        "UserGetResponse22": 1
+      },
+      "other_values": 0
+    },
+    "session_id": {
+      "present": 22,
+      "values": {
+        "&xxe;": 1,
+        "a1b2c3d4e5f6": 20,
+        "s1": 1
+      },
+      "other_values": 0
+    },
+    "is_request": {
+      "present": 23,
+      "values": {
+        "1": 12,
+        "0": 11
+      },
+      "other_values": 0
+    }
+  },
+  "paths": {
+    "baseline": {
+      "meta.ethernet.ip.tcp.unknown": 86,
+      "meta.ethernet.ip.tcp.http": 15
+    },
+    "plugin": {
+      "meta.ethernet.ip.tcp.unknown": 36,
+      "meta.ethernet.ip.tcp.OCIP": 50,
+      "meta.ethernet.ip.tcp.http": 15
+    },
+    "displaced": {}
+  },
+  "thresholds": {
+    "min_recall": 0.95
+  }
+}

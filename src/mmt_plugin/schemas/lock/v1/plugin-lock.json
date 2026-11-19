@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin plugin.lock, lock_version 1",
+  "description": "What mmt-plugin generate last wrote (docs/design/cli.md, sections 4 and 8): the generator, the SDK profile, the model's format and sha256, and each generated file's sha256. Written last, after the generated files. Paths are relative to the lock's directory, with POSIX separators, sorted. No timestamp and no absolute path.",
+  "type": "object",
+  "required": ["lock_version", "generator", "sdk_profile", "model", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "lock_version": {
+      "const": 1,
+      "description": "Bumped on any change a reader of version 1 would misread; a reader refuses a newer one."
+    },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"const": "mmt-plugin"},
+        "version": {"type": "string", "minLength": 1, "description": "The mmt-plugin version that generated the files."}
+      }
+    },
+    "sdk_profile": {"type": "string", "minLength": 1, "description": "The SDK profile the files were generated for (e.g. 1.10.2)."},
+    "model": {
+      "type": "object",
+      "required": ["format", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {"enum": ["pdl", "yaml"]},
+        "sha256": {"$ref": "#/$defs/sha256", "description": "The sha256 of the model's bytes, as read."}
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "The generated files, sorted by path.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*\\\\)(?!.*(^|/)\\.?(/|$))[^\\u0000]+$",
+            "description": "Relative to the lock's directory, POSIX separators, normalised (no empty or . segment)."
+          },
+          "sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

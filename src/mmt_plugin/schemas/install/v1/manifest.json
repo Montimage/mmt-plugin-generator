@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin install manifest, manifest_version 1",
+  "description": "What mmt-plugin install wrote into <prefix>/plugins (docs/design/cli.md, sections 4 and 8): <prefix>/plugins/.mmt-plugin/<label>.json. uninstall removes only the files listed here whose sha256 is still the recorded one; doctor reads the protocol to find id and name clashes. Written last, after the files. No timestamp and no absolute path.",
+  "type": "object",
+  "required": ["manifest_version", "tool", "label", "protocol", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "const": 1,
+      "description": "Bumped on any change a reader of version 1 would misread; a reader refuses a newer one."
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"const": "mmt-plugin"},
+        "version": {"type": "string", "minLength": 1, "description": "The mmt-plugin version that installed the files."}
+      }
+    },
+    "label": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "The plugin's label (lower case); the manifest's file name is <label>.json."},
+    "protocol": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "integer", "minimum": 1, "description": "The protocol id the plugin registers."},
+        "name": {"type": "string", "minLength": 1, "description": "The protocol name the plugin registers (the label in upper case)."}
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The installed files, sorted by path.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\.\\.?$)[^/\\\\\\u0000]+$",
+            "description": "A file name in <prefix>/plugins (no directory part)."
+          },
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

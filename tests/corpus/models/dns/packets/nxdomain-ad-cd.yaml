@@ -1,0 +1,142 @@
+# Corpus packet dns/nxdomain-ad-cd. Format and rules: tests/corpus/README.md
+schema: 1
+id: "dns/nxdomain-ad-cd"
+model: "dns"
+summary: "Authoritative NXDOMAIN with AD and CD set and one SOA in the authority section"
+constructs:
+  - "struct.bitfield"
+  - "struct.bitfield.followed"
+  - "struct.type.uint16_t"
+  - "properties.session_context"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "udp"
+  selector: "UDP port 53"
+  source: "RFC 1035 section 4.2.1"
+bytes:
+  - "be ef 85 b3 00 01 00 00 00 01 00 00 07 65 78 61"
+  - "6d 70 6c 65 03 63 6f 6d 00 00 01 00 01 c0 0c 00"
+  - "06 00 01 00 00 01 2c 00 26 02 6e 73 c0 0c 0a 68"
+  - "6f 73 74 6d 61 73 74 65 72 c0 0c 78 a3 f1 75 00"
+  - "00 1c 20 00 00 0e 10 00 12 75 00 00 00 01 2c"
+bytes_source: "RFC 1035 sections 4.1.1-4.1.4 (RCODE 3 = name error; authority RR TYPE SOA = 6, RDATA per 3.3.13); RFC 6895 section 2 for AD and CD"
+expect:
+  protocol: "DNS"
+  proto_id: 11
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "tid"
+      type: "MMT_U16_DATA"
+      offset: 0
+      length: 2
+      value: 48879
+      source: "RFC 1035 section 4.1.1 ID, bytes 0-1"
+    - name: "qr"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 0
+      bit_width: 1
+      source: "RFC 1035 section 4.1.1 QR, bit 0 (most significant) of the flags word"
+    - name: "opcode"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 0
+      bit_offset: 1
+      bit_width: 4
+      source: "RFC 1035 section 4.1.1 OPCODE, bits 1-4"
+    - name: "aa"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 5
+      bit_width: 1
+      source: "RFC 1035 section 4.1.1 AA, bit 5"
+    - name: "tc"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 0
+      bit_offset: 6
+      bit_width: 1
+      source: "RFC 1035 section 4.1.1 TC, bit 6"
+    - name: "rd"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 7
+      bit_width: 1
+      source: "RFC 1035 section 4.1.1 RD, bit 7"
+    - name: "ra"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 8
+      bit_width: 1
+      source: "RFC 1035 section 4.1.1 RA, bit 8"
+    - name: "z"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 0
+      bit_offset: 9
+      bit_width: 1
+      source: "RFC 6895 section 2 header figure: Z, bit 9"
+    - name: "ans_auth"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 10
+      bit_width: 1
+      source: "RFC 6895 section 2 header figure: AD (authentic data), bit 10"
+    - name: "data_auth"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 1
+      bit_offset: 11
+      bit_width: 1
+      source: "RFC 6895 section 2 header figure: CD (checking disabled), bit 11"
+    - name: "rcode"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 3
+      bit_offset: 12
+      bit_width: 4
+      source: "RFC 1035 section 4.1.1 RCODE, bits 12-15"
+    - name: "qdcount"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 1
+      source: "RFC 1035 section 4.1.1 QDCOUNT, bytes 4-5"
+    - name: "ancount"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 0
+      source: "RFC 1035 section 4.1.1 ANCOUNT, bytes 6-7"
+    - name: "nscount"
+      type: "MMT_U16_DATA"
+      offset: 8
+      length: 2
+      value: 1
+      source: "RFC 1035 section 4.1.1 NSCOUNT, bytes 8-9"
+    - name: "arcount"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 0
+      source: "RFC 1035 section 4.1.1 ARCOUNT, bytes 10-11"

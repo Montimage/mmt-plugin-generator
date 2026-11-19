@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin uninstall --json result, schema_version 1",
+  "description": "The result of uninstall (docs/design/cli.md, section 6): the install prefix, the label, its manifest, and the manifest's files that were removed (would be, with dry_run), kept (changed since install, without --force) or already missing. A plugin that is not installed has three empty lists.",
+  "type": "object",
+  "required": ["prefix", "label", "manifest", "removed", "kept", "missing", "dry_run"],
+  "additionalProperties": false,
+  "properties": {
+    "prefix": {"type": "string", "minLength": 1},
+    "label": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "manifest": {"type": "string", "minLength": 1, "description": "The manifest's path: <prefix>/plugins/.mmt-plugin/<label>.json."},
+    "removed": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "kept": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "missing": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "dry_run": {"type": "boolean"}
+  }
+}

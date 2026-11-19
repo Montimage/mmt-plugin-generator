@@ -1,0 +1,34 @@
+# Port of plugins/abb_plugin (ABB camera telemetry; no public specification).
+schema: 1
+protocol:
+  label: abb_example
+  id: 976
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: udp
+    classify:
+      match:
+        - {offset: 2, length: 2, value: 12118}   # the UDP destination port
+      offset: 8
+attributes:
+  - struct: abb_hdr
+    fields:
+      - name: size
+        type: uint32_t
+      - name: type
+        type: uint32_t
+      - name: frame_number
+        type: uint32_t
+      - name: capture_time
+        type: uint32_t
+      - name: flags_checksum
+        type: uint32_t
+      - name: number_of_markers
+        type: uint32_t
+      - name: reserved_timestamp
+        type: uint32_t

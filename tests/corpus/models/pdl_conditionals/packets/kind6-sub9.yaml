@@ -1,0 +1,73 @@
+# Corpus packet pdl_conditionals/kind6-sub9. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_conditionals/kind6-sub9"
+model: "pdl_conditionals"
+summary: "kind 6, sub 9: else branch, nested else, and the if without else"
+constructs:
+  - "conditional.nested_else"
+  - "conditional.if"
+  - "expr.cmp.ge"
+  - "expr.or"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "06 09 00 00 11 22 33 44"
+bytes_source: "model-declared: kind, sub, size, then four bytes read by the branches"
+expect:
+  protocol: "PDL_CONDITIONALS"
+  proto_id: 971
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 6
+      source: "model-declared: byte 0"
+    - name: "sub"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 9
+      source: "model-declared: byte 1"
+    - name: "size"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 0
+      source: "model-declared: bytes 2-3"
+    - name: "one_val"
+      type: "MMT_U16_DATA"
+      status: "absent"
+      source: "model-declared: if (val(kind) == 1): kind = 6 does not hold"
+    - name: "one_big"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "model-declared: nested in the if branch: if (val(sub) > 7): sub = 9 does not hold"
+    - name: "other_val"
+      type: "MMT_U8_DATA"
+      offset: 4
+      length: 1
+      value: 17
+      source: "model-declared: else branch of if (val(kind) == 1): kind = 6 holds"
+    - name: "other_small"
+      type: "MMT_U8_DATA"
+      status: "absent"
+      source: "model-declared: nested in the else branch: if (val(sub) <= 7 AND val(size) != 0): sub = 9, size = 0 does not hold"
+    - name: "other_alt"
+      type: "MMT_U8_DATA"
+      offset: 6
+      length: 1
+      value: 51
+      source: "model-declared: else of the nested condition: sub = 9, size = 0 holds"
+    - name: "tail"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 68
+      source: "model-declared: if (val(kind) >= 5 OR val(sub) < 2): kind = 6, sub = 9 holds"

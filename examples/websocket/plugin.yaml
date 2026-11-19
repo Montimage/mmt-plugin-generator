@@ -1,0 +1,59 @@
+# WebSocket (RFC 6455) over TCP, written for issue #40 with mmt-plugin init
+# (not a port of a Java tool model). Where a frame starts in a TCP segment
+# depends on the session (the opening handshake, a frame begun in an earlier
+# segment), so every attribute is extracted by a hook:
+# src/websocket_example_impl.c parses each segment with its session's state.
+schema: 1
+protocol:
+  label: "websocket_example"
+  id: 992
+  session_context: true   # the session data hooks keep the per-session state
+  encoding: network       # big-endian integers
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: tcp    # any port, after an HTTP Upgrade: websocket_example_hook_register_parents
+attributes:
+  # The first frame whose header ends in the segment (RFC 6455 section 5.2).
+  - name: fin
+    type: MMT_U8_DATA
+  - name: rsv1
+    type: MMT_U8_DATA
+  - name: rsv2
+    type: MMT_U8_DATA
+  - name: rsv3
+    type: MMT_U8_DATA
+  - name: opcode
+    type: MMT_U8_DATA
+  - name: mask
+    type: MMT_U8_DATA
+  - name: payload_len
+    type: MMT_U64_DATA      # resolved from the 7, 7+16 or 7+64 bit length
+  - name: masking_key
+    type: MMT_U32_DATA      # only when mask is 1
+  - name: payload_offset
+    type: MMT_U32_DATA      # where its payload starts, from the protocol's start
+  - name: payload
+    type: MMT_BINARY_VAR_DATA   # its payload bytes in the segment, unmasked, at most 1024
+  - name: close_code
+    type: MMT_U16_DATA      # a close frame's status code (section 5.5.1)
+  - name: message_opcode
+    type: MMT_U8_DATA       # the opcode of the message a continuation frame belongs to
+  - name: frame_count
+    type: MMT_U32_DATA      # frames whose header ends in the segment
+  - name: carried_len
+    type: MMT_U32_DATA      # bytes of a frame begun in an earlier segment
+  # The opening handshake (RFC 6455 section 4).
+  - name: handshake
+    type: MMT_U8_DATA       # 1: the client's request, 2: the server's answer, 0: frames
+  - name: status_code
+    type: MMT_U16_DATA      # the answer's status code (101: switching protocols)
+  - name: subprotocol
+    type: MMT_STRING_DATA   # Sec-WebSocket-Protocol; on frames, the one the server selected
+  - name: key
+    type: MMT_STRING_DATA   # Sec-WebSocket-Key of the request
+  - name: accept
+    type: MMT_STRING_DATA   # Sec-WebSocket-Accept of the answer
+  # permessage-deflate (RFC 7692).
+  - name: payload_inflated
+    type: MMT_U8_DATA       # what payload carries: 1 an inflated message, 0 a plain frame's bytes, 2 compressed bytes

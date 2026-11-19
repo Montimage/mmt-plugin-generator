@@ -1,0 +1,61 @@
+# Port of plugins/arp_plugin (RFC 826). The else branch's second `ar_pro`
+# (inventory bug 12) is the sender hardware address, renamed SRC_HARD.
+schema: 1
+protocol:
+  label: arp_example
+  id: 977
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: ethernet
+    classify:
+      match:
+        - {offset: 12, length: 2, value: 0x0806}   # the EtherType
+      offset: 14
+attributes:
+  - struct: arphdr
+    fields:
+      - name: ar_hrd
+        type: uint16_t
+      - name: ar_pro
+        type: uint16_t
+      - name: ar_hln
+        type: uint8_t
+      - name: ar_pln
+        type: uint8_t
+      - name: ar_op
+        type: uint16_t
+  - if: val(ar_hrd) == 0x0001 AND val(ar_pro) == 0x0800
+    then:
+      - struct: ethernet_arp_data
+        offset: 8
+        fields:
+          - name: ar_sha
+            type: MMT_DATA_MAC_ADDR
+          - name: ar_sip
+            type: uint32_t
+          - name: ar_tha
+            type: MMT_DATA_MAC_ADDR
+          - name: ar_tip
+            type: uint32_t
+    else:
+      - name: SRC_HARD
+        type: MMT_BINARY_DATA
+        offset: sizeof(struct arphdr)
+        length: val(ar_hln)
+      - name: SRC_PROTO
+        type: MMT_BINARY_DATA
+        offset: sizeof(struct arphdr) + val(ar_hln)
+        length: val(ar_pln)
+      - name: DST_HARD
+        type: MMT_BINARY_DATA
+        offset: sizeof(struct arphdr) + val(ar_pln) + val(ar_hln)
+        length: val(ar_hln)
+      - name: DST_PROTO
+        type: MMT_BINARY_DATA
+        offset: sizeof(struct arphdr) + val(ar_pln) + 2 * val(ar_hln)
+        length: val(ar_pln)

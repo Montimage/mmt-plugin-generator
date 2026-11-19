@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin validate --json result, schema_version 1",
+  "description": "The result of validate (docs/design/cli.md, section 6): every check, in run order, with a stable id, a status and a detail. A check that cannot run (the model does not parse, --no-sdk, no SDK) is skip. protocol is null when the model does not parse.",
+  "type": "object",
+  "required": ["model", "format", "protocol", "checks"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {"type": "string", "minLength": 1, "description": "The model read: its path, or <stdin>."},
+    "format": {"enum": ["pdl", "yaml"]},
+    "protocol": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["label", "name", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "label": {"type": "string", "minLength": 1, "description": "The model's label, as written."},
+            "name": {"type": "string", "minLength": 1, "description": "The name the plugin registers: the label in upper case."},
+            "id": {"type": "integer", "description": "The protocol id."}
+          }
+        }
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"enum": ["schema", "semantics", "sdk-profile", "id-free", "name-free", "parents-exist", "load-order", "id-range"]},
+          "status": {"enum": ["pass", "warn", "fail", "skip"]},
+          "detail": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mmt-plugin SDK profile",
+  "description": "What code generated for one mmt-dpi version uses from the SDK, each entry with the header that declares it, relative to <prefix>/dpi/include. Bundled as mmt_plugin/sdk/profiles/<profile>.json. Types are C type names. schema_version is bumped only on a breaking change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile",
+    "sdk",
+    "c_std",
+    "headers",
+    "types",
+    "structs",
+    "callbacks",
+    "registrations",
+    "helpers",
+    "constants",
+    "macros",
+    "logger",
+    "class_provider",
+    "entry_point",
+    "parents"
+  ],
+  "properties": {
+    "$comment": {"type": "string"},
+    "schema_version": {"const": 1},
+    "profile": {"$ref": "#/$defs/version", "description": "The mmt-dpi version the profile describes; also the file name."},
+    "sdk": {"const": "mmt-dpi"},
+    "c_std": {"$ref": "#/$defs/text", "description": "The -std the headers need (gnu11: data_defs.h uses u_char, which glibc's <sys/types.h> hides in strict -std=c11)."},
+    "headers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/header"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "definition": {"$ref": "#/$defs/ctype", "description": "What a scalar or pointer typedef stands for; absent for an opaque or enum type."},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "structs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "layout", "fields", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "layout": {"enum": ["complete", "partial"], "description": "complete: every field, in order (positional initializers rely on it); partial: only the fields generated code reads."},
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type"],
+              "properties": {
+                "name": {"$ref": "#/$defs/ident"},
+                "type": {"$ref": "#/$defs/ctype"}
+              }
+            }
+          },
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "callbacks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "typedef", "header", "returns", "params", "doc"],
+        "properties": {
+          "role": {"$ref": "#/$defs/ident", "description": "The name the generator looks the callback up by."},
+          "typedef": {"$ref": "#/$defs/ident", "description": "The SDK function-pointer typedef the callback converts to."},
+          "header": {"$ref": "#/$defs/header"},
+          "returns": {"$ref": "#/$defs/ctype"},
+          "params": {"$ref": "#/$defs/params"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "registrations": {"type": "array", "items": {"$ref": "#/$defs/function"}},
+    "helpers": {"type": "array", "items": {"$ref": "#/$defs/function"}},
+    "constants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "group", "doc"],
+        "if": {"properties": {"group": {"const": "data_type"}}},
+        "then": {"required": ["size"]},
+        "else": {"not": {"required": ["size"]}},
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "group": {"$ref": "#/$defs/ident"},
+          "value": {"type": "integer", "description": "The constant's value, when generated or checked code needs it as a number (the header check asserts it); absent otherwise."},
+          "size": {"type": "integer", "minimum": 0, "description": "A data_type constant only, and required there: what the SDK's get_data_size_by_data_type() returns for the type, the most bytes register_attribute_with_protocol() accepts as its data_len (0: the type has no size, and only data_len 0 registers)."},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "macros": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "header", "doc"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "header": {"$ref": "#/$defs/header"},
+          "doc": {"$ref": "#/$defs/text"}
+        }
+      }
+    },
+    "logger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "error", "warn", "info", "debug", "debug_opt_in", "doc"],
+      "description": "The logging macro of each level (entries of macros) and the define that enables the debug one.",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "error": {"$ref": "#/$defs/ident"},
+        "warn": {"$ref": "#/$defs/ident"},
+        "info": {"$ref": "#/$defs/ident"},
+        "debug": {"$ref": "#/$defs/ident"},
+        "debug_opt_in": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "class_provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "struct", "register", "unknown", "doc"],
+      "description": "Names of the class provider's struct (in structs), registration call (in registrations) and unknown class (in constants).",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "struct": {"$ref": "#/$defs/ident"},
+        "register": {"$ref": "#/$defs/ident"},
+        "unknown": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "entry_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callback", "symbol", "core_macro", "doc"],
+      "description": "The function mmt-dpi looks up in a plugin it loads: its callback role (in callbacks) and symbol, and the macro defined when a plugin is built into the core, where the entry point is left out.",
+      "properties": {
+        "callback": {"$ref": "#/$defs/ident"},
+        "symbol": {"$ref": "#/$defs/ident"},
+        "core_macro": {"$ref": "#/$defs/ident"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    },
+    "parents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header", "declared_in", "id_macro", "examples", "doc"],
+      "description": "How a libmmt_tcpip parent protocol's id is named: id_macro with {LABEL} replaced by the upper-case label, from header (which includes declared_in).",
+      "properties": {
+        "header": {"$ref": "#/$defs/header"},
+        "declared_in": {"$ref": "#/$defs/header"},
+        "id_macro": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\{LABEL\\}[A-Za-z0-9_]*$"},
+        "examples": {"type": "array", "items": {"$ref": "#/$defs/ident"}},
+        "ids": {
+          "type": "array",
+          "description": "The protocols of the plugins the SDK installs, per header that defines them. The header check asserts every id and alias, and that each header defines no other numeric PROTO_* macro (PROTO_CLASS_* excepted) or PROTO_*_ALIAS than listed. Model checks use them to find a plugin id or name the SDK already takes. Absent: no id is known.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["header", "doc", "protocols"],
+            "properties": {
+              "header": {"$ref": "#/$defs/header"},
+              "doc": {"$ref": "#/$defs/text"},
+              "protocols": {
+                "type": "object",
+                "description": "By macro name: its id and, when the header defines PROTO_<X>_ALIAS, the name the SDK registers (compared case-insensitively).",
+                "propertyNames": {"$ref": "#/$defs/ident"},
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id"],
+                  "properties": {
+                    "id": {"type": "integer", "minimum": 0},
+                    "alias": {"type": "string", "pattern": "^[^\"\\\\\\s]+$"}
+                  }
+                }
+              },
+              "not_ids": {
+                "type": "array",
+                "description": "The header's other PROTO_* macros, whatever their value, which are neither protocol ids nor the PROTO_<X>_ALIAS of a listed id (PROTO_DICOM_HDRLEN); PROTO_CLASS_* macros need not be listed.",
+                "items": {"$ref": "#/$defs/ident"}
+              }
+            }
+          }
+        },
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    }
+  },
+  "$defs": {
+    "version": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$"},
+    "ident": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "header": {"type": "string", "pattern": "^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\\.h$"},
+    "ctype": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "params": {
+      "type": "array",
+      "description": "Parameter types never hold a function or array declarator, so '<type> <name>' declares each.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {"$ref": "#/$defs/ident"},
+          "type": {"type": "string", "pattern": "^[^()\\[\\]]*\\S[^()\\[\\]]*$"}
+        }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "header", "returns", "params", "doc"],
+      "properties": {
+        "name": {"$ref": "#/$defs/ident"},
+        "header": {"$ref": "#/$defs/header"},
+        "implements": {"$ref": "#/$defs/ident", "description": "The callback role this function can stand in for."},
+        "returns": {"$ref": "#/$defs/ctype"},
+        "params": {"$ref": "#/$defs/params"},
+        "doc": {"$ref": "#/$defs/text"}
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+# Port of plugins/topo_ind_sch_plugin (MSG_TOPO_IND_SCH; no public
+# specification). No parent is known.
+schema: 1
+protocol:
+  label: topo_ind_sch_example
+  id: 990
+  context: false
+  session: false
+  encapsulation: false
+  encoding: network
+sdk:
+  profile: "1.10.2"
+attributes:
+  - struct: attrs
+    fields:
+      - type: uint8_t
+        bits:
+          - name: management_status
+            width: 4
+          - name: reserve_bloc0_byte1
+            width: 4
+      - type: uint8_t
+        bits:
+          - name: reserve_bloc0_byte2
+            width: 3
+          - name: channel_presence
+            width: 1
+          - name: status
+            width: 2
+          - name: mandatory
+            width: 2
+      - name: neighbors_nb
+        type: uint8_t
+      - name: elem_k_alloc
+        type: uint8_t
+      - name: elem_j_alloc
+        type: uint8_t
+      - name: elem_c_alloc
+        type: uint8_t
+      - name: lc_channels_nb
+        type: uint8_t
+  - name: LP_STATIONS_NB
+    type: MMT_U8_DATA
+    offset: "7 + val(lc_channels_nb) * 3"
+    length: 1
+  - name: BLOC0
+    type: MMT_BINARY_DATA
+    offset: 0
+    length: 3
+  - name: BLOC1
+    type: MMT_BINARY_DATA
+    offset: 3
+    length: 3
+  - name: BLOC2
+    type: MMT_BINARY_DATA
+    offset: 6
+    length: "1 + val(lc_channels_nb) * 3"
+  - name: BLOC3
+    type: MMT_BINARY_DATA
+    offset: "7 + val(lc_channels_nb) * 3"
+    length: "1 + val(LP_STATIONS_NB) * 3"

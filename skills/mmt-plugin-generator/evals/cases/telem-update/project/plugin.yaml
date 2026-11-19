@@ -1,0 +1,36 @@
+# TELEM, the sensor telemetry protocol of spec.md.
+schema: 1
+protocol:
+  label: telem
+  id: 963
+  encoding: network
+sdk:
+  profile: "1.10.2"
+parents:
+  - protocol: udp
+    classify:
+      match:
+        - {offset: 2, length: 2, value: 5684}
+      offset: 8
+attributes:
+  - struct: telem_hdr
+    fields:
+      - type: uint8_t
+        bits:
+          - {name: version, width: 4}
+          - {name: flags, width: 4}
+      - name: msg_type
+        type: uint8_t
+      - name: length
+        type: uint16_t
+      - name: sequence
+        type: uint32_t
+  - if: val(msg_type) == 1
+    then:
+      - name: payload
+        type: MMT_BINARY_DATA
+        offset: 8
+        length: val(length) - 8
+  - name: readings
+    type: MMT_U32_DATA
+    scope: session

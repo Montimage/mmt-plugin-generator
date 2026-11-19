@@ -1,0 +1,607 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # tests/fetch_mmt_dpi_package.sh pins the sha256 of this tag's SHA256SUMS;
+  # another tag also needs MMT_DPI_SHA256SUMS_SHA256.
+  MMT_DPI_TAG: v1.10.2
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      # Pinned so CI and local runs use the same ShellCheck (the runner image
+      # ships an older one). The sha256 is the release asset's GitHub digest.
+      SHELLCHECK_VERSION: v0.11.0
+      SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned ShellCheck
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          tarball="shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          dir="$RUNNER_TEMP/shellcheck"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$tarball"
+          echo "$SHELLCHECK_SHA256  $dir/$tarball" | sha256sum -c -
+          tar -xJf "$dir/$tarball" -C "$dir" --strip-components=1 "shellcheck-$SHELLCHECK_VERSION/shellcheck"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Shellcheck the repo's shell scripts
+        run: |
+          [ "$(command -v shellcheck)" = "$RUNNER_TEMP/shellcheck/shellcheck" ] \
+            || { echo "shellcheck resolves to $(command -v shellcheck), not the pinned one"; exit 1; }
+          shellcheck --version
+          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION#v}" \
+            || { echo "shellcheck is not $SHELLCHECK_VERSION"; exit 1; }
+          mapfile -d '' scripts < <(git ls-files -z -- '*.sh' '*.bash')
+          [ "${#scripts[@]}" -gt 0 ] || { echo "no shell scripts found"; exit 1; }
+          printf '%s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+
+  corpus:
+    name: Test corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the test corpus
+        # Stdlib only: the runner's python3 is enough.
+        run: |
+          python3 --version
+          python3 tests/corpus/validate.py
+
+  ndn-check:
+    name: NDN example (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify the mmt-dpi package
+        env:
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          echo "MMT_DPI_PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Install mmt-dpi
+        run: |
+          sudo apt-get install -y --no-install-recommends "$MMT_DPI_PKG"
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' mmt-dpi
+          # The package uses the /opt/mmt layout that check_ndn_plugin.sh expects.
+          dpkg -L mmt-dpi | grep -qx /opt/mmt/dpi/include/mmt_log.h
+          dpkg -L mmt-dpi | grep -qx /opt/mmt/plugins/libmmt_tcpip.so
+          # The FHS pkg-config entry (/usr/share/pkgconfig/mmt-dpi.pc) resolves.
+          command -v pkg-config > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config; }
+          pkg-config --exists mmt-dpi || { echo "pkg-config cannot find mmt-dpi"; exit 1; }
+          echo "pkg-config mmt-dpi $(pkg-config --modversion mmt-dpi)"
+      - name: Build and load the NDN example plugin
+        run: MMT_BASE=/opt/mmt bash tests/check_ndn_plugin.sh
+
+  python:
+    name: Python package (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is requires-python's floor (plan decision 1); 3.12 is the
+        # Python of the pinned build container (T0.3); 3.14 is the newest,
+        # with argparse's color=False path and its newest message wording.
+        # uv sync downloads a managed CPython when the runner has no match
+        # (uv 0.12.10 provides 3.14.7).
+        python: ['3.10', '3.12', '3.14']
+        include:
+          # Only this job installs zsh and fish; their completion tests then
+          # fail instead of skipping (MMT_REQUIRE_SHELLS below). It also runs
+          # the user docs' `uv tool install` blocks (MMT_DOCS_INSTALL below,
+          # tests/unit/docs/test_commands.py), which need the network.
+          - python: '3.12'
+            shells: true
+            docs_install: true
+    env:
+      # Pinned uv; the sha256 is copied from the release's upstream
+      # uv-x86_64-unknown-linux-gnu.tar.gz.sha256 file.
+      UV_VERSION: 0.12.10
+      UV_SHA256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+      UV_PYTHON: ${{ matrix.python }}
+      # Fail instead of re-locking when uv.lock is out of date.
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the uv version
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Install zsh and fish
+        if: matrix.shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh fish
+          zsh --version
+          fish --version
+      - name: Install the package and dev tools from uv.lock
+        run: |
+          uv sync
+          uv run python --version
+          uv run python -c 'import os, sys; v = "%d.%d" % sys.version_info[:2]; assert v == os.environ["UV_PYTHON"], v'
+      - name: Ruff lint
+        run: uv run ruff check
+      - name: Ruff format
+        run: uv run ruff format --check
+      - name: Mypy
+        run: uv run mypy
+      - name: Pytest
+        env:
+          MMT_REQUIRE_SHELLS: ${{ matrix.shells && '1' || '0' }}
+          MMT_DOCS_INSTALL: ${{ matrix.docs_install && '1' || '0' }}
+        run: uv run pytest
+      - name: Show the zsh and fish completion tests
+        # Verbose, so the log shows each of them passing, none skipped.
+        if: matrix.shells
+        env:
+          MMT_REQUIRE_SHELLS: '1'
+        run: uv run pytest -v -rA tests/unit/test_completion.py -k 'zsh or fish'
+      - name: Run the console script
+        run: uv run mmt-plugin --version
+
+  container:
+    name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the container image
+        # Plain docker through the Makefile, so CI and `make test-container`
+        # build the same image.
+        run: |
+          docker version --format 'docker {{.Server.Version}} {{.Server.Arch}}'
+          make container MMT_DPI_TAG="$MMT_DPI_TAG"
+      - name: Check the image architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          arch="$(docker run --rm --network none mmt-plugin-generator-test:local dpkg --print-architecture)"
+          [ "$arch" = "$EXPECTED_ARCH" ] || { echo "image arch is $arch, expected $EXPECTED_ARCH"; exit 1; }
+          docker run --rm --network none mmt-plugin-generator-test:local \
+            grep -E '^(gcc|clang|python3|mmt-dpi) ' /usr/share/doc/mmt-test-image/packages.txt
+      - name: Build and load the NDN example plugin inside the container
+        run: make test-container MMT_DPI_TAG="$MMT_DPI_TAG"
+
+  sdk-profile:
+    name: SDK profile vs mmt-dpi headers (ubuntu-24.04, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both arches: the struct layout checks are per target ABI.
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            uv_target: uv-x86_64-unknown-linux-gnu
+            uv_sha256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            uv_target: uv-aarch64-unknown-linux-gnu
+            uv_sha256: 9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e
+    env:
+      # Pinned uv, as in the python job; each sha256 is copied from the
+      # release's upstream <target>.tar.gz.sha256 file.
+      UV_VERSION: 0.12.10
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download, verify and extract the mmt-dpi package
+        # Extracted, not installed: the check reads the headers of a private
+        # prefix, the one the package would install as /opt/mmt.
+        env:
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          dpkg-deb -x "$pkg" "$RUNNER_TEMP/sdk"
+          prefix="$RUNNER_TEMP/sdk/opt/mmt"
+          [ -f "$prefix/dpi/include/mmt_log.h" ] || { echo "no mmt_log.h in $prefix"; exit 1; }
+          echo "SDK_PREFIX=$prefix" >> "$GITHUB_ENV"
+      - name: Install the pinned uv
+        env:
+          UV_TARGET: ${{ matrix.uv_target }}
+          UV_SHA256: ${{ matrix.uv_sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$UV_TARGET.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$UV_TARGET.tar.gz"
+          echo "$UV_SHA256  $dir/$UV_TARGET.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$UV_TARGET.tar.gz" -C "$dir" --strip-components=1 "$UV_TARGET/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the tools
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+          command -v clang > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends clang; }
+          gcc --version | head -n 1
+          clang --version | head -n 1
+          uv sync
+      - name: Check the bundled profile against the headers (gcc and clang)
+        run: |
+          for cc in gcc clang; do
+            uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --cc "$cc"
+          done
+      - name: Check that a deliberately wrong signature fails
+        # A scratch copy of the profile whose attribute extraction callback
+        # takes an int proto_index (the Java generator's mistake).
+        run: |
+          wrong="$RUNNER_TEMP/wrong-profile.json"
+          uv run python - "$wrong" <<'PY'
+          import json, sys
+          from importlib import resources
+          path = resources.files("mmt_plugin").joinpath("sdk/profiles/1.10.2.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          cb = next(c for c in data["callbacks"] if c["role"] == "attribute_extraction")
+          cb["params"][1]["type"] = "int"
+          with open(sys.argv[1], "w", encoding="utf-8") as f:
+              json.dump(data, f)
+          PY
+          status=0
+          uv run python -m mmt_plugin.sdk.headercheck --sdk "$SDK_PREFIX" --profile "$wrong" \
+            > "$RUNNER_TEMP/wrong.txt" || status=$?
+          cat "$RUNNER_TEMP/wrong.txt"
+          [ "$status" -eq 1 ] || { echo "expected exit 1, got $status"; exit 1; }
+          grep -qF 'callbacks.attribute_extraction: generic_attribute_extraction_function is not int (*)(const ipacket_t *, int, attribute_t *)' \
+            "$RUNNER_TEMP/wrong.txt" || { echo "the wrong signature was not reported"; exit 1; }
+      - name: Check that broken copies of the headers fail (gcc and clang)
+        # Scratch copies of the extracted headers with an unprototyped
+        # register_protocol() and generic_init_proto, and Max_Alias_Len 32.
+        run: |
+          for cc in gcc clang; do
+            bash tests/check_headercheck_mutations.sh "$SDK_PREFIX" "$cc"
+          done
+      - name: Check the profile's ids against the run-time registry
+        # tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile
+        # (#50, #115): with every plugin of the package loaded, mmt-dpi
+        # registers exactly the profile's ids, each under its alias. The test
+        # skips on an SDK without a bundled profile or without all four
+        # plugins, so the step also requires its PASSED line.
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          out="$RUNNER_TEMP/registry.txt"
+          status=0
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider \
+            tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile \
+            > "$out" || status=$?
+          cat "$out"
+          [ "$status" -eq 0 ] || exit "$status"
+          grep -qxF 'PASSED tests/unit/test_sdk_registry.py::test_the_real_registry_is_the_profile' "$out" \
+            || { echo "the run-time registry check did not pass"; exit 1; }
+
+  generated-code:
+    # T1.7 (#16): the generated C of every corpus model that generate accepts
+    # compiles with -Wall -Wextra -Werror, builds into a plugin and loads
+    # through init_extraction(), per compiler and per supported mmt-dpi.
+    name: Generated code (mmt-dpi ${{ matrix.mmt_dpi.tag }}, ${{ matrix.cc }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest and the newest mmt-dpi with a bundled SDK profile
+        # (src/mmt_plugin/sdk/profiles/); both are 1.10.2 until a second
+        # profile lands. tests/unit/generate/test_ci_matrix.py keeps this list
+        # in step with the profiles. sums_sha256 is the sha256 of the tag's
+        # SHA256SUMS, empty for the tag tests/fetch_mmt_dpi_package.sh pins.
+        mmt_dpi:
+          - tag: v1.10.2
+            sums_sha256: ''
+        cc: [gcc, clang]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            uv_target: uv-x86_64-unknown-linux-gnu
+            uv_sha256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            uv_target: uv-aarch64-unknown-linux-gnu
+            uv_sha256: 9ff6b9d4665edcdd3a88dcc73cd1eb641754deb927f14e8c62ebfde6bf4f5f5e
+    env:
+      # Pinned uv, as in the sdk-profile job.
+      UV_VERSION: 0.12.10
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download, verify and extract the mmt-dpi package
+        # Extracted, not installed: a private prefix, as in the sdk-profile job.
+        env:
+          MMT_DPI_TAG: ${{ matrix.mmt_dpi.tag }}
+          MMT_DPI_SHA256SUMS_SHA256: ${{ matrix.mmt_dpi.sums_sha256 }}
+          MMT_DPI_DISTRO: ubuntu-24.04
+          MMT_DPI_ARCH: ${{ matrix.arch }}
+        run: |
+          [ "$(dpkg --print-architecture)" = "$MMT_DPI_ARCH" ] \
+            || { echo "runner arch is $(dpkg --print-architecture), expected $MMT_DPI_ARCH"; exit 1; }
+          pkg="$(bash tests/fetch_mmt_dpi_package.sh "$RUNNER_TEMP/mmt-dpi")"
+          dpkg-deb -x "$pkg" "$RUNNER_TEMP/sdk"
+          prefix="$RUNNER_TEMP/sdk/opt/mmt"
+          [ -f "$prefix/dpi/include/mmt_log.h" ] || { echo "no mmt_log.h in $prefix"; exit 1; }
+          [ -f "$prefix/plugins/libmmt_tcpip.so" ] || { echo "no libmmt_tcpip.so in $prefix"; exit 1; }
+          echo "SDK_PREFIX=$prefix" >> "$GITHUB_ENV"
+      - name: Install the pinned uv
+        env:
+          UV_TARGET: ${{ matrix.uv_target }}
+          UV_SHA256: ${{ matrix.uv_sha256 }}
+        run: |
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$UV_TARGET.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$UV_TARGET.tar.gz"
+          echo "$UV_SHA256  $dir/$UV_TARGET.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$UV_TARGET.tar.gz" -C "$dir" --strip-components=1 "$UV_TARGET/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Check the tools
+        env:
+          CC_NAME: ${{ matrix.cc }}
+        run: |
+          [ "$(command -v uv)" = "$RUNNER_TEMP/uv/uv" ] \
+            || { echo "uv resolves to $(command -v uv), not the pinned one"; exit 1; }
+          uv --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+          command -v "$CC_NAME" > /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends "$CC_NAME"; }
+          "$CC_NAME" --version | head -n 1
+          # mmt-plugin test --sanitize links with ASan and UBSan: install the
+          # compiler's sanitizer runtime when it is missing (clang's ships in
+          # libclang-rt-dev).
+          probe="$RUNNER_TEMP/sanitizer-probe"
+          echo 'int main(void) { return 0; }' \
+            | "$CC_NAME" -x c -fsanitize=address,undefined - -o "$probe" 2> /dev/null \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libclang-rt-dev; }
+          echo 'int main(void) { return 0; }' \
+            | "$CC_NAME" -x c -fsanitize=address,undefined - -o "$probe"
+          "$probe"
+          # The skill's capture evaluation (skills/mmt-plugin-generator/scripts/
+          # pcap_eval.c) reads captures with libpcap.
+          [ -f /usr/include/pcap.h ] \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcap-dev; }
+          uv sync
+      - name: Install tshark
+        # The scaffold --tshark test (#125) and the skill's drift check
+        # against tshark (#123) need the real tshark: the distribution's
+        # package, installed without prompts (wireshark-common's setuid
+        # question answered no: the tests only read capture files). The
+        # scaffold and skill steps below set MMT_REQUIRE_TSHARK, so a
+        # missing tshark fails them instead of skipping (#128).
+        run: |
+          echo 'wireshark-common wireshark-common/install-setuid boolean false' \
+            | sudo debconf-set-selections
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y --no-install-recommends tshark
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' tshark
+          command -v tshark
+          tshark --version | head -n 1
+      - name: Compile, build and load the generated C of every corpus model
+        # tests/unit/generate/test_compile.py: -fsyntax-only -Wall -Wextra
+        # -Werror, registration with libmmt_core, and a plugin built -O2
+        # -fPIC -shared -Wall -Wextra -Werror -Wl,-z,defs that
+        # init_extraction() loads next to libmmt_tcpip.so. Verbose, so the
+        # log lists every model, none skipped.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/generate/test_compile.py
+      - name: Build every corpus model with mmt-plugin build
+        # tests/unit/build/test_sdk.py: mmt-plugin build (#19) with its
+        # hardened -Wall -Wextra -Werror flags on every corpus model and its
+        # scaffold, each plugin then loaded next to libmmt_tcpip.so; a no-op
+        # rebuild, a located compile error and a missing hook.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/build/test_sdk.py
+      - name: Test every corpus model with mmt-plugin test
+        # tests/unit/packettest/test_sdk.py: mmt-plugin test (#20) on every
+        # corpus model and its corpus packets, under ASan and UBSan with
+        # truncated and random packets; a broken model, user code that reads
+        # past the packet, a plugin that does not load, and --bench.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/packettest/test_sdk.py
+      - name: Build and test every ported example
+        # tests/unit/examples/test_sdk.py: each examples/<name>/ project
+        # (#28, the 16 plugins/ models), copied to a temporary directory:
+        # validate against the SDK, build from the committed generated/
+        # (no regeneration), then test --sanitize on its packet tests.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/examples/test_sdk.py
+      - name: Build and test the OCI-P plugin project
+        # tests/unit/ocip/test_sdk.py: ocip-plugin/project (#134, #138),
+        # copied to a temporary directory: validate against the SDK, build
+        # from the committed generated/ (no regeneration), then test
+        # --sanitize on its packet and session tests.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/ocip/test_sdk.py
+      - name: Create a project with mmt-plugin init and test it
+        # tests/unit/init/test_sdk.py: mmt-plugin init (#23) in a temporary
+        # directory, its id from the SDK's registry, then mmt-plugin test
+        # --json on the new project: every packet passes, also under ASan
+        # and UBSan, and a second init is a no-op.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/init/test_sdk.py
+      - name: Classify a plugin.yaml protocol through its generated parent code
+        # tests/unit/pluginyaml/test_sdk.py: a plugin.yaml project (#24)
+        # whose Ethernet parent is classified by generated code; its packet
+        # test passes only when that code classified the packet, also under
+        # ASan and UBSan, and validate finds the parent in the SDK.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/pluginyaml/test_sdk.py
+      - name: Scaffold packet tests from sample pcaps and test the proposal
+        # tests/unit/scaffold/test_sdk.py: mmt-plugin init, then scaffold
+        # --from-pcap (#26) on sample captures under UDP and Ethernet
+        # parents; the proposed plugin.yaml passes every packet test
+        # scaffold wrote, also under ASan and UBSan. With the real tshark,
+        # scaffold --tshark (#125) drafts DNS, ARP and WebSocket plugins
+        # that read the values tshark decodes (MMT_REQUIRE_TSHARK, #128).
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/scaffold/test_sdk.py
+      - name: Run plugins over captures with mmt-plugin run
+        # tests/unit/run/test_sdk.py: mmt-plugin run (#103, #115) over
+        # captures written by the test: the DNS example's counts, a second
+        # plugin with --plugin and --protocol, a file that is not a plugin, a
+        # broken capture, and the same memory for a ten times larger capture.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/run/test_sdk.py
+      - name: Run the mmt-plugin-generator skill's evals
+        # tests/unit/skill/test_sdk.py: every case of
+        # skills/mmt-plugin-generator/evals/ (#27), from a spec, a capture and
+        # a legacy PDL model, runs the skill's validate, generate, build and
+        # test loop with --json until green; each command has no stdin data
+        # and no terminal, and every envelope keeps the skill's contract.
+        # Then the spec-telem plugin is evaluated on a capture that
+        # scripts/make_pcap.py writes, with scripts/pcap_eval.py, with and
+        # without the real tshark: with it, a field without drift, one with
+        # a drift, then that drift accepted (#123; MMT_REQUIRE_TSHARK, #128).
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_REQUIRE_TSHARK: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/skill/test_sdk.py
+      - name: Run the user documentation's commands
+        # tests/unit/docs/test_commands.py (#29): every block of README.md,
+        # docs/user-guide.md and docs/migration.md marked doc:run, in page
+        # order, in a copy of the checkout: the no-sdk ones, the sdk ones
+        # against this SDK and compiler, and the install ones (uv tool
+        # install from the checkout and from a built wheel).
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+          MMT_DOCS_INSTALL: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/docs/test_commands.py
+      - name: Install, load and uninstall a plugin in a temporary prefix
+        # tests/unit/install/test_sdk.py: mmt-plugin install (#21) at the
+        # default user prefix (a temporary XDG_DATA_HOME; no sudo, never
+        # /opt/mmt), loaded by libmmt_core through MMT_DPI_PLUGINS_DIR,
+        # doctor reporting the directory as scanned, then uninstall.
+        env:
+          MMT_GOLDEN_CC: ${{ matrix.cc }}
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/install/test_sdk.py
+      - name: Read the run-time registry and validate against the SDK
+        # tests/unit/test_sdk_registry.py: the protocols init_extraction()
+        # registers with the SDK's plugins, one of them excluded, and
+        # mmt-plugin validate against that SDK (#17).
+        env:
+          MMT_REQUIRE_GOLDEN_COMPILE: '1'
+        run: |
+          MMT_GOLDEN_SDK="$SDK_PREFIX" \
+            uv run pytest -v -rA -p no:cacheprovider tests/unit/test_sdk_registry.py

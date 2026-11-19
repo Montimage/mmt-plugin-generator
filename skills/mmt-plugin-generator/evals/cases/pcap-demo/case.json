@@ -1,0 +1,38 @@
+{
+  "id": "pcap-demo",
+  "summary": "From a capture (capture.pcap, with notes.md): scaffold proposes fields and packet tests; init's sample test fails until it is removed; the fields are renamed after the notes.",
+  "entry": "pcap",
+  "input": "notes.md",
+  "params": {"label": "demo", "id": "978", "selector": "udp:dport=4433", "pcap": "{case}/capture.pcap"},
+  "runs": [
+    {
+      "note": "Take scaffold's proposal as the model, in place of init's sample model, pinned to the profile; keep everything else.",
+      "edits": [
+        {"copy": "plugin.yaml", "source": "plugin.proposed.yaml"},
+        {"replace": "plugin.yaml", "old": "  encoding: network\n", "new": "  encoding: network\nsdk:\n  profile: \"1.10.2\"\n"}
+      ],
+      "expect": {
+        "stop": "test",
+        "exit_code": 6,
+        "error_code": "test.packet-failed",
+        "failures": {"demo/basic": ["kind", "version"]}
+      }
+    },
+    {
+      "note": "demo/basic is init's sample of its own 4-byte header, not of DEMO: delete it. Rename the fields after notes.md, in the model and in the tests scaffold wrote, and drop the two body bytes from both.",
+      "edits": [
+        {"remove": "tests/demo-basic.yaml"},
+        {"regex": "plugin.yaml", "pattern": "^  - name: field_[89] .*\\n(?:    .*\\n)*", "new": ""},
+        {"regex": "plugin.yaml", "pattern": "^# Not proposed: .*\\n", "new": "# The body, from offset 8, is text (notes.md): not decoded.\n"},
+        {"regex": "tests/demo-pcap-*.yaml", "pattern": "^    - name: \"field_[89]\"\\n(?:      .*\\n)*", "new": ""},
+        {"replace": "plugin.yaml", "old": "field_0", "new": "version"},
+        {"replace": "plugin.yaml", "old": "field_1", "new": "kind"},
+        {"replace": "plugin.yaml", "old": "field_4", "new": "sequence"},
+        {"replace": "tests/demo-pcap-*.yaml", "old": "\"field_0\"", "new": "\"version\""},
+        {"replace": "tests/demo-pcap-*.yaml", "old": "\"field_1\"", "new": "\"kind\""},
+        {"replace": "tests/demo-pcap-*.yaml", "old": "\"field_4\"", "new": "\"sequence\""}
+      ],
+      "expect": {"stop": null}
+    }
+  ]
+}

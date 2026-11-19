@@ -1,0 +1,18 @@
+Protocol {
+	Properties {
+		label = "pdl_bitfields"
+		id = "968"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_bits_hdr {
+			uint8_t b_hi:3, b_mid:1, b_lo:4;
+			uint16_t w_lead, w_a:4, w_b:8, w_c:4, w_tail;
+			uint32_t d_a:1, d_b:7, d_c:16, d_d:8;
+			uint8_t after;
+		}
+		attribute {
+			alias="next_byte" data_type="MMT_U8_DATA" data_len="1" offset="0" scope="SCOPE_PACKET"
+		}
+	}
+}

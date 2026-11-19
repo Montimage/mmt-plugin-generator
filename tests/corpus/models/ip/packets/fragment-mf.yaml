@@ -1,0 +1,128 @@
+# Corpus packet ip/fragment-mf. Format and rules: tests/corpus/README.md
+schema: 1
+id: "ip/fragment-mf"
+model: "ip"
+summary: "IPv4 fragment with MF set, fragment offset 185, DSCP EF"
+constructs:
+  - "lexical.keyword_names"
+  - "struct.bitfield"
+  - "struct.bitfield.followed"
+  - "properties.context"
+  - "properties.session"
+  - "properties.encapsulation"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+  selector: "ethertype 0x0800"
+  source: "RFC 894"
+bytes:
+  - "45 b8 00 1c ab cd 20 b9 80 01 07 60 c6 33 64 05"
+  - "cb 00 71 09 00 01 02 03 04 05 06 07"
+bytes_source: "RFC 791 section 3.1 (MF, fragment offset 185 = 1480 bytes / 8, protocol 1); TOS 0xb8 = DSCP EF 46 (RFC 3246); addresses from RFC 5737"
+expect:
+  protocol: "IP"
+  proto_id: 12
+  next:
+    kind: "hook"
+    source: "model-declared: encapsulation is true but there is no classifynext block, so classify_next is a user hook"
+  attributes:
+    - name: "ihl"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 4
+      bit_offset: 0
+      bit_width: 4
+      note: "the model swaps ihl and version (see the index notes)"
+      source: "model-declared: first bitfield of byte 0, so the high nibble; RFC 791 section 3.1 puts Version (4) there, not IHL"
+    - name: "version"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 5
+      bit_offset: 4
+      bit_width: 4
+      source: "model-declared: low nibble of byte 0; RFC 791 section 3.1 puts IHL (5 words) there, not Version"
+    - name: "tos"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 184
+      source: "RFC 791 section 3.1 Type of Service, byte 1 (DS field, RFC 2474)"
+    - name: "tot_len"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 28
+      source: "RFC 791 section 3.1 Total Length, bytes 2-3"
+    - name: "id"
+      type: "MMT_U16_DATA"
+      offset: 4
+      length: 2
+      value: 43981
+      source: "RFC 791 section 3.1 Identification, bytes 4-5"
+    - name: "r_flag"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 0
+      bit_offset: 0
+      bit_width: 1
+      source: "RFC 791 section 3.1 Flags bit 0 (reserved), the top bit of bytes 6-7"
+    - name: "df"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 0
+      bit_offset: 1
+      bit_width: 1
+      source: "RFC 791 section 3.1 Flags bit 1 (DF)"
+    - name: "mf"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 1
+      bit_offset: 2
+      bit_width: 1
+      source: "RFC 791 section 3.1 Flags bit 2 (MF)"
+    - name: "frag_off"
+      type: "MMT_U16_DATA"
+      offset: 6
+      length: 2
+      value: 185
+      bit_offset: 3
+      bit_width: 13
+      source: "RFC 791 section 3.1 Fragment Offset, low 13 bits of bytes 6-7"
+    - name: "ttl"
+      type: "MMT_U8_DATA"
+      offset: 8
+      length: 1
+      value: 128
+      source: "RFC 791 section 3.1 Time to Live, byte 8"
+    - name: "protocol"
+      type: "MMT_U8_DATA"
+      offset: 9
+      length: 1
+      value: 1
+      source: "RFC 791 section 3.1 Protocol, byte 9"
+    - name: "check"
+      type: "MMT_U16_DATA"
+      offset: 10
+      length: 2
+      value: 1888
+      source: "RFC 791 section 3.1 Header Checksum, bytes 10-11 (computed over the header)"
+    - name: "saddr"
+      type: "MMT_U32_DATA"
+      offset: 12
+      length: 4
+      value: 3325256709
+      note: "198.51.100.5 as a 32-bit integer"
+      source: "RFC 791 section 3.1 Source Address, bytes 12-15; uint32_t, so a network-order U32"
+    - name: "daddr"
+      type: "MMT_U32_DATA"
+      offset: 16
+      length: 4
+      value: 3405803785
+      note: "203.0.113.9 as a 32-bit integer"
+      source: "RFC 791 section 3.1 Destination Address, bytes 16-19"

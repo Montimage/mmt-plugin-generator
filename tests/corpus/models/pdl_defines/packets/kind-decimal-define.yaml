@@ -1,0 +1,44 @@
+# Corpus packet pdl_defines/kind-decimal-define. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_defines/kind-decimal-define"
+model: "pdl_defines"
+summary: "kind 1 matches the decimal define T_KIND_A"
+constructs:
+  - "define.decimal"
+  - "classifynext.switch"
+  - "classifynext.case.define"
+  - "classifynext.nextencaps.define"
+  - "classifynext.nextoffset"
+  - "expr.val"
+  - "properties.label"
+  - "properties.id"
+  - "properties.encapsulation"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "01 02 aa bb"
+bytes_source: "model-declared: kind, hlen = 2, two payload bytes"
+expect:
+  protocol: "PDL_DEFINES"
+  proto_id: 960
+  next:
+    kind: "proto"
+    proto_id: 951
+    offset: 2
+    source: "model-declared: case T_KIND_A (define = 1) -> nextencaps T_NEXT_A (define = 951)"
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 1
+      source: "model-declared: struct pdl_defines_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_defines_hdr byte 1"

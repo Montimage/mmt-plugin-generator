@@ -1,0 +1,68 @@
+# Packet test of examples/ocpp, written from the OCPP-J 1.6 and OCPP 1.6
+# specifications (not a port: the corpus has no OCPP model). Format and
+# rules: tests/corpus/README.md
+schema: 1
+id: "ocpp/call-heartbeat"
+model: "ocpp"
+summary: "A CALL, Heartbeat, with an empty payload (a masked client frame)"
+parent:
+  kind: "stack"
+  path:
+    - "ethernet"
+    - "ip"
+    - "tcp"
+  selector: "TCP, a WebSocket session whose opening handshake offers ocpp1.6 (any port)"
+  source: "OCPP-J 1.6 section 3 (OCPP over WebSocket, subprotocol ocpp1.6) and RFC 6455 section 1.7 (over TCP)"
+bytes:
+  - "81 9d 37 fa 21 3d 6c c8 0d 1f 06 c3 13 0f 04 c8"
+  - "11 05 15 d6 03 75 52 9b 53 49 55 9f 40 49 15 d6"
+  - "5a 40 6a"
+bytes_source: "OCPP-J 1.6 section 4.2.1, the CALL syntax, Action Heartbeat (OCPP 1.6 section 4.6; Heartbeat.req, section 6.29, has no field: an empty object), compact JSON, in one masked text frame (RFC 6455 section 5.2, the key of section 5.7)"
+expect:
+  protocol: "OCPP_EXAMPLE"
+  proto_id: 993
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "message_type_id"
+      type: "MMT_U8_DATA"
+      offset: 7
+      length: 1
+      value: 2
+      source: "OCPP-J 1.6 section 4.1.3: MessageTypeId 2, a CALL (a request), the first element of the array"
+    - name: "unique_id"
+      type: "MMT_STRING_DATA"
+      offset: 10
+      length: 8
+      value: "31 39 32 32 33 32 30 38"
+      text: "19223208"
+      source: "OCPP-J 1.6 section 4.1.4 and 4.2: the UniqueId, the second element, as sent"
+    - name: "action"
+      type: "MMT_STRING_DATA"
+      offset: 21
+      length: 9
+      value: "48 65 61 72 74 62 65 61 74"
+      text: "Heartbeat"
+      source: "OCPP-J 1.6 section 4.2.1: the Action, the third element of a CALL"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+      offset: 32
+      length: 2
+      value: "7b 7d"
+      text: "{}"
+      source: "OCPP-J 1.6 section 4.2.1: the Payload, the fourth element; OCPP 1.6 section 6.29: Heartbeat.req is empty"
+    - name: "connector_id"
+      type: "MMT_U32_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: the payload has no top-level connectorId (Heartbeat.req, section 6.29)"
+    - name: "id_tag"
+      type: "MMT_STRING_DATA"
+      status: "absent"
+      source: "OCPP 1.6 section 6: only Authorize, StartTransaction and RemoteStartTransaction requests have the idTag read here"
+    - name: "message_count"
+      type: "MMT_U32_DATA"
+      offset: 0
+      length: 35
+      value: 1
+      source: "OCPP-J 1.6 section 4.1.2 and RFC 6455 section 5.6: one message in the segment's one text frame"

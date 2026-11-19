@@ -1,0 +1,15 @@
+Protocol {
+	Properties {
+		label = "pdl_host"
+		id = "964"
+		encoding = "host"
+	}
+	Attributes {
+		struct pdl_host_hdr {
+			uint16_t a16;
+			uint32_t a32;
+			MMT_U64_DATA a64;
+			uint8_t a8;
+		}
+	}
+}

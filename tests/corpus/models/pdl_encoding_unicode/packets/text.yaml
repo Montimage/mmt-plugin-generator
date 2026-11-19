@@ -1,0 +1,39 @@
+# Corpus packet pdl_encoding_unicode/text. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_encoding_unicode/text"
+model: "pdl_encoding_unicode"
+summary: "UNICODE encoding with a one-byte value and a string"
+constructs:
+  - "properties.encoding.unicode"
+  - "type.MMT_STRING_DATA"
+  - "expr.sizeof.type"
+  - "layout.align.stop"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "47 68 c3 a9 6c 6c 6f"
+bytes_source: "model-declared: 0x47, then the UTF-8 text 'h\u00e9llo'"
+expect:
+  protocol: "PDL_UNICODE"
+  proto_id: 966
+  next:
+    kind: "none"
+    source: "model-declared: encapsulation is false, so no next protocol"
+  attributes:
+    - name: "first"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 71
+      source: "model-declared: byte 0"
+    - name: "text"
+      type: "MMT_STRING_DATA"
+      offset: 1
+      length: 6
+      value: "68 c3 a9 6c 6c 6f"
+      text: "h\u00e9llo"
+      source: "corpus rule (README.md, Semantics): strings are copied byte for byte"
+note: "Only single-byte and byte-copy types are used, so the values do not depend on what ASCII or UNICODE mean for byte order (inventory bug 10)."

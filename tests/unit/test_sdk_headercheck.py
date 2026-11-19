@@ -1,0 +1,530 @@
+"""Tests for ``mmt_plugin.sdk.headercheck``. The check of the bundled profile
+against the real mmt-dpi 1.10.2 headers runs in CI (job ``sdk-profile``);
+here the checker itself is tested on a small stub SDK, compiled when a C
+compiler is installed."""
+
+from __future__ import annotations
+
+import copy
+import json
+import shutil
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from mmt_plugin.sdk import headercheck
+from mmt_plugin.sdk.detect import Sdk, SdkSource
+from mmt_plugin.sdk.headercheck import (
+    check_profile,
+    declared_names,
+    render_ids_unit,
+    render_unit,
+    unlisted_protocol_macros,
+)
+from mmt_plugin.sdk.profile import Profile, ProtocolHeader, SdkProtocol, get_bundled, parse_profile
+
+CC = shutil.which("gcc") or shutil.which("cc")
+needs_cc = pytest.mark.skipif(CC is None, reason="no C compiler")
+
+STUB_HEADER = """\
+/* stub.h: a tiny SDK for the checker's own tests. */
+#ifndef STUB_H
+#define STUB_H
+#include <stdbool.h>
+typedef unsigned idx_t;
+typedef struct opaque_struct opaque_t;
+typedef struct row_struct { int id; char alias[4 + 1]; } row_t;
+typedef struct view_struct { int hidden; const unsigned char *data; } view_t;
+typedef int (*cb_t)(const opaque_t *o, idx_t i);
+typedef int (*init_t)(void);
+bool reg(cb_t f, int weight);
+int helper(const opaque_t *o, idx_t i);
+int old_helper(const opaque_t *o, idx_t i) __attribute__((deprecated("gone")));
+#define K_ONE 1
+#define K_LEN 64
+enum { K_TWO = 2 };
+typedef struct cp_struct { int (*klass)(idx_t); } cp_t;
+bool cp_register(const cp_t *p);
+#define CP_UNKNOWN 0
+#define log_e(...) ((void)0)
+#define log_w(...) ((void)0)
+#define log_i(...) ((void)0)
+#ifdef STUB_DEBUG_ON
+void stub_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+#define log_d(...) stub_log(__VA_ARGS__)
+#else
+#define log_d(...) ((void)0)
+#endif
+#define PROTO_TCP 354
+#define PROTO_TCP_ALIAS "tcp"
+#endif
+"""
+
+#: The header of a second stub plugin, with a numeric PROTO_* macro that is
+#: no protocol id.
+PLUG_HEADER = """\
+#define PROTO_PLUG 901
+#define PROTO_PLUG_ALIAS "plug" /* its registered name */
+#define PROTO_PLUG_HDRLEN 6
+"""
+
+
+def _fn(name: str, returns: str, params: list[tuple[str, str]], **extra: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "header": "stub.h",
+        "returns": returns,
+        "params": [{"name": n, "type": t} for n, t in params],
+        "doc": name,
+        **extra,
+    }
+
+
+def _stub_data() -> dict[str, Any]:
+    def entry(name: str, **extra: Any) -> dict[str, Any]:
+        return {"name": name, "header": "stub.h", "doc": name, **extra}
+
+    return {
+        "schema_version": 1,
+        "profile": "1.10.2",
+        "sdk": "mmt-dpi",
+        "c_std": "gnu11",
+        "headers": [{"name": "stub.h", "doc": "the stub"}],
+        "types": [entry("idx_t", definition="unsigned"), entry("opaque_t")],
+        "structs": [
+            entry(
+                "row_t",
+                layout="complete",
+                fields=[{"name": "id", "type": "int"}, {"name": "alias", "type": "char [5]"}],
+            ),
+            entry(
+                "view_t",
+                layout="partial",
+                fields=[{"name": "data", "type": "const unsigned char *"}],
+            ),
+            entry("cp_t", layout="complete", fields=[{"name": "klass", "type": "int (*)(idx_t)"}]),
+        ],
+        "callbacks": [
+            {
+                "role": "cb",
+                "typedef": "cb_t",
+                "header": "stub.h",
+                "returns": "int",
+                "params": [
+                    {"name": "o", "type": "const opaque_t *"},
+                    {"name": "i", "type": "idx_t"},
+                ],
+                "doc": "cb",
+            },
+            {
+                "role": "init",
+                "typedef": "init_t",
+                "header": "stub.h",
+                "returns": "int",
+                "params": [],
+                "doc": "init",
+            },
+        ],
+        "registrations": [
+            _fn("reg", "bool", [("f", "cb_t"), ("weight", "int")]),
+            _fn("cp_register", "bool", [("p", "const cp_t *")]),
+        ],
+        "helpers": [
+            _fn("helper", "int", [("o", "const opaque_t *"), ("i", "idx_t")], implements="cb")
+        ],
+        "constants": [
+            entry("K_ONE", group="k"),
+            entry("K_TWO", group="k"),
+            entry("K_LEN", group="k", value=64),
+            entry("CP_UNKNOWN", group="cp"),
+        ],
+        "macros": [entry(m) for m in ("log_e", "log_w", "log_i", "log_d")],
+        "logger": {
+            "header": "stub.h",
+            "error": "log_e",
+            "warn": "log_w",
+            "info": "log_i",
+            "debug": "log_d",
+            "debug_opt_in": "STUB_DEBUG_ON",
+            "doc": "logger",
+        },
+        "class_provider": {
+            "header": "stub.h",
+            "struct": "cp_t",
+            "register": "cp_register",
+            "unknown": "CP_UNKNOWN",
+            "doc": "cp",
+        },
+        "entry_point": {
+            "callback": "init",
+            "symbol": "init_proto",
+            "core_macro": "CORE",
+            "doc": "entry",
+        },
+        "parents": {
+            "header": "stub.h",
+            "declared_in": "stub.h",
+            "id_macro": "PROTO_{LABEL}",
+            "examples": ["PROTO_TCP"],
+            "ids": [
+                {
+                    "header": "stub.h",
+                    "doc": "the stub's protocols",
+                    "protocols": {"PROTO_TCP": {"id": 354, "alias": "tcp"}},
+                },
+                {
+                    "header": "plug/plug.h",
+                    "doc": "a second plugin",
+                    "protocols": {"PROTO_PLUG": {"id": 901, "alias": "plug"}},
+                    "not_ids": ["PROTO_PLUG_HDRLEN"],
+                },
+            ],
+            "doc": "parents",
+        },
+    }
+
+
+@pytest.fixture
+def stub_sdk(tmp_path: Path) -> Sdk:
+    include = tmp_path / "dpi" / "include"
+    include.mkdir(parents=True)
+    (include / "stub.h").write_text(STUB_HEADER)
+    (include / "plug").mkdir()
+    (include / "plug" / "plug.h").write_text(PLUG_HEADER)
+    (include / "mmt_log.h").write_text("/* the marker of an SDK prefix */\n")
+    (include / "mmt_core.h").write_text('#define VERSION "1.10.2"\n')
+    return Sdk(str(tmp_path), SdkSource.CLI, "1.10.2")
+
+
+def _failures(profile: Profile, sdk: Sdk) -> list[str]:
+    assert CC is not None
+    return [f"{r.name}\n{r.detail}" for r in check_profile(profile, sdk, CC) if not r.ok]
+
+
+@needs_cc
+def test_a_matching_profile_passes(stub_sdk: Sdk) -> None:
+    results = check_profile(parse_profile(_stub_data()), stub_sdk, CC or "cc")
+    assert [r.name for r in results if not r.ok] == []
+    # version, declared names (2 headers), complete ids (2 headers), the
+    # unit, the unit again with the debug opt-in, the ids unit, the aliases
+    assert len(results) == 9
+    assert results[6].name.endswith("-DSTUB_DEBUG_ON)")
+    assert results[-2].name.startswith("parents.ids: 2 protocol ids compile")
+    assert results[-1].name.startswith("parents.ids: 2 PROTO_*_ALIAS expand to their names")
+
+
+Mutation = Callable[[dict[str, Any]], object]
+
+MUTATIONS: dict[str, tuple[Mutation, str]] = {
+    "callback param": (
+        lambda d: d["callbacks"][0]["params"][1].update(type="int"),
+        "callbacks.cb: cb_t is not int (*)(const opaque_t *, int)",
+    ),
+    "callback return": (
+        lambda d: d["callbacks"][0].update(returns="long"),
+        "callbacks.cb: cb_t is not long",
+    ),
+    "registration param": (
+        lambda d: d["registrations"][0]["params"][1].update(type="unsigned"),
+        "registrations.reg is not bool (cb_t, unsigned)",
+    ),
+    "helper does not implement": (
+        lambda d: d["helpers"][0]["params"][1].update(type="int"),
+        "helpers.helper is not int (const opaque_t *, int)",
+    ),
+    "deprecated helper": (
+        lambda d: d["helpers"][0].update(name="old_helper"),
+        "deprecated",
+    ),
+    "typedef definition": (
+        lambda d: d["types"][0].update(definition="int"),
+        "types.idx_t is not int",
+    ),
+    "missing struct field": (
+        lambda d: d["structs"][0]["fields"].pop(),
+        "structs.row_t has fields that the profile does not list",
+    ),
+    "swapped struct fields": (
+        lambda d: d["structs"][0]["fields"].reverse(),
+        "structs.row_t.alias is not at its place",
+    ),
+    "partial field type": (
+        lambda d: d["structs"][1]["fields"][0].update(type="char *"),
+        "structs.view_t.data is not char *",
+    ),
+    "unknown constant": (
+        lambda d: d["constants"].append({**d["constants"][0], "name": "K_NONE"}),
+        "not declared there: K_NONE",
+    ),
+    "unknown macro": (
+        lambda d: d["macros"].append({**d["macros"][0], "name": "log_f"}),
+        "macros.log_f is not defined",
+    ),
+    "unknown parent": (
+        lambda d: d["parents"].update(examples=["PROTO_SCTP"]),
+        "not declared there: PROTO_SCTP",
+    ),
+    "unknown version": (lambda d: d.update(profile="1.11.0"), "profile 1.11.0 is the SDK version"),
+    "parent id value": (
+        lambda d: d["parents"]["ids"][0]["protocols"]["PROTO_TCP"].update(id=355),
+        "parents.ids.PROTO_TCP is not 355",
+    ),
+    "plugin id value": (
+        lambda d: d["parents"]["ids"][1]["protocols"]["PROTO_PLUG"].update(id=902),
+        "parents.ids.PROTO_PLUG is not 902",
+    ),
+    "unknown parent id": (
+        lambda d: d["parents"]["ids"][0]["protocols"].update(PROTO_SCTP={"id": 9}),
+        "not declared there: PROTO_SCTP",
+    ),
+    "parent alias": (
+        lambda d: d["parents"]["ids"][0]["protocols"]["PROTO_TCP"].update(alias="TCP"),
+        'parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is "tcp", not "TCP"',
+    ),
+    "unlisted alias": (
+        lambda d: d["parents"]["ids"][1]["protocols"]["PROTO_PLUG"].pop("alias"),
+        "not in the profile: PROTO_PLUG_ALIAS",
+    ),
+    "unlisted macro": (
+        lambda d: d["parents"]["ids"][1].pop("not_ids"),
+        "not in the profile: PROTO_PLUG_HDRLEN",
+    ),
+    "constant value": (
+        lambda d: d["constants"][2].update(value=63),
+        "constants.K_LEN is not 63",
+    ),
+}
+
+
+@needs_cc
+@pytest.mark.parametrize("name", sorted(MUTATIONS))
+def test_a_wrong_profile_fails(stub_sdk: Sdk, name: str) -> None:
+    mutate, message = MUTATIONS[name]
+    data = copy.deepcopy(_stub_data())
+    mutate(data)
+    failures = _failures(parse_profile(data), stub_sdk)
+    assert failures, f"{name}: no check failed"
+    assert any(message in f for f in failures), failures
+
+
+#: Header changes the check must catch: (old, new) replacements of the stub
+#: header, and the failures they cause.
+HEADER_MUTATIONS: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
+    # gnu11 accepts R () as compatible with any parameter list.
+    "unprototyped": (
+        [
+            ("bool reg(cb_t f, int weight);", "bool reg();"),
+            ("typedef int (*init_t)(void);", "typedef int (*init_t)();"),
+            ("typedef int (*cb_t)(const opaque_t *o, idx_t i);", "typedef int (*cb_t)();"),
+        ],
+        [
+            "registrations.reg is not prototyped",
+            "callbacks.init: init_t is not prototyped",
+            "callbacks.cb: cb_t is not prototyped",
+        ],
+    ),
+    "unprototyped helper": (
+        [("int helper(const opaque_t *o, idx_t i);", "int helper();")],
+        ["helpers.helper is not prototyped"],
+    ),
+    "constant value": (
+        [("#define K_LEN 64", "#define K_LEN 32")],
+        ["constants.K_LEN is not 64"],
+    ),
+    # parents.ids must stay complete (#51 review, N2).
+    "unlisted protocol": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_UDP (376)\n")],
+        ["stub.h: parents.ids lists all its protocols (1)\nnot in the profile: PROTO_UDP"],
+    ),
+    # Whatever the value or the layout of the definition (#50).
+    "unlisted protocol of an expression": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_NEW (PROTO_TCP+1)\n")],
+        ["not in the profile: PROTO_NEW"],
+    ),
+    "unlisted protocol on a continued line": (
+        [("#define PROTO_TCP 354\n", "#define PROTO_TCP 354\n#define PROTO_NEW \\\n    355\n")],
+        ["not in the profile: PROTO_NEW"],
+    ),
+    "unlisted alias": (
+        [("#define PROTO_TCP 354\n", '#define PROTO_TCP 354\n#define PROTO_NEW_ALIAS "new"\n')],
+        ["not in the profile: PROTO_NEW_ALIAS"],
+    ),
+    "alias value": (
+        [('#define PROTO_TCP_ALIAS "tcp"', '#define PROTO_TCP_ALIAS "tcp2"')],
+        ['parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is "tcp2", not "tcp"'],
+    ),
+    "no alias": (
+        [('#define PROTO_TCP_ALIAS "tcp"', "")],
+        [
+            "not declared there: PROTO_TCP_ALIAS",
+            'parents.ids.PROTO_TCP: PROTO_TCP_ALIAS is PROTO_TCP_ALIAS, not "tcp"',
+        ],
+    ),
+}
+
+
+@needs_cc
+@pytest.mark.parametrize("name", sorted(HEADER_MUTATIONS))
+def test_a_wrong_header_fails(stub_sdk: Sdk, name: str) -> None:
+    replacements, messages = HEADER_MUTATIONS[name]
+    header = Path(stub_sdk.include_dir) / "stub.h"
+    text = header.read_text()
+    for old, new in replacements:
+        assert old in text, old
+        text = text.replace(old, new)
+    header.write_text(text)
+    failures = _failures(parse_profile(_stub_data()), stub_sdk)
+    for message in messages:
+        assert any(message in f for f in failures), (message, failures)
+
+
+def test_render_unit_of_the_bundled_profile() -> None:
+    profile = get_bundled("1.10.2")
+    assert profile is not None
+    unit = render_unit(profile, "plugin_defs.h")
+    assert '#include "plugin_defs.h"' in unit
+    assert (
+        "_Static_assert(__builtin_types_compatible_p(generic_attribute_extraction_function,"
+        " int (*)(const ipacket_t *, mmt_proto_index_t, attribute_t *))"
+    ) in unit
+    assert "__typeof__(register_protocol), bool (protocol_t *, mmt_proto_id_t))" in unit
+    assert "struct mmtp_never_;" in unit
+    assert (
+        "_Static_assert(!__builtin_types_compatible_p(__typeof__(&register_protocol),"
+        ' bool (*)(struct mmtp_never_ *)), "registrations.register_protocol is not prototyped");'
+    ) in unit
+    assert (
+        "_Static_assert(!__builtin_types_compatible_p(generic_init_proto,"
+        ' int (*)(struct mmtp_never_ *)), "callbacks.init_proto: generic_init_proto is not'
+        ' prototyped");'
+    ) in unit
+    defs = render_unit(profile, "data_defs.h")
+    assert '_Static_assert((Max_Alias_Len) == 64, "constants.Max_Alias_Len is not 64");' in defs
+    assert "((ipacket_t *)0)->packet_id), uint64_t)" in defs
+    types = render_unit(profile, "types_defs.h")
+    assert "typedef mac_addr_t mmtp_chk_type_mac_addr_t;" in types
+    for name in ("IPv6_ALEN", "BINARY_64DATA_TYPE_LEN"):
+        assert f'"constants.{name} is not an integer constant"' in types
+    assert '"constants.POSITION_NOT_KNOWN is not an integer constant"' in render_unit(
+        profile, "mmt_core.h"
+    )
+    assert "struct mmtp_chk_mirror_attribute_metadata_t {" in unit
+    lib = render_unit(profile, "extraction_lib.h")
+    assert '#include "plugin_defs.h" /* for a callback typedef */' in lib
+    assert "__typeof__(&general_char_extraction), generic_attribute_extraction_function" in lib
+    assert "void mmtp_chk_logger(int value)" in render_unit(profile, "mmt_log.h")
+    assert "PROTO_TCP" in render_unit(profile, "tcpip/mmt_tcpip.h")
+    ids = render_ids_unit(profile)
+    for header in ("tcpip/mmt_tcpip.h", "dicom/dicom.h", "mobile/mmt_mobile.h"):
+        assert f'#include "{header}"' in ids
+    assert '_Static_assert((PROTO_DICOM) == 701, "parents.ids.PROTO_DICOM is not 701");' in ids
+    assert "mmtp_alias_0: PROTO_163_ALIAS" in ids
+    assert "PROTO_INT_ALIAS" not in ids  # the header defines none
+
+
+def test_declared_names_cover_every_entry() -> None:
+    profile = get_bundled("1.10.2")
+    assert profile is not None
+    names = declared_names(profile)
+    flat = {n for ns in names.values() for n in ns}
+    assert "get_packet_offset_at_index" in names["data_defs.h"]
+    assert "MMT_LOG_ENABLE_DEBUG" in names["mmt_log.h"]
+    protocols = names["tcpip/mmt_tcpip_protocols.h"]
+    assert protocols[:4] == ["PROTO_ETHERNET", "PROTO_IP", "PROTO_TCP", "PROTO_UDP"]
+    tcpip = profile.parents.ids[0]
+    assert protocols[4:] == [
+        name
+        for p in tcpip.protocols
+        for name in (p.macro, *((f"{p.macro}_ALIAS",) if p.alias else ()))
+    ]
+    assert names["dicom/dicom.h"] == ["PROTO_DICOM", "PROTO_DICOM_ALIAS", "PROTO_DICOM_HDRLEN"]
+    assert names["business_app/mmt_business_app.h"] == ["PROTO_IPS_DATA", "PROTO_IPS_DATA_ALIAS"]
+    assert names["proto_meta.h"] == ["PROTO_UNKNOWN", "PROTO_META"]
+    expected = {
+        *(t.name for t in profile.types),
+        *(s.name for s in profile.structs),
+        *(c.typedef for c in profile.callbacks),
+        *(f.name for f in (*profile.registrations, *profile.helpers)),
+        *(c.name for c in profile.constants),
+        *(m.name for m in profile.macros),
+    }
+    assert expected <= flat
+
+
+def test_the_completeness_check_reads_every_proto_define(tmp_path: Path) -> None:
+    # Every PROTO_* definition counts, whatever its value or layout; the
+    # ones in comments do not (#50).
+    header = tmp_path / "plug.h"
+    header.write_text(
+        "#define PROTO_PLUG 901\n"
+        '#define PROTO_PLUG_ALIAS "plug" /* #define PROTO_IN_COMMENT 1 */\n'
+        "// #define PROTO_IN_LINE_COMMENT 2\n"
+        "/*\n#define PROTO_IN_BLOCK 3\n*/\n"
+        '#define PROTO_TEXT "/*" /* a string holds no comment */\n'
+        "#define PROTO_NEXT (PROTO_PLUG + 1)\n"
+        "  #  define PROTO_SPLIT \\\n    903\n"
+        "#define PROTO_CLASS_ANY 4\n"
+        "#define PROTO_PLUG_HDRLEN 6\n"
+        '#define PROTO_OTHER_ALIAS "other"\n'
+        "#define NOT_PROTO_X 5\n"
+    )
+    plug = SdkProtocol("PROTO_PLUG", 901, "plug.h", "plug")
+    group = ProtocolHeader("plug.h", "doc", (plug,), ("PROTO_PLUG_HDRLEN",))
+    text = headercheck._read_header(str(header))
+    assert unlisted_protocol_macros(text, group) == [
+        "PROTO_TEXT",
+        "PROTO_NEXT",
+        "PROTO_SPLIT",
+        "PROTO_OTHER_ALIAS",
+    ]
+    # An alias counts only for an id that has one.
+    no_alias = ProtocolHeader("plug.h", "doc", (SdkProtocol("PROTO_PLUG", 901, "plug.h", None),))
+    assert "PROTO_PLUG_ALIAS" in unlisted_protocol_macros(text, no_alias)
+
+
+def test_missing_headers_and_compiler(tmp_path: Path) -> None:
+    sdk = Sdk(str(tmp_path), SdkSource.CLI, "1.10.2")
+    results = check_profile(parse_profile(_stub_data()), sdk, str(tmp_path / "no-cc"))
+    failed = {r.name: r.detail for r in results if not r.ok}
+    assert "stub.h: exists" in failed
+    assert any("cannot run" in d for d in failed.values())
+
+
+def test_main_exit_codes(
+    tmp_path: Path,
+    make_prefix: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("MMT_BASE", str(tmp_path / "missing"))
+    assert headercheck.main([]) == 4
+    assert "FAIL: MMT_BASE" in capsys.readouterr().out
+    prefix = make_prefix(tmp_path / "p", version="9.9")
+    assert headercheck.main(["--sdk", str(prefix)]) == 4
+    assert "no profile is bundled for the SDK's version (9.9)" in capsys.readouterr().out
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"schema_version": 1}))
+    assert headercheck.main(["--sdk", str(prefix), "--profile", str(bad)]) == 1
+    assert "missing key" in capsys.readouterr().out
+
+
+@needs_cc
+def test_main_prints_one_line_per_check(
+    stub_sdk: Sdk, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    good = tmp_path / "stub.json"
+    good.write_text(json.dumps(_stub_data()))
+    args = ["--sdk", stub_sdk.prefix, "--profile", str(good), "--cc", CC or "cc"]
+    assert headercheck.main(args) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith(f"SDK {stub_sdk.prefix} (--sdk), version 1.10.2; profile 1.10.2")
+    assert all(line.startswith("PASS: ") for line in out[1:-1])
+    assert out[-1] == "9 passed, 0 failed"
+    data = _stub_data()
+    data["callbacks"][0]["returns"] = "long"
+    good.write_text(json.dumps(data))
+    assert headercheck.main(args) == 1
+    text = capsys.readouterr().out
+    assert "FAIL: stub.h: entries compile" in text and "callbacks.cb: cb_t is not long" in text

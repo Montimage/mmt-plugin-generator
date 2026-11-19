@@ -1,0 +1,38 @@
+# Corpus packet pdl_defines/kind-hex-define. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_defines/kind-hex-define"
+model: "pdl_defines"
+summary: "kind 2 matches the hex define T_KIND_B"
+constructs:
+  - "define.hex"
+  - "classifynext.case.define"
+  - "classifynext.nextencaps.define"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "02 02 aa bb"
+bytes_source: "model-declared: kind, hlen = 2, two payload bytes"
+expect:
+  protocol: "PDL_DEFINES"
+  proto_id: 960
+  next:
+    kind: "proto"
+    proto_id: 952
+    offset: 2
+    source: "model-declared: case T_KIND_B (define = 0x02) -> nextencaps T_NEXT_B (define = 0x3B8 = 952)"
+  attributes:
+    - name: "kind"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_defines_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_defines_hdr byte 1"

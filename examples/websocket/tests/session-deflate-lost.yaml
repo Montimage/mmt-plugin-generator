@@ -1,0 +1,268 @@
+# Session test of examples/websocket, written from RFC 6455 and RFC 7692
+# (permessage-deflate, #107): its packets run in order, one TCP connection.
+# Format and rules: tests/corpus/README.md, Session files
+schema: 1
+id: "websocket/session-deflate-lost"
+model: "websocket"
+summary: "The capture loses a whole compressed message: the window's history is gone, so section 7.2.3.2's second message is not inflated (2); a self-contained one is (1); then the capture loses bytes inside a compressed frame: that message is not inflated, and the window loses its history; then bytes inside a plain fragment: its continuation is of an unknown message (2, no message opcode)"
+source: "RFC 6455 section 4 (the opening handshake) and 5 (framing); RFC 7692 section 7 (permessage-deflate), section 7.2.3.2; a lost message's bytes may have changed the window; the WebSocket layer's session state, examples/README.md, WebSocket"
+session:
+  through: "tcp:dport=8080,sport=49182"
+  protocol: "WEBSOCKET_EXAMPLE"
+  proto_id: 992
+  attributes:
+    - name: "carried_len"
+      type: "MMT_U32_DATA"
+    - name: "fin"
+      type: "MMT_U8_DATA"
+    - name: "frame_count"
+      type: "MMT_U32_DATA"
+    - name: "handshake"
+      type: "MMT_U8_DATA"
+    - name: "message_opcode"
+      type: "MMT_U8_DATA"
+    - name: "opcode"
+      type: "MMT_U8_DATA"
+    - name: "payload"
+      type: "MMT_BINARY_VAR_DATA"
+    - name: "payload_inflated"
+      type: "MMT_U8_DATA"
+    - name: "payload_len"
+      type: "MMT_U64_DATA"
+    - name: "rsv1"
+      type: "MMT_U8_DATA"
+packets:
+  - open: true
+  - from: "client"
+    text: "GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    bytes:
+      - "47 45 54 20 2f 63 68 61 74 20 48 54 54 50 2f 31"
+      - "2e 31 0d 0a 48 6f 73 74 3a 20 73 65 72 76 65 72"
+      - "2e 65 78 61 6d 70 6c 65 2e 63 6f 6d 0d 0a 55 70"
+      - "67 72 61 64 65 3a 20 77 65 62 73 6f 63 6b 65 74"
+      - "0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e 3a 20 55 70"
+      - "67 72 61 64 65 0d 0a 53 65 63 2d 57 65 62 53 6f"
+      - "63 6b 65 74 2d 4b 65 79 3a 20 64 47 68 6c 49 48"
+      - "4e 68 62 58 42 73 5a 53 42 75 62 32 35 6a 5a 51"
+      - "3d 3d 0d 0a 53 65 63 2d 57 65 62 53 6f 63 6b 65"
+      - "74 2d 45 78 74 65 6e 73 69 6f 6e 73 3a 20 70 65"
+      - "72 6d 65 73 73 61 67 65 2d 64 65 66 6c 61 74 65"
+      - "3b 20 63 6c 69 65 6e 74 5f 6d 61 78 5f 77 69 6e"
+      - "64 6f 77 5f 62 69 74 73 0d 0a 53 65 63 2d 57 65"
+      - "62 53 6f 63 6b 65 74 2d 56 65 72 73 69 6f 6e 3a"
+      - "20 31 33 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 1
+  - from: "server"
+    text: "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"
+    bytes:
+      - "48 54 54 50 2f 31 2e 31 20 31 30 31 20 53 77 69"
+      - "74 63 68 69 6e 67 20 50 72 6f 74 6f 63 6f 6c 73"
+      - "0d 0a 55 70 67 72 61 64 65 3a 20 77 65 62 73 6f"
+      - "63 6b 65 74 0d 0a 43 6f 6e 6e 65 63 74 69 6f 6e"
+      - "3a 20 55 70 67 72 61 64 65 0d 0a 53 65 63 2d 57"
+      - "65 62 53 6f 63 6b 65 74 2d 41 63 63 65 70 74 3a"
+      - "20 73 33 70 50 4c 4d 42 69 54 78 61 51 39 6b 59"
+      - "47 7a 7a 68 5a 52 62 4b 2b 78 4f 6f 3d 0d 0a 53"
+      - "65 63 2d 57 65 62 53 6f 63 6b 65 74 2d 45 78 74"
+      - "65 6e 73 69 6f 6e 73 3a 20 70 65 72 6d 65 73 73"
+      - "61 67 65 2d 64 65 66 6c 61 74 65 0d 0a 0d 0a"
+    expect:
+      attributes:
+        - name: "handshake"
+          value: 2
+  - from: "server"
+    bytes:
+      - "c1 07 f2 48 cd c9 c9 07 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65 6c 6c 6f"
+          text: "Hello"
+        - name: "payload_inflated"
+          value: 1
+        - name: "payload_len"
+          value: 7
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    lost: 9
+    note: "the 9 bytes of another compressed Hello were lost before it"
+    bytes:
+      - "c1 05 f2 00 11 00 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "f2 00 11 00 00"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 5
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    bytes:
+      - "c1 07 f2 48 cd c9 c9 07 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65 6c 6c 6f"
+          text: "Hello"
+        - name: "payload_inflated"
+          value: 1
+        - name: "payload_len"
+          value: 7
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    bytes:
+      - "c1 15 00 05 00 fa ff 48 65 6c 6c 6f"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "00 05 00 fa ff 48 65 6c 6c 6f"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 21
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    lost: 10
+    note: "the frame's second stored block was lost: the message is not inflated"
+    bytes:
+      - "00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 1
+        - name: "handshake"
+          value: 0
+  - from: "server"
+    note: "the window lost its history with the frame's bytes"
+    bytes:
+      - "c1 05 f2 00 11 00 00"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "f2 00 11 00 00"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 5
+        - name: "rsv1"
+          value: 1
+  - from: "server"
+    bytes:
+      - "01 05 48 65"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 0
+        - name: "fin"
+          value: 0
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "message_opcode"
+          value: 1
+        - name: "opcode"
+          value: 1
+        - name: "payload"
+          value: "48 65"
+          text: "He"
+        - name: "payload_inflated"
+          value: 0
+        - name: "payload_len"
+          value: 5
+        - name: "rsv1"
+          value: 0
+  - from: "server"
+    lost: 2
+    note: "two bytes of the plain fragment were lost: its continuation is of an unknown message"
+    bytes:
+      - "6f 80 01 21"
+    expect:
+      attributes:
+        - name: "carried_len"
+          value: 1
+        - name: "fin"
+          value: 1
+        - name: "frame_count"
+          value: 1
+        - name: "handshake"
+          value: 0
+        - name: "opcode"
+          value: 0
+        - name: "payload"
+          value: "21"
+          text: "!"
+        - name: "payload_inflated"
+          value: 2
+        - name: "payload_len"
+          value: 1
+        - name: "rsv1"
+          value: 0

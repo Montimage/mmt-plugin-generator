@@ -1,0 +1,39 @@
+Protocol {
+	define T_KIND_A = 1
+	define T_KIND_B = 0x02
+	define T_KIND_BASE = 3
+	define T_KIND_C = T_KIND_BASE
+	define T_NEXT_A = 951
+	define T_NEXT_B = 0x3B8
+	define T_NEXT_C = T_NEXT_A
+	Properties {
+		label = "pdl_defines"
+		id = "960"
+		encapsulation = "true"
+		encoding = "network"
+	}
+	Attributes {
+		struct pdl_defines_hdr {
+			uint8_t kind;
+			uint8_t hlen;
+		}
+	}
+	classifynext {
+		switch(val(kind)) {
+			case T_KIND_A:
+				nextencaps = T_NEXT_A
+				nextoffset = 2
+				break
+			case T_KIND_B:
+				nextencaps = T_NEXT_B
+				nextoffset = 2
+				break
+			case T_KIND_C:
+				nextencaps = T_NEXT_C
+				nextoffset = 2
+				break
+			default:
+				break
+		}
+	}
+}

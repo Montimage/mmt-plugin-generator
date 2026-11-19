@@ -1,0 +1,40 @@
+# Corpus packet pdl_classifynext/offset-only. Format and rules: tests/corpus/README.md
+schema: 1
+id: "pdl_classifynext/offset-only"
+model: "pdl_classifynext"
+summary: "type 4: a case that sets no next protocol"
+constructs:
+  - "classifynext.case.decimal"
+parent:
+  kind: "none"
+  path: []
+  selector: "none: the model has no published parent; the harness hands the bytes to the plugin directly"
+  source: "corpus rule (README.md, Parent)"
+bytes:
+  - "04 02 00 08 a0 a1 a2 a3"
+bytes_source: "model-declared: struct pdl_cn_hdr then filler bytes"
+expect:
+  protocol: "PDL_CLASSIFYNEXT"
+  proto_id: 961
+  next:
+    kind: "none"
+    source: "model-declared: case 4 sets only nextoffset; with no nextencaps the next protocol is not classified"
+  attributes:
+    - name: "type"
+      type: "MMT_U8_DATA"
+      offset: 0
+      length: 1
+      value: 4
+      source: "model-declared: struct pdl_cn_hdr byte 0"
+    - name: "hlen"
+      type: "MMT_U8_DATA"
+      offset: 1
+      length: 1
+      value: 2
+      source: "model-declared: struct pdl_cn_hdr byte 1"
+    - name: "length"
+      type: "MMT_U16_DATA"
+      offset: 2
+      length: 2
+      value: 8
+      source: "model-declared: struct pdl_cn_hdr bytes 2-3"

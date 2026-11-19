@@ -128,13 +128,14 @@ describes how a release is published.
 [user guide](docs/user-guide.md#install-mmt-plugin) shows how to install
 a built wheel instead.
 
-Once a release is published, install it from PyPI, or from the wheel
-attached to its [GitHub release](docs/user-guide.md#from-a-release), or run
-its container image (mmt-plugin with gcc, clang and mmt-dpi):
+Once a release is published, install the wheel attached to its
+[GitHub release](docs/user-guide.md#from-a-release) (mmt-plugin is not on
+PyPI yet), or run its container image (mmt-plugin with gcc, clang and
+mmt-dpi):
 
 <!-- doc:skip needs a published release -->
 ```sh
-uv tool install mmt-plugin
+uv tool install https://github.com/Montimage/mmt-plugin-generator/releases/download/v0.1.0/mmt_plugin-0.1.0-py3-none-any.whl
 docker run --rm ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin --version
 ```
 

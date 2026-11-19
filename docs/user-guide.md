@@ -74,15 +74,17 @@ Once a release is published ([`docs/releasing.md`](releasing.md)), each
 GitHub release of this repository carries the wheel, the sdist, the JSON
 Schemas of the `--json` output and of `plugin.yaml`
 (`mmt-plugin-schemas-<version>.tar.gz`), a `SHA256SUMS` and a provenance
-attestation. Install the wheel straight from the release, or from PyPI
-when the release is also published there:
+attestation. Install the wheel straight from the release:
 
 <!-- doc:skip needs a published release -->
 ```sh
 uv tool install https://github.com/Montimage/mmt-plugin-generator/releases/download/v0.1.0/mmt_plugin-0.1.0-py3-none-any.whl
-uv tool install mmt-plugin
 mmt-plugin --version
 ```
+
+mmt-plugin is not on PyPI yet. Once a release is also published there
+([`docs/releasing.md`](releasing.md), "Setup before the first release"),
+`uv tool install mmt-plugin` installs it too.
 
 `0.1.0` stands for the release's version. To check a downloaded asset,
 `sha256sum -c SHA256SUMS`, then

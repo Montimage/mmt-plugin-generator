@@ -118,7 +118,14 @@ bytes behind the headers it names, through mmt-dpi's stack: a second
 classified) when the parent's classification does not match the packet and
 `<parent>` when the plugin starts at another protocol or offset. Fix
 `parents:` (or the hook), not the selector, unless the selector contradicts
-the spec. That run does not check `next`.
+the spec. That run does not check `next`. For a parent that is another
+plugin (its project under `plugins` in `plugin.yaml`), `through` is its
+label, e.g. `through: "parent"` or `through: "parent:test=parent/basic"`:
+the frame is that project's packet test with `through` (the first, or the
+one `test=` names), its bytes taken as the parent's header, then the
+test's bytes; the plugin must be found directly above the parent's
+protocol where that header ends (`<parent>`). Not above a parent under TCP
+or UDP: mmt-dpi 1.10.2 does not classify there.
 
 When a value depends on earlier packets of the connection (a handshake, a
 message over two segments, an answer linked to its request), write a

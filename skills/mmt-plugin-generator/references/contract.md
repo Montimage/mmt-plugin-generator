@@ -49,7 +49,12 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   in the project before this session (stop and report instead). A failing
   entry with `through` ran through the plugin's parent: `<protocol>` there
   (not classified) or `<parent>` is fixed in `parents:` (its `classify`) or
-  in `<label>_hook_register_parents`. An entry with `session` is a session
+  in `<label>_hook_register_parents`. When `through` is a plugin parent's
+  label (a project under `plugins`), the frame is that project's packet
+  test (the first with `through`, or `test=<id>`): its lower layers and
+  its bytes, the parent's header; a `<parent>` offset is fixed in the hook's
+  classifier, or with `test=` naming a parent test whose bytes are the
+  header, never in the parent's tests. An entry with `session` is a session
   test: each failure's `packet` is the index of its step in the file's
   `packets`; a value that depends on earlier packets is fixed in the
   session hooks of `src/<label>_impl.c`.

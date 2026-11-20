@@ -64,13 +64,14 @@ class PluginError(Exception):
 @dataclass(frozen=True)
 class NamedPlugin:
     """A plugin to load before the model's own: ``plugin``, the ``.so``
-    file (absolute), and for a project its directory, its model file and its
-    label (``None`` for a ``.so`` file named directly)."""
+    file (absolute), and for a project its directory, its model file, its
+    label and its protocol id (``None`` for a ``.so`` file named directly)."""
 
     plugin: Path
     project: Path | None = None
     model: Path | None = None
     label: str | None = None
+    proto_id: int | None = None
 
 
 def _error(ref: PluginRef, message: str, hint: str = HINT) -> PluginError:
@@ -179,7 +180,8 @@ class _Resolver:
         self.labels[label] = real
         self.walk(model.plugins, target, [*stack, real])
         plugin = target / BUILD_DIR / f"mmtp_{label}{SUFFIX}"
-        self.add(NamedPlugin(plugin, target, model_file, label), os.path.realpath(plugin))
+        named = NamedPlugin(plugin, target, model_file, label, model.properties.id.value)
+        self.add(named, os.path.realpath(plugin))
 
     def add(self, plugin: NamedPlugin, real: str) -> None:
         if real in self.files:

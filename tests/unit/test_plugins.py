@@ -44,6 +44,7 @@ def test_a_plugin_two_projects_need_loads_once_before_both(tmp_path: Path) -> No
         tmp_path / "base",
         tmp_path / "base" / "plugin.yaml",
         "base",
+        990,
     )
 
 

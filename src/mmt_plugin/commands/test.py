@@ -10,17 +10,17 @@ Stages, reported in ``result.stages`` (``ran``, ``up-to-date``, ``failed``,
 ``stale`` or ``skipped``), each stopping the run with its class's exit code:
 
 0. read the model, find the SDK, the compiler and the profile (as
-   ``build``), and read every packet test (a bad one is
-   ``model.bad-packet-test``, exit 3); no packet test at all is the warning
-   ``test.no-packets``;
+   ``build``), the other plugins plugin.yaml's ``plugins`` names
+   (``mmt_plugin.plugins``, a parent first; a bad entry is
+   ``model.bad-plugin``, exit 3, reported in the ``build`` stage), and read
+   every packet test (a bad one is ``model.bad-packet-test``, exit 3); no
+   packet test at all is the warning ``test.no-packets``;
 1. ``build``: ``mmt-plugin build`` (``mmt_plugin.commands.build``), a no-op
    when the plugin is up to date; with ``--no-deps``, a plugin that is not
-   up to date is ``state.stale`` (exit 7) and nothing is built. Then the
-   other plugins plugin.yaml's ``plugins`` names (``mmt_plugin.plugins``,
-   a parent first; a bad entry is ``model.bad-plugin``, exit 3): each
-   project's is built the same way, in its own directory (its own
-   ``sdk.profile``), and each one is loaded, in that order, before the
-   plugin in every harness run (``result.plugins``);
+   up to date is ``state.stale`` (exit 7) and nothing is built. Then each
+   named project's plugin is built the same way, in its own directory (its
+   own ``sdk.profile``), and each named plugin is loaded, in that order,
+   before the plugin in every harness run (``result.plugins``);
 2. ``harness``: the host harness (``mmt_plugin.testing.harness``) is
    generated into ``<build-dir>/test/harness.c`` and compiled against the
    SDK (``build.harness-failed``, exit 5);
@@ -32,7 +32,10 @@ Stages, reported in ``result.stages`` (``ran``, ``up-to-date``, ``failed``,
    (``mmt_plugin.testing.frames``), through mmt-dpi's stack, so the plugin's
    own parent classification must find it, directly above the selector's
    protocol and at the offset those layers end at (``<parent>``); its next
-   protocol is not checked there. A session test
+   protocol is not checked there. The selector may name a named project's
+   plugin (#147): the lower layers are then one of that project's packet
+   tests that runs through an mmt-dpi protocol, its bytes the parent's
+   header (``mmt_plugin.testing.frames``, ``PluginParent``). A session test
    (``mmt_plugin.testing.session``) runs its packets, one TCP connection,
    in order in a harness of its own, so the plugin keeps its session state
    from one packet to the next: one ``result.packets`` entry, with
@@ -70,7 +73,7 @@ import math
 import os
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -106,7 +109,7 @@ from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, Profile
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.testing import harness as harness_mod
-from mmt_plugin.testing.frames import build_frame
+from mmt_plugin.testing.frames import ParentFrame, PluginParent, build_frame
 from mmt_plugin.testing.fuzz import fuzz_packets, mutate_frames
 from mmt_plugin.testing.packets import (
     ExpectedParent,
@@ -333,10 +336,44 @@ def _expected_parent(profile: Profile, packet: _Packet) -> ExpectedParent | None
     through = packet.test.through
     if not (packet.through or packet.session is not None) or through is None:
         return None
+    if through.plugin is not None:
+        return ExpectedParent(through.proto, through.plugin.proto_id, through.offset)
     parents = profile.parents
     return ExpectedParent(
         through.proto, parents.id_of(parents.id_for(through.proto)), through.offset
     )
+
+
+def _plugin_parents(
+    named: Sequence[NamedPlugin], project: Path, data_types: Collection[str]
+) -> dict[str, PluginParent]:
+    """The plugin parents a ``through`` selector may name: each named
+    project, with its packet tests (``<project>/tests/*.yaml``, in file
+    order) that run through an mmt-dpi protocol. A test of that project that
+    cannot be read, a session test and one through another plugin are not
+    among them (the project's own ``test`` reports them)."""
+    out: dict[str, PluginParent] = {}
+    for entry in named:
+        if entry.project is None or entry.label is None or entry.proto_id is None:
+            continue
+        frames: list[ParentFrame] = []
+        for path in sorted((entry.project / TESTS_DIR).glob("*.yaml")):
+            if not path.is_file():
+                continue
+            try:
+                test = load_test(path, show_path(path, project), data_types)
+            except PacketTestError:
+                continue
+            if not isinstance(test, PacketTest) or test.through is None:
+                continue
+            header = test.data
+            if test.next.kind == "proto" and test.next.offset is not None:
+                header = test.data[: test.next.offset]
+            frames.append(ParentFrame(test.id, test.through, header, entry.proto_id))
+        out[entry.label] = PluginParent(
+            entry.label, entry.proto_id, show_path(entry.project, project), tuple(frames)
+        )
+    return out
 
 
 @dataclass
@@ -505,14 +542,20 @@ class TestCommand:
     # --- stage 0 ---
 
     def _load_tests(
-        self, args: argparse.Namespace, project: Path, profile: Profile, run: _Run
+        self,
+        args: argparse.Namespace,
+        project: Path,
+        profile: Profile,
+        run: _Run,
+        named: Sequence[NamedPlugin] = (),
     ) -> tuple[list[_Test], CliError | None]:
         types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
+        parents = _plugin_parents(named, project, types)
         tests: list[_Test] = []
         errors: list[Diagnostic] = []
         for path in packet_paths(args.packets, project):
             try:
-                tests.append(load_test(path, show_path(path, project), types))
+                tests.append(load_test(path, show_path(path, project), types, parents))
             except PacketTestError as exc:
                 errors.append(exc.diagnostic)
         seen: dict[str, str] = {}
@@ -799,7 +842,17 @@ class TestCommand:
                 context=context,
             )
 
-        tests, error = self._load_tests(args, project, choice.profile, run)
+        named: list[NamedPlugin] = []
+        if generation is not None:  # else build reports why the model does not generate
+            try:
+                named = self._named(args, model, project)
+            except PluginError as exc:
+                run.diagnostics.append(exc.diagnostic)
+                run.stages["build"] = "failed"
+                return outcome(
+                    CliError("model.bad-plugin", exc.diagnostic.message, exc.diagnostic.hint)
+                )
+        tests, error = self._load_tests(args, project, choice.profile, run, named)
         run.packets = _entries(tests)
         if error is not None:
             return outcome(error)
@@ -819,14 +872,6 @@ class TestCommand:
             if run.stages["build"] == "skipped":
                 run.stages["build"] = "stale" if error.code == "state.stale" else "failed"
             return outcome(error)
-        try:
-            named = self._named(args, model, project)
-        except PluginError as exc:
-            run.diagnostics.append(exc.diagnostic)
-            run.stages["build"] = "failed"
-            return outcome(
-                CliError("model.bad-plugin", exc.diagnostic.message, exc.diagnostic.hint)
-            )
         error = self._build_named(args, ctx, sdk, cc, named, project, run)
         if error is not None:
             run.stages["build"] = "stale" if error.code == "state.stale" else "failed"
@@ -908,6 +953,10 @@ class TestCommand:
         records = {n: run.packets[n].record(k) for k, n in enumerate(pending)}
         sessions = [p for p in run.packets if p.session is not None]
         aliases = {p.id: p.alias or p.macro for p in tools.profile.parents.protocols()}
+        for p in run.packets:
+            through = p.test.through
+            if through is not None and through.plugin is not None:
+                aliases[through.plugin.proto_id] = through.proto
         packets_file = tools.test_dir / "packets.bin"
         with ctx.progress("packets", total=len(run.packets)) as progress:
             done = 0

@@ -10,7 +10,13 @@ import pytest
 
 from mmt_plugin.pcap.layers import parent_of, slice_payloads
 from mmt_plugin.pcap.reader import Frame
-from mmt_plugin.testing.frames import Through, build_frame, parse_through
+from mmt_plugin.testing.frames import (
+    ParentFrame,
+    PluginParent,
+    Through,
+    build_frame,
+    parse_through,
+)
 
 PAYLOAD = bytes.fromhex("0300001611e00000000100c1020100c2020102c0010a")
 
@@ -123,3 +129,70 @@ def test_a_selector_keeps_its_text_and_numbers() -> None:
 def test_a_bad_selector_says_why(text: str, message: str) -> None:
     with pytest.raises(ValueError, match=message.replace("(", r"\(")):
         parse_through(text)
+
+
+# --- a plugin parent (#147) -----------------------------------------------------------
+
+#: A parent plugin above Ethernet (EtherType 0x88b6), whose header is 4 bytes;
+#: its second test also carries a payload after it.
+_ETHER = parse_through("ethernet:ethertype=0x88b6")
+_FIRST = ParentFrame("parentp/basic", _ETHER, bytes.fromhex("01020004"), 970)
+_SECOND = ParentFrame("parentp/udp", parse_through("udp:dport=9"), bytes.fromhex("0102"), 970)
+PARENTS = {"parentp": PluginParent("parentp", 970, "../parentp", (_FIRST, _SECOND))}
+
+
+def test_a_plugin_parent_runs_through_its_first_packet_test() -> None:
+    through = parse_through("parentp", PARENTS)
+    assert through == Through("parentp", "parentp", (), _FIRST)
+    assert through.offset == 18
+    frame = build_frame(through, PAYLOAD, 3)
+    assert frame == build_frame(_ETHER, bytes.fromhex("01020004") + PAYLOAD, 3)
+    assert frame[through.offset :] == PAYLOAD
+
+
+def test_test_picks_the_plugin_parents_packet_test() -> None:
+    through = parse_through("parentp:test=parentp/udp", PARENTS)
+    assert through.plugin == _SECOND
+    assert through.offset == 44
+    frame = build_frame(through, PAYLOAD, 5)
+    assert _sliced(frame, "udp:dport=9") == [bytes.fromhex("0102") + PAYLOAD]
+    assert frame[through.offset :] == PAYLOAD
+
+
+def test_an_mmt_dpi_protocol_is_never_a_plugin_parent() -> None:
+    plugins = {"udp": PluginParent("udp", 970, "../udp", (_FIRST,))}
+    assert parse_through("udp:dport=53", plugins) == parse_through("udp:dport=53")
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (
+            "other",
+            "the parent is one of ethernet, ip, ipv6, udp, tcp or a plugin of plugins:"
+            " (parentp), not other",
+        ),
+        ("parentp:dport=1", "a plugin parent has one key, test, not 'dport'"),
+        ("parentp:test=a,test=b", "test is given twice"),
+        (
+            "parentp:test=parentp/none",
+            "../parentp has no packet test 'parentp/none' that runs"
+            " through an mmt-dpi protocol (tests: parentp/basic, parentp/udp)",
+        ),
+        ("bare", "no packet test of ../bare runs through an mmt-dpi protocol"),
+    ],
+)
+def test_a_bad_plugin_parent_selector_says_why(text: str, message: str) -> None:
+    plugins = {**PARENTS, "bare": PluginParent("bare", 971, "../bare", ())}
+    if text == "other":
+        plugins = PARENTS
+    with pytest.raises(ValueError) as caught:
+        parse_through(text, plugins)
+    assert message in str(caught.value)
+
+
+def test_without_plugins_a_label_is_not_a_parent() -> None:
+    with pytest.raises(ValueError, match="the parent is one of ethernet, ip, ipv6, udp, tcp, not"):
+        parse_through("parentp")
+    with pytest.raises(ValueError, match="the parent is one of ethernet, ip, ipv6, udp, tcp, not"):
+        parse_through("parentp", {})

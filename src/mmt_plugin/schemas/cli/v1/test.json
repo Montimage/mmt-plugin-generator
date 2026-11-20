@@ -60,7 +60,7 @@
         "properties": {
           "id": {"type": "string", "description": "The packet test's id."},
           "file": {"type": "string", "minLength": 1},
-          "through": {"type": "string", "minLength": 1, "description": "The run through the plugin's real parent: the test's through selector. Absent on the run the harness attaches to Ethernet."},
+          "through": {"type": "string", "minLength": 1, "description": "The run through the plugin's real parent: the test's through selector, an mmt-dpi protocol's or a plugin parent's label (a project plugin.yaml's plugins names, behind one of its packet tests). Absent on the run the harness attaches to Ethernet."},
           "session": {"type": "integer", "minimum": 0, "description": "A session test (its packets run in order in one harness, over one TCP connection): the number of packets it ran (an open step is three, an idle step one per second). Absent on a packet test."},
           "status": {"enum": ["pass", "fail", "crash", "skipped"]},
           "attributes": {"type": "integer", "minimum": 0, "description": "The attributes checked (an undefined one is not); a session test's, over all its packets."},

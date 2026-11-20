@@ -16,6 +16,13 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   before the plugin in every harness run, so a plugin whose hook attaches it
   under another plugin can be tested; `result.plugins` lists them. A bad
   entry is the new code `model.bad-plugin` (exit 3).
+- A packet test's `through` can name a plugin parent, by the label of a
+  project `plugins` names (#147): `through: "parent"`, or
+  `"parent:test=<id>"`. The frame is one of that project's packet tests
+  that runs through an mmt-dpi protocol (the first, or the one `test=`
+  names), its bytes the parent's header, then the test's bytes; the plugin
+  must be classified directly above the parent's protocol where that header
+  ends (`<parent>`).
 
 ### Changed
 

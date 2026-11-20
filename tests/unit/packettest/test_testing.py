@@ -18,6 +18,7 @@ from mmt_plugin.commands.generate import make_generation
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP
 from mmt_plugin.sdk.resolve import resolve_profile
 from mmt_plugin.testing import harness
+from mmt_plugin.testing.frames import ParentFrame, PluginParent, build_frame, parse_through
 from mmt_plugin.testing.fuzz import fuzz_packets
 from mmt_plugin.testing.packets import (
     NEXT,
@@ -32,7 +33,10 @@ from mmt_plugin.testing.packets import (
     check,
     harness_lengths,
     load,
+    load_doc,
+    read_doc,
 )
+from mmt_plugin.testing.session import load_test
 from mmt_plugin.testing.yamlsubset import LoadError, loads
 
 CORPUS = Path(__file__).resolve().parents[2] / "corpus"
@@ -245,6 +249,43 @@ def test_a_bad_through_is_a_bad_packet_test(tmp_path: Path, through: str, messag
     assert d.location is not None and d.location.file == "tests/t.yaml"
 
 
+#: A plugin parent (#147): parentp, above Ethernet, with a 4-byte header.
+PARENTP = PluginParent(
+    "parentp",
+    970,
+    "../parentp",
+    (ParentFrame("parentp/basic", parse_through("ethernet:ethertype=0x88b6"), b"\1\2\0\4", 970),),
+)
+
+
+def test_through_names_a_plugin_parent_the_model_names(tmp_path: Path) -> None:
+    path = tmp_path / "t.yaml"
+    path.write_text(PACKET.replace("bytes:", 'through: "parentp"\nbytes:'))
+    doc = read_doc(path, "tests/t.yaml")
+    test = load_doc(doc, "tests/t.yaml", TYPES, {"parentp": PARENTP})
+    assert test.through is not None and test.through.plugin == PARENTP.tests[0]
+    assert (test.through.proto, test.through.offset) == ("parentp", 18)
+    assert build_frame(test.through, test.data)[18:] == test.data
+    assert load_test(path, "tests/t.yaml", TYPES, {"parentp": PARENTP}) == test
+    # Without the plugin parents (a model that names no plugins), it is not one.
+    with pytest.raises(PacketTestError) as exc:
+        load_doc(doc, "tests/t.yaml", TYPES)
+    assert "the parent is one of ethernet, ip, ipv6, udp, tcp, not parentp" in (
+        exc.value.diagnostic.message
+    )
+
+
+def test_a_session_test_never_runs_through_a_plugin_parent(tmp_path: Path) -> None:
+    path = tmp_path / "s.yaml"
+    path.write_text(
+        'schema: 1\nid: "t/s"\nsession:\n  through: "parentp"\n  protocol: "T"\n'
+        "  proto_id: 990\npackets:\n  - open: true\n"
+    )
+    with pytest.raises(PacketTestError) as exc:
+        load_test(path, "tests/s.yaml", TYPES, {"parentp": PARENTP})
+    assert "session.through: 'parentp': the parent is one of" in exc.value.diagnostic.message
+
+
 UDP = ExpectedParent("udp", 376, 42)
 
 
@@ -267,6 +308,15 @@ def test_the_run_through_the_parent_checks_where_the_plugin_is(tmp_path: Path) -
     ]
     assert check(test, _through(below=7), (990, "T"), UDP)[0] == [
         Failure(PARENT, "udp at offset 42", "7 at offset 42")
+    ]
+    # A plugin parent: its label shows its id.
+    plugin = ExpectedParent("parentp", 970, 18)
+    assert check(test, _through(at=18, below=970), (990, "T"), plugin, {970: "parentp"}) == (
+        [],
+        3,
+    )
+    assert check(test, _through(at=14, below=99), (990, "T"), plugin, names)[0] == [
+        Failure(PARENT, "parentp at offset 18", "99 at offset 14")
     ]
     # A profile without the parent's id checks the offset only.
     assert check(test, _through(below=7), (990, "T"), ExpectedParent("udp", None, 42))[0] == []

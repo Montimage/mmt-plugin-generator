@@ -157,6 +157,7 @@ class _Builder:
             attributes = pdl.Attributes(self.elements(attributes_node), self.span(attributes_node))
         classify = root.get("classify_next")
         parents = root.get("parents")
+        plugins = root.get("plugins")
         return pdl.Model(
             defines=defines,
             properties=properties,
@@ -165,6 +166,7 @@ class _Builder:
             span=self.span(root),
             offsets=offsets,
             parents=() if parents is None else self.parents(parents),
+            plugins=() if plugins is None else self.plugins(plugins),
         )
 
     def defines(self, node: Node | None) -> tuple[pdl.Define, ...]:
@@ -214,6 +216,15 @@ class _Builder:
                     span=self.span(item),
                 )
             )
+        return tuple(out)
+
+    def plugins(self, node: Node) -> tuple[pdl.PluginRef, ...]:
+        assert isinstance(node, Sequence)
+        out = []
+        for item in node.items:
+            s = self.scalar(item)
+            assert isinstance(s.value, str)
+            out.append(pdl.PluginRef(s.value, self.span(s)))
         return tuple(out)
 
     def parent_classify(self, node: Node) -> pdl.ParentClassify:

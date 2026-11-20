@@ -5,10 +5,11 @@ layouts, folds expressions or checks names (T1.3 does). Every node is a frozen
 dataclass with the ``Span`` of the text it was parsed from.
 
 ``plugin.yaml`` (``mmt_plugin.pluginyaml``, #24) is read into the same model,
-its spans pointing into the YAML. It says three things PDL v1 has no syntax
+its spans pointing into the YAML. It says four things PDL v1 has no syntax
 for: absolute offsets (``Model.offsets``), a struct's offset
-(``Struct.offset``) and the parent protocols (``Model.parents``). Their
-defaults are PDL v1's meaning, which the parser never changes.
+(``Struct.offset``), the parent protocols (``Model.parents``) and the other
+plugins to load with this one (``Model.plugins``). Their defaults are PDL
+v1's meaning, which the parser never changes.
 
 The grammar that fixes each construct's meaning is the Java tool's,
 ``legacy/pdl_grammar/PluginGrammar.g`` at commit 4076899 (the last before the
@@ -60,6 +61,7 @@ __all__ = [
     "Parent",
     "ParentClassify",
     "ParentMatch",
+    "PluginRef",
     "Properties",
     "Scope",
     "ScopeValue",
@@ -603,6 +605,16 @@ class Parent:
     span: Span
 
 
+@dataclass(frozen=True)
+class PluginRef:
+    """Another plugin to load with this one (plugin.yaml's ``plugins``): a
+    path, as written, relative to the model file's directory, to a project
+    directory or a ``.so`` file (``mmt_plugin.plugins`` resolves it)."""
+
+    path: str
+    span: Span
+
+
 # --- The whole file ----------------------------------------------------------
 
 
@@ -610,8 +622,9 @@ class Parent:
 class Model:
     """A PDL v1 file: ``Protocol { define* Properties Attributes classifynext? }``.
 
-    The layout of G:33. ``offsets`` and ``parents`` are plugin.yaml's (see
-    the module docstring); a PDL v1 file has the defaults.
+    The layout of G:33. ``offsets``, ``parents`` and ``plugins`` are
+    plugin.yaml's (see the module docstring); a PDL v1 file has the
+    defaults.
     """
 
     defines: tuple[Define, ...]
@@ -621,3 +634,4 @@ class Model:
     span: Span
     offsets: Offsets = Offsets.RUNNING
     parents: tuple[Parent, ...] = ()
+    plugins: tuple[PluginRef, ...] = ()

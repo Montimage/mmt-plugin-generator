@@ -554,6 +554,46 @@ def test_a_harness_run_sees_only_its_own_plugin_directory(tmp_path: Path) -> Non
     assert run.returncode == 0
 
 
+def test_a_harness_run_loads_the_other_plugins_first_in_their_order(tmp_path: Path) -> None:
+    # The plugin's own name (mmtp_achild.so) sorts before its parents': the
+    # links' names give the load order, plugin.yaml's plugins: order.
+    program = tmp_path / "env"
+    program.write_text('#!/bin/sh\nls "$MMT_DPI_PLUGINS_DIR"\n')
+    program.chmod(0o755)
+    plugins = tmp_path / "sdk-plugins"
+    plugins.mkdir()
+    (plugins / harness.TCPIP).write_text("")
+    files = {}
+    for name in ("mmtp_achild.so", "mmtp_zgrand.so", "mmtp_parent.so"):
+        files[name] = tmp_path / name
+        files[name].write_text(name)
+    extra = [files["mmtp_zgrand.so"], files["mmtp_parent.so"]]
+    run = harness.run(
+        program,
+        [],
+        files["mmtp_achild.so"],
+        plugins,
+        timeout=10,
+        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+        extra=extra,
+    )
+    assert run.lines == [
+        harness.TCPIP,
+        "p1-mmtp_zgrand.so",
+        "p2-mmtp_parent.so",
+        "p3-mmtp_achild.so",
+    ]
+    assert sorted(run.lines) == run.lines  # mmt-dpi's alphasort, in the C locale
+
+
+def test_plugin_links_number_the_plugins_with_one_width() -> None:
+    plugins = [Path(f"/x/mmtp_{n}.so") for n in range(10, 0, -1)]
+    names = [name for name, _ in harness.plugin_links(plugins)]
+    assert names[0] == "p01-mmtp_10.so" and names[-1] == "p10-mmtp_1.so"
+    assert sorted(names) == names and names[0] > harness.TCPIP
+    assert harness.plugin_links([Path("/x/mmtp_a.so")]) == [("mmtp_a.so", Path("/x/mmtp_a.so"))]
+
+
 def test_a_run_that_does_not_print_its_end_line_crashed() -> None:
     assert harness.crash_reason(harness.HarnessRun(0, ["packet 0", "end 1"]), 1) is None
     assert harness.crash_reason(harness.HarnessRun(0, ["packet 0"]), 1) == (

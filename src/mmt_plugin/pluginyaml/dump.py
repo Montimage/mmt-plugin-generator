@@ -132,6 +132,8 @@ class _Writer:
             doc["defines"] = {d.name.text: _number_or_name(d.value) for d in m.defines}
         if m.parents:
             doc["parents"] = [self.parent(p) for p in m.parents]
+        if m.plugins:
+            doc["plugins"] = [p.path for p in m.plugins]
         doc["attributes"] = self.elements(m.attributes.elements)
         if m.classify_next is not None:
             doc["classify_next"] = self.classify_next(m.classify_next.switch)

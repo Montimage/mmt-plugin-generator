@@ -12,7 +12,12 @@ from the profile (the classification names of the scaffold's example,
 temporary directory, a plugin directory holds the SDK's ``libmmt_tcpip.so``
 and the plugin, and ``MMT_DPI_PLUGINS_DIR`` names it (never the host's
 plugin directory); the current directory is an empty one, since mmt-dpi
-also loads ``./plugins``. The harness runs in its own process group, killed
+also loads ``./plugins``. Other plugins (``extra``, the ones plugin.yaml's
+``plugins`` names, parents first) load before the plugin: mmt-dpi loads the
+``*.so`` of the directory in file name order (``alphasort``, in the C
+locale the harness runs in), so each is linked as ``p<n>-<its name>``,
+numbered in load order, and the plugin last; without them, the plugin keeps
+its own name. The harness runs in its own process group, killed
 on a timeout or any exception (SIGINT included). With the sanitizers,
 ``ASAN_OPTIONS`` and ``UBSAN_OPTIONS`` make the first error end the run with
 ``SANITIZER_EXIT``; leak detection is off (mmt-dpi keeps its tables until
@@ -66,6 +71,7 @@ __all__ = [
     "harness_source",
     "parse_check",
     "parse_sample",
+    "plugin_links",
     "run",
     "write_packets",
 ]
@@ -238,6 +244,18 @@ def _kill(proc: subprocess.Popen[str]) -> None:
         proc.wait()
 
 
+def plugin_links(plugins: Sequence[Path]) -> list[tuple[str, Path]]:
+    """The file names the plugin directory gives ``plugins``, with each
+    target, so that mmt-dpi loads them in this order, after
+    ``libmmt_tcpip.so``: ``p<n>-<name>`` (``n`` zero-padded to one width,
+    so the names sort in this order in the C locale), or, for one plugin,
+    its own name."""
+    if len(plugins) == 1:
+        return [(plugins[0].name, plugins[0])]
+    width = len(str(len(plugins)))
+    return [(f"p{n:0{width}d}-{p.name}", p) for n, p in enumerate(plugins, 1)]
+
+
 def run(
     harness: Path,
     args: Sequence[str],
@@ -248,16 +266,18 @@ def run(
     on_line: Callable[[str], None] | None = None,
     log: Callable[[str], None] | None = None,
     env: Mapping[str, str] | None = None,
+    extra: Sequence[Path] = (),
 ) -> HarnessRun:
     """Run ``harness args`` with the plugin directory ``{libmmt_tcpip.so,
-    plugin}`` (``sdk_plugins`` is the SDK's plugin directory); ``on_line``
-    sees each stdout line as it arrives."""
+    *extra, plugin}``, loaded in that order (``sdk_plugins`` is the SDK's
+    plugin directory); ``on_line`` sees each stdout line as it arrives."""
     with tempfile.TemporaryDirectory(prefix="mmt-plugin-test-") as tmp:
         root = Path(tmp)
         plugins = root / "plugins"
         plugins.mkdir()
         (plugins / TCPIP).symlink_to(os.path.realpath(sdk_plugins / TCPIP))
-        (plugins / plugin.name).symlink_to(os.path.realpath(plugin))
+        for name, target in plugin_links([*extra, plugin]):
+            (plugins / name).symlink_to(os.path.realpath(target))
         cwd = root / "run"
         cwd.mkdir()
         # The dynamic loader searches LD_LIBRARY_PATH before the harness's

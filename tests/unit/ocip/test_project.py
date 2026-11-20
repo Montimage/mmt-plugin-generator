@@ -8,13 +8,17 @@ instead: its ``plugin.yaml`` validates with the profile it pins,
 ``generate --check`` finds the committed ``generated/`` and ``plugin.lock``
 up to date (a generator change or a version bump makes it stale, as it
 makes every example stale), and its packet and session tests load and are
-what ``ocip-plugin/inputs/make_tests.py`` writes. ``test_sdk.py`` builds it
+what ``ocip-plugin/inputs/make_tests.py`` writes; the sha256 that
+``inputs/SOURCES.md`` and ``manifest.json`` record are the files' (#155).
+``test_sdk.py`` builds it
 and runs them against a real SDK.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -92,6 +96,32 @@ def test_the_tests_load_and_name_a_source() -> None:
         else:
             for attr in doc["expect"]["attributes"]:
                 assert str(attr.get("source", "")).strip(), (path, attr["name"])
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_the_recorded_hashes_are_the_files_on_disk() -> None:
+    # inputs/SOURCES.md and manifest.json record the sha256 of the work
+    # folder's files (#155): each must be the file's, except the build
+    # output, which is not committed (project/build/ is ignored).
+    rows = re.findall(
+        r"^\| `([^`]+)` \|.*\| `([0-9a-f]{64})` \|$",
+        (WORK / "inputs" / "SOURCES.md").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert rows, "no hash in inputs/SOURCES.md"
+    for name, digest in rows:
+        assert _sha256(WORK / "inputs" / name) == digest, f"inputs/SOURCES.md: {name}"
+    manifest = json.loads((WORK / "manifest.json").read_text(encoding="utf-8"))
+    checked = 0
+    for name, digest in manifest["files"].items():
+        if name.startswith("project/build/"):
+            continue
+        assert _sha256(WORK / name) == digest, f"manifest.json: {name}"
+        checked += 1
+    assert checked >= len(rows) + 1, manifest["files"]
 
 
 def test_the_tests_are_what_make_tests_writes(tmp_path: Path) -> None:

@@ -117,8 +117,8 @@ def test_the_recorded_hashes_are_the_files_on_disk() -> None:
     files: dict[str, str] = json.loads((WORK / "manifest.json").read_text(encoding="utf-8"))[
         "files"
     ]
-    # Every input SOURCES.md lists, SOURCES.md itself, the capture, the model,
-    # the hooks and the plugin built from them.
+    # Every input SOURCES.md lists, SOURCES.md itself, make_tests.py, the
+    # capture, the model, the hooks and the plugin built from them.
     assert set(files) == {f"inputs/{name}" for name, _ in rows} | {
         "inputs/SOURCES.md",
         "inputs/make_tests.py",
@@ -132,6 +132,9 @@ def test_the_recorded_hashes_are_the_files_on_disk() -> None:
     for name, digest in files.items():
         if not name.startswith("project/build/"):
             assert _sha256(WORK / name) == digest, f"manifest.json: {name}"
+    # The plugin the manifest records is the one the capture evaluation ran.
+    report = json.loads((WORK / "eval" / "report.json").read_text(encoding="utf-8"))
+    assert files["project/build/mmtp_ocip.so"] == report["plugin"]["sha256"]
 
 
 def test_the_tests_are_what_make_tests_writes(tmp_path: Path) -> None:

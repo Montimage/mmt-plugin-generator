@@ -15,3 +15,8 @@ packets, `dtd` on 8, as before. `pcap_eval.py` re-run with this `.so` (tshark 4.
 the `mmt-plugin-generator-toolchain:local` container with tshark and libpcap-dev added): PASS, 23/23, recall 1.0, no
 drift; `eval/` is that run: only the `.so`'s sha256 and the packet pointers in `frames.jsonl` and `plugin.json`
 changed.
+
+After the second review: comments only in `src/ocip_impl.c` (the limit worded more exactly, and a segment whose
+capture ends inside the bytes already seen reports nothing unless the search over the last bytes finds a keyword; no
+session test can build such a cut frame). `build --rebuild` gives the same `.so` bytes (`1f9aceb0...`), so the
+evaluation and `manifest.json`'s `.so` hash still hold.

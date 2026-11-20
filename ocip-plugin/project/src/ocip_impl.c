@@ -90,10 +90,12 @@
  * view: the tail, the hole, `dtd`, `session_id` and `command_type` keep
  * following the bytes the probe took first. What stays unhandled: a
  * filler of several segments, or a filler followed in order by more bytes
- * before the real ones arrive (only the last scanned segment's start is
- * kept, so the real bytes then end before it), a segment that starts
- * inside the last bytes, and, after a filler, a keyword that needs bytes
- * of the real segment and of the segments after it.
+ * before the real ones arrive (only the last scanned segment's start and
+ * the 17 bytes before it are kept, and those then hold the filler), a
+ * segment that starts inside the last bytes, and, after a filler, a
+ * keyword that needs bytes of the real segment and of the segments after
+ * it. A segment whose capture ends inside the bytes already seen reports
+ * nothing unless that search finds a keyword (`has_dtd` 1, `is_request`).
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
  * bytes are scanned alone, from an empty state, and `is_request` is absent.

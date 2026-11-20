@@ -40,7 +40,7 @@ a late byte whose keyword ends in bytes after the hole that arrive later; and fi
 `TYPE` sent over a filler after `...<!DOC`, the whole `TYPE ...` over it and past it, a whole `<!DOCTYPE` over a
 16-byte filler, a control: a benign retransmission and a segment that repeats an XXE and adds new bytes, both
 `has_dtd` 0, and a miss pinned as a limit: the rest of the message in order after the filler, before `TYPE`).
-`--sanitize`: 38297 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
+`--sanitize`: 39305 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
 carried tail both fail (`runs/run-1/notes.md`).
 
 ## Capture and evaluation
@@ -76,12 +76,13 @@ sees no DOCTYPE and the plugin does.
   that arrive later (`session-reordered-short-after-edge` pins the miss), or bytes of another late segment
   (`session-reordered-two-late-halves`). The old payload-scan rule 232 misses these too.
 - Overlapping segments, an in-order filler (#140): a filler the server drops (a bad checksum) but the probe keeps can
-  arrive in order, before the real bytes at the same sequence number. A segment that starts at or before a
-  direction's last scanned bytes and has bytes from their start on is also searched for `has_dtd` (that search
-  changes no state; the segment's new bytes, if any, are scanned as before) after the 17 bytes before those bytes (the server's stream), unless the last segment reported `has_dtd`:
-  a segment that repeats an attack segment and adds new bytes reports it no more than before (a retransmitted attack
-  segment still reports it again), and a plain retransmission of a benign segment reports 0. `dtd`, `session_id`
-  and `command_type` keep following the bytes the probe took first. Still missed: a filler of several segments,
-  or a filler followed in order by more bytes before the real ones arrive (only the last scanned segment's start is
-  kept; `session-inorder-filler-then-rest` pins the miss), a segment that starts inside the last bytes, and, after a
-  filler, a keyword that needs bytes of the real segment and of the segments after it.
+  arrive in order, before the real bytes at the same sequence number. A segment that starts at or before a direction's
+  last scanned bytes and has bytes from their start on is also searched for `has_dtd` after the 17 bytes before those
+  bytes (the server's stream), unless the last segment reported `has_dtd`. That search changes no state; the segment's
+  new bytes, if any, are scanned as before. So a segment that repeats an attack segment and adds new bytes reports it
+  no more than before (a retransmitted attack segment still reports it again), and a plain retransmission of a benign
+  segment reports 0. `dtd`, `session_id` and `command_type` keep following the bytes the probe took first. Still
+  missed: a filler of several segments, or a filler followed in order by more bytes before the real ones arrive (only
+  the last scanned segment's start and the 17 bytes before it are kept, and those then hold the filler;
+  `session-inorder-filler-then-rest` pins the miss), a segment that starts inside the last bytes, and, after a filler,
+  a keyword that needs bytes of the real segment and of the segments after it.

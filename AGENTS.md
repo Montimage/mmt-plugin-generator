@@ -71,7 +71,9 @@ protocol model. A Python rewrite is planned in
   tests are written by `ocip-plugin/inputs/make_tests.py` (stdlib only)
   from the wire format, never by hand. Tests in `tests/unit/ocip/`:
   `test_project.py` (`validate --no-sdk`, `generate --check`, the tests
-  load and are what `make_tests.py` writes) and `test_sdk.py` (`validate`,
+  load and are what `make_tests.py` writes, and the sha256 that
+  `inputs/SOURCES.md` and `manifest.json` record are the files', the
+  `.so` the one `eval/` evaluated, #155) and `test_sdk.py` (`validate`,
   `build` and `test --sanitize` on a copy; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example.

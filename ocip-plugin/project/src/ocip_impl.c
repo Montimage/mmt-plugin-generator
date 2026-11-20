@@ -20,8 +20,9 @@
  *
  * What a segment reports (nothing for a pure ACK; a segment with no new
  * bytes, a retransmission or an earlier segment arriving late, reports only
- * `has_dtd`, from a search of that segment alone and across the edges of
- * the hole it fills, below, and `is_request`):
+ * `has_dtd`, from a search of that segment alone, across the edges of the
+ * hole it fills and over the direction's last bytes, both below, and
+ * `is_request`):
  *
  * - `has_dtd`, always: 1 when a "<!DOCTYPE" ends in the segment's new bytes,
  *   in ASCII (letters in any case), UTF-16LE or UTF-16BE, found by a plain
@@ -71,10 +72,30 @@
  * edges as they stand when it arrives, so a keyword is found only when
  * its bytes are in that late segment and in the edges already recorded:
  * it is missed when it needs bytes after the hole that arrive later, or
- * bytes of another late segment; and an in-order filler that the server
- * drops, followed by the real bytes at the same sequence number, puts the
- * scan out of step with the server's stream (the real segment is a
- * retransmission, searched alone).
+ * bytes of another late segment.
+ *
+ * Overlapping segments, an in-order filler (#140): a filler the server
+ * drops (a bad checksum) but the probe keeps can arrive in order, before
+ * the real bytes at the same sequence number, so the probe's stream and
+ * the server's differ. Each direction records where its last scanned
+ * bytes start and the 17 bytes before them. A segment sent over them (one
+ * that starts at or before their start and has bytes from there on: a
+ * retransmission, or the real bytes after a filler, with or without new
+ * bytes past it) is also searched, with no state change, as those 17
+ * bytes followed by its bytes from that start on, the server's stream; a
+ * keyword that ends there is `has_dtd` 1. That search is skipped when the
+ * last segment reported `has_dtd`, so a segment that repeats an attack
+ * segment and adds new bytes reports it no more than before; a plain
+ * retransmission of a benign segment reports 0. Only `has_dtd` gets this
+ * view: the tail, the hole, `dtd`, `session_id` and `command_type` keep
+ * following the bytes the probe took first. What stays unhandled: a
+ * filler of several segments, or a filler followed in order by more bytes
+ * before the real ones arrive (only the last scanned segment's start and
+ * the 17 bytes before it are kept, and those then hold the filler), a
+ * segment that starts inside the last bytes, and, after a filler, a
+ * keyword that needs bytes of the real segment and of the segments after
+ * it. A segment whose capture ends inside the bytes already seen reports
+ * nothing unless that search finds a keyword (`has_dtd` 1, `is_request`).
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
  * bytes are scanned alone, from an empty state, and `is_request` is absent.
@@ -172,11 +193,20 @@ struct ox_hole {
     uint8_t after_done; /* a segment cut short by the capture: after[] stops there */
 };
 
-/* One direction of a session. */
+/*
+ * One direction of a session. The last segment whose new bytes were
+ * scanned (last_known): where those bytes start, last_start, the tail as it
+ * was before them, prev_tail, and whether the segment reported has_dtd,
+ * last_dtd. A segment sent over them is searched after prev_tail too, the
+ * stream as the server reads it when those bytes were a filler it dropped.
+ */
 struct ox_direction {
     uint8_t seq_known;
     uint32_t next_seq;
     uint8_t tail[OX_TAIL], tail_len;
+    uint8_t last_known, last_dtd;
+    uint32_t last_start;
+    uint8_t prev_tail[OX_TAIL], prev_tail_len;
     struct ox_hole hole;
     struct ox_parse parse;
 };
@@ -727,6 +757,28 @@ static void ox_hole_after(struct ox_hole *h, const uint8_t *p, unsigned n, bool 
     h->after_done = cut;
 }
 
+/* --- a segment sent over the last in-order bytes: an in-order filler --- */
+
+/*
+ * A segment that starts at or before the direction's last scanned bytes
+ * and has bytes from their start on (a retransmission of them, or the real
+ * bytes after a filler the server dropped): the keyword that ends in its
+ * bytes from last_start on, after prev_tail, the server's stream when the
+ * last bytes were a filler (the server keeps the bytes it took before
+ * last_start). Not searched when the last segment reported has_dtd, so a
+ * segment that repeats it reports it no more than before (#140); no state
+ * changes.
+ */
+static bool ox_over_doctype(const struct ox_direction *d, const struct ox_segment *seg)
+{
+    uint32_t k = d->last_start - seg->seq; /* the segment's bytes before last_start, modulo 2^32 */
+
+    if (!d->last_known || d->last_dtd || (int32_t)k < 0 || k >= seg->n) {
+        return false; /* it starts inside the last bytes, or ends before them */
+    }
+    return ox_has_doctype(d->prev_tail, d->prev_tail_len, seg->p + k, seg->n - k);
+}
+
 /* --- the segment --- */
 
 /* The TCP payload of the packet, TCP at tcp_index; 0 when there is none to read. */
@@ -780,6 +832,7 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
     struct ox_view *view = &s->view;
     struct ox_direction *d;
     unsigned pos = 0;
+    bool over = false;
     int32_t diff;
 
     if (s->stamped && s->packet_id == ipacket->packet_id) {
@@ -798,17 +851,22 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
         diff = (int32_t)(seg.seq - d->next_seq);
         if (diff < 0) {
             uint32_t old = (uint32_t)0 - (uint32_t)diff;
+            /* Bytes already seen: they may be the real ones and the bytes
+               taken before them an in-order filler the server dropped. */
+            over = ox_over_doctype(d, &seg);
             if (old >= seg.total) {
-                /* No new bytes: a retransmission, or an earlier segment
-                   that arrives late (reordered). Search it for a DOCTYPE
-                   alone and, in the hole, across the hole's edges,
-                   without the tail, the tokenizer or any state change,
-                   so a reordered attack is not missed (a retransmitted
-                   attack segment reports it again). */
+                /* No new bytes: a retransmission, an earlier segment that
+                   arrives late (reordered), or the real bytes after a
+                   filler. Search it for a DOCTYPE alone, in the hole
+                   across the hole's edges, and over the last bytes after
+                   the tail before them, without the tail, the tokenizer
+                   or any state change, so a reordered attack is not
+                   missed (a retransmitted attack segment reports it
+                   again). */
                 view->scanned = 1;
                 view->dir_known = 1;
                 view->is_request = seg.dport == OX_PORT;
-                view->has_dtd = ox_has_doctype(NULL, 0, seg.p, seg.n) || ox_late_doctype(&d->hole, &seg);
+                view->has_dtd = ox_has_doctype(NULL, 0, seg.p, seg.n) || ox_late_doctype(&d->hole, &seg) || over;
                 return;
             }
             pos = old; /* the new bytes after an overlap */
@@ -827,12 +885,28 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
     d->seq_known = 1;
     d->next_seq = seg.seq + seg.total;
     if (pos >= seg.n) {
+        d->last_known = 0; /* the last bytes are not in the capture */
+        if (over) {
+            /* The capture ends in the overlap: only what it holds. */
+            view->scanned = 1;
+            view->dir_known = 1;
+            view->is_request = seg.dport == OX_PORT;
+            view->has_dtd = 1;
+        }
         return;
     }
     view->dir_known = 1;
     view->is_request = seg.dport == OX_PORT;
     ox_hole_after(&d->hole, seg.p + pos, seg.n - pos, seg.n < seg.total);
+    d->last_known = 1;
+    d->last_start = seg.seq + pos;
+    d->prev_tail_len = d->tail_len;
+    memcpy(d->prev_tail, d->tail, d->tail_len);
     ox_scan(d, seg.p + pos, seg.n - pos, view);
+    if (over) {
+        view->has_dtd = 1; /* the overlap after the tail before the last bytes */
+    }
+    d->last_dtd = view->has_dtd;
 }
 
 /* --- the classification --- */

@@ -26,15 +26,21 @@ Cisco BroadWorks OCI-P over TCP 2208, for mmt-security rule 232 (CVE-2026-20320 
 | 8 | green, `test --sanitize` | — (#137's final source: comments only; the `.so` evaluated below; also green with clang) |
 | 9 | green, `test --sanitize` | review of #137: a `<!DOCTYPE` split between two late segments is missed; pinned by `session-reordered-two-late-halves` and documented below (comments only in the source, the same `.so`) |
 | 10 | green, `test --sanitize` | review of #137: a late segment is searched once, with the hole's edges as they stand then, so a `<!DOCTYPE` that needs bytes after the hole that arrive later is missed; pinned by `session-reordered-short-after-edge` and documented below (comments only in the source) |
+| 11 | exit 6, 35/38 | #140: three session tests of an in-order filler (one the server drops, the probe keeps) followed by the real bytes at its sequence number, and a control; `has_dtd` 0 where those bytes complete a `<!DOCTYPE` in the server's stream |
+| 12 | green, `test --sanitize` | #140: a segment sent over a direction's last scanned bytes is also searched after the 17 bytes before them, unless that segment reported `has_dtd`; also green with clang |
+| 13 | green, `test --sanitize` | review of #140: a filler followed in order by the rest of the message before the real `TYPE` is missed, pinned by `session-inorder-filler-then-rest` and documented below; a segment whose capture ends in the overlap now reports what the search over the last bytes found; `pcap_eval.py` re-run with this `.so` |
 
-Last `test` summary: `{total: 34, passed: 34, failed: 0, skipped: 0}`: 10 packet tests, each also `through`
-`tcp:dport=2208`, and 14 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
+Last `test` summary: `{total: 39, passed: 39, failed: 0, skipped: 0}`: 10 packet tests, each also `through`
+`tcp:dport=2208`, and 19 session tests (split DOCTYPE, benign session, UTF-16 split at an odd byte, DTD in a 2nd
 message plus its retransmission, two messages in one segment, a gap, a server DOCTYPE, a 126-packet session whose
-split DOCTYPE comes after 50 benign packets with 70 s idle between its halves, and six reordered ones: V7's halves
+split DOCTYPE comes after 50 benign packets with 70 s idle between its halves, six reordered ones: V7's halves
 in reverse order, the same after a filler sent into the hole, a 2-byte late segment between both halves, a whole
 DOCTYPE in the segment that arrives first, and two misses pinned as limits: V7 cut in three in reverse order, and
-a late byte whose keyword ends in bytes after the hole that arrive later).
-`--sanitize`: 33248 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
+a late byte whose keyword ends in bytes after the hole that arrive later; and five of an in-order filler, #140:
+`TYPE` sent over a filler after `...<!DOC`, the whole `TYPE ...` over it and past it, a whole `<!DOCTYPE` over a
+16-byte filler, a control: a benign retransmission and a segment that repeats an XXE and adds new bytes, both
+`has_dtd` 0, and a miss pinned as a limit: the rest of the message in order after the filler, before `TYPE`).
+`--sanitize`: 39305 fuzz and corrupted-session packets under ASan/UBSan, 0 crashes. Tests that bite: a flipped expectation and a build without the
 carried tail both fail (`runs/run-1/notes.md`).
 
 ## Capture and evaluation
@@ -42,9 +48,10 @@ carried tail both fail (`runs/run-1/notes.md`).
 - Capture: `capture/capture.pcap`, **synthetic**: the 11 pcaps of `inputs/gen_pcaps.py` (attack V1-V7, benign OCI-P,
   SOAP and HTML-DOCTYPE flows), one after the other, with each file's client port moved (`capture/make-capture.sh`;
   gen_pcaps.py gives V2 and V4 the same port 41019, which merged as-is reads V4 as a retransmission of V2).
-- `mmt-plugin run`: 101 frames, 50 OCIP; `has_dtd` on 23 packets (every payload segment on 2208), `dtd` 8.
-- `pcap_eval.py` (with tshark 4.2.2, `-d tcp.port==2208,xml`): **PASS**, 23/23 expected frames classified, recall 1.0,
-  0 problems; warning: synthetic capture.
+- `mmt-plugin run`: 101 frames, 50 OCIP; `has_dtd` on 23 packets (every payload segment on 2208), `dtd` 8; the same
+  counts with run 13's `.so` (`runs/run-13/run.json`).
+- `pcap_eval.py` (with tshark 4.2.2, `-d tcp.port==2208,xml`, run 13's `.so`): **PASS**,
+  23/23 expected frames classified, recall 1.0, 0 problems; warning: synthetic capture.
 
 ## Drift against tshark
 
@@ -67,7 +74,15 @@ sees no DOCTYPE and the plugin does.
   segment is searched once, with the hole's edges as they stand when it arrives, so a keyword is found only when its
   bytes are in that late segment and in the edges already recorded: it is missed when it needs bytes after the hole
   that arrive later (`session-reordered-short-after-edge` pins the miss), or bytes of another late segment
-  (`session-reordered-two-late-halves`). An in-order filler
-  that the server drops (a bad checksum) followed by the real bytes at the same sequence number puts the scan out of
-  step with the server's stream: the real segment is a retransmission, searched alone. The old payload-scan rule 232
-  misses these too.
+  (`session-reordered-two-late-halves`). The old payload-scan rule 232 misses these too.
+- Overlapping segments, an in-order filler (#140): a filler the server drops (a bad checksum) but the probe keeps can
+  arrive in order, before the real bytes at the same sequence number. A segment that starts at or before a direction's
+  last scanned bytes and has bytes from their start on is also searched for `has_dtd` after the 17 bytes before those
+  bytes (the server's stream), unless the last segment reported `has_dtd`. That search changes no state; the segment's
+  new bytes, if any, are scanned as before. So a segment that repeats an attack segment and adds new bytes reports it
+  no more than before (a retransmitted attack segment still reports it again), and a plain retransmission of a benign
+  segment reports 0. `dtd`, `session_id` and `command_type` keep following the bytes the probe took first. Still
+  missed: a filler of several segments, or a filler followed in order by more bytes before the real ones arrive (only
+  the last scanned segment's start and the 17 bytes before it are kept, and those then hold the filler;
+  `session-inorder-filler-then-rest` pins the miss), a segment that starts inside the last bytes, and, after a filler,
+  a keyword that needs bytes of the real segment and of the segments after it.

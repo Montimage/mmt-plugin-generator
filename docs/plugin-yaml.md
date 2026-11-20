@@ -189,6 +189,7 @@ plugins:
 `mmt-plugin test` loads them, in that order, before the plugin, in every
 harness run, and builds each named project that is stale first, as
 `mmt-plugin -C <dir> build` would, with that project's own `sdk.profile`
+unless `--sdk-profile` or `MMT_PLUGIN_SDK_PROFILE` is given
 (`docs/user-guide.md`, Packet tests). A plugin two named projects need
 loads once. An entry that does not exist, is neither a project nor a `.so`
 file, is named twice, names back a project that names this one (a cycle),

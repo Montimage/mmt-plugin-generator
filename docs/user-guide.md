@@ -393,7 +393,8 @@ plugins:
 
 `test` then builds each named project that is stale (as
 `mmt-plugin -C ../parent build` would, with that project's own
-`sdk.profile`; with `--no-deps`, a stale one is `state.stale`, exit 7),
+`sdk.profile` unless `--sdk-profile` or `MMT_PLUGIN_SDK_PROFILE` says
+otherwise; with `--no-deps`, a stale one is `state.stale`, exit 7),
 and every harness run (the packets, the session tests, `--sanitize` and
 `--bench`) loads them, in that order, before the plugin, whatever their
 file names. `result.plugins` lists them in that order, each with its

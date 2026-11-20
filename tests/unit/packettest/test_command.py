@@ -965,6 +965,11 @@ def test_no_deps_is_exit_7_while_a_named_project_is_stale(
     assert _stages(doc)["build"] == "stale"
     assert doc["result"]["plugins"][0]["build"] == "stale"
     assert not (tmp_path / "parent" / "build" / "mmtp_zparent.so").exists()
+    # Stale generated files too: the project's own generate --check says so.
+    (tmp_path / "parent" / "plugin.yaml").write_text(_yaml_model("zparent", 997))
+    code, doc = run("--model", "plugin.yaml", "--no-deps")
+    assert code == 7 and doc["error"]["code"] == "state.stale"
+    assert doc["result"]["plugins"][0]["build"] == "stale"
 
 
 def test_a_named_project_that_does_not_build_is_its_build_error(

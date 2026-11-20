@@ -677,7 +677,7 @@ class TestCommand:
                     run.diagnostics.append(moved)
             if outcome.error is not None:
                 error = outcome.error
-                record["build"] = "failed"
+                record["build"] = "stale" if error.code == "state.stale" else "failed"
                 return CliError(error.code, f"the plugin of {where}: {error.message}", error.hint)
             if args.no_deps and not outcome.result["up_to_date"]:
                 record["build"] = "stale"

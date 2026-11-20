@@ -8,7 +8,9 @@ UBSan, 100 truncated and random packets per test): all pass. Then a model
 whose offset is wrong fails with the attribute, the expected and the actual
 value; user code that reads past the packet passes the plain run but crashes
 under the sanitizers, the same crashes for the same seed; a plugin that does
-not load is reported; and ``--bench`` measures the plugin and the baseline.
+not load is reported; ``--bench`` measures the plugin and the baseline; and
+a plugin whose hook attaches it under another plugin loads only with that
+plugin's project named in plugin.yaml's ``plugins`` (#145).
 
 The SDK is an extracted mmt-dpi package, a private prefix (never
 ``/opt/mmt``), as for ``tests/unit/build/test_sdk.py``::
@@ -406,3 +408,77 @@ def test_bench_measures_the_plugin_and_the_empty_baseline(
     code, doc = _test(project, monkeypatch, capsys)
     assert code == 0
     assert _stages(doc)["build"] == "up-to-date" and _stages(doc)["harness"] == "up-to-date"
+
+
+#: The child plugin's code: its hook attaches it under the parent plugin's
+#: protocol, 970, which mmt-dpi refuses unless that plugin loaded first.
+_CHILD_IMPL = """#include <stdbool.h>
+#include <stddef.h>
+
+#include "data_defs.h"
+#include "plugin_defs.h"
+
+#include "childp_mmt_plugin.h"
+
+static mmt_classify_verdict_t classify_after_parentp(ipacket_t *ipacket, unsigned previous_index)
+{
+    (void)ipacket;
+    (void)previous_index;
+    return MMT_CLASSIFY_SKIP;
+}
+
+int childp_hook_register_parents(protocol_t *protocol_struct)
+{
+    (void)protocol_struct;
+    return register_classification_function_with_parent_protocol(970, classify_after_parentp, 5)
+        ? 1 : 0;
+}
+"""
+
+
+def test_a_plugin_under_a_plugin_parent_loads_with_the_parent_named_in_plugins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#145: a parent plugin above Ethernet (parentp, 970) and a child whose
+    hook attaches it under that plugin (childp, 971; mmtp_childp.so sorts
+    before mmtp_parentp.so). Without plugins: the child does not load; with
+    the parent's project named, test builds the parent and loads it first."""
+    sdk, cc = str(_sdk()), _cc()
+    monkeypatch.chdir(tmp_path)
+    for name in ("MMT_PLUGIN_SDK_PROFILE", "MMT_DPI_PLUGINS_DIR", "MMT_BASE"):
+        monkeypatch.delenv(name, raising=False)
+
+    def cli(*argv: str) -> tuple[int, dict[str, Any]]:
+        code = main(["--json", *argv])
+        doc: dict[str, Any] = json.loads(capsys.readouterr().out)
+        return code, doc
+
+    parent = ["init", "parentp", "--id", "970", "--parent", "ethernet:ethertype=0x88b6"]
+    code, doc = cli(*parent, "--sdk", sdk)
+    assert code == 0, doc["error"]
+    code, doc = cli("init", "childp", "--id", "971", "--sdk", sdk)
+    assert code == 0, doc["error"]
+    child = tmp_path / "childp"
+    (child / "src" / "childp_impl.c").write_text(_CHILD_IMPL)
+    test = ["-C", str(child), "test", "--sdk", sdk, "--cc", cc]
+
+    code, doc = cli(*test)
+    assert code == 6, doc["error"]
+    assert doc["error"]["code"] == "test.load-failed"
+    assert "plugins:" in doc["error"]["hint"]
+    assert not (tmp_path / "parentp" / "build").exists()
+
+    model = child / "plugin.yaml"
+    model.write_text(
+        model.read_text().replace("\nattributes:", '\nplugins:\n  - "../parentp"\nattributes:')
+    )
+    code, doc = cli(*test)
+    assert code == 0, doc["error"]
+    parent_so = tmp_path / "parentp" / "build" / "mmtp_parentp.so"
+    assert doc["result"]["plugins"] == [
+        {"path": str(parent_so), "project": str(tmp_path / "parentp"), "build": "ran"}
+    ]
+    assert [p["status"] for p in doc["result"]["packets"]] == ["pass"]
+    code, doc = cli(*test, "--sanitize", "--fuzz-count", "20")
+    assert code == 0, doc["error"]
+    assert doc["result"]["plugins"][0]["build"] == "up-to-date"

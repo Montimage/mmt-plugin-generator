@@ -71,6 +71,7 @@ classify_next:
 | `offsets` | no | `absolute` (the default) or `running`, below. |
 | `defines` | no | Named numbers, in order: a number, or the name of an earlier define or of an SDK protocol id macro (`PROTO_TCP`). A case value or a `next` may name one; an expression may not (PDL v1). |
 | `parents` | no | The protocols this one runs on, below. |
+| `plugins` | no | The other plugins to load with this one, a parent plugin first: paths, relative to the directory of `plugin.yaml`, to project directories or `.so` files, below. |
 | `attributes` | no | The attributes, structs and conditionals, in order. |
 | `classify_next` | no | The classification of the next protocol: `switch` (an expression), `cases` (each with `case`, a number or a define, and optional `next`, `offset`, `fallthrough`) and `default` (optional `next`, `offset`). `next` sets the next protocol's id and classifies it, `offset` its offset; `fallthrough: true` goes on to the next case, as a C `case` without `break`. |
 
@@ -161,7 +162,39 @@ checks that each one exists (`parents-exist`).
 
 - Without `classify`, your code attaches the protocol, in
   `<label>_hook_register_parents` (`src/<label>_impl.c`), which the
-  generated init calls after attaching the others.
+  generated init calls after attaching the others. A parent that is
+  another plugin's protocol must be registered first: name that plugin
+  under `plugins` (below).
+
+### Plugins
+
+`plugins` lists the other plugins this one needs loaded with it, a parent
+plugin first: the plugin your `<label>_hook_register_parents` attaches the
+protocol to, which mmt-dpi refuses (and the plugin does not load) unless
+that plugin loaded before. Each entry is a path relative to the directory
+of `plugin.yaml`, never absolute (a committed file holds nothing
+machine-specific):
+
+- a project directory, with its `plugin.yaml`: its plugin is
+  `<dir>/build/mmtp_<label>.so`, and the plugins that project names load
+  before it;
+- a built plugin, a file whose name ends in `.so`.
+
+```yaml
+plugins:
+  - "../websocket"              # a project: test builds it when it is stale
+  - "../lib/mmtp_other.so"      # a built plugin
+```
+
+`mmt-plugin test` loads them, in that order, before the plugin, in every
+harness run, and builds each named project that is stale first, as
+`mmt-plugin -C <dir> build` would, with that project's own `sdk.profile`
+(`docs/user-guide.md`, Packet tests). A plugin two named projects need
+loads once. An entry that does not exist, is neither a project nor a `.so`
+file, is named twice, names back a project that names this one (a cycle),
+or has this plugin's label (or another named project's) is
+`model.bad-plugin` at the entry, exit 3. The key changes nothing in the
+generated code.
 
 ## The YAML subset
 
@@ -193,7 +226,9 @@ Every error is a diagnostic at its node's line and column, exit 3:
 - then the semantic checks of any model (`model.duplicate-name`,
   `model.unknown-attribute`, ...), and for a parent with `classify`
   `model.unknown-parent` when the SDK profile does not have it, and
-  `model.classify-port` for ports under a parent other than `tcp`.
+  `model.classify-port` for ports under a parent other than `tcp`;
+- `test` (which loads them) reports a `plugins` entry it cannot use as
+  `model.bad-plugin`.
 
 ```
 plugin.yaml:4:7: error: protocol.id: expected an integer, found a string (`960`) [model.schema]

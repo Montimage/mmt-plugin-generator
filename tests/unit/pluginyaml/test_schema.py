@@ -232,6 +232,10 @@ INVALID = [
         "model.yaml-syntax",
         "a space must follow `:`",
     ),
+    (MINIMAL + "plugins:\n  - /opt/mmt/plugins/x.so\n", 6, 5, "model.schema", "not valid here"),
+    (MINIMAL + 'plugins:\n  - ""\n', 6, 5, "model.schema", "empty"),
+    (MINIMAL + "plugins:\n  - 3\n", 6, 5, "model.schema", "expected a string"),
+    (MINIMAL + "plugins: ../parent\n", 5, 10, "model.schema", "expected a list"),
     (MINIMAL + "classify_next:\n  cases: []\n", 6, 3, "model.schema", "missing key `switch`"),
     (
         MINIMAL + "classify_next:\n  switch: 1\n  cases:\n    - next: 3\n",

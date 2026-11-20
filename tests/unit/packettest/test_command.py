@@ -172,6 +172,8 @@ class FakeHarness:
         self.exit_early: set[int] = set()
         self.setup_crash = False
         self.runs: list[tuple[str, int, str]] = []
+        #: Each run's other plugins (``extra``), in load order.
+        self.extras: list[list[Path]] = []
         self.frames: list[bytes] = []
         self.frame_match: tuple[int, bytes] | None = None
         self.frame_offset = 42
@@ -188,8 +190,10 @@ class FakeHarness:
         on_line: Callable[[str], None] | None = None,
         log: Callable[[str], None] | None = None,
         env: Any = None,
+        extra: Sequence[Path] = (),
     ) -> harness.HarnessRun:
         assert program.is_file() and timeout > 0
+        self.extras.append(list(extra))
         records = _read(Path(args[1]))
         self.frames = [data for frame, data in records if frame]
         packets = [self._payload(frame, data) for frame, data in records]
@@ -867,6 +871,182 @@ def test_bench_skips_session_tests(project: Path, run: Run, fake: FakeHarness) -
     assert _stages(doc)["bench"] == "failed" and doc["result"]["bench"] is None
     assert "test.bench-failed" in _codes(doc)
     assert [r[0] for r in fake.runs] == ["check"]
+
+
+# --- plugins: the other plugins to load (#145) ------------------------------------------
+
+
+def _yaml_model(label: str, pid: int, plugins: Sequence[str] = ()) -> str:
+    named = "".join(f"  - {json.dumps(p)}\n" for p in plugins)
+    return (
+        f"schema: 1\nprotocol:\n  label: {label}\n  id: {pid}\n  encoding: network\n"
+        + (f"plugins:\n{named}" if plugins else "")
+        + "attributes:\n"
+        "  - name: kind\n    type: MMT_U8_DATA\n    offset: 0\n"
+        "  - name: size\n    type: MMT_U16_DATA\n    offset: 1\n"
+    )
+
+
+def _yaml_project(directory: Path, label: str, pid: int, plugins: Sequence[str] = ()) -> Path:
+    """A plugin.yaml project, with its scaffold, in ``directory``."""
+    (directory / "src").mkdir(parents=True, exist_ok=True)
+    text = _yaml_model(label, pid, plugins)
+    (directory / "plugin.yaml").write_text(text)
+    choice = resolve_profile("1.10.2", {}, None, None)
+    generation, _, _ = make_generation("plugin.yaml", text.encode(), choice, "yaml")
+    assert generation is not None
+    impl = scaffold(generation, choice.profile)
+    (directory / impl.path).write_text(impl.text)
+    return directory
+
+
+def _named(project: Path, *plugins: str) -> None:
+    """The project's own model as plugin.yaml, naming ``plugins``."""
+    (project / "plugin.yaml").write_text(_yaml_model("fakeproto", 991, plugins))
+
+
+def test_named_plugins_are_built_and_loaded_before_the_plugin_parents_first(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    # The child's file name (mmtp_fakeproto.so) sorts before its parents':
+    # only the order of plugins: decides the load order.
+    _yaml_project(tmp_path / "grand", "zgrand", 993)
+    _yaml_project(tmp_path / "parent", "zparent", 992, ["../grand"])
+    built = tmp_path / "lib" / "mmtp_zother.so"
+    built.parent.mkdir()
+    built.write_text("fake\n")
+    _named(project, "../parent", "../lib/mmtp_zother.so")
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 0, doc["error"]
+    grand = tmp_path / "grand" / "build" / "mmtp_zgrand.so"
+    parent = tmp_path / "parent" / "build" / "mmtp_zparent.so"
+    assert grand.is_file() and parent.is_file()
+    assert doc["result"]["plugins"] == [
+        {"path": str(grand), "project": str(tmp_path / "grand"), "build": "ran"},
+        {"path": str(parent), "project": str(tmp_path / "parent"), "build": "ran"},
+        {"path": str(built), "project": None, "build": None},
+    ]
+    assert fake.runs == [("check", 3, "build")]
+    assert fake.extras == [[grand, parent, built]]
+    assert _stages(doc)["build"] == "ran"
+    # Up to date: nothing is built again, and --no-deps passes.
+    code, doc = run("--model", "plugin.yaml", "--no-deps")
+    assert code == 0, doc["error"]
+    assert _stages(doc)["build"] == "up-to-date"
+    assert [p["build"] for p in doc["result"]["plugins"]] == ["up-to-date", "up-to-date", None]
+
+
+def test_every_harness_run_loads_the_named_plugins(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    _yaml_project(tmp_path / "parent", "zparent", 992)
+    _named(project, "../parent")
+    fake.bench = [f"sample 1000 {n}" for n in range(1, 11)]
+    code, doc = run("--model", "plugin.yaml", "--sanitize", "--fuzz-count", "2", "--bench")
+    assert code == 0, doc["error"]
+    parent = tmp_path / "parent" / "build" / "mmtp_zparent.so"
+    assert [r[0] for r in fake.runs] == ["check", "fuzz", "bench", "bench"]
+    assert fake.extras == [[parent]] * 4
+    # The named plugin is not built again with the sanitizers.
+    assert not (tmp_path / "parent" / "build" / "sanitize").exists()
+
+
+def test_no_deps_is_exit_7_while_a_named_project_is_stale(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    _yaml_project(tmp_path / "parent", "zparent", 992)
+    _named(project, "../parent")
+    assert run("--model", "plugin.yaml", "--no-deps")[0] == 7  # the plugin itself is stale
+    assert run("--model", "plugin.yaml")[0] == 0
+    (tmp_path / "parent" / "build" / "mmtp_zparent.so").unlink()
+    code, doc = run("--model", "plugin.yaml", "--no-deps")
+    assert code == 7 and doc["error"]["code"] == "state.stale"
+    assert str(tmp_path / "parent") in doc["error"]["message"]
+    assert _stages(doc)["build"] == "stale"
+    assert doc["result"]["plugins"][0]["build"] == "stale"
+    assert not (tmp_path / "parent" / "build" / "mmtp_zparent.so").exists()
+
+
+def test_a_named_project_that_does_not_build_is_its_build_error(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    parent = _yaml_project(tmp_path / "parent", "zparent", 992)
+    impl = parent / "src" / "zparent_impl.c"
+    impl.write_text("#error broken\n" + impl.read_text())
+    _named(project, "../parent")
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 5 and doc["error"]["code"] == "build.compile-failed"
+    assert doc["error"]["message"].startswith(f"the plugin of {parent}: ")
+    # Its diagnostics point at its files, as this project writes them.
+    located = [d["location"]["file"] for d in doc["diagnostics"] if d["code"] == "build.cc"]
+    assert located == [str(impl)]
+    assert _stages(doc)["build"] == "failed" and fake.runs == []
+
+
+@pytest.mark.parametrize(
+    ("plugins", "message"),
+    [
+        (["../missing"], "plugins: ../missing not found"),
+        (["../empty"], "is a directory without a plugin.yaml"),
+        (["../notes.txt"], "is neither a project directory nor a .so file"),
+        (["../parent", "../parent/"], "plugins: ../parent/ is named twice"),
+        (["."], "is a project that loads this one: a cycle"),
+        (["../loop"], "is a project that loads this one: a cycle"),
+        (["../same"], "is a project with this plugin's label, fakeproto"),
+        (["../parent", "../twin"], "has the label zparent of another named project"),
+        (["../broken"], "plugins: cannot read"),
+        (["build/mmtp_fakeproto.so"], "is the plugin's own file name"),
+    ],
+)
+def test_a_bad_plugins_entry_is_exit_3_at_the_entry(
+    project: Path,
+    tmp_path: Path,
+    run: Run,
+    fake: FakeHarness,
+    plugins: list[str],
+    message: str,
+) -> None:
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "notes.txt").write_text("not a plugin\n")
+    _yaml_project(tmp_path / "parent", "zparent", 992)
+    _yaml_project(tmp_path / "twin", "zparent", 994)
+    _yaml_project(tmp_path / "loop", "zloop", 995, ["../project"])
+    _yaml_project(tmp_path / "same", "fakeproto", 996)
+    (tmp_path / "broken").mkdir()
+    (tmp_path / "broken" / "plugin.yaml").write_text("schema: 1\n")
+    (project / "build").mkdir(exist_ok=True)
+    (project / "build" / "mmtp_fakeproto.so").write_text("")
+    _named(project, *plugins)
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.bad-plugin", doc["error"]
+    assert message in doc["error"]["message"]
+    errors = [d for d in doc["diagnostics"] if d["code"] == "model.bad-plugin"]
+    assert len(errors) == 1
+    location = errors[0]["location"]
+    if plugins == ["../loop"]:
+        # The entry that closes the cycle, in the project that names this one.
+        assert (location["file"], location["line"]) == (str(tmp_path / "loop" / "plugin.yaml"), 7)
+    else:
+        # The last entry's line: plugins: is line 6.
+        assert (location["file"], location["line"]) == ("plugin.yaml", 6 + len(plugins))
+    assert _stages(doc)["build"] == "failed" and fake.runs == []
+
+
+def test_an_absolute_plugins_entry_is_a_schema_error(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    _named(project, str(tmp_path / "parent"))
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.schema"
+
+
+def test_a_model_without_plugins_loads_only_the_plugin(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    _named(project)
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 0, doc["error"]
+    assert doc["result"]["plugins"] == [] and fake.extras == [[]]
 
 
 # --- output ----------------------------------------------------------------------------

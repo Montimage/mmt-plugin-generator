@@ -24,7 +24,7 @@ also on a usage error, and nothing else. The skill reads these keys:
 | `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project inside it, absolute outside it (a `build.cc` error or note in an SDK header); `line` and `column` are 1-based and may be `null` (a whole file). Edit there, unless `file` is outside the project. |
 | `diagnostics[].hint` | one line on how to fix it, or `null` | |
 | `diagnostics[].related[]` | other places (`"first defined here"`) | |
-| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
+| `result` | the command's own result, `null` on a usage error | `test`: `summary`, `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`) and `plugins[]` (the plugins `plugins:` names, in load order: `path`, `project`, `build`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
 
 Keys not listed here may be added; ignore them. Paths in the envelope are
 relative to the project (`-C`) when inside it, absolute otherwise.
@@ -144,6 +144,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.no-parent` | Warning from `init`: add a parent to `plugin.yaml`. |
 | `model.legacy-*` | Warnings from `import`: the converted model does what the spec says, not what the Java tool did. Check the attribute against the spec. |
 | `model.bad-packet-test` | The packet test file is not corpus schema 1 (`tests/corpus/README.md`, Packet files): fix it at the location. |
+| `model.bad-plugin` | An entry of `plugins:` in `plugin.yaml` that `test` cannot use, at the entry: fix the path (relative to the directory of `plugin.yaml`, to a project directory with its `plugin.yaml` or to a built `.so` file), name each plugin once, never this plugin itself or a project that names this one. |
 | `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
 | `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
@@ -157,7 +158,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `build.runner-failed` | `run`: the capture runner does not compile against the SDK: check the SDK prefix and the compiler, then report. |
 | `test.packet-failed` | Compare each failure's `attribute`, `expected` and `actual` with the spec: fix the model (an offset, a type, a bit order) or the test (a wrong expected value). A test that was in the project before this session is never edited: fix the model, or stop and report when the spec contradicts the test. |
 | `test.crash` | The plugin crashed on a packet: check the lengths and conditions of variable-length attributes, and the user code. From `run`, the message names the frame: write its protocol bytes as a packet test and run `test --sanitize` on it. |
-| `test.load-failed` | The plugin does not load: check the hooks in `src/<label>_impl.c` (`register_parents` must return 1). From `run`, also each `--plugin` (a parent plugin it needs must be passed). |
+| `test.load-failed` | The plugin does not load: check the hooks in `src/<label>_impl.c` (`register_parents` must return 1). When the hook attaches the protocol under another plugin's, name that plugin's project (or `.so`) under `plugins:` in `plugin.yaml`, parents first (`docs/plugin-yaml.md`, Plugins). From `run`, also each `--plugin` (a parent plugin it needs must be passed). |
 | `test.no-match` | Warning from `run`: no packet of the capture has the protocol. Compare `result.paths` with the parent in `parents:` (its `classify`) or `<label>_hook_register_parents`; check that the capture carries the protocol. |
 | `test.other-linktype` | Warning from `run`: frames of another link type were not processed. Go on, or split the capture by interface. |
 | `test.unknown-protocol` | Warning from `run`: a `--protocol` no loaded plugin registers. Fix the name or pass its plugin with `--plugin`. |

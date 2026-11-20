@@ -376,6 +376,33 @@ not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
 attached under its TCP or UDP. With `--sanitize`, its random packets run
 behind the same headers.
 
+### A parent that is another plugin
+
+`test` loads the plugin next to the SDK's `libmmt_tcpip.so` only. When
+`<label>_hook_register_parents` attaches it under another plugin's
+protocol, that plugin must load first, or the registration fails and so
+does the load (`test.load-failed`, exit 6). Name it under `plugins` in
+`plugin.yaml`, a parent first: a project directory, or a built `.so` file,
+relative to the directory of `plugin.yaml`
+([`docs/plugin-yaml.md`](plugin-yaml.md#plugins)):
+
+```yaml
+plugins:
+  - "../parent"      # the parent plugin's project
+```
+
+`test` then builds each named project that is stale (as
+`mmt-plugin -C ../parent build` would, with that project's own
+`sdk.profile`; with `--no-deps`, a stale one is `state.stale`, exit 7),
+and every harness run (the packets, the session tests, `--sanitize` and
+`--bench`) loads them, in that order, before the plugin, whatever their
+file names. `result.plugins` lists them in that order, each with its
+`project` and its `build` (`ran`, `up-to-date`, or `null` for a `.so`
+file). A plugin the named projects themselves name loads first, once. An
+entry that `test` cannot use (missing, neither a project nor a `.so` file,
+named twice, a cycle, this plugin's label) is `model.bad-plugin`, exit 3.
+The named plugins are not rebuilt with the sanitizers.
+
 ### Session tests
 
 A packet test is one packet, with no session around it. When what your

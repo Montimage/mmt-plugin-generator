@@ -7,6 +7,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ## [Unreleased]
 
+### Added
+
+- `plugin.yaml` key `plugins`: the other plugins to load with this one, a
+  parent plugin first, each a project directory or a built `.so` file
+  relative to the directory of `plugin.yaml` (#145). `mmt-plugin test`
+  builds each named project that is stale and loads them, in that order,
+  before the plugin in every harness run, so a plugin whose hook attaches it
+  under another plugin can be tested; `result.plugins` lists them. A bad
+  entry is the new code `model.bad-plugin` (exit 3).
+
 ## [0.1.0] - 2026-11-19
 
 The first release of the Python generator, `mmt-plugin`. It replaces the

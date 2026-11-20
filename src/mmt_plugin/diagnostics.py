@@ -165,6 +165,9 @@ CODES: Mapping[str, str] = MappingProxyType(
         # `test` (mmt_plugin.commands.test, mmt_plugin.testing, #20).
         "model.bad-packet-test": "a packet test file is not a corpus schema 1 packet test "
         "(tests/corpus/README.md, Packet files)",
+        "model.bad-plugin": "an entry of plugin.yaml's plugins does not exist, is neither a "
+        "project directory nor a .so file, cannot be read, is named twice, makes a cycle, or "
+        "has the plugin's own label or another named plugin's",
         "build.harness-failed": "the generated test harness does not compile against the SDK",
         "test.packet-failed": "a packet test failed: the classification, the next protocol or "
         "an attribute value is not the one the test expects",

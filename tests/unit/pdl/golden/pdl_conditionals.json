@@ -490,6 +490,7 @@
     "classify_next": null,
     "span": "1:1-46:2",
     "offsets": "running",
-    "parents": []
+    "parents": [],
+    "plugins": []
   }
 }

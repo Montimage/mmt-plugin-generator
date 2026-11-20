@@ -43,6 +43,16 @@
       "description": "The protocols this one runs on. Each one is checked by validate (parents-exist); one with classify is attached by the generated code, one without by the hook <label>_hook_register_parents in src/<label>_impl.c.",
       "items": {"$ref": "#/$defs/parent"}
     },
+    "plugins": {
+      "type": "array",
+      "description": "The other plugins this one needs loaded with it, a parent plugin first (a plugin its <label>_hook_register_parents attaches it to). Each is a path relative to the directory of this file: a project directory (its plugin.yaml; test builds its build/mmtp_<label>.so when it is stale, and loads the plugins that project names before it) or a built plugin, a file ending in .so. test loads them, in this order, before the plugin.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^/].*$",
+        "description": "A path relative to the directory of plugin.yaml (never absolute): a project directory, or a .so file."
+      }
+    },
     "attributes": {
       "description": "The attributes, structs and conditionals, in packet order.",
       "$ref": "#/$defs/elements"

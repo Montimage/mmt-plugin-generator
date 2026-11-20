@@ -255,7 +255,15 @@ protocol model. A Python rewrite is planned in
   `--fuzz-count` packets, each in a harness of its own (a crash has its
   copy as `index` and its step as `packet`); `--bench` compares packets
   per second over the packet tests with an empty plugin
-  (`templates/baseline.c.j2`) and never changes the exit code. Tests in
+  (`templates/baseline.c.j2`) and never changes the exit code. The
+  model's `plugins` (#145, `src/mmt_plugin/plugins.py`: each a project
+  directory or a `.so` file relative to `plugin.yaml`, followed depth
+  first; a bad entry is `model.bad-plugin`) are built in the `build` stage
+  when stale (each project with its own `sdk.profile`) and loaded before
+  the plugin in every harness run (`harness.run`'s `extra`, linked as
+  `p<n>-<name>` so mmt-dpi's alphasort loads them in that order),
+  `result.plugins`; `validate` (#146) and `through` (#147) do not read them
+  yet. Tests in
   `tests/unit/packettest/`: `test_testing.py`, `test_frames.py`,
   `test_session.py` and `test_command.py` (fake SDK, compiler and harness
   run), and `test_sdk.py`

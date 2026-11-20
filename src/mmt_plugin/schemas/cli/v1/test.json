@@ -3,7 +3,7 @@
   "title": "mmt-plugin test --json result, schema_version 1",
   "description": "The result of test (docs/design/cli.md, section 6). Paths are relative to the project when inside it (POSIX separators), absolute otherwise. stages are always the five, in order; a stage the run did not reach, or did not ask for, is skipped. packets are in the order the packet tests were read, a test with through followed by its run through its parent; a session test is one entry. stats holds the only timing; everything else is the same on a re-run with the same inputs (the bench's numbers aside).",
   "type": "object",
-  "required": ["model", "profile", "build_dir", "stages", "summary", "packets", "sanitize", "bench", "stats"],
+  "required": ["model", "profile", "build_dir", "stages", "summary", "plugins", "packets", "sanitize", "bench", "stats"],
   "additionalProperties": false,
   "properties": {
     "model": {"type": "string", "minLength": 1, "description": "The model read: its path."},
@@ -35,6 +35,20 @@
         "passed": {"type": "integer", "minimum": 0},
         "failed": {"type": "integer", "minimum": 0, "description": "Failed or crashed packets."},
         "skipped": {"type": "integer", "minimum": 0, "description": "Packets not run: an earlier stage failed, or --fail-fast stopped."}
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "description": "The other plugins plugin.yaml's plugins names (docs/plugin-yaml.md, Plugins), in the order every harness run loads them, before the plugin; empty without them. Filled as the build stage reaches them.",
+      "items": {
+        "type": "object",
+        "required": ["path", "project", "build"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "description": "The plugin file loaded."},
+          "project": {"type": ["string", "null"], "minLength": 1, "description": "The project directory that builds it, or null for a .so file named directly."},
+          "build": {"enum": ["ran", "up-to-date", "stale", "failed", null], "description": "The project's build: ran, up-to-date, stale (--no-deps), failed; null for a .so file, or a project the build stage did not reach."}
+        }
       }
     },
     "packets": {

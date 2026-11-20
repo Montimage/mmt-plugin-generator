@@ -171,6 +171,10 @@ note: "..."                    # optional
   protocol and where those headers end (`<parent>`). That run checks the
   classification and `expect.attributes`, not `expect.next`: mmt-dpi 1.10.2
   does not process a layer a plugin classified above its TCP or UDP.
+  In a project, `through` can also be the label of a plugin parent whose
+  project plugin.yaml's `plugins` names, optionally with `test=<id>`
+  (#147): the frame is then that project's packet test with `through`
+  (the first, or that id), its bytes the parent's header, then `bytes`.
 - `parent.kind`:
   - `stack`: `path` lists the mmt-dpi protocols below this one, outermost
     first. The models do not declare their parent (inventory section 2:

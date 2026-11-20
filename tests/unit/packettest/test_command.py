@@ -1054,6 +1054,157 @@ def test_a_model_without_plugins_loads_only_the_plugin(
     assert doc["result"]["plugins"] == [] and fake.extras == [[]]
 
 
+#: The parent's packet test: its 4-byte header, through Ethernet (EtherType 0x88b6).
+_PARENT_TEST = """schema: 1
+id: "zparent/basic"
+through: "ethernet:ethertype=0x88b6"
+bytes:
+  - "aa bb cc dd"
+expect:
+  protocol: "ZPARENT"
+  proto_id: 992
+  next:
+    kind: "none"
+  attributes: []
+"""
+
+
+def _plugin_parent(project: Path, tmp_path: Path, through: str = "zparent") -> Path:
+    """A parent project (zparent, 992) with one packet test through Ethernet,
+    named in the project's plugins, and b's test through ``through``."""
+    parent = _yaml_project(tmp_path / "parent", "zparent", 992)
+    (parent / "tests").mkdir()
+    (parent / "tests" / "basic.yaml").write_text(_PARENT_TEST)
+    _named(project, "../parent")
+    _through(project, through=through)
+    return parent
+
+
+def test_through_names_a_plugin_parent_and_runs_behind_its_packet_test(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    _plugin_parent(project, tmp_path)
+    fake.frame_match = (12, bytes.fromhex("88b6aabbccdd"))
+    fake.frame_offset, fake.frame_parent = 18, 992
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 0, doc["error"]
+    packets = doc["result"]["packets"]
+    assert [(p.get("through"), p["status"]) for p in packets] == [
+        (None, "pass"),
+        (None, "pass"),
+        ("zparent", "pass"),
+        (None, "pass"),
+    ]
+    # The frame is the parent's test, Ethernet then its header, then b's bytes.
+    lower = parse_through("ethernet:ethertype=0x88b6")
+    assert fake.frames == [build_frame(lower, bytes.fromhex("aabbccdd020003"), 2)]
+    # Under another parent, or at another offset: <parent>, by the parent's label.
+    fake.frame_parent = 376
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 6
+    assert doc["result"]["packets"][2]["failures"] == [
+        {"attribute": "<parent>", "expected": "zparent at offset 18", "actual": "udp at offset 18"}
+    ]
+    fake.frame_parent, fake.frame_offset = 992, 14
+    code, doc = run("--model", "plugin.yaml")
+    assert doc["result"]["packets"][2]["failures"][0] == {
+        "attribute": "<parent>",
+        "expected": "zparent at offset 18",
+        "actual": "zparent at offset 14",
+    }
+
+
+def test_test_picks_the_plugin_parents_packet_test_and_its_header(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    parent = _plugin_parent(project, tmp_path, "zparent:test=zparent/udp")
+    # A test before it without through, and one whose next protocol starts
+    # after 2 bytes: only those 2 are the parent's header.
+    (parent / "tests" / "a.yaml").write_text(
+        _PARENT_TEST.replace('through: "ethernet:ethertype=0x88b6"\n', "")
+    )
+    (parent / "tests" / "udp.yaml").write_text(
+        _PARENT_TEST.replace("zparent/basic", "zparent/udp")
+        .replace("ethernet:ethertype=0x88b6", "udp:dport=4433")
+        .replace('kind: "none"', 'kind: "proto"\n    proto_id: 991\n    offset: 2')
+    )
+    fake.frame_match = DPORT_4433
+    fake.frame_offset, fake.frame_parent = 44, 992
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 0, doc["error"]
+    lower = parse_through("udp:dport=4433")
+    assert fake.frames == [build_frame(lower, bytes.fromhex("aabb020003"), 2)]
+    # With --sanitize, its random packets run behind the same layers.
+    code, doc = run("--model", "plugin.yaml", "--sanitize", "--fuzz-count", "2", "--seed", "1")
+    assert code == 0, doc["error"]
+    fuzz = _read(project / "build" / "test" / "fuzz.bin")
+    frames = [data for frame, data in fuzz if frame]
+    assert len(frames) == 3
+    assert all(f.startswith(build_frame(lower, b"\xaa\xbb", 0)[:12]) for f in frames)
+    assert frames[0] == build_frame(lower, bytes.fromhex("aabb020003"), 6)
+
+
+@pytest.mark.parametrize(
+    ("through", "message"),
+    [
+        ("zparent:test=zparent/other", "parent has no packet test 'zparent/other'"),
+        ("zparent:port=1", "a plugin parent has one key, test, not 'port'"),
+        (
+            "zother",
+            "the parent is one of ethernet, ip, ipv6, udp, tcp or a plugin of plugins:"
+            " (zparent), not zother",
+        ),
+    ],
+)
+def test_a_bad_plugin_parent_selector_is_exit_3_before_anything_is_built(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness, through: str, message: str
+) -> None:
+    _plugin_parent(project, tmp_path, through)
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    bad = [d for d in doc["diagnostics"] if d["code"] == "model.bad-packet-test"]
+    assert bad[0]["location"]["file"] == "tests/b.yaml"
+    assert message in bad[0]["message"], bad[0]["message"]
+    assert fake.runs == [] and not (tmp_path / "parent" / "build").exists()
+
+
+def test_a_plugin_parent_without_a_packet_test_through_mmt_dpi_is_exit_3(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    parent = _plugin_parent(project, tmp_path)
+    (parent / "tests" / "basic.yaml").write_text(
+        _PARENT_TEST.replace('through: "ethernet:ethertype=0x88b6"\n', "")
+    )
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    assert (
+        f"no packet test of {tmp_path / 'parent'} runs through an mmt-dpi protocol"
+        in (doc["diagnostics"][-1]["message"])
+    )
+
+
+def test_a_plugin_named_by_its_file_is_not_a_through_parent(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    built = tmp_path / "lib" / "mmtp_zparent.so"
+    built.parent.mkdir()
+    built.write_text("fake\n")
+    _named(project, "../lib/mmtp_zparent.so")
+    _through(project, through="zparent")
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+
+
+def test_a_bad_plugins_entry_comes_before_the_through_that_names_it(
+    project: Path, tmp_path: Path, run: Run, fake: FakeHarness
+) -> None:
+    _named(project, "../missing")
+    _through(project, through="zparent")
+    code, doc = run("--model", "plugin.yaml")
+    assert code == 3 and doc["error"]["code"] == "model.bad-plugin", doc["error"]
+    assert _stages(doc)["build"] == "failed" and fake.runs == []
+
+
 # --- output ----------------------------------------------------------------------------
 
 

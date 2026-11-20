@@ -235,7 +235,10 @@ protocol model. A Python rewrite is planned in
   the plugin's own parent classification: its own `result.packets` entry
   (with `through`), a `<parent>` failure when the plugin is not directly
   above that protocol where the layers end, `next` not checked (mmt-dpi
-  1.10.2's TCP and UDP stop at a plugin's layer); the harness's records
+  1.10.2's TCP and UDP stop at a plugin's layer); `through` can also be
+  a plugin parent's label, a project `plugins` names (#147, `test=<id>`
+  optional): the frame is one of its packet tests with an mmt-dpi
+  `through`, its bytes the parent's header; the harness's records
   are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A
   session test (#99, `session.py`: `session` and `packets` instead of
   `bytes` and `expect`; `tests/corpus/README.md`, "Session files") is the

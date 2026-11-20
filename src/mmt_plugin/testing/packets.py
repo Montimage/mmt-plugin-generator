@@ -12,11 +12,12 @@ harness attaches the protocol to Ethernet itself, so a packet is tested
 without the user code's parent registration. The optional ``through`` (a
 selector, ``mmt_plugin.testing.frames``) runs the packet a second time,
 behind the lower layers it names, through mmt-dpi's stack and the plugin's
-own parent classification.
+own parent classification; it names an mmt-dpi protocol, or one of the
+plugin parents ``load_doc``'s ``plugins`` gives (#147).
 
-``load_doc(doc, shown, data_types)`` does the same for a file already
-read (``mmt_plugin.testing.session.load_test`` reads a file once and
-tells a packet test from a session test).
+``load_doc(doc, shown, data_types, plugins)`` does the same for a file
+already read (``mmt_plugin.testing.session.load_test`` reads a file once
+and tells a packet test from a session test).
 
 ``check(test, observed, plugin)`` compares one ``Observation`` with the test
 and returns its failures, each an attribute, the expected and the actual
@@ -42,7 +43,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from mmt_plugin.diagnostics import Diagnostic, Location, Severity
-from mmt_plugin.testing.frames import Through, parse_through
+from mmt_plugin.testing.frames import PluginParent, Through, parse_through
 from mmt_plugin.testing.yamlsubset import LoadError, loads
 
 __all__ = [
@@ -355,8 +356,14 @@ def load(path: Path, shown: str, data_types: Collection[str]) -> PacketTest:
     return load_doc(read_doc(path, shown), shown, data_types)
 
 
-def load_doc(doc: Mapping[str, Any], shown: str, data_types: Collection[str]) -> PacketTest:
-    """The packet test of ``doc``, a file ``read_doc`` read."""
+def load_doc(
+    doc: Mapping[str, Any],
+    shown: str,
+    data_types: Collection[str],
+    plugins: Mapping[str, PluginParent] | None = None,
+) -> PacketTest:
+    """The packet test of ``doc``, a file ``read_doc`` read; its ``through``
+    may name one of the plugin parents ``plugins``."""
     if "session" in doc:
         raise error(shown, "a session test (it has 'session'), not a packet test")
     test_id = need(shown, "the test", doc, "id", str)
@@ -380,7 +387,7 @@ def load_doc(doc: Mapping[str, Any], shown: str, data_types: Collection[str]) ->
     if "through" in doc:
         text = need(shown, "the test", doc, "through", str)
         try:
-            through = parse_through(text)
+            through = parse_through(text, plugins)
         except ValueError as exc:
             raise error(shown, f"through: {exc}") from None
     return PacketTest(test_id, shown, data, protocol, proto_id, nxt, attributes, through)

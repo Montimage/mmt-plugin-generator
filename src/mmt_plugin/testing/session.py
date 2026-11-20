@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from mmt_plugin.testing.frames import Through, parse_through
+from mmt_plugin.testing.frames import PluginParent, Through, parse_through
 from mmt_plugin.testing.packets import (
     PROTOCOL,
     ExpectedAttribute,
@@ -274,12 +274,18 @@ class SessionTest:
         return CLIENT_PORT if port is None else port
 
 
-def load_test(path: Path, shown: str, data_types: Collection[str]) -> PacketTest | SessionTest:
+def load_test(
+    path: Path,
+    shown: str,
+    data_types: Collection[str],
+    plugins: Mapping[str, PluginParent] | None = None,
+) -> PacketTest | SessionTest:
     """Read the packet test or the session test at ``path`` (``shown`` names
-    it in diagnostics); ``data_types`` are the SDK profile's data type names."""
+    it in diagnostics); ``data_types`` are the SDK profile's data type names,
+    ``plugins`` the plugin parents a packet test's ``through`` may name."""
     doc = read_doc(path, shown)
     if "session" not in doc:
-        return load_doc(doc, shown, data_types)
+        return load_doc(doc, shown, data_types, plugins)
     return _load_session(doc, shown, data_types)
 
 

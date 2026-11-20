@@ -404,6 +404,30 @@ entry that `test` cannot use (missing, neither a project nor a `.so` file,
 named twice, a cycle, this plugin's label) is `model.bad-plugin`, exit 3.
 The named plugins are not rebuilt with the sanitizers.
 
+A packet test's `through` can name such a parent by its label, when its
+project is named under `plugins` (a `.so` file named directly cannot be
+one):
+
+```yaml
+through: "parent"                     # parent's first packet test with through
+through: "parent:test=parent/basic"   # or the one with that id
+```
+
+The frame then starts with one of the parent project's packet tests
+(`tests/*.yaml`, in file order) whose own `through` names an mmt-dpi
+protocol: its lower layers (`ethernet:ethertype=0x88b6`, say), then its
+bytes up to its `expect.next` offset, or all of them when it names no next
+protocol, as the parent's header, then your test's bytes. `test=` picks
+that test by its id; without it, it is the first. Your plugin must be
+classified directly above the parent's protocol (its id from the parent's
+`plugin.yaml`), where the parent's header ends (`<parent>`, shown with the
+parent's label), and that run checks the attributes, not `next`, as above.
+A label that names no such project, or a project with no such packet
+test, is `model.bad-packet-test`, exit 3. A session test's
+`session.through` stays a `tcp` selector. mmt-dpi 1.10.2 does not classify
+a layer above a plugin it classified under TCP or UDP (#96), so a parent
+plugin above TCP or UDP cannot be tested this way; one above Ethernet can.
+
 ### Session tests
 
 A packet test is one packet, with no session around it. When what your

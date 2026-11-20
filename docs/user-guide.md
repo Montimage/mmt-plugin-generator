@@ -236,6 +236,23 @@ that the plugin file loads after `libmmt_tcpip.so`:
 mmt-plugin -C demo validate
 ```
 
+A parent that is another plugin's protocol is checked from that plugin's
+project, named under `plugins` in `plugin.yaml` (see
+[A parent that is another plugin](#a-parent-that-is-another-plugin)):
+
+- `parents-exist` accepts a parent that is the label of a named project,
+  or of a project one of them names, compared case-insensitively. The
+  project need not be built or installed, and the check passes with
+  `--no-sdk` too. A `.so` entry proves no parent (its protocol is known
+  only once it loads), and an entry `validate` cannot use fails the check
+  with `model.bad-plugin`, exit 3.
+- `load-order` also checks that `mmtp_<label>.so` sorts after the plugin
+  file of every named plugin (a project's `mmtp_<label>.so`, a `.so`
+  entry's own name), since mmt-dpi loads the plugins of a directory in file
+  name order and a parent must be registered first. A child labelled
+  `ocpp_example` under a parent labelled `websocket_example` fails it
+  (`model.load-order`, exit 3): `mmtp_ocpp_example.so` sorts first.
+
 `generate` writes `generated/demo_mmt_plugin.h` and `.c`, and `plugin.lock`,
 which records their hashes, the tool version and the profile. Commit all
 three. Re-running it on an unchanged model writes nothing, and
@@ -402,7 +419,9 @@ file names. `result.plugins` lists them in that order, each with its
 file). A plugin the named projects themselves name loads first, once. An
 entry that `test` cannot use (missing, neither a project nor a `.so` file,
 named twice, a cycle, this plugin's label) is `model.bad-plugin`, exit 3.
-The named plugins are not rebuilt with the sanitizers.
+The named plugins are not rebuilt with the sanitizers. `validate` reads the
+same list: it finds the parent in its project and checks that the plugin
+loads after it ([Validate and generate](#validate-and-generate)).
 
 A packet test's `through` can name such a parent by its label, when its
 project is named under `plugins` (a `.so` file named directly cannot be
@@ -481,11 +500,12 @@ packets:
   (`dport`) and optionally the client's (`sport`); `protocol` and
   `proto_id` are the plugin's.
 - `session.attributes` lists attributes every packet of the plugin's
-  checks: one a packet does not list must be absent there.
+  checks: one a packet does not list must be absent there. `session` has
+  no other key (`note` is a comment), so a misspelt one is an error.
 - Each step of `packets` is `open: true` (the three-way handshake),
   `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
   segment `from` the client or the server, its TCP payload in `bytes`
-  (none: a pure ACK), with `retransmit: true` to send it again at that
+  (none: a pure ACK; at most 65495 bytes, one IPv4/TCP frame), with `retransmit: true` to send it again at that
   side's previous sequence number, `lost: N` for bytes the capture
   lost before it, or `back: N` to send it `N` bytes before that side's
   next sequence number (a segment that arrives late, or one sent over

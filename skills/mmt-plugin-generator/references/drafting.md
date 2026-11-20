@@ -132,9 +132,9 @@ message over two segments, an answer linked to its request), write a
 session test, `tests/<label>-session-<case>.yaml`, from the spec's
 exchange: `session` (`through: "tcp:dport=N"`, the protocol, its id, and
 the `attributes` every packet of the plugin's checks, absent where a
-packet does not list them) and `packets`, the steps in order: `open: true`
+packet does not list them; no other key) and `packets`, the steps in order: `open: true`
 (the handshake), `from: client` or `from: server` with the segment's
-`bytes` and its `expect` (`"none"`, or its `attributes`, without
+`bytes` (at most 65495) and its `expect` (`"none"`, or its `attributes`, without
 `offset`/`length` when the value comes from an earlier packet),
 `retransmit: true`, `lost: N`, `back: N` (a segment that arrives late,
 `N` bytes before that side's next sequence number), and `idle: N` seconds. `test` builds the

@@ -198,6 +198,11 @@ protocol model. A Python rewrite is planned in
   against what `init_extraction()` registers with the installed plugins
   (`src/mmt_plugin/sdk/registry.py`: a child Python process loads
   `libmmt_core` with ctypes, without the plugin's own `mmtp_<label>.so`).
+  `plugin.yaml`'s `plugins` (#146, `src/mmt_plugin/plugins.py`): a parent
+  that is a named project's label exists (`parents-exist`, no installed
+  copy needed, `--no-sdk` too; a bad entry fails it with
+  `model.bad-plugin`), and `load-order` also requires `mmtp_<label>.so` to
+  sort after every named plugin's file (`model.load-order`).
   Without an SDK it exits 4 unless `--no-sdk`. `commands/modelio.py` reads
   `MODEL` (PDL v1 or `plugin.yaml`) for every command that takes one.
   Tests in `tests/unit/test_validate.py`
@@ -265,8 +270,8 @@ protocol model. A Python rewrite is planned in
   when stale (each project with its own `sdk.profile`) and loaded before
   the plugin in every harness run (`harness.run`'s `extra`, linked as
   `p<n>-<name>` so mmt-dpi's alphasort loads them in that order),
-  `result.plugins`; `validate` (#146) and `through` (#147) do not read them
-  yet. Tests in
+  `result.plugins`; `validate` reads them too (#146), `through` (#147)
+  does not yet. Tests in
   `tests/unit/packettest/`: `test_testing.py`, `test_frames.py`,
   `test_session.py` and `test_command.py` (fake SDK, compiler and harness
   run), and `test_sdk.py`

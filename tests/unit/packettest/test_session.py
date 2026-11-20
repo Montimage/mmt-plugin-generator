@@ -22,6 +22,7 @@ from mmt_plugin.testing.packets import (
     load,
 )
 from mmt_plugin.testing.session import (
+    MAX_SEGMENT,
     SessionTest,
     build_frames,
     check_frame,
@@ -166,6 +167,9 @@ def test_a_packet_test_still_loads_and_load_rejects_a_session_test(tmp_path: Pat
     ("old", "new", "message"),
     [
         ('  through: "tcp:dport=4433"', '  through: "udp:dport=4433"', "runs over tcp"),
+        # A misspelt key would turn the absent-attribute check off (#124).
+        ("\n  attributes:\n", "\n  atributes:\n", "session: unknown key 'atributes'"),
+        ("  proto_id: 960\n", "  proto_id: 960\n  bytes: []\n", "session: unknown key 'bytes'"),
         ('  through: "tcp:dport=4433"', '  through: "tcp:sport=1"', "server's port"),
         ('  through: "tcp:dport=4433"', '  through: "tcp:dport=70000"', "is not a number"),
         ("  proto_id: 960\n", "", "missing key 'proto_id'"),
@@ -202,6 +206,42 @@ def test_a_bad_session_test_is_a_bad_packet_test(
     assert exc.value.diagnostic.code == "model.bad-packet-test"
     assert exc.value.diagnostic.location is not None
     assert exc.value.diagnostic.location.file == "tests/t.yaml"
+
+
+def test_a_session_note_is_a_comment(tmp_path: Path) -> None:
+    text = SESSION.replace("  proto_id: 960\n", '  proto_id: 960\n  note: "a comment"\n', 1)
+    test = _load(tmp_path, text)
+    assert isinstance(test, SessionTest)
+    assert test.attributes == _session(tmp_path).attributes
+
+
+def _one_segment(size: int) -> str:
+    """SESSION's connection with one client segment of ``size`` bytes."""
+    chunk = " ".join(["00"] * size)
+    return SESSION[: SESSION.index("packets:")] + (
+        f'packets:\n  - open: true\n  - from: "client"\n    bytes:\n      - "{chunk}"\n'
+    )
+
+
+def test_a_segment_fits_one_ipv4_tcp_frame(tmp_path: Path) -> None:
+    # An IPv4 packet is at most 65535 bytes, 40 of them the IPv4 and TCP headers.
+    assert MAX_SEGMENT == 65495
+    test = _load(tmp_path, _one_segment(MAX_SEGMENT))
+    assert isinstance(test, SessionTest)
+    frame = build_frames(test)[-1]
+    assert len(frame.payload) == MAX_SEGMENT
+    assert struct.unpack(">H", frame.frame[16:18])[0] == 65535
+    # One byte more is a bad packet test, not a struct.error when the frames
+    # are built (#124).
+    with pytest.raises(PacketTestError) as exc:
+        _load(tmp_path, _one_segment(MAX_SEGMENT + 1))
+    diagnostic = exc.value.diagnostic
+    assert diagnostic.code == "model.bad-packet-test"
+    assert diagnostic.message == (
+        "packets[1]: the segment has 65496 bytes; one IPv4/TCP frame carries at most 65495"
+    )
+    assert diagnostic.location is not None
+    assert diagnostic.location.file == "tests/t.yaml"
 
 
 def test_a_retransmission_needs_data_sent_before_it(tmp_path: Path) -> None:

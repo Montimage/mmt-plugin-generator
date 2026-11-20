@@ -130,8 +130,9 @@ the first attribute that is not constant, and a struct has no `offset`.
 ### Parents
 
 Each parent names a protocol by its registered name, case-insensitively: an
-SDK protocol (`ethernet`, `udp`, ...) or an installed plugin's. `validate`
-checks that each one exists (`parents-exist`).
+SDK protocol (`ethernet`, `udp`, ...), an installed plugin's, or the label
+of a project `plugins` names (below). `validate` checks that each one
+exists (`parents-exist`).
 
 - With `classify`, the generated code attaches the protocol: when every
   `match` holds (the `length`-byte unsigned integer at `offset` from the
@@ -196,6 +197,14 @@ file, is named twice, names back a project that names this one (a cycle),
 or has this plugin's label (or another named project's) is
 `model.bad-plugin` at the entry, exit 3. The key changes nothing in the
 generated code.
+
+`mmt-plugin validate` reads the same list. A parent that is the label of
+a named project, or of a project one of them names, exists
+(`parents-exist`), with no build or installed copy and with `--no-sdk`;
+a `.so` entry proves no parent. And since mmt-dpi loads the plugins of a
+directory in file name order, `mmtp_<label>.so` must sort after the file
+of every named plugin (`load-order`, `model.load-order`): a child labelled
+`ocpp_example` loads before its parent `websocket_example` and fails.
 
 ## The YAML subset
 

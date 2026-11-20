@@ -85,7 +85,7 @@ def test_the_tests_load_and_name_a_source() -> None:
     assert all((t.protocol, t.proto_id) == ("OCIP", 960) for t in tests)
     sessions = [t for t in tests if isinstance(t, SessionTest)]
     packets = [t for t in tests if isinstance(t, PacketTest)]
-    assert (len(packets), len(sessions)) == (10, 18)
+    assert (len(packets), len(sessions)) == (10, 19)
     # Every packet test also runs through TCP port 2208, the plugin's parent.
     assert all(t.through is not None and t.through.text == "tcp:dport=2208" for t in packets)
     for path in paths:
@@ -114,14 +114,24 @@ def test_the_recorded_hashes_are_the_files_on_disk() -> None:
     assert rows, "no hash in inputs/SOURCES.md"
     for name, digest in rows:
         assert _sha256(WORK / "inputs" / name) == digest, f"inputs/SOURCES.md: {name}"
-    manifest = json.loads((WORK / "manifest.json").read_text(encoding="utf-8"))
-    checked = 0
-    for name, digest in manifest["files"].items():
-        if name.startswith("project/build/"):
-            continue
-        assert _sha256(WORK / name) == digest, f"manifest.json: {name}"
-        checked += 1
-    assert checked >= len(rows) + 1, manifest["files"]
+    files: dict[str, str] = json.loads((WORK / "manifest.json").read_text(encoding="utf-8"))[
+        "files"
+    ]
+    # Every input SOURCES.md lists, SOURCES.md itself, the capture, the model,
+    # the hooks and the plugin built from them.
+    assert set(files) == {f"inputs/{name}" for name, _ in rows} | {
+        "inputs/SOURCES.md",
+        "inputs/make_tests.py",
+        "capture/capture.pcap",
+        "project/plugin.yaml",
+        "project/src/ocip_impl.c",
+        "project/build/mmtp_ocip.so",
+    }
+    for name, digest in rows:
+        assert files[f"inputs/{name}"] == digest, f"manifest.json: inputs/{name}"
+    for name, digest in files.items():
+        if not name.startswith("project/build/"):
+            assert _sha256(WORK / name) == digest, f"manifest.json: {name}"
 
 
 def test_the_tests_are_what_make_tests_writes(tmp_path: Path) -> None:

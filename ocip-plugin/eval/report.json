@@ -12,7 +12,7 @@
   },
   "plugin": {
     "path": "ocip-plugin/project/build/mmtp_ocip.so",
-    "sha256": "ac5f07e8458b7d764c45f0865a368bb0fa042517a41eac01519f1d13096ffcdc",
+    "sha256": "1f9aceb04d782b344eef8d980b253029198d90cbe39f6119cd0fc9f1f3dfa32e",
     "label": "ocip"
   },
   "parent": "tcp:port=2208",

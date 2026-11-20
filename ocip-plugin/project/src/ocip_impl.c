@@ -89,10 +89,11 @@
  * retransmission of a benign segment reports 0. Only `has_dtd` gets this
  * view: the tail, the hole, `dtd`, `session_id` and `command_type` keep
  * following the bytes the probe took first. What stays unhandled: a
- * filler of several segments (only the last one's start is kept), a
- * segment that starts inside the last bytes (the server would have a gap
- * there), and, after a filler, a keyword that needs bytes of the real
- * segment and of the segments after it.
+ * filler of several segments, or a filler followed in order by more bytes
+ * before the real ones arrive (only the last scanned segment's start is
+ * kept, so the real bytes then end before it), a segment that starts
+ * inside the last bytes, and, after a filler, a keyword that needs bytes
+ * of the real segment and of the segments after it.
  *
  * Without a session (mmt-plugin test's packets behind Ethernet), the layer's
  * bytes are scanned alone, from an empty state, and `is_request` is absent.
@@ -883,6 +884,13 @@ static void ox_session_packet(const ipacket_t *ipacket, unsigned tcp_index, stru
     d->next_seq = seg.seq + seg.total;
     if (pos >= seg.n) {
         d->last_known = 0; /* the last bytes are not in the capture */
+        if (over) {
+            /* The capture ends in the overlap: only what it holds. */
+            view->scanned = 1;
+            view->dir_known = 1;
+            view->is_request = seg.dport == OX_PORT;
+            view->has_dtd = 1;
+        }
         return;
     }
     view->dir_known = 1;

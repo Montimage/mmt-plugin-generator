@@ -1,7 +1,7 @@
 # Capture evaluation: ocip — PASS
 
 - Capture: `ocip-plugin/capture/capture.pcap` (sha256 `0688efc704f01b33…`), **synthetic**
-- Plugin: `ocip-plugin/project/build/mmtp_ocip.so` (sha256 `ac5f07e8458b7d76…`)
+- Plugin: `ocip-plugin/project/build/mmtp_ocip.so` (sha256 `1f9aceb04d782b34…`)
 - Parent: `tcp:port=2208`; expected frames from tshark: `tcp.port==2208 && tcp.len>0`
 - Frames 101, expected 23, claimed 50, expected and claimed 23, recall 1.0
 

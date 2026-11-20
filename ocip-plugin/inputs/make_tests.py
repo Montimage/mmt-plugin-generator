@@ -812,6 +812,31 @@ write_session(
     "gen_pcaps.py attack_v7_split's message, cut after its XML declaration, a filler "
     "crafted between both parts",
 )
+# A documented limit (REPORT.md, "Not checked"; the header of src/ocip_impl.c):
+# only the last scanned segment's start is kept, so when the rest of the
+# message follows the filler in order before the real TYPE arrives, the real
+# bytes end before that start and are searched alone. The server reads
+# "<!DOCTYPE" (it drops the filler, queues the rest, then TYPE fills the
+# gap). This test pins the miss.
+write_session(
+    "session-inorder-filler-then-rest",
+    "Limit, pinned: ...<!DOC, a 4-byte filler in order, the rest of the message in order, "
+    "then TYPE at the filler's sequence number; has_dtd is 0 everywhere",
+    [
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], text="...<!DOC"),
+        step("client", INORDER, [("has_dtd", 0), ("is_request", 1)], text="filler, in order"),
+        step("client", v7[cut + 4 :], after_v7, text="the rest of the message, in order"),
+        step(
+            "client",
+            v7[cut : cut + 4],
+            [("has_dtd", 0), ("is_request", 1)],
+            back=len(INORDER) + len(v7) - cut - 4,
+            text="TYPE, over the filler, after the rest",
+        ),
+    ],
+    "gen_pcaps.py attack_v7_split's two client segments, a filler crafted between them, "
+    "the second cut after 'TYPE' and its two parts sent in reverse order",
+)
 # The control (#140): a segment sent over the last in-order one counts a
 # DOCTYPE only when that segment did not already report one, so a plain
 # retransmission of a benign segment reports has_dtd 0, and a retransmission

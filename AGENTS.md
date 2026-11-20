@@ -59,11 +59,11 @@ protocol model. A Python rewrite is planned in
   harness `test` built, next to the WebSocket plugin; needs
   `MMT_GOLDEN_SDK`).
 - `ocip-plugin/` (#134): the work folder of the Cisco BroadWorks OCI-P
-  plugin for mmt-security rule 231 (`README.md`, `REPORT.md`,
+  plugin for mmt-security rule 232 (`README.md`, `REPORT.md`,
   `request.md`, `inputs/`, `runs/`, the synthetic capture and its
   evaluation). Its project, `ocip-plugin/project` (label `ocip`, id 960,
   registered name `OCIP`, parent `tcp` port 2208 in its hook), is not an
-  example: rule 231 reads `OCIP.*`, so it keeps its label and is not
+  example: rule 232 reads `OCIP.*`, so it keeps its label and is not
   under `examples/`. It is kept current (#138, option 1 of the three the
   issue weighed): regenerate it with the examples after a generator change
   or a version bump (`examples/README.md`, "Regenerating"; the release's

@@ -1,9 +1,9 @@
-# Session test of the ocip plugin (mmt-security rule 231), written from the OCI-P wire format:
+# Session test of the ocip plugin (mmt-security rule 232), written from the OCI-P wire format:
 # its packets run in order, one TCP connection. Format and rules: tests/corpus/README.md, Session files
 schema: 1
 id: "ocip/session-server-doctype"
 model: "ocip"
-summary: "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 231 ignores it)"
+summary: "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 232 ignores it)"
 source: "gen_pcaps.py benign_html_doctype.pcap, second flow"
 session:
   through: "tcp:dport=2208,sport=42003"

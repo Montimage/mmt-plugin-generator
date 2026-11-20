@@ -17,6 +17,17 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   under another plugin can be tested; `result.plugins` lists them. A bad
   entry is the new code `model.bad-plugin` (exit 3).
 
+### Changed
+
+- `mmt-plugin validate` reads `plugins` too (#146). `parents-exist`
+  accepts a parent that is the label of a named project (or of a project
+  one of them names), without an installed copy and with `--no-sdk`; a bad
+  entry fails it with `model.bad-plugin`. `load-order` also requires
+  `mmtp_<label>.so` to sort after the plugin file of every named plugin
+  (`model.load-order`), as mmt-dpi loads the plugins of a directory in
+  file name order: `mmtp_ocpp_example.so` loads before
+  `mmtp_websocket_example.so`.
+
 ### Fixed
 
 - `mmt-plugin test`: a session test with an unknown key in its `session`

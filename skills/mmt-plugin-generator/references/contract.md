@@ -139,12 +139,12 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.default-byte-order` | Warning: set `protocol.encoding` (`network` for big-endian). |
 | `model.classifynext-without-encapsulation` | Warning: set `protocol.encapsulation: true` when `classify_next` is meant. |
 | `model.classify-port` | `port`, `sport` and `dport` classify only under `protocol: tcp`: under another parent, give `match` and `offset` from the start of the parent. |
-| `model.unknown-parent` | Name a parent the SDK profile or an installed plugin has (`ethernet`, `ip`, `udp`, `tcp`, ...). |
-| `model.load-order` | The label must make `mmtp_<label>.so` sort after `libmmt_tcpip.so`: choose another label. |
+| `model.unknown-parent` | Name a parent the SDK profile or an installed plugin has (`ethernet`, `ip`, `udp`, `tcp`, ...), or another plugin's label with its project under `plugins:` in `plugin.yaml`. |
+| `model.load-order` | The label must make `mmtp_<label>.so` sort after `libmmt_tcpip.so` and after the plugin file of every plugin `plugins:` names (the message names it): choose another label. |
 | `model.no-parent` | Warning from `init`: add a parent to `plugin.yaml`. |
 | `model.legacy-*` | Warnings from `import`: the converted model does what the spec says, not what the Java tool did. Check the attribute against the spec. |
 | `model.bad-packet-test` | The packet test file is not corpus schema 1 (`tests/corpus/README.md`, Packet files): fix it at the location. |
-| `model.bad-plugin` | An entry of `plugins:` in `plugin.yaml` that `test` cannot use, at the entry: fix the path (relative to the directory of `plugin.yaml`, to a project directory with its `plugin.yaml` or to a built `.so` file), name each plugin once, never this plugin itself or a project that names this one. |
+| `model.bad-plugin` | An entry of `plugins:` in `plugin.yaml` that `test` or `validate` cannot use, at the entry: fix the path (relative to the directory of `plugin.yaml`, to a project directory with its `plugin.yaml` or to a built `.so` file), name each plugin once, never this plugin itself or a project that names this one. |
 | `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
 | `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |

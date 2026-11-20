@@ -742,6 +742,31 @@ def test_a_session_test_runs_its_packets_in_one_harness(
 DPORT_4433_TCP = (36, (4433).to_bytes(2, "big"))
 
 
+def test_an_oversized_segment_is_exit_3_before_anything_is_built(
+    project: Path, run: Run, fake: FakeHarness
+) -> None:
+    # 65496 bytes do not fit one IPv4/TCP frame: a bad packet test, never
+    # internal.unexpected from the frame builder (#124).
+    _session(project, SESSION.replace('"09"', '"' + " ".join(["00"] * 65496) + '"'))
+    code, doc = run()
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    bad = [d for d in doc["diagnostics"] if d["code"] == "model.bad-packet-test"]
+    assert bad[0]["location"]["file"] == "tests/s.yaml"
+    assert "packets[2]: the segment has 65496 bytes" in bad[0]["message"]
+    assert not [d for d in doc["diagnostics"] if d["code"] == "internal.unexpected"]
+    assert fake.runs == []
+
+
+def test_a_misspelt_session_key_is_exit_3(project: Path, run: Run, fake: FakeHarness) -> None:
+    _session(project, SESSION.replace("\n  attributes:\n", "\n  atributes:\n", 1))
+    code, doc = run()
+    assert code == 3 and doc["error"]["code"] == "model.bad-packet-test"
+    bad = [d for d in doc["diagnostics"] if d["code"] == "model.bad-packet-test"]
+    assert bad[0]["location"]["file"] == "tests/s.yaml"
+    assert "session: unknown key 'atributes'" in bad[0]["message"]
+    assert fake.runs == []
+
+
 def test_a_session_failure_names_its_packet(project: Path, run: Run, fake: FakeHarness) -> None:
     # The last client segment's size is not absent where the session lists only kind,
     # but kind is 7 there; the server's segment is the plugin's where it must not be.

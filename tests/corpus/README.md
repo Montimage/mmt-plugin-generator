@@ -263,6 +263,8 @@ packets:
 - `session.attributes` (optional): `name` and `type` of attributes every
   packet of the plugin's checks. One a packet does not list must be
   absent there.
+- `session` has no other key (`note` is a comment): a misspelt one, such
+  as `atributes`, is an error, not a check turned off (#124).
 - `packets`: the steps, in order, each a mapping:
   - `open: true`: the three-way handshake;
   - `idle: N`: `N` seconds (1 to 3600) of other TCP traffic, one pure ACK
@@ -270,7 +272,8 @@ packets:
     apart), to let mmt-dpi's timers run;
   - `from: client` or `from: server`: one segment of that side, with the
     sequence and acknowledgment numbers of a connection without loss.
-    `bytes` is its TCP payload (none: a pure ACK). `retransmit: true` sends
+    `bytes` is its TCP payload (none: a pure ACK), at most 65495 bytes,
+    what one IPv4/TCP frame carries (#124). `retransmit: true` sends
     it at the sequence number of that side's previous segment with data;
     `lost: N` loses that side's next `N` bytes before it (the capture never
     had them); `back: N` sends it `N` bytes before that side's next

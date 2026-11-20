@@ -486,6 +486,144 @@ def test_parents_check_statuses() -> None:
     assert parents_check(["tcp"], None, None, "no SDK").status == "skip"
 
 
+def test_parents_check_with_named_projects() -> None:
+    # #146: a parent that is a named project's label exists without an SDK
+    # registry or an installed copy.
+    profile = get_bundled("1.10.2")
+    assert profile is not None
+    choice = ProfileChoice(profile, ProfileSource.CLI)
+    projects = {"websocket_example": "../websocket"}
+    only = parents_check(["WebSocket_Example"], choice, None, "--no-sdk", projects)
+    assert (only.status, only.detail) == ("pass", "WebSocket_Example (../websocket)")
+    mixed = parents_check(["tcp", "websocket_example"], choice, None, "--no-sdk", projects)
+    assert (mixed.status, mixed.detail) == (
+        "skip",
+        "--no-sdk: tcp in SDK 1.10.2; websocket_example (../websocket)",
+    )
+    ok = parents_check(["tcp", "websocket_example"], choice, registry(), None, projects)
+    assert (ok.status, ok.detail) == ("pass", "tcp, websocket_example (../websocket)")
+    bad = parents_check(["websocket_example"], choice, None, "--no-sdk", {})
+    assert bad.status == "fail"
+    assert bad.error is not None and bad.error.code == "model.unknown-parent"
+    assert "plugins" in bad.error.hint
+
+
+def plugin_yaml(label: str, *parents: str, plugins: Sequence[str] = ()) -> str:
+    """A plugin.yaml model, with ``parents`` (no classify) and ``plugins``."""
+    text = (
+        f"schema: 1\nprotocol:\n  label: {label}\n  id: 960\n  encoding: network\n"
+        "sdk:\n  profile: '1.10.2'\n"
+        "attributes:\n  - name: kind\n    type: MMT_U8_DATA\n    offset: 0\n"
+    )
+    if parents:
+        text += "parents:\n" + "".join(f"  - protocol: {p}\n" for p in parents)
+    if plugins:
+        text += "plugins:\n" + "".join(f'  - "{p}"\n' for p in plugins)
+    return text
+
+
+def write_project(directory: Path, label: str, *parents: str, plugins: Sequence[str] = ()) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "plugin.yaml").write_text(plugin_yaml(label, *parents, plugins=plugins))
+    return directory
+
+
+def test_a_plugin_parent_exists_from_its_named_project_with_no_sdk(
+    run: Run, project: Path, reader: Reader
+) -> None:
+    # AC1: the parent's project is named under plugins; it is not built and
+    # not installed, and there is no SDK.
+    write_project(project / "websocket", "websocket_example", "tcp")
+    write_project(project, "yamlchild", "websocket_example", plugins=["websocket"])
+    code, doc = run("--no-sdk")
+    assert code == 0, doc["error"]
+    assert statuses(doc)["parents-exist"] == "pass"
+    assert detail(doc, "parents-exist") == "websocket_example (websocket)"
+    assert statuses(doc)["load-order"] == "pass"
+    assert detail(doc, "load-order") == (
+        "mmtp_yamlchild.so after libmmt_tcpip.so, mmtp_websocket_example.so (C)"
+    )
+    assert not (project / "websocket" / "build").exists()
+    assert reader.calls == []
+    # Without the entry, the same parent is unknown.
+    write_project(project, "yamlchild", "websocket_example")
+    code, doc = run("--no-sdk")
+    assert code == 3
+    assert doc["error"]["code"] == "model.unknown-parent"
+    assert detail(doc, "parents-exist") == (
+        "parent protocol websocket_example is not in the SDK profile 1.10.2"
+    )
+
+
+def test_a_plugin_parent_exists_from_its_project_without_an_installed_copy(
+    run: Run, project: Path, sdk_prefix: Path, reader: Reader
+) -> None:
+    # The registry (the installed plugins) does not have the parent.
+    write_project(project / "websocket", "websocket_example", "tcp")
+    write_project(project, "yamlchild", "tcp", "websocket_example", plugins=["websocket"])
+    code, doc = run("--sdk", str(sdk_prefix))
+    assert code == 0, doc["error"]
+    assert statuses(doc)["parents-exist"] == "pass"
+    assert detail(doc, "parents-exist") == "tcp, websocket_example (websocket)"
+    assert len(reader.calls) == 1
+
+
+def test_a_parent_project_a_named_project_names_counts(run: Run, project: Path) -> None:
+    # The plugins a named project names load too: their labels are parents.
+    write_project(project / "base", "base_example", "tcp")
+    write_project(project / "mid", "mid_example", "base_example", plugins=["../base"])
+    write_project(project, "yamlchild", "base_example", "mid_example", plugins=["mid"])
+    code, doc = run("--no-sdk")
+    assert code == 0, doc["error"]
+    assert detail(doc, "parents-exist") == "base_example (base), mid_example (mid)"
+    assert detail(doc, "load-order") == (
+        "mmtp_yamlchild.so after libmmt_tcpip.so, mmtp_base_example.so, mmtp_mid_example.so (C)"
+    )
+
+
+def test_a_plugin_entry_validate_cannot_use_fails_parents_exist(run: Run, project: Path) -> None:
+    write_project(project, "yamlchild", "websocket_example", plugins=["nosuch"])
+    code, doc = run("--no-sdk")
+    assert code == 3
+    assert doc["error"]["code"] == "model.bad-plugin"
+    assert [c["id"] for c in doc["result"]["checks"]] == list(CHECKS)
+    assert statuses(doc)["parents-exist"] == "fail"
+    assert detail(doc, "parents-exist").startswith("plugins: nosuch not found")
+    (bad,) = [d for d in doc["diagnostics"] if d["code"] == "model.bad-plugin"]
+    assert bad["location"]["file"] == "plugin.yaml"
+    assert bad["location"]["line"] == 15  # the entry
+    # load-order still checks libmmt_tcpip.so.
+    assert statuses(doc)["load-order"] == "pass"
+    assert detail(doc, "load-order") == "mmtp_yamlchild.so after libmmt_tcpip.so (C)"
+    # Also when the model has no parents.
+    write_project(project, "yamlchild", plugins=["nosuch"])
+    code, doc = run("--no-sdk")
+    assert code == 3
+    assert doc["error"]["code"] == "model.bad-plugin"
+    assert statuses(doc)["parents-exist"] == "fail"
+
+
+def test_plugin_entries_are_relative_to_the_model_file(
+    run: Run, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # MODEL in another directory: its entries are relative to that one.
+    other = tmp_path / "other"
+    write_project(other / "websocket", "websocket_example", "tcp")
+    write_project(other / "child", "yamlchild", "websocket_example", plugins=["../websocket"])
+    code, doc = run(str(other / "child" / "plugin.yaml"), "--no-sdk")
+    assert code == 0, doc["error"]
+    assert detail(doc, "parents-exist") == f"websocket_example ({other / 'websocket'})"
+    # MODEL from stdin: relative to the project directory.
+    write_project(project / "websocket", "websocket_example", "tcp")
+    stdin = tmp_path / "stdin.yaml"
+    stdin.write_text(plugin_yaml("yamlchild", "websocket_example", plugins=["websocket"]))
+    with stdin.open("rb") as f:
+        monkeypatch.setattr("sys.stdin", type("S", (), {"buffer": f})())
+        code, doc = run("-", "--model-format", "yaml", "--no-sdk")
+    assert code == 0, doc["error"]
+    assert detail(doc, "parents-exist") == "websocket_example (websocket)"
+
+
 # --- load-order --------------------------------------------------------------
 
 
@@ -548,6 +686,65 @@ def test_a_load_order_failure_exits_3(run: Run, sdk_prefix: Path, tmp_path: Path
     assert doc["error"]["code"] == "model.load-order"
     assert statuses(doc)["load-order"] == "fail"
     assert "model.load-order" in codes(doc)
+
+
+def test_load_order_after_another_file() -> None:
+    assert load_order("mmtp_ocpp_example.so", C_ONLY, "mmtp_websocket_example.so") == (
+        False,
+        "mmtp_ocpp_example.so sorts before mmtp_websocket_example.so (C)",
+    )
+    assert load_order("mmtp_ws_ocpp.so", C_ONLY, "mmtp_websocket_example.so")[0] is True
+
+
+def test_a_child_that_loads_before_its_plugin_parent_fails_load_order(
+    run: Run, project: Path, sdk_prefix: Path
+) -> None:
+    # AC2, #96's case: mmtp_ocpp_example.so sorts before
+    # mmtp_websocket_example.so, so mmt-dpi loads the child first.
+    write_project(project / "websocket", "websocket_example", "tcp")
+    write_project(project, "ocpp_example", "websocket_example", plugins=["websocket"])
+    for args in (("--no-sdk",), ("--sdk", str(sdk_prefix))):
+        code, doc = run(*args)
+        assert code == 3
+        assert doc["error"]["code"] == "model.load-order"
+        assert doc["error"]["message"] == "1 error in plugin.yaml (load-order failed)"
+        assert statuses(doc)["parents-exist"] in ("pass", "skip")
+        assert statuses(doc)["load-order"] == "fail"
+        assert detail(doc, "load-order") == (
+            "mmtp_ocpp_example.so sorts before mmtp_websocket_example.so (C)"
+        )
+        (d,) = [d for d in doc["diagnostics"] if d["code"] == "model.load-order"]
+        assert d["message"] == (
+            "mmtp_ocpp_example.so sorts before mmtp_websocket_example.so (C): the plugin"
+            " file mmtp_ocpp_example.so would load before mmtp_websocket_example.so, the"
+            " plugin of websocket_example (websocket): a protocol it attaches under would"
+            " not be registered yet"
+        )
+        assert "mmtp_websocket_example.so" in d["hint"]
+        assert d["location"]["line"] == 3
+
+
+def test_load_order_against_a_named_plugin_file(run: Run, project: Path, tmp_path: Path) -> None:
+    # A .so entry: its own file name. It names no project, so it proves no
+    # parent; it still must load first.
+    (project / "lib").mkdir()
+    (project / "lib" / "mmtp_zzz.so").write_bytes(b"")
+    write_project(project, "yamlchild", "tcp", plugins=["lib/mmtp_zzz.so"])
+    folded: Collation = ("en_US.UTF-8", lambda s: s.casefold())
+    command = make_command(tmp_path, Reader(registry()), orders=[*C_ONLY, folded])
+    code, doc = run("--no-sdk", command=command)
+    assert code == 3
+    assert doc["error"]["code"] == "model.load-order"
+    assert detail(doc, "load-order") == (
+        "mmtp_yamlchild.so sorts before mmtp_zzz.so (C, en_US.UTF-8)"
+    )
+    (d,) = [d for d in doc["diagnostics"] if d["code"] == "model.load-order"]
+    assert "mmtp_zzz.so, the named plugin:" in d["message"]
+    # A parent the .so file would register is not known from it.
+    write_project(project, "yamlchild", "zzz", plugins=["lib/mmtp_zzz.so"])
+    code, doc = run("--no-sdk", command=command)
+    assert statuses(doc)["parents-exist"] == "fail"
+    assert doc["error"]["code"] == "model.unknown-parent"
 
 
 # --- id-range ----------------------------------------------------------------

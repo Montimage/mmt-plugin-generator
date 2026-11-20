@@ -13,17 +13,23 @@ stable id and a status (``pass``, ``warn``, ``fail``, ``skip``) and a detail:
 - ``id-free``: no SDK protocol has the id, in the SDK headers (the profile)
   or at run time with the installed plugins (``mmt_plugin.sdk.registry``);
 - ``name-free``: the same for the name, compared case-insensitively;
-- ``parents-exist``: every parent protocol plugin.yaml names is in the SDK
-  (a PDL v1 model names none: ``skip``);
-- ``load-order``: ``mmtp_<label>.so`` sorts after ``libmmt_tcpip.so`` in the
-  C locale and in the current ``LC_COLLATE``, as mmt-dpi's loader
-  (``scandir`` with ``alphasort``) needs for the parents to be registered;
+- ``parents-exist``: every parent protocol plugin.yaml names is in the SDK,
+  or is the label of a project plugin.yaml's ``plugins`` names (#146,
+  ``mmt_plugin.plugins``; no installed copy needed); a PDL v1 model names
+  none: ``skip``. An entry of ``plugins`` that cannot be used fails it
+  (``model.bad-plugin``);
+- ``load-order``: ``mmtp_<label>.so`` sorts after ``libmmt_tcpip.so``, and
+  after the plugin file of every plugin ``plugins`` names (each project's
+  ``mmtp_<label>.so``, each ``.so`` file's name), in the C locale and in the
+  current ``LC_COLLATE``, as mmt-dpi's loader (``scandir`` with
+  ``alphasort``) needs for the parents to be registered;
 - ``id-range``: the id is in 950-999, the third-party range (a warning).
 
 Without an SDK, the run exits 4 (``sdk.not-found``, decision D12) unless
 ``--no-sdk``: then ``id-free`` and ``name-free`` check the profile only and
 report ``skip`` (or ``fail`` on a conflict the profile shows), and
-``parents-exist`` is ``skip``. The exit code is the first failing check's
+``parents-exist`` is ``skip`` for the SDK's parents (it passes when every
+parent is a named project's). The exit code is the first failing check's
 class (a taken id or name is 3); ``--strict`` also fails on the first
 warning, with its code's class.
 """
@@ -33,15 +39,24 @@ from __future__ import annotations
 import argparse
 import locale
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from mmt_plugin.commands import Context, Outcome, Subparsers
-from mmt_plugin.commands.modelio import FORMATS, absolute, parse_model, read_model
+from mmt_plugin.commands.modelio import (
+    FORMATS,
+    PROJECT_FILE,
+    absolute,
+    parse_model,
+    read_model,
+    show_path,
+)
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Related, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.pdl import Model, PdlSyntaxError
+from mmt_plugin.plugins import NamedPlugin, PluginError, resolve
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.profile import Profile
 from mmt_plugin.sdk.registry import Registry, RegistryError, read_registry
@@ -64,7 +79,12 @@ __all__ = [
 
 #: The codes this command reports itself (besides the parser's, the
 #: semantic passes' and the SDK's).
-DIAGNOSTIC_CODES = ("model.unknown-parent", "model.load-order", "sdk.registry-unavailable")
+DIAGNOSTIC_CODES = (
+    "model.unknown-parent",
+    "model.load-order",
+    "model.bad-plugin",
+    "sdk.registry-unavailable",
+)
 
 #: The check ids, in the order they run and are reported.
 CHECKS = (
@@ -184,14 +204,16 @@ def _frozen_key(name: str) -> Callable[[str], str]:
     return key
 
 
-def load_order(file_name: str, orders: Sequence[Collation]) -> tuple[bool, str]:
-    """Whether ``file_name`` sorts after ``libmmt_tcpip.so`` in every
-    collation of ``orders``, and the detail to report."""
-    before = [name for name, key in orders if not key(file_name) > key(TCPIP_PLUGIN)]
+def load_order(
+    file_name: str, orders: Sequence[Collation], after: str = TCPIP_PLUGIN
+) -> tuple[bool, str]:
+    """Whether ``file_name`` sorts after ``after`` (``libmmt_tcpip.so``) in
+    every collation of ``orders``, and the detail to report."""
+    before = [name for name, key in orders if not key(file_name) > key(after)]
     names = " and ".join(name for name, _ in orders)
     if before:
-        return False, f"{file_name} sorts before {TCPIP_PLUGIN} ({', '.join(before)})"
-    return True, f"{file_name} after {TCPIP_PLUGIN} ({names})"
+        return False, f"{file_name} sorts before {after} ({', '.join(before)})"
+    return True, f"{file_name} after {after} ({names})"
 
 
 def parents_exist(
@@ -217,28 +239,38 @@ def parents_check(
     choice: ProfileChoice | None,
     registry: Registry | None,
     skipped: str | None,
+    projects: Mapping[str, str] | None = None,
 ) -> Check:
     """The ``parents-exist`` check of ``parents`` (labels): against the
-    profile and the registry; ``skipped`` says why there is no registry
-    (``None``: there is one, or it could not be read)."""
+    projects plugin.yaml's ``plugins`` names (``projects``: each one's label,
+    case-folded, and its directory as reported), then the profile and the
+    registry; ``skipped`` says why there is no registry (``None``: there is
+    one, or it could not be read). A parent that is a named project's label
+    exists without an SDK or an installed copy."""
     if not parents:
         return Check("parents-exist", "skip", "the model declares no parent protocol")
     if choice is None:
         return Check("parents-exist", "skip", "no SDK profile")
-    found, missing = parents_exist(parents, choice.profile, registry)
+    projects = projects or {}
+    named = [p for p in parents if p.casefold() in projects]
+    shown = [f"{p} ({projects[p.casefold()]})" for p in named]
+    others = [p for p in parents if p not in named]
+    found, missing = parents_exist(others, choice.profile, registry)
     if missing:
         message = f"parent protocol {', '.join(missing)} is not in the SDK"
         if registry is None:
             message += f" profile {choice.profile.version}"
-        error = CliError("model.unknown-parent", message, "use a protocol the SDK registers")
-        return Check("parents-exist", "fail", message, error)
-    if skipped is not None:
-        return Check(
-            "parents-exist",
-            "skip",
-            f"{skipped}: {', '.join(found)} in SDK {choice.profile.version}",
+        error = CliError(
+            "model.unknown-parent",
+            message,
+            "use a protocol the SDK registers, or name the project of the plugin that"
+            " registers it under plugins",
         )
-    return Check("parents-exist", "pass", ", ".join(found))
+        return Check("parents-exist", "fail", message, error)
+    if skipped is not None and found:
+        detail = f"{skipped}: {', '.join(found)} in SDK {choice.profile.version}"
+        return Check("parents-exist", "skip", "; ".join([detail, *shown]))
+    return Check("parents-exist", "pass", ", ".join([*found, *shown]))
 
 
 class ValidateCommand:
@@ -274,8 +306,10 @@ class ValidateCommand:
                 "id-free, name-free, parents-exist, load-order, id-range) as pass, warn,\n"
                 "fail or skip. The id and the name must be free in the SDK headers and\n"
                 "among the protocols the installed plugins register at run time\n"
-                "(names are compared case-insensitively). Without an SDK, validate\n"
-                "exits 4 unless --no-sdk. Nothing is written."
+                "(names are compared case-insensitively). A parent may be the label of\n"
+                "a project plugin.yaml's plugins names, whose plugin file must sort\n"
+                "before this one's. Without an SDK, validate exits 4 unless --no-sdk.\n"
+                "Nothing is written."
             ),
             epilog=(
                 "examples:\n"
@@ -384,7 +418,8 @@ class ValidateCommand:
             state.add("schema", "pass", f"{name}, {'schema 1' if yaml else 'PDL v1'}")
 
         if model is not None:
-            self._model_checks(args, model, sdk, choice, sdk_error, state)
+            named = self._named(args, model, project, state)
+            self._model_checks(args, model, sdk, choice, sdk_error, state, project, named)
 
         protocol = None
         if model is not None:
@@ -421,6 +456,28 @@ class ValidateCommand:
             context=context,
         )
 
+    def _named(
+        self, args: argparse.Namespace, model: Model, project: Path, state: _Run
+    ) -> list[NamedPlugin] | PluginError:
+        """The plugins plugin.yaml's ``plugins`` names, and the ones those
+        projects name, in load order (``mmt_plugin.plugins``), or the error
+        of the first entry that cannot be used (its diagnostic added). The
+        entries are relative to the model file's directory: ``project`` for
+        the default model and for stdin. A PDL v1 model names none."""
+        if not model.plugins:
+            return []
+        given = args.model
+        path = project / PROJECT_FILE if given in (None, "-") else absolute(given)
+
+        def read(file: Path) -> Model:
+            return parse_model(read_model(str(file), "yaml", project))
+
+        try:
+            return resolve(model, path.parent, lambda p: show_path(p, project), read)
+        except PluginError as exc:
+            state.diagnostics.append(exc.diagnostic)
+            return exc
+
     def _model_checks(
         self,
         args: argparse.Namespace,
@@ -429,8 +486,11 @@ class ValidateCommand:
         choice: ProfileChoice | None,
         sdk_error: CliError | None,
         state: _Run,
+        project: Path,
+        named: list[NamedPlugin] | PluginError,
     ) -> None:
-        """Every check after ``schema``."""
+        """Every check after ``schema``; ``named`` is what ``_named``
+        returned."""
         props = model.properties
         label, pid = props.label.text, props.id.value
 
@@ -561,41 +621,34 @@ class ValidateCommand:
                     " installed plugins not checked",
                 )
 
-        # parents-exist: plugin.yaml's parents (PDL v1 declares none).
+        # parents-exist: plugin.yaml's parents (PDL v1 declares none), and the
+        # entries of its plugins (#146).
         skipped = None if registry is not None or registry_problem is not None else why_skipped
         parents = list(dict.fromkeys(p.protocol.text for p in model.parents))
-        check = parents_check(parents, choice, registry, skipped)
-        state.add(check.id, check.status, check.detail, check.error)
-        if check.error is not None:
-            state.diagnostics.append(
-                Diagnostic(Severity.ERROR, "model.unknown-parent", check.error.message)
-            )
-
-        # load-order
-        file_name = plugin_file(label)
-        ok, detail = load_order(file_name, self.orders())
-        if ok:
-            state.add("load-order", "pass", detail)
-        else:
-            message = (
-                f"the plugin file {file_name} would load before {TCPIP_PLUGIN}: its parents"
-                " would not be registered yet"
-            )
-            state.diagnostics.append(
-                Diagnostic(
-                    Severity.ERROR,
-                    "model.load-order",
-                    f"{detail}: {message}",
-                    hint="choose a label whose plugin file sorts after libmmt_tcpip.so",
-                    location=label_span,
-                )
-            )
+        if isinstance(named, PluginError):
+            bad = named.diagnostic
             state.add(
-                "load-order",
+                "parents-exist",
                 "fail",
-                detail,
-                CliError("model.load-order", message, "choose another label"),
+                bad.message,
+                CliError("model.bad-plugin", bad.message, bad.hint),
             )
+            named = []
+        else:
+            projects = {
+                p.label.casefold(): show_path(p.project, project)
+                for p in named
+                if p.label is not None and p.project is not None
+            }
+            check = parents_check(parents, choice, registry, skipped, projects)
+            state.add(check.id, check.status, check.detail, check.error)
+            if check.error is not None:
+                state.diagnostics.append(
+                    Diagnostic(Severity.ERROR, "model.unknown-parent", check.error.message)
+                )
+
+        # load-order: after libmmt_tcpip.so, and after every named plugin.
+        self._load_order(plugin_file(label), named, project, label_span, state)
 
         # id-range (a warning: model.id-outside-reserved-range, from semantics)
         low, high = THIRD_PARTY_IDS.start, THIRD_PARTY_IDS.stop - 1
@@ -603,6 +656,68 @@ class ValidateCommand:
             state.add("id-range", "pass", f"{pid} in {low}-{high}")
         else:
             state.add("id-range", "warn", f"{pid} outside {low}-{high}")
+
+    def _load_order(
+        self,
+        file_name: str,
+        named: Sequence[NamedPlugin],
+        project: Path,
+        label_span: Location,
+        state: _Run,
+    ) -> None:
+        """The ``load-order`` check: ``file_name`` after ``libmmt_tcpip.so``,
+        whose protocols the parents are, and after the file of every named
+        plugin (``mmtp_<label>.so`` of a project, a ``.so`` file's own name),
+        which must have registered its protocol when this plugin attaches
+        under it: mmt-dpi loads the plugins of a directory in file name
+        order."""
+        orders = self.orders()
+        firsts = [TCPIP_PLUGIN, *dict.fromkeys(p.plugin.name for p in named)]
+        owner = {p.plugin.name: p for p in reversed(named)}
+        failed: list[tuple[str, CliError]] = []
+        for first in firsts:
+            ok, detail = load_order(file_name, orders, first)
+            if ok:
+                continue
+            if first == TCPIP_PLUGIN:
+                message = (
+                    f"the plugin file {file_name} would load before {TCPIP_PLUGIN}: its"
+                    " parents would not be registered yet"
+                )
+                hint = "choose a label whose plugin file sorts after libmmt_tcpip.so"
+            else:
+                entry = owner[first]
+                what = (
+                    "the named plugin"
+                    if entry.project is None
+                    else f"the plugin of {entry.label} ({show_path(entry.project, project)})"
+                )
+                message = (
+                    f"the plugin file {file_name} would load before {first}, {what}: a"
+                    " protocol it attaches under would not be registered yet"
+                )
+                hint = (
+                    f"choose a label whose plugin file sorts after {first}; mmt-dpi loads the"
+                    " plugins of a directory in file name order"
+                )
+            state.diagnostics.append(
+                Diagnostic(
+                    Severity.ERROR,
+                    "model.load-order",
+                    f"{detail}: {message}",
+                    hint=hint,
+                    location=label_span,
+                )
+            )
+            failed.append((detail, CliError("model.load-order", message, "choose another label")))
+        if failed:
+            details = "; ".join(d for d, _ in failed)
+            state.add("load-order", "fail", details, failed[0][1])
+        elif len(firsts) == 1:
+            state.add("load-order", "pass", load_order(file_name, orders)[1])
+        else:
+            names = " and ".join(name for name, _ in orders)
+            state.add("load-order", "pass", f"{file_name} after {', '.join(firsts)} ({names})")
 
 
 def _run_error(state: _Run) -> CliError | None:

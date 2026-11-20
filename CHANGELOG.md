@@ -17,6 +17,15 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   under another plugin can be tested; `result.plugins` lists them. A bad
   entry is the new code `model.bad-plugin` (exit 3).
 
+### Fixed
+
+- `mmt-plugin test`: a session test with an unknown key in its `session`
+  mapping (a misspelt `atributes`, which turned off the check that
+  unlisted attributes are absent) is `model.bad-packet-test` (exit 3), and
+  so is a segment whose payload does not fit one IPv4/TCP frame (more
+  than 65495 bytes), which was `internal.unexpected` (exit 1) when its
+  frames were built (#124).
+
 ## [0.1.0] - 2026-11-19
 
 The first release of the Python generator, `mmt-plugin`. It replaces the

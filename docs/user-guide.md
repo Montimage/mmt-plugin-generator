@@ -457,11 +457,12 @@ packets:
   (`dport`) and optionally the client's (`sport`); `protocol` and
   `proto_id` are the plugin's.
 - `session.attributes` lists attributes every packet of the plugin's
-  checks: one a packet does not list must be absent there.
+  checks: one a packet does not list must be absent there. `session` has
+  no other key (`note` is a comment), so a misspelt one is an error.
 - Each step of `packets` is `open: true` (the three-way handshake),
   `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
   segment `from` the client or the server, its TCP payload in `bytes`
-  (none: a pure ACK), with `retransmit: true` to send it again at that
+  (none: a pure ACK; at most 65495 bytes, one IPv4/TCP frame), with `retransmit: true` to send it again at that
   side's previous sequence number, `lost: N` for bytes the capture
   lost before it, or `back: N` to send it `N` bytes before that side's
   next sequence number (a segment that arrives late, or one sent over

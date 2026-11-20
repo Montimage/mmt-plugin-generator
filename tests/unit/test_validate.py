@@ -505,7 +505,7 @@ def test_parents_check_with_named_projects() -> None:
     bad = parents_check(["websocket_example"], choice, None, "--no-sdk", {})
     assert bad.status == "fail"
     assert bad.error is not None and bad.error.code == "model.unknown-parent"
-    assert "plugins" in bad.error.hint
+    assert bad.error is not None and bad.error.hint is not None and "plugins" in bad.error.hint
 
 
 def plugin_yaml(label: str, *parents: str, plugins: Sequence[str] = ()) -> str:

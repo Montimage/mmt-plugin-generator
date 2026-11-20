@@ -2,7 +2,7 @@
 
 > Renumbered 2026-11-19: this rule was id 231 when the experiment ran; it is now 232 because 231 is used by the OCPP 1.6-J charging-limit rule (Montimage/mmt-security PR #25). Logs and directory names keep the original id.
 
-Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (34/34 tests, sanitizers clean); capture evaluation PASS
+Cisco BroadWorks OCI-P (TCP 2208), label `ocip`, id 960: green (38/38 tests, sanitizers clean); capture evaluation PASS
 (synthetic capture). See `REPORT.md`; decisions in `request.md`.
 
 ## Re-run

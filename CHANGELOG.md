@@ -387,6 +387,14 @@ relative to that draft. None of it was released before 0.1.0.
   `skills/mmt-plugin-generator/`. Its steps are renumbered: 0, the work
   folder; 1, the capture; 2, the project; 3, the drafts; 4, the loop; 5, the
   envelope; 6, the capture evaluation.
+- The build and test container (and so the release image) installs
+  pkg-config, and its build fails unless pkg-config finds mmt-dpi at the
+  package's version, with its headers where `mmt-dpi.pc` says. CI's
+  runner-based NDN job is gone: the container job, `make test-container` on
+  amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
+  `docs/`, `skills/`, `ocip-plugin/` and the C templates in `src/`, and a unit
+  test fails when a tracked C source or C template lies outside the
+  directories it scans (#42).
 - Styled output (#54, N5): the width that boxes and tables are drawn to is
   at most 500 cells (`ui.streams.MAX_WIDTH`), whatever `COLUMNS` or the
   terminal says; `COLUMNS=100000` draws a 500-cell box

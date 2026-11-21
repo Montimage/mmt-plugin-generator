@@ -229,9 +229,11 @@ make test-container CONTAINER=podman
 The repo is mounted read-only and the check runs as your uid with no
 network; on an SELinux host add `MOUNT_OPTS=ro,z`. apt packages are not
 pinned to exact versions (see the policy at the top of `Dockerfile`): the
-build fails if the gcc, clang or Python major version changes, and the image
-lists every installed version in `/usr/share/doc/mmt-test-image/packages.txt`.
-CI runs the same target on amd64 and arm64. The release image is the
+build fails if the gcc, clang or Python major version changes, or if
+pkg-config cannot find mmt-dpi at the package's version (a broken
+`mmt-dpi.pc`), and the image lists every installed version in
+`/usr/share/doc/mmt-test-image/packages.txt`. CI runs the same target on
+amd64 and arm64: it is CI's NDN check. The release image is the
 `release` target of the same `Dockerfile`, this image plus mmt-plugin
 (`make release-image`, [`docs/releasing.md`](docs/releasing.md)).
 
@@ -372,14 +374,15 @@ gcc -Wall -Werror -fPIC -shared -o ndn_example.so -I "$MMT_BASE"/dpi/include ndn
 
 and check it, with `MMT_BASE` set to the prefix:
 
-<!-- doc:skip CI runs it in its NDN job, against the installed package -->
+<!-- doc:skip CI runs it in the build and test container, make test-container -->
 ```sh
 bash tests/check_ndn_plugin.sh
 ```
 
 `tests/check_ndn_plugin.sh` compiles the
 example with `-Wall -Werror`, with and without `-DMMT_LOG_ENABLE_DEBUG`,
-checks that no C source uses the removed macros, then loads it next to
+checks that no C source or C template (`*.c`, `*.h`, `*.c.j2`, `*.h.j2`
+under its `SCAN_DIRS`) uses the removed macros, then loads it next to
 `libmmt_tcpip.so` (through a temporary `MMT_DPI_PLUGINS_DIR`) and checks
 that `ndn_example` (980) and the built-in `ndn` (625) both resolve and that
 its classifiers are attached. It also fails if the plugin file name

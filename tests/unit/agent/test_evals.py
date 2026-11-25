@@ -161,6 +161,51 @@ def test_a_saved_envelope_counts_only_when_written_while_its_command_ran(
     assert saved_envelope(tmp_path, CommandRecord(command, 0, ""), 1) is None
 
 
+def _saved(path: Path, env: dict[str, Any], mtime_ns: int) -> dict[str, Any]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(env))
+    os.utime(path, ns=(mtime_ns, mtime_ns))
+    return env
+
+
+def test_an_envelope_saved_under_another_name_is_its_commands(tmp_path: Path) -> None:
+    """L7, the live telem-update run: the entry check saved as
+    run-1/validate-nosdk.json, the loop's validate 0.2 s later as
+    run-1/validate.json; the shell numbers them runs 1 and 2. Each command
+    gets its own envelope, a misnamed one too, and none is taken twice."""
+    t = time.time_ns()
+    runs = tmp_path / "runs"
+    env = {"schema_version": 1, "exit_code": 0, "command": "validate"}
+    nosdk = _saved(runs / "run-1/validate-nosdk.json", {**env, "context": {"sdk": None}}, t + 50)
+    loop = _saved(runs / "run-1/validate.json", {**env, "context": {"sdk": "/sdk"}}, t + 2 * 10**8)
+    _saved(runs / "run-1/generate.json", {**env, "command": "generate"}, t + 3 * 10**8)
+    first = CommandRecord(
+        "mmt-plugin --json validate --no-sdk p > runs/run-1/validate-nosdk.json",
+        0,
+        "",
+        started_ns=t,
+        ended_ns=t + 10**8,
+    )
+    second = CommandRecord(
+        'cd p && mmt-plugin --json validate > "$W/runs/run-1/validate.json"',
+        0,
+        "",
+        started_ns=t + 10**8,
+        ended_ns=t + 25 * 10**7,
+    )
+    claimed: set[Path] = set()
+    assert saved_envelope(tmp_path, first, 1, claimed=claimed) == nosdk
+    assert saved_envelope(tmp_path, second, 2, claimed=claimed) == loop
+    assert claimed == {runs / "run-1/validate-nosdk.json", runs / "run-1/validate.json"}
+    # No file name in the command (a variable): the one written while it ran.
+    command = 'mmt-plugin --json validate --no-sdk p > "$OUT"'
+    by_time = CommandRecord(command, 0, "", started_ns=t, ended_ns=t + 10**8)
+    assert saved_envelope(tmp_path, by_time, 2) == nosdk
+    # Nothing left for a third validate; generate's envelope is not one.
+    third = CommandRecord("mmt-plugin --json validate p > /tmp/v", 0, "", started_ns=t, ended_ns=t)
+    assert saved_envelope(tmp_path, third, 3, claimed=claimed) is None
+
+
 def test_without_sdk_the_eval_uses_mmt_base(
     tmp_path: Path, skills_copy: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

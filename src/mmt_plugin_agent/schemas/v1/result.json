@@ -20,7 +20,8 @@
     "question",
     "skills_modified",
     "commands",
-    "message"
+    "message",
+    "eval_leave"
   ],
   "properties": {
     "status": {
@@ -217,6 +218,14 @@
     },
     "message": {
       "type": "string"
+    },
+    "eval_leave": {
+      "description": "The leave the run had for the evaluation: capture (--capture), synthetic (--allow-synthetic), or null. A green run with an SDK and leave whose evaluation is not done skipped it: status incomplete, exit 6 (agent.evaluation-skipped).",
+      "enum": [
+        "capture",
+        "synthetic",
+        null
+      ]
     }
   }
 }

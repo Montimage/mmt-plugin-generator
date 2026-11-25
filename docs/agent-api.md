@@ -99,7 +99,11 @@ The capture question (the skill's Step 1): when no capture is given
 synthetic one, or for leave to skip the evaluation. `--allow-synthetic`
 answers it with a synthetic capture; unattended without it, the evaluation
 is skipped and reported as not done (status `incomplete`, exit 0, the
-warning `agent.evaluation-not-done`). `--no-eval` skips the evaluation.
+warning `agent.evaluation-not-done`). With `--capture` or `--allow-synthetic`
+and an SDK, a green run whose evaluation is not done skipped the
+evaluation it had leave for: status `incomplete` with `eval_leave` set,
+`ok` false, exit 6 (`agent.evaluation-skipped`). `--no-eval` skips the
+evaluation.
 
 A `questions.md` entry:
 
@@ -136,12 +140,12 @@ are in `src/mmt_plugin_agent/schemas/v1/`: `envelope.json`, and
 
 | Exit | Class | When |
 |---|---|---|
-| 0 | success | Done, or green with the evaluation not done (`incomplete`). |
+| 0 | success | Done, or green with the evaluation not done (`incomplete`) and no `--capture` or `--allow-synthetic`. |
 | 1 | internal | The model's provider failed (a bad key, a rate limit, an endpoint down) or an I/O error (`agent.unexpected`, its message without secrets), a bug, or the run returned no result. |
 | 2 | usage | Bad arguments, no model (`agent.no-model`), a model string without a provider (`agent.bad-model`). |
 | 3 | model | An input that is not there (`agent.bad-input`). |
 | 4 | sdk | The environment: no Python 3.11 or extra (`agent.needs-extra`), no skills (`agent.skills-not-found`), an SDK prefix under `/opt/mmt` (`agent.system-sdk`: extract the package into a private prefix), `doctor` with a failed check (`agent.doctor-failed`). |
-| 6 | test | Not green (`agent.not-green`), the evaluation failed (`agent.eval-failed`), `BLOCKED` (`agent.blocked`), the skills were changed (`agent.skills-modified`, even when the run then failed), an eval case failed (`agent.eval-cases-failed`). |
+| 6 | test | Not green (`agent.not-green`), the evaluation failed (`agent.eval-failed`), green with the evaluation not done although `--capture` or `--allow-synthetic` gave leave for it (`agent.evaluation-skipped`), `BLOCKED` (`agent.blocked`), the skills were changed (`agent.skills-modified`, even when the run then failed), an eval case failed (`agent.eval-cases-failed`). |
 | 130 | interrupted | Ctrl-C. |
 
 ## The Python API
@@ -181,8 +185,10 @@ summary, `green(with_sdk)`; read from the envelopes the skill saves in
 with mmt-plugin's exit code from its envelope), `loop_runs`, `evaluation` (`pass`, `fail`,
 `not_done`, `skipped`, from `manifest.json`), `drift` (the open drifts),
 `unchecked`, `report_path`, `questions_path`, `question`,
-`skills_modified`, `commands` and `message` (the model's last reply);
-`to_json()` is the command line's `result`.
+`skills_modified`, `commands`, `message` (the model's last reply) and
+`eval_leave` (`capture`, `synthetic` or `None`: the leave the run had for
+the evaluation; `skipped_with_leave` is an `incomplete` run that had it,
+and is not `ok`); `to_json()` is the command line's `result`.
 
 This example runs in CI with a scripted model
 (`tests/unit/agent/test_docs_example.py`):

@@ -10,6 +10,7 @@ import os
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -345,3 +346,48 @@ def test_a_work_folder_is_not_looked_for_below_when_it_is_one_or_ambiguous(
     empty = tmp_path / "empty"
     (empty / "project").mkdir(parents=True)
     assert work_folder(empty) == empty
+
+
+@pytest.mark.parametrize(
+    ("capture", "allow_synthetic", "leave", "flag"),
+    [(True, False, "capture", "--capture"), (False, True, "synthetic", "--allow-synthetic")],
+)
+def test_green_with_leave_and_no_evaluation_is_the_models_skip(
+    tmp_path: Path, capture: bool, allow_synthetic: bool, leave: str, flag: str
+) -> None:
+    """N6: the result knows the run had a capture or leave for a synthetic
+    one, so an evaluation not done is not ok and says why."""
+    inner = _vllm_shaped(tmp_path / "run")
+    (inner / "manifest.json").write_text(json.dumps({"schema": 1}))
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE: green",
+        capture=capture,
+        allow_synthetic=allow_synthetic,
+    )
+    assert result.status == "incomplete", result.to_json()
+    assert result.eval_leave == leave and result.skipped_with_leave
+    assert result.ok is False
+    assert result.unchecked == [
+        f"evaluation: not done (the model skipped the evaluation it had leave for ({flag}))"
+    ]
+    assert result.to_json()["eval_leave"] == leave
+
+
+def test_without_leave_no_evaluation_is_still_incomplete_and_ok(tmp_path: Path) -> None:
+    inner = _vllm_shaped(tmp_path / "run")
+    (inner / "manifest.json").write_text(json.dumps({"schema": 1}))
+    kwargs: dict[str, Any] = {"thread_id": "t", "work": inner, "project": None, "records": []}
+    result = build_result(**kwargs, with_sdk=True, no_eval=False, message="DONE")
+    assert (result.status, result.ok, result.eval_leave) == ("incomplete", True, None)
+    reason = "no capture, and no leave for a synthetic one"
+    assert result.unchecked == [f"evaluation: not done ({reason})"]
+    skipped = build_result(
+        **kwargs, with_sdk=True, no_eval=True, message="DONE", allow_synthetic=True
+    )
+    assert (skipped.status, skipped.ok, skipped.eval_leave) == ("done", True, None)

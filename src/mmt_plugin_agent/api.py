@@ -572,6 +572,8 @@ class PluginAgent:
             question=state.question,
             skills_modified=modified,
             since_ns=run.started_ns,
+            capture=run.settings.capture is not None,
+            allow_synthetic=run.settings.allow_synthetic,
         )
         return AgentEvent("done", result.status, result.to_json(), result)
 

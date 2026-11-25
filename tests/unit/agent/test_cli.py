@@ -119,6 +119,39 @@ def test_the_exit_code_follows_the_status(
     assert warnings == (["agent.evaluation-not-done"] if status == "incomplete" else [])
 
 
+@pytest.mark.parametrize(
+    ("flag", "leave"), [("--allow-synthetic", "synthetic"), ("--capture", "capture")]
+)
+def test_a_green_run_that_skipped_the_evaluation_it_had_leave_for_fails(
+    tmp_path: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flag: str,
+    leave: str,
+) -> None:
+    """N6: with --capture or --allow-synthetic, a green run whose evaluation
+    is not done is the model's skip, not a missing capture."""
+    fake_cli()
+    work, sdk = tmp_path / "w", tmp_path / "sdk"
+    capture = tmp_path / "telem.pcap"
+    capture.write_bytes(b"")
+    _use(monkeypatch, scripted([*loop(work / "project", sdk), *done_files(work, None), "x"]))
+    args = ["new", "--spec", str(SPEC), "--sdk", str(sdk), "--work", str(work), "--model", "a:b"]
+    args += [flag, str(capture)] if flag == "--capture" else [flag]
+    got, envelope = _main(args, capsys)
+    result = envelope["result"]
+    assert (got, result["status"], result["eval_leave"]) == (6, "incomplete", leave)
+    assert envelope["error"]["code"] == "agent.evaluation-skipped"
+    assert flag in envelope["error"]["message"]
+    assert "--capture or --allow-synthetic" not in json.dumps(envelope)
+    assert envelope["diagnostics"] == []
+    assert result["unchecked"] == [
+        f"evaluation: not done (the model skipped the evaluation it had leave for ({flag}): "
+        "no capture)"
+    ]
+
+
 def test_interactive_reads_the_answer_on_the_terminal(
     tmp_path: Path,
     fake_cli: Callable[..., FakeCli],

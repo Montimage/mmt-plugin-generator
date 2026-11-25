@@ -23,7 +23,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -31,7 +31,7 @@ from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin_agent.api import PluginAgent
 from mmt_plugin_agent.errors import AgentError
 from mmt_plugin_agent.graph import DEFAULT_TIMEOUT
-from mmt_plugin_agent.policy import mmt_plugin_command
+from mmt_plugin_agent.policy import _tokens, mmt_plugin_command
 from mmt_plugin_agent.result import AgentResult, CommandRecord, envelope_of, loop_runs
 from mmt_plugin_agent.skills import SKILL_NAME, resolve_skills_dir
 
@@ -41,41 +41,102 @@ if TYPE_CHECKING:
 __all__ = ["CaseOutcome", "ModelEvalReport", "load_run_evals", "run_model_evals"]
 
 _PROFILE = re.compile(r'^\s*profile: "([^"]+)"', re.MULTILINE)
+_RUN_DIR = re.compile(r"run-[0-9]+")
 
 #: How far a saved envelope's time may lie outside its command's: file
 #: times come from a coarser clock, on some file systems to 2 seconds.
 _CLOCK_SLACK_NS = 2_000_000_000
 
 
-def saved_envelope(work: Path, record: CommandRecord, run: int) -> dict[str, Any] | None:
+def _saved_to(command: str) -> list[tuple[str, str]]:
+    """The ``run-<k>/<file>.json`` each mmt-plugin segment of ``command``
+    redirects or tees its output to (``> runs/run-1/validate-nosdk.json``),
+    in order: the trailing two parts of the path, whatever the shell's
+    directory."""
+    try:
+        tokens = _tokens(command)
+    except ValueError:
+        return []
+    out: list[tuple[str, str]] = []
+    target = False
+    in_mmt = in_tee = False
+    for i, token in enumerate(tokens):
+        if token in (">", ">>", ">|", ">&", "&>", "&>>", "<", "<<", "<<<"):
+            # 2> is stderr and < an input: not the envelope.
+            target = in_mmt and "<" not in token and not (i > 0 and tokens[i - 1] == "2")
+            continue
+        if token and all(c in "|&;()<>" for c in token):
+            in_tee = in_mmt and token == "|"
+            if token != "|":
+                in_mmt = False
+            target = False
+            continue
+        if target or (in_tee and not token.startswith("-") and PurePosixPath(token).name != "tee"):
+            parts = PurePosixPath(token).parts
+            if len(parts) >= 2 and _RUN_DIR.fullmatch(parts[-2]) and parts[-1].endswith(".json"):
+                out.append((parts[-2], parts[-1]))
+            target = False
+            continue
+        name = PurePosixPath(token).name
+        if name == "mmt-plugin" or (token == "mmt_plugin" and i >= 1 and tokens[i - 1] == "-m"):
+            in_mmt, in_tee = True, False
+    return out
+
+
+def saved_envelope(
+    work: Path, record: CommandRecord, run: int, *, claimed: set[Path] | None = None
+) -> dict[str, Any] | None:
     """The envelope a loop command saved in the work folder while it ran,
-    ``<work>/runs/run-<n>/<command>.json`` (``mmt-plugin ... > FILE`` prints
-    nothing): the file of that command written in the command's time,
-    ``run-<run>``'s first, else the one written last. None when there is none."""
+    ``<work>/runs/run-<k>/*.json`` (``mmt-plugin ... > FILE`` prints nothing),
+    whatever the file's name: a file written in the command's time whose
+    envelope is that command's. The files the command redirects to first
+    (in order), then one written while it ran (not in the clock's slack), then
+    ``run-<run>``'s, then ``<command>.json``, then the newest. A file in
+    ``claimed`` is another command's; the one taken is added to it. None
+    when there is none."""
     name = record.mmt_command
     if name is None or record.started_ns is None or record.ended_ns is None:
         return None
-    low, high = record.started_ns - _CLOCK_SLACK_NS, record.ended_ns + _CLOCK_SLACK_NS
+    start, end = record.started_ns, record.ended_ns
+    low, high = start - _CLOCK_SLACK_NS, end + _CLOCK_SLACK_NS
+    runs = work / "runs"
+    targets: dict[Path, int] = {}
+    for k, f in _saved_to(record.command):
+        targets.setdefault(runs / k / f, len(targets))
     try:
-        dirs = list((work / "runs").iterdir())
+        files = [p for d in runs.iterdir() if d.is_dir() for p in d.glob("*.json")]
     except OSError:
         return None
     found = []
-    for path in dirs:
-        saved = path / f"{name}.json"
+    for saved in files:
+        if claimed is not None and saved in claimed:
+            continue
         try:
             mtime = saved.stat().st_mtime_ns
         except OSError:
             continue
         if low <= mtime <= high:
-            found.append((path.name != f"run-{run}", -mtime, saved))
-    for _, _, saved in sorted(found):
+            key = (
+                targets.get(saved, len(targets)),
+                not start <= mtime <= end,
+                saved.parent.name != f"run-{run}",
+                saved.name != f"{name}.json",
+                -mtime,
+            )
+            found.append((key, saved))
+    for _, saved in sorted(found):
         try:
             env = envelope_of(saved.read_text("utf-8"))
         except (OSError, UnicodeDecodeError):
             continue
-        if env is not None:
-            return env
+        if env is None:
+            continue
+        # Another command's envelope; one without "command" only as <command>.json.
+        if env.get("command", name if saved.name == f"{name}.json" else None) != name:
+            continue
+        if claimed is not None:
+            claimed.add(saved)
+        return env
     return None
 
 
@@ -281,10 +342,11 @@ class _Case:
         final = _snapshot(rev, self.project)
         states = [*snapshots, final]
         runs = loop_runs(result.commands)
+        claimed: set[Path] = set()
         for n, run in enumerate(runs, 1):
             seen = []
             for record in run.commands:
-                env = record.envelope or saved_envelope(result.work, record, n)
+                env = record.envelope or saved_envelope(result.work, record, n, claimed=claimed)
                 code = _exit_code(record, env)
                 seen.append((record, env, code))
                 if env is None:

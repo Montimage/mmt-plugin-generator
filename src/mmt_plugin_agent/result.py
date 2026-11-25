@@ -259,10 +259,19 @@ class AgentResult:
     skills_modified: list[str] = field(default_factory=list)
     commands: list[CommandRecord] = field(default_factory=list)
     message: str = ""
+    #: The leave the run had for the evaluation: ``"capture"`` (``--capture``),
+    #: ``"synthetic"`` (``--allow-synthetic``), or None.
+    eval_leave: str | None = None
+
+    @property
+    def skipped_with_leave(self) -> bool:
+        """Green, the evaluation not done although the run had a capture or
+        leave for a synthetic one: the model skipped it."""
+        return self.status == "incomplete" and self.eval_leave is not None
 
     @property
     def ok(self) -> bool:
-        return self.status in ("done", "incomplete")
+        return self.status in ("done", "incomplete") and not self.skipped_with_leave
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -281,6 +290,7 @@ class AgentResult:
             "skills_modified": list(self.skills_modified),
             "commands": [c.to_json() for c in self.commands],
             "message": self.message,
+            "eval_leave": self.eval_leave,
         }
 
 
@@ -318,13 +328,18 @@ def build_result(
     question: Question | None = None,
     skills_modified: Sequence[str] = (),
     since_ns: int | None = None,
+    capture: bool = False,
+    allow_synthetic: bool = False,
 ) -> AgentResult:
     """The result of a run from its work folder and what its shell ran.
 
     The loop is the work folder's last run (``work_loop``, the envelopes
     the skill saves), else the shell's: the command text the model wrote
     (variables, ``&&`` chains, loops) is only a fallback. The work folder
-    is ``work_folder(work)``, which the result reports as its ``work``."""
+    is ``work_folder(work)``, which the result reports as its ``work``.
+    ``capture`` and ``allow_synthetic``: the run was given a capture, or
+    leave for a synthetic one, so a green run with an SDK whose evaluation
+    is not done skipped it (``AgentResult.skipped_with_leave``)."""
     given_work = work
     work = work_folder(given_work)
     runs = loop_runs(records)
@@ -347,12 +362,21 @@ def build_result(
         evaluation = "not_done"
     drift_info = evaluation_info.get("drift")
     drift = drift_info.get("open") if isinstance(drift_info, dict) else None
+    leave = None
+    if not no_eval:
+        leave = "capture" if capture else "synthetic" if allow_synthetic else None
     unchecked = []
     if not with_sdk:
         unchecked.append("build and test: no SDK")
     if evaluation == "not_done":
-        default = "no SDK" if not with_sdk else "no capture, and no leave for a synthetic one"
-        unchecked.append(f"evaluation: not done ({evaluation_info.get('reason') or default})")
+        reason = evaluation_info.get("reason")
+        if with_sdk and leave is not None:
+            flag = "--capture" if leave == "capture" else "--allow-synthetic"
+            why = f"the model skipped the evaluation it had leave for ({flag})"
+            unchecked.append(f"evaluation: not done ({why}{f': {reason}' if reason else ''})")
+        else:
+            default = "no SDK" if not with_sdk else "no capture, and no leave for a synthetic one"
+            unchecked.append(f"evaluation: not done ({reason or default})")
     if isinstance(drift_info, dict) and drift_info.get("checked") is False:
         unchecked.append("drift: not checked (no tshark)")
     report = work / "REPORT.md"
@@ -394,4 +418,5 @@ def build_result(
         skills_modified=list(skills_modified),
         commands=list(records),
         message=message,
+        eval_leave=leave,
     )

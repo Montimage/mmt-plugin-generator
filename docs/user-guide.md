@@ -899,9 +899,10 @@ uv run mmt-plugin-agent new --spec skills/mmt-plugin-generator/evals/cases/spec-
   to `<work>/questions.md` with the default it takes, never waits for
   input and never uses `--force`; `--interactive` asks on the terminal.
   Without a capture and without `--allow-synthetic`, the evaluation is
-  not done, and the result says so.
+  not done, and the result says so. With either, a green run that did
+  not evaluate the plugin exits 6 (`agent.evaluation-skipped`).
 - Exit codes are `mmt-plugin`'s classes: 0 done (or green with the
-  evaluation not done), 2 usage, 3 input, 4 environment (no extra, no
+  evaluation not done and no leave for it), 2 usage, 3 input, 4 environment (no extra, no
   skills, a failed `doctor` check), 6 not green or failed.
 - The agent's shell has no isolation: it can do what you can. Run it in the
   agent container (`make agent-image`), where its user is not root and the

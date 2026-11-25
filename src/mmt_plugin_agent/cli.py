@@ -251,7 +251,15 @@ def _run(args: argparse.Namespace, json_out: bool) -> AgentResult:
 
 
 def _outcome(result: AgentResult) -> tuple[AgentError | None, list[dict[str, Any]]]:
-    diagnostics = []
+    diagnostics: list[dict[str, Any]] = []
+    if result.skipped_with_leave:
+        flag = "--capture" if result.eval_leave == "capture" else "--allow-synthetic"
+        return AgentError(
+            ExitCode.TEST,
+            "agent.evaluation-skipped",
+            f"the plugin is green, but the model skipped the evaluation it had leave for ({flag})",
+            "read REPORT.md and manifest.json, then run update on the project to evaluate it",
+        ), diagnostics
     if result.status == "incomplete":
         diagnostics.append(
             {

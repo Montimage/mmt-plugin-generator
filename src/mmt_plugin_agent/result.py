@@ -164,9 +164,9 @@ def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int]
     SKILL.md, Step 4 saves each loop command's envelope as
     ``<work>/runs/run-<n>/<command>.json``. A run counts when it has
     ``validate.json``; its commands are the envelopes in loop order, up to
-    the first one missing. With ``since_ns`` (a ``time.time_ns()``), only
-    runs whose envelopes were all written since count: an earlier run's
-    work folder may be reused. None when no run counts."""
+    the first one missing. With ``since_ns`` (a ``time.time_ns()``), an
+    envelope written before it is missing: an earlier run's work folder may
+    be reused. None when no run counts."""
     runs: list[tuple[int, LoopRun]] = []
     try:
         dirs = list((work / "runs").iterdir())
@@ -178,7 +178,6 @@ def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int]
             continue
         number = int(found.group(1))
         records: list[CommandRecord] = []
-        fresh = True
         for name in LOOP_COMMANDS:
             saved = path / f"{name}.json"
             try:
@@ -187,14 +186,14 @@ def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int]
             except (OSError, UnicodeDecodeError):
                 break
             if since_ns is not None and stat.st_mtime_ns < since_ns - _CLOCK_SLACK_NS:
-                fresh = False
+                # Left by an earlier run: as if missing.
                 break
             env = envelope_of(text)
             code = None if env is None else env.get("exit_code")
             records.append(
                 CommandRecord(str(saved), code if isinstance(code, int) else None, text, name=name)
             )
-        if fresh and records and records[0].mmt_command == "validate":
+        if records and records[0].mmt_command == "validate":
             runs.append((number, LoopRun(number, records)))
     if not runs:
         return None

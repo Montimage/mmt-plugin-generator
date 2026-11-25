@@ -250,3 +250,32 @@ def test_an_earlier_runs_envelopes_do_not_count(
     result = _agent(model, work, sdk).new(spec=SPEC)
     assert result.status == "not_green"
     assert result.loop is not None and result.loop.exit_codes()["test"] == 6
+
+
+def test_a_failed_run_over_an_earlier_green_one_is_not_green(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli({"validate": [0, 3]})
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    old = work / "runs" / "run-2"
+    old.mkdir(parents=True)
+    hour_ago = time.time() - 3600
+    for name in ("validate", "generate", "build", "test"):
+        (old / f"{name}.json").write_text(_env(name, 0))
+        os.utime(old / f"{name}.json", (hour_ago, hour_ago))
+    model_yaml = step(
+        call("write_file", file_path=str(work / "project/plugin.yaml"), content="schema: 1\n")
+    )
+    second = step(
+        call(
+            "execute",
+            command=f'P={work}; cd "$P/project" && mmt-plugin -C . --json validate --sdk {sdk} '
+            "| tee ../runs/run-2/validate.json",
+        )
+    )
+    model = scripted([model_yaml, _live_loop(work, sdk, 1), second, "NOT GREEN"])
+    result = _agent(model, work, sdk).new(spec=SPEC)
+    assert result.status == "not_green"
+    assert result.loop is not None
+    assert result.loop.number == 2
+    assert result.loop.exit_codes() == {"validate": 3}

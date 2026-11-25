@@ -104,9 +104,16 @@ variable whose name ends in `_API_KEY` or `_TOKEN`, or holds `SECRET`,
 `PASSWORD` or `CREDENTIAL`, and `doctor` never prints one. The agent's
 own environment still holds them. On Linux the agent makes itself
 non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`) before its shell's first
-command, so `/proc/<pid>/environ` is root's and the shell, as the same
-user, cannot read it; if that fails, the run has the warning
+command, so its own `/proc/<pid>/environ` is root's and the shell, as the
+same user, cannot read it; if that fails, the run has the warning
 `agent.environ-readable` and `doctor` warns on its `environ` check.
+That hides only the agent's process: a parent process started with the
+key keeps it, readable by the shell, such as `uv` under
+`uv run mmt-plugin-agent` (uv does not exec the agent), a wrapper script
+or `make`. `doctor` warns on its `environ` check when a parent it can
+read holds a key, naming the process and the variables. On a Linux host,
+start the `mmt-plugin-agent` console script directly (from the
+environment's `bin/`), or run the agent image, where the agent is PID 1.
 Elsewhere (macOS) nothing hides it: a process of the same user can read
 another's environment (`ps eww`), and so can the agent's shell. Run the
 agent in the `agent` image there. Being non-dumpable also means no core
@@ -334,8 +341,9 @@ in depth:
   `UV_TOOL_BIN_DIR`, not its index URLs, ...) without secrets: no
   variable named as one (see [Models](#models)), no URL's password, and no
   user name in a proxy or http(s) URL. On Linux the shell cannot
-  read the agent's own environment either; elsewhere it can (see
-  [Models](#models)).
+  read the agent's own environment either, but it can read a parent's
+  that holds the key (`uv run`, a wrapper); elsewhere it can read both
+  (see [Models](#models)).
 
 The container is the sandbox: run the agent in the `agent` image, where it
 is not root and the skills are root-owned and read-only. The image has no

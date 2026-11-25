@@ -144,6 +144,15 @@ def test_envelopes_redirected_to_the_work_folder_are_checked(
     assert outcome.ok
 
 
+#: Each file named, its times set 10 seconds back (a model turn's pause).
+_BACKDATE = """
+import os, sys, time
+then = time.time() - 10
+for path in sys.argv[1:]:
+    os.utime(path, (then, then))
+"""
+
+
 def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> list[Any]:
     """The live telem-update run (L8): the entry check saved in run-0, a
     heredoc holding a validate command line, the loop as one shell for-loop over ``$c``
@@ -167,9 +176,19 @@ def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> li
 
     run0 = shlex.quote(str(runs / "run-0"))
     run1 = shlex.quote(str(runs / "run-1"))
-    notes = shlex.quote(str(agent / "plan.md"))
+    notes_path = agent / "plan.md"
+    notes = shlex.quote(str(notes_path))
     evals_dir = str(skills / "mmt-plugin-generator" / "evals")
     apply = shlex.join([sys.executable, "-c", _APPLY, evals_dir, str(case_dir), str(project)])
+    backdate = shlex.join(
+        [
+            sys.executable,
+            "-c",
+            _BACKDATE,
+            str(runs / "run-0" / "validate-nosdk.json"),
+            str(notes_path),
+        ]
+    )
     return [
         step(
             call(
@@ -184,8 +203,9 @@ def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> li
                 command=f"cat > {notes} <<'EOF'\nmmt-plugin -C {p} --json validate --no-sdk\nEOF",
             )
         ),
-        # A model's turn takes seconds: nothing ties the heredoc to an envelope.
-        step(call("execute", command="sleep 3")),
+        # A model's turn takes seconds: the heredoc and the entry check look
+        # older than the loop's envelopes, by their mtimes rather than a pause.
+        step(call("execute", command=backdate)),
         loop(1),
         step(call("execute", command=f"mv {run0}/validate-nosdk.json {run1}/ && rmdir {run0}")),
         step(call("execute", command=apply)),

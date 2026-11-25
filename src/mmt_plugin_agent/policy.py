@@ -26,6 +26,7 @@ __all__ = [
     "is_system_prefix",
     "is_within",
     "mmt_plugin_command",
+    "readable_ancestors",
     "shell_env",
 ]
 
@@ -176,6 +177,62 @@ def hide_environ() -> str | None:
     if "result" not in _HIDDEN:
         _HIDDEN["result"] = _make_non_dumpable()
     return _HIDDEN["result"]
+
+
+#: How many parents ``readable_ancestors()`` follows at most.
+_MAX_ANCESTORS = 64
+
+
+def _parent_of(proc: Path, pid: int) -> int | None:
+    """The parent pid of ``pid`` from ``<proc>/<pid>/stat`` (its command
+    name, in parentheses, may hold spaces and parentheses), or None."""
+    try:
+        stat = (proc / str(pid) / "stat").read_text("utf-8", errors="replace")
+        return int(stat.rpartition(")")[2].split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def readable_ancestors(
+    proc: Path = Path("/proc"), start: int | None = None
+) -> list[tuple[int, str, list[str]]]:
+    """Each ancestor of this process, from its parent (``start``, by
+    default ``os.getppid()``) up to PID 1, whose ``<proc>/<pid>/environ``
+    this user can read and holds a variable ``is_secret()`` names: its pid,
+    its command name and those variables' names, never their values.
+    ``hide_environ()`` hides only this process: a parent that holds the key
+    (``uv run``, a wrapper script) stays readable by the agent's shell.
+    Empty without ``/proc`` (off Linux)."""
+    found: list[tuple[int, str, list[str]]] = []
+    pid = os.getppid() if start is None else start
+    seen: set[int] = set()
+    while pid >= 1 and pid not in seen and len(seen) < _MAX_ANCESTORS:
+        seen.add(pid)
+        base = proc / str(pid)
+        try:
+            data = (base / "environ").read_bytes()
+        except OSError:
+            data = b""
+        names = sorted(
+            {
+                name
+                for item in data.split(b"\0")
+                if (name := item.partition(b"=")[0].decode("utf-8", "replace")) and is_secret(name)
+            }
+        )
+        if names:
+            try:
+                comm = (base / "comm").read_text("utf-8", errors="replace").strip()
+            except OSError:
+                comm = "?"
+            found.append((pid, comm, names))
+        if pid == 1:
+            break
+        parent = _parent_of(proc, pid)
+        if parent is None:
+            break
+        pid = parent
+    return found
 
 
 def environ_failure() -> str | None:

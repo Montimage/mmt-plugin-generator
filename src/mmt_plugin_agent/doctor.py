@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mmt_plugin_agent.models import ENV_MODEL, model_spec
-from mmt_plugin_agent.policy import hide_environ, is_system_prefix
+from mmt_plugin_agent.policy import hide_environ, is_system_prefix, readable_ancestors
 from mmt_plugin_agent.skills import ENV_SKILLS, SKILL_NAME, find_skills_dir
 
 __all__ = ["MIN_PYTHON", "DoctorCheck", "DoctorReport", "run_doctor"]
@@ -230,11 +230,26 @@ def _home() -> DoctorCheck:
     return DoctorCheck("home", "fail", "HOME is not a directory", "set HOME to your home")
 
 
-def _environ() -> DoctorCheck:
+def _environ(proc: Path = Path("/proc"), start: int | None = None) -> DoctorCheck:
     reason = hide_environ()
     if reason is None:
+        leaks = readable_ancestors(proc, start)
+        if not leaks:
+            return DoctorCheck(
+                "environ",
+                "pass",
+                "not dumpable: the shell cannot read the agent's own environment, and no "
+                "parent process it can read holds a key",
+            )
+        held = "; ".join(f"{pid} ({comm}): {', '.join(names)}" for pid, comm, names in leaks)
         return DoctorCheck(
-            "environ", "pass", "not dumpable: the shell cannot read the agent's environment"
+            "environ",
+            "warn",
+            "only the agent's own environment is hidden: the shell can read a parent "
+            f"process's, which holds {held}",
+            "start the mmt-plugin-agent console script directly (not through uv run or a "
+            "wrapper started with the key), or run the agent in the agent image (make "
+            "agent-run), where it is PID 1",
         )
     return DoctorCheck(
         "environ",

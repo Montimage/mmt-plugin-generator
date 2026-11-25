@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from mmt_plugin_agent import policy
+from mmt_plugin_agent import doctor, policy
 from mmt_plugin_agent.errors import redact
 from mmt_plugin_agent.policy import check_command, is_system_prefix, mmt_plugin_command, shell_env
 
@@ -193,3 +193,74 @@ def test_off_linux_the_environment_is_not_hidden_and_says_why() -> None:
     reason = policy.hide_environ()
     assert reason is not None and "not Linux" in reason
     assert policy.environ_failure() is None
+
+
+#: A value no key scanner takes for a real one: it must never be printed.
+_VALUE = "dummy-value-not-a-key"
+
+
+def _fake_proc(root: Path, chain: list[tuple[int, int, str, dict[str, str] | None]]) -> Path:
+    """A ``/proc`` tree: each (pid, ppid, comm, environ or None for none)."""
+    for pid, ppid, comm, env in chain:
+        base = root / str(pid)
+        base.mkdir(parents=True)
+        (base / "stat").write_text(f"{pid} ({comm}) S {ppid} {pid} {pid} 0\n")
+        (base / "comm").write_text(f"{comm}\n")
+        if env is not None:
+            (base / "environ").write_bytes(b"".join(f"{k}={v}\0".encode() for k, v in env.items()))
+    return root
+
+
+@pytest.fixture
+def hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    """As on Linux once prctl worked: only the parents are left to check."""
+    monkeypatch.setattr(doctor, "hide_environ", lambda: None)
+
+
+@pytest.mark.usefixtures("hidden")
+def test_doctor_warns_on_a_readable_parent_that_holds_a_key(tmp_path: Path) -> None:
+    proc = _fake_proc(
+        tmp_path / "proc",
+        [
+            (4243, 4242, "sh", {"PATH": "/bin"}),
+            (4242, 1, "uv) (run", {"PATH": "/bin", "ANTHROPIC_API_KEY": _VALUE}),
+            (1, 0, "init", None),
+        ],
+    )
+    found = policy.readable_ancestors(proc, 4243)
+    assert found == [(4242, "uv) (run", ["ANTHROPIC_API_KEY"])]
+    check = doctor._environ(proc, 4243)
+    assert check.status == "warn"
+    assert "4242 (uv) (run): ANTHROPIC_API_KEY" in check.detail
+    assert check.hint is not None and "uv run" in check.hint
+    assert _VALUE not in str(check.to_json())
+
+
+@pytest.mark.usefixtures("hidden")
+def test_doctor_passes_a_parent_without_a_key(tmp_path: Path) -> None:
+    proc = _fake_proc(
+        tmp_path / "proc",
+        [(4242, 1, "bash", {"PATH": "/bin", "HOME": "/home/u"}), (1, 0, "init", None)],
+    )
+    assert policy.readable_ancestors(proc, 4242) == []
+    check = doctor._environ(proc, 4242)
+    assert check.status == "pass" and check.hint is None
+
+
+@pytest.mark.usefixtures("hidden")
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads unreadable files")
+def test_doctor_passes_a_parent_whose_environment_it_cannot_read(tmp_path: Path) -> None:
+    proc = _fake_proc(
+        tmp_path / "proc",
+        [(4242, 1, "sudo", {"ANTHROPIC_API_KEY": _VALUE}), (1, 0, "init", None)],
+    )
+    (proc / "4242" / "environ").chmod(0)
+    try:
+        assert policy.readable_ancestors(proc, 4242) == []
+        assert doctor._environ(proc, 4242).status == "pass"
+    finally:
+        (proc / "4242" / "environ").chmod(0o600)
+
+
+def test_without_proc_no_ancestor_is_readable(tmp_path: Path) -> None:
+    assert policy.readable_ancestors(tmp_path / "none", 4242) == []

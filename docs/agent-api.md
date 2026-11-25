@@ -84,9 +84,19 @@ tokens) is shorter than the agent's system prompt and tools, and Ollama
 then drops the start of the conversation, the request with it: the agent
 passes `num_ctx` to an `ollama:` model, 65536 tokens unless
 `MMT_PLUGIN_AGENT_NUM_CTX` says otherwise (a model object is used as it
-is). Keys stay in the environment: the agent's
-shell never sees a variable whose name ends in `_API_KEY` or `_TOKEN`, or
-holds `SECRET`, `PASSWORD` or `CREDENTIAL`, and `doctor` never prints one.
+is). Keys stay in the agent's environment: its shell's environment has no
+variable whose name ends in `_API_KEY` or `_TOKEN`, or holds `SECRET`,
+`PASSWORD` or `CREDENTIAL`, and `doctor` never prints one. The agent's
+own environment still holds them. On Linux the agent makes itself
+non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`) before its shell's first
+command, so `/proc/<pid>/environ` is root's and the shell, as the same
+user, cannot read it; if that fails, the run has the warning
+`agent.environ-readable` and `doctor` warns on its `environ` check.
+Elsewhere (macOS) nothing hides it: a process of the same user can read
+another's environment (`ps eww`), and so can the agent's shell. Run the
+agent in the `agent` image there. Being non-dumpable also means no core
+dump, and that attaching a debugger or profiler (gdb, py-spy) to a process
+that runs the agent needs root.
 
 ## Run modes
 
@@ -302,7 +312,13 @@ in depth:
   change, by any route, is restored and the run fails with
   `agent.skills-modified`.
 - The shell's environment is an allowlist (`PATH`, `HOME`, `MMT_*`,
-  `UV_*`, `XDG_*`, proxies, `DOCKER_*`, ...) without secrets.
+  `XDG_*`, proxies, `DOCKER_*`, uv's `UV_CACHE_DIR`, `UV_LOCKED`,
+  `UV_NO_CACHE`, `UV_OFFLINE`, `UV_PYTHON`, `UV_TOOL_DIR` and
+  `UV_TOOL_BIN_DIR`, not its index URLs, ...) without secrets: no
+  variable named as one (see [Models](#models)), no URL's password, and a
+  proxy URL without its user name and password. On Linux the shell cannot
+  read the agent's own environment either; elsewhere it can (see
+  [Models](#models)).
 
 The container is the sandbox: run the agent in the `agent` image, where it
 is not root and the skills are root-owned and read-only. The image has no

@@ -119,6 +119,19 @@ def test_the_exit_code_follows_the_status(
     assert warnings == (["agent.evaluation-not-done"] if status == "incomplete" else [])
 
 
+def test_a_shell_that_could_read_the_agents_environment_is_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("mmt_plugin_agent.api.environ_failure", lambda: "prctl failed")
+    work = tmp_path / "w"
+    _use(monkeypatch, scripted(["NOT GREEN: nothing done"]))
+    _, envelope = _main(
+        ["new", "--spec", str(SPEC), "--work", str(work), "--model", "a:b"], capsys
+    )
+    assert envelope["result"]["environ_readable"] == "prctl failed"
+    assert "agent.environ-readable" in [d["code"] for d in envelope["diagnostics"]]
+
+
 @pytest.mark.parametrize(
     ("flag", "leave"), [("--allow-synthetic", "synthetic"), ("--capture", "capture")]
 )

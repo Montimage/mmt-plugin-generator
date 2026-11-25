@@ -260,6 +260,16 @@ def _outcome(result: AgentResult) -> tuple[AgentError | None, list[dict[str, Any
             f"the plugin is green, but the model skipped the evaluation it had leave for ({flag})",
             "read REPORT.md and manifest.json, then run update on the project to evaluate it",
         ), diagnostics
+    if result.environ_readable is not None:
+        diagnostics.append(
+            {
+                "severity": "warning",
+                "code": "agent.environ-readable",
+                "message": "the agent's shell could read its environment: "
+                + result.environ_readable,
+                "hint": "run the agent in the agent image (make agent-run)",
+            }
+        )
     if result.status == "incomplete":
         diagnostics.append(
             {

@@ -16,14 +16,19 @@ __all__ = ["AgentError", "redact"]
 #: What a provider's key looks like (Anthropic, OpenAI and the like).
 _KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}")
 
+#: A URL's user name and password (``https://user:token@host``).
+_USERINFO = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@")
+
 
 def redact(text: str, environ: Mapping[str, str] | None = None) -> str:
     """``text`` without the value of any secret variable of ``environ``
-    (``*_API_KEY``, ``*_TOKEN``, ...) and without anything shaped like a key."""
+    (``*_API_KEY``, ``*_TOKEN``, ...), without a URL's user name and
+    password, and without anything shaped like a key."""
     env = os.environ if environ is None else environ
     for name, value in env.items():
         if is_secret(name) and len(value) >= 8:
             text = text.replace(value, f"<{name}>")
+    text = _USERINFO.sub(r"\1<userinfo>@", text)
     return _KEY.sub("<key>", text)
 
 

@@ -7,9 +7,11 @@ always reach what the user running it can. The container is the sandbox
 
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import shlex
+import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -18,6 +20,8 @@ __all__ = [
     "LOOP_COMMANDS",
     "CommandCheck",
     "check_command",
+    "environ_failure",
+    "hide_environ",
     "is_secret",
     "is_system_prefix",
     "is_within",
@@ -57,7 +61,14 @@ _ENV_ALLOWED = (
     "SSL_CERT_DIR",
     "REQUESTS_CA_BUNDLE",
     "PKG_CONFIG_*",
-    "UV_*",
+    # uv's own settings, not its index URLs (they can hold a password).
+    "UV_CACHE_DIR",
+    "UV_LOCKED",
+    "UV_NO_CACHE",
+    "UV_OFFLINE",
+    "UV_PYTHON",
+    "UV_TOOL_DIR",
+    "UV_TOOL_BIN_DIR",
     "XDG_*",
     "MMT_*",
     "CYBERLAB_DIR",
@@ -66,6 +77,12 @@ _ENV_ALLOWED = (
 #: Names never passed on, even when allowed above: the model's provider
 #: keys and any other credential.
 _ENV_SECRET = re.compile(r"_API_KEY$|_TOKEN$|SECRET|PASSWORD|CREDENTIAL", re.IGNORECASE)
+
+#: The proxy variables: a URL whose user name alone can be a token.
+_PROXIES = frozenset({"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"})
+
+#: One URL of a value (a list is separated by commas or white space).
+_URL_ITEM = re.compile(r"[^,\s]+")
 
 #: The system prefix the skill never uses (SKILL.md, Rule 3).
 _SYSTEM_PREFIX = PurePosixPath("/opt/mmt")
@@ -76,9 +93,33 @@ def is_secret(name: str) -> bool:
     return _ENV_SECRET.search(name) is not None
 
 
+def _without_userinfo(item: str, proxy: bool) -> str:
+    """``item`` without the ``user:password@`` of its URL: always for a
+    proxy (also without a scheme, ``u:p@host:3128``), else only when it has
+    a password (``DOCKER_HOST=ssh://user@host`` stays)."""
+    scheme, sep, rest = item.partition("://")
+    if not sep:
+        if not proxy:
+            return item
+        scheme, rest = "", item
+    end = len(rest)
+    for c in "/?#":
+        found = rest.find(c)
+        if found != -1:
+            end = min(end, found)
+    authority = rest[:end]
+    if "@" not in authority:
+        return item
+    userinfo, host = authority.rsplit("@", 1)
+    if not proxy and ":" not in userinfo:
+        return item
+    return f"{scheme}{sep}{host}{rest[end:]}"
+
+
 def shell_env(environ: Mapping[str, str]) -> dict[str, str]:
     """The environment of the agent's shell: the allowed names of
-    ``environ``, without secrets, and no byte-code files."""
+    ``environ``, without secrets (by name, and a URL's password, a
+    proxy's user name too), and no byte-code files."""
     out = {}
     for name, value in environ.items():
         allowed = any(
@@ -86,9 +127,62 @@ def shell_env(environ: Mapping[str, str]) -> dict[str, str]:
             for rule in _ENV_ALLOWED
         )
         if allowed and not is_secret(name):
+            proxy = name in _PROXIES
+            items = [
+                (m.span(), _without_userinfo(m.group(0), proxy)) for m in _URL_ITEM.finditer(value)
+            ]
+            for (start, end), item in reversed(items):
+                value = value[:start] + item + value[end:]
             out[name] = value
     out["PYTHONDONTWRITEBYTECODE"] = "1"
     return out
+
+
+#: Whether this is Linux (a variable: mypy checks one platform's branch only).
+_LINUX: bool = sys.platform.startswith("linux")
+
+_PR_GET_DUMPABLE = 3
+_PR_SET_DUMPABLE = 4
+
+#: What ``hide_environ()`` found, once it ran: None (hidden) or why not.
+_HIDDEN: dict[str, str | None] = {}
+
+
+def _make_non_dumpable() -> str | None:
+    if not _LINUX:
+        return (
+            f"not Linux ({sys.platform}): a process of the same user can read the "
+            "agent's environment, its provider keys with it"
+        )
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(_PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+            return f"prctl(PR_SET_DUMPABLE, 0) failed: {os.strerror(ctypes.get_errno())}"
+        if libc.prctl(_PR_GET_DUMPABLE, 0, 0, 0, 0) != 0:
+            return "prctl(PR_SET_DUMPABLE, 0) did not make the process non-dumpable"
+    except (OSError, AttributeError) as exc:
+        return f"prctl is not available: {exc}"
+    return None
+
+
+def hide_environ() -> str | None:
+    """Make this process non-dumpable (Linux ``prctl(PR_SET_DUMPABLE, 0)``),
+    so that ``/proc/<pid>/environ`` is root's: the agent's shell, as the
+    same user, cannot read the provider keys ``shell_env()`` keeps from it.
+    A child is dumpable again after its ``exec``, but holds only
+    ``shell_env()``. Done once; None when it worked, else why not (off
+    Linux, always)."""
+    if "result" not in _HIDDEN:
+        _HIDDEN["result"] = _make_non_dumpable()
+    return _HIDDEN["result"]
+
+
+def environ_failure() -> str | None:
+    """Why ``hide_environ()`` failed on Linux, when it ran there and did;
+    else None (it worked, did not run, or the host is not Linux)."""
+    if not _LINUX:
+        return None
+    return _HIDDEN.get("result")
 
 
 def is_within(path: Path, root: Path) -> bool:

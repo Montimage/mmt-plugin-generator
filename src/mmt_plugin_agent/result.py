@@ -262,6 +262,10 @@ class AgentResult:
     #: The leave the run had for the evaluation: ``"capture"`` (``--capture``),
     #: ``"synthetic"`` (``--allow-synthetic``), or None.
     eval_leave: str | None = None
+    #: Why the shell could read this process's environment, the provider
+    #: keys with it (``policy.environ_failure()``): None when it could not,
+    #: and off Linux.
+    environ_readable: str | None = None
 
     @property
     def skipped_with_leave(self) -> bool:
@@ -291,6 +295,7 @@ class AgentResult:
             "commands": [c.to_json() for c in self.commands],
             "message": self.message,
             "eval_leave": self.eval_leave,
+            "environ_readable": self.environ_readable,
         }
 
 
@@ -330,6 +335,7 @@ def build_result(
     since_ns: int | None = None,
     capture: bool = False,
     allow_synthetic: bool = False,
+    environ_readable: str | None = None,
 ) -> AgentResult:
     """The result of a run from its work folder and what its shell ran.
 
@@ -419,4 +425,5 @@ def build_result(
         commands=list(records),
         message=message,
         eval_leave=leave,
+        environ_readable=environ_readable,
     )

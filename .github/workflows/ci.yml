@@ -240,7 +240,7 @@ jobs:
         # As the image's own unprivileged user: the agent's shell and file
         # tools against the root-owned, read-only skills, then the doctor.
         run: |
-          docker run --rm --network none \
+          docker run --rm --network none -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
             -v "$PWD/tests/unit/agent/image_guard.py:/tmp/image_guard.py:ro" \
             mmt-plugin-agent:ci /opt/mmt-plugin/bin/python /tmp/image_guard.py
           docker run --rm --network none mmt-plugin-agent:ci \
@@ -248,7 +248,7 @@ jobs:
           python3 - "$RUNNER_TEMP/doctor.json" <<'EOF'
           import json, sys
           checks = {c["id"]: c["status"] for c in json.load(open(sys.argv[1]))["result"]["checks"]}
-          for name in ("agent-extra", "mmt-plugin", "sdk", "compiler", "tshark", "libpcap", "skills"):
+          for name in ("agent-extra", "mmt-plugin", "sdk", "compiler", "tshark", "libpcap", "skills", "environ"):
               assert checks[name] == "pass", (name, checks)
           print("doctor in the image:", checks)
           EOF
@@ -271,6 +271,7 @@ jobs:
                 sh -euc "chown $user /work && chmod 0755 /work"
             fi
             docker run --rm --network none --user "$user" -e HOME=/tmp \
+              -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
               -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
               -v "$dir:/work" -w /work mmt-plugin-agent:ci \
               /opt/mmt-plugin/bin/python /opt/image_guard.py /work/guard-work

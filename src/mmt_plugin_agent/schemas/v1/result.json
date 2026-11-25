@@ -21,7 +21,8 @@
     "skills_modified",
     "commands",
     "message",
-    "eval_leave"
+    "eval_leave",
+    "environ_readable"
   ],
   "properties": {
     "status": {
@@ -225,6 +226,14 @@
         "capture",
         "synthetic",
         null
+      ]
+    }
+,
+    "environ_readable": {
+      "description": "Why the agent's shell could read the agent's own environment, the provider keys with it: prctl(PR_SET_DUMPABLE, 0) failed on Linux (warning agent.environ-readable). Null when it could not, and off Linux, where it is not guaranteed (docs/agent-api.md, The sandbox).",
+      "type": [
+        "string",
+        "null"
       ]
     }
   }

@@ -18,7 +18,7 @@ from mmt_plugin_agent import models
 from mmt_plugin_agent.doctor import MIN_PYTHON, DoctorReport, run_doctor
 from mmt_plugin_agent.errors import AgentError
 from mmt_plugin_agent.graph import DEFAULT_TIMEOUT, RunSettings, compile_graph, request_text
-from mmt_plugin_agent.policy import LOOP_COMMANDS, is_system_prefix
+from mmt_plugin_agent.policy import LOOP_COMMANDS, environ_failure, is_system_prefix
 from mmt_plugin_agent.questions import Question, Questioner, RunMode
 from mmt_plugin_agent.result import AgentEvent, AgentResult, CommandRecord, build_result, loop_runs
 from mmt_plugin_agent.skills import (
@@ -574,6 +574,7 @@ class PluginAgent:
             since_ns=run.started_ns,
             capture=run.settings.capture is not None,
             allow_synthetic=run.settings.allow_synthetic,
+            environ_readable=environ_failure(),
         )
         return AgentEvent("done", result.status, result.to_json(), result)
 

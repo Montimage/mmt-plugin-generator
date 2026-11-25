@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mmt_plugin_agent.policy import shell_env
+from mmt_plugin_agent.policy import hide_environ, shell_env
 from mmt_plugin_agent.questions import Question, Questioner, QuestionKind, RunMode
 from mmt_plugin_agent.result import CommandRecord
 from mmt_plugin_agent.skills import (
@@ -187,6 +187,8 @@ def compile_graph(
 
     from mmt_plugin_agent.backend import GuardedShellBackend
 
+    # Before the shell's first command: its keys out of /proc/<pid>/environ.
+    hide_environ()
     writable = [settings.work, Path(tempfile.gettempdir())]
     if settings.project is not None:
         writable.append(settings.project)

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mmt_plugin_agent.models import ENV_MODEL, model_spec
-from mmt_plugin_agent.policy import is_system_prefix
+from mmt_plugin_agent.policy import hide_environ, is_system_prefix
 from mmt_plugin_agent.skills import ENV_SKILLS, SKILL_NAME, find_skills_dir
 
 __all__ = ["MIN_PYTHON", "DoctorCheck", "DoctorReport", "run_doctor"]
@@ -230,6 +230,21 @@ def _home() -> DoctorCheck:
     return DoctorCheck("home", "fail", "HOME is not a directory", "set HOME to your home")
 
 
+def _environ() -> DoctorCheck:
+    reason = hide_environ()
+    if reason is None:
+        return DoctorCheck(
+            "environ", "pass", "not dumpable: the shell cannot read the agent's environment"
+        )
+    return DoctorCheck(
+        "environ",
+        "warn",
+        reason,
+        "run the agent in the agent image (make agent-run), where its shell cannot read "
+        "the provider keys",
+    )
+
+
 def _model(model: str | None, model_object: bool) -> DoctorCheck:
     if model_object:
         return DoctorCheck("model", "pass", "a chat model object")
@@ -281,6 +296,7 @@ def run_doctor(
         _docker(),
         _skills(skills_dir),
         _home(),
+        _environ(),
         _model(model, model_object),
     ]
     return DoctorReport(checks)

@@ -75,13 +75,17 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
 | 4 | sdk | Fix the environment: the SDK prefix (`--sdk`), the profile (`--sdk-profile`, `sdk.profile`) or the compiler (`--cc`). Never the model. |
 | 5 | build | Fix `src/<label>_impl.c` (or the model, when the error is in generated code) at each error's `location`. |
 | 6 | test | For each failing packet in `result.packets`, compare `attribute`, `expected` and `actual` with the spec, then fix whichever of the model and the test is wrong; never a test that was in the project before this session. |
-| 7 | state | Files on disk are not what the command needs: see the code. Never `--force` over a file you did not write. |
+| 7 | state | Files on disk are not what the command needs: see the code. Never `--force` over a file you did not write; unattended, never `--force` at all. |
 | 130 | interrupted | Run the command again. |
 
 ## Error codes
 
 A row is a code, or a family ending in `*`. Codes are the
 `diagnostics[].code` and `error.code` values; the first part is the class.
+
+Where a row says to ask, an unattended run (`SKILL.md`, Run modes) writes
+the question with its recommended answer to `<work>/questions.md` and
+takes the row's unattended default instead; it never passes `--force`.
 
 | Code | Action |
 |---|---|
@@ -95,7 +99,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `sdk.profile-fallback` | Warning: no profile for the SDK's version; the nearest one is used. Pin one with `sdk.profile` if it matters. |
 | `sdk.profile-default` | Warning: no SDK and no pinned profile. Pin `sdk.profile` in `plugin.yaml`. |
 | `sdk.cc-not-found` | Pass `--cc gcc` or `--cc clang` (one program, no arguments). |
-| `sdk.tshark-not-found` | `scaffold --tshark` needs tshark on `PATH`: ask the user to install it (Wireshark's command line), or drop `--tshark` for `scaffold`'s own proposal. Nothing was written. |
+| `sdk.tshark-not-found` | `scaffold --tshark` needs tshark on `PATH`: ask the user to install it (Wireshark's command line), or drop `--tshark` for `scaffold`'s own proposal. Nothing was written. Unattended: drop `--tshark` and record the question. |
 | `sdk.tshark-failed` | tshark failed or printed what does not parse: check each `--decode-as` rule against the message (a protocol tshark does not know), and that tshark reads the capture (`tshark -r`). Nothing was written. |
 | `sdk.registry-unavailable` | Warning: the installed plugins could not be listed, so the id and name were checked against the SDK headers only. Go on. |
 | `sdk.id-unchecked` | Warning from `init` without an SDK: `validate` with `--sdk` checks the id later. |
@@ -150,7 +154,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.legacy-*` | Warnings from `import`: the converted model does what the spec says, not what the Java tool did. Check the attribute against the spec. |
 | `model.bad-packet-test` | The packet test file is not corpus schema 1 (`tests/corpus/README.md`, Packet files): fix it at the location. |
 | `model.bad-plugin` | An entry of `plugins:` in `plugin.yaml` that `test` or `validate` cannot use, at the entry: fix the path (relative to the directory of `plugin.yaml`, to a project directory with its `plugin.yaml` or to a built `.so` file), name each plugin once, never this plugin itself or a project that names this one. |
-| `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
+| `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one (unattended: record the question and go on to the next item of Step 1 without it). From `run`, a capture broken after its header still reports the counts of the frames before the break. |
 | `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
 | `model.no-dissector` | `scaffold --tshark`: tshark has no dissector for the payloads (only `data`), or not the `--protocol` asked for; the message lists what it dissects there. Pass `--decode-as <layer>==<value>,<protocol>` for a protocol on a port tshark does not know, choose a listed `--protocol`, or drop `--tshark`. |
@@ -170,13 +174,13 @@ A row is a code, or a family ending in `*`. Codes are the
 | `test.no-packets` | Warning: write packet tests in `tests/*.yaml`; a run without one is not green. |
 | `test.bench-failed` | Warning from `--bench`: go on. |
 | `state.stale` | Run the command without `--no-deps` (or `generate`) to bring the files up to date. |
-| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. A directory where a generated file goes: ask the user (`--force` does not replace it). |
-| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. A directory named `plugin.lock`: ask the user (`--force` does not replace it). |
+| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. A directory where a generated file goes: ask the user (`--force` does not replace it). Unattended: leave it, record the question, stop BLOCKED. |
+| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. A directory named `plugin.lock`: ask the user (`--force` does not replace it). Unattended: leave it, record the question, stop BLOCKED. |
 | `state.kept` | Warning: a file `generate` no longer writes was kept. Delete it if it is yours. |
-| `state.exists` | A file no install manifest lists is at the target: ask the user. |
-| `state.installed-modified` | An installed file was changed since install: ask the user. |
-| `state.invalid-manifest` | An install manifest cannot be read: ask the user. |
+| `state.exists` | A file no install manifest lists is at the target: ask the user. Unattended: install nothing, record the question. |
+| `state.installed-modified` | An installed file was changed since install: ask the user. Unattended: leave it, record the question. |
+| `state.invalid-manifest` | An install manifest cannot be read: ask the user. Unattended: leave it, record the question. |
 | `state.not-installed` | Warning from `uninstall`: nothing was installed. |
-| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. At a `model.pdl` (a project of an older `init`): the hint's `import` converts it; ask the user before you run it. |
+| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. At a `model.pdl` (a project of an older `init`): the hint's `import` converts it; ask the user before you run it. Unattended: pick another `--dir` and record the question. |
 | `state.not-a-project` | `init --dir` is not empty and not a project: pick an empty directory. |
-| `state.output-differs` | `import` or `scaffold` would replace a file with other content: `--force` only if you wrote it. |
+| `state.output-differs` | `import` or `scaffold` would replace a file with other content: `--force` only if you wrote it. Unattended: write to another file (`-o`, `--tests-dir`) instead. |

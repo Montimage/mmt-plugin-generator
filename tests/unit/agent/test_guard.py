@@ -109,9 +109,13 @@ def test_a_run_reads_a_read_only_copy_of_the_skills(
     fake_cli()
     work = tmp_path / "work"
     cache = tmp_path / "cache" / "mmt-plugin-agent"
+    # A redirection target is not globbed by a non-interactive sh: name the
+    # snapshot first, so each write reaches the real read-only copy.
     write = (
-        f"echo x >> {cache}/*/{SKILL_MD}; echo append=$?; "
-        f"touch {cache}/*/mmt-plugin-generator/new.md; echo create=$?"
+        f"set -- {cache}/skills-*; d=$1; "
+        f'test -f "$d/{SKILL_MD}"; echo found=$?; '
+        f'echo x >> "$d/{SKILL_MD}"; echo append=$?; '
+        f'touch "$d/mmt-plugin-generator/new.md"; echo create=$?'
     )
     model = scripted(
         [step(call("ls", path=str(cache))), step(call("execute", command=write)), "DONE"]
@@ -119,7 +123,10 @@ def test_a_run_reads_a_read_only_copy_of_the_skills(
     result = PluginAgent(model, work_dir=work, skills_dir=skills_copy).new(spec=SPEC)
     listing, wrote = model.tool_results()[:2]
     assert "skills-" in listing
-    assert "append=1" in wrote and "create=1" in wrote
+    assert "found=0" in wrote, wrote
+    assert "append=" in wrote and "create=" in wrote, wrote
+    assert "append=0" not in wrote and "create=0" not in wrote, wrote
+    assert "Permission denied" in wrote and "No such file" not in wrote, wrote
     assert result.skills_modified == []
     assert not any(cache.iterdir()), "the copy is removed at the end"
 

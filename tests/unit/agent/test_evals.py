@@ -9,13 +9,16 @@ import os
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from mmt_plugin_agent import run_model_evals
-from mmt_plugin_agent.evals import load_run_evals
+from mmt_plugin_agent import evals, run_model_evals
+from mmt_plugin_agent.evals import load_run_evals, saved_envelope
+from mmt_plugin_agent.policy import LOOP_COMMANDS, mmt_plugin_command
+from mmt_plugin_agent.result import CommandRecord
 
 from .fakes import ScriptedModel, call, step
 
@@ -101,3 +104,113 @@ def test_a_model_that_does_nothing_fails_every_case(tmp_path: Path, skills_copy:
     assert "green: the update adds or changes no packet test" in update.problems
     assert "| ScriptedModel | spec-telem | FAIL | no |" in out.read_text()
     assert report.ok is False
+
+
+def _redirected(script: list[Any], runs: Path) -> list[Any]:
+    """The script with each loop command's envelope written to
+    ``runs/run-1/<command>.json`` by a redirect, so its output holds none."""
+    out: list[Any] = []
+    for item in script:
+        if isinstance(item, list) and item[0]["name"] == "execute":
+            command = item[0]["args"]["command"]
+            found = mmt_plugin_command(command)
+            if found is not None and found[0] in LOOP_COMMANDS:
+                saved = shlex.quote(str(runs / f"{found[0]}.json"))
+                dest = shlex.quote(str(runs))
+                command = f"mkdir -p {dest} && {command} > {saved}"
+                item = step(call("execute", command=command))
+        out.append(item)
+    return out
+
+
+@pytest.mark.usefixtures("mmt_plugin_on_path")
+def test_envelopes_redirected_to_the_work_folder_are_checked(
+    tmp_path: Path, skills_copy: Path
+) -> None:
+    case_dir = skills_copy / "mmt-plugin-generator" / "evals" / "cases" / "spec-telem"
+    root = tmp_path / "evals"
+    agent = root / "ScriptedModel" / "spec-telem" / "agent"
+    script = _redirected(_script(skills_copy, case_dir, agent / "project"), agent / "runs/run-1")
+    model = ScriptedModel(scripts={f"{case_dir}/": script})
+    report = run_model_evals(
+        [model],
+        out=tmp_path / "r.md",
+        skills_dir=skills_copy,
+        work_root=root,
+        cases=["spec-telem"],
+    )
+    (outcome,) = report.outcomes
+    assert (agent / "runs/run-1/validate.json").is_file()
+    assert outcome.problems == []
+    assert outcome.ok
+
+
+def test_a_saved_envelope_counts_only_when_written_while_its_command_ran(
+    tmp_path: Path,
+) -> None:
+    saved = tmp_path / "runs" / "run-1" / "validate.json"
+    saved.parent.mkdir(parents=True)
+    env = {"schema_version": 1, "exit_code": 0, "command": "validate"}
+    saved.write_text(json.dumps(env))
+    now = time.time_ns()
+    command = "mmt-plugin -C p --json validate > runs/run-1/validate.json"
+    record = CommandRecord(command, 0, "", started_ns=now - 10**9, ended_ns=now + 10**9)
+    assert saved_envelope(tmp_path, record, 1) == env
+    old = CommandRecord(command, 0, "", started_ns=now - 100 * 10**9, ended_ns=now - 90 * 10**9)
+    assert saved_envelope(tmp_path, old, 1) is None
+    assert saved_envelope(tmp_path, CommandRecord(command, 0, ""), 1) is None
+
+
+def test_without_sdk_the_eval_uses_mmt_base(
+    tmp_path: Path, skills_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sdk = tmp_path / "sdk"
+    sdk.mkdir()
+    monkeypatch.setenv("MMT_BASE", str(sdk))
+    seen: dict[str, Any] = {}
+
+    def agent(model: Any, **kwargs: Any) -> Any:
+        seen["agent"] = kwargs["sdk"]
+        raise RuntimeError("stop here")
+
+    real = evals._Case
+
+    class Case(real):  # type: ignore[valid-type, misc]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            seen["case"] = kwargs["sdk"]
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(evals, "PluginAgent", agent)
+    monkeypatch.setattr(evals, "_Case", Case)
+    report = run_model_evals(
+        [ScriptedModel(scripts={"": ["DONE"]})],
+        out=tmp_path / "r.md",
+        skills_dir=skills_copy,
+        work_root=tmp_path / "evals",
+        cases=["spec-telem"],
+    )
+    assert seen == {"agent": sdk.resolve(), "case": sdk.resolve()}
+    assert report.outcomes[0].problems == ["error: RuntimeError: stop here"]
+
+
+def test_a_nested_work_folder_is_one_clear_problem(tmp_path: Path, skills_copy: Path) -> None:
+    root = tmp_path / "evals"
+    nested = root / "ScriptedModel" / "spec-telem" / "agent" / "telem-plugin"
+    make = shlex.join(["mkdir", "-p", str(nested / "runs"), str(nested / "project")])
+    write = call("write_file", file_path=str(nested / "manifest.json"), content="{}")
+    model = ScriptedModel(scripts={"": [step(call("execute", command=make)), step(write), "DONE"]})
+    report = run_model_evals(
+        [model],
+        out=tmp_path / "r.md",
+        skills_dir=skills_copy,
+        work_root=root,
+        cases=["spec-telem"],
+    )
+    (outcome,) = report.outcomes
+    assert not outcome.ok
+    assert outcome.work == str(root / "ScriptedModel" / "spec-telem")
+    assert outcome.problems == [
+        f"the model nested its work folder at {nested.resolve()}; the brief says "
+        f"{nested.parent} is the work folder, with the project at "
+        f"{(nested.parent / 'project').resolve()}"
+    ]

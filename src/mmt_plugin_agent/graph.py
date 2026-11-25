@@ -32,10 +32,22 @@ if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
     from langgraph.types import Checkpointer
 
-__all__ = ["DEFAULT_TIMEOUT", "RunSettings", "build_graph", "compile_graph", "request_text"]
+__all__ = [
+    "ARTIFACTS_DIR",
+    "DEFAULT_TIMEOUT",
+    "RunSettings",
+    "build_graph",
+    "compile_graph",
+    "request_text",
+]
 
 #: Seconds a shell command may run: ``build`` and ``test --sanitize`` take a while.
 DEFAULT_TIMEOUT = 900
+
+#: Where deepagents keeps what it takes out of the context (large tool
+#: results, summarized history), in the work folder: its default root, ``/``,
+#: is outside what the agent may write.
+ARTIFACTS_DIR = ".agent"
 
 
 @dataclass
@@ -171,13 +183,14 @@ def compile_graph(
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """The graph of one run, whose skills are ``skills`` (a read-only copy)."""
     from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend
 
     from mmt_plugin_agent.backend import GuardedShellBackend
 
     writable = [settings.work, Path(tempfile.gettempdir())]
     if settings.project is not None:
         writable.append(settings.project)
-    backend = GuardedShellBackend(
+    guarded = GuardedShellBackend(
         work=settings.work,
         writable=writable,
         protected=[skills, *extra_skills, *protected],
@@ -186,6 +199,10 @@ def compile_graph(
         timeout=settings.timeout,
         on_command=on_command,
     )
+    # No routes: every path goes to the guarded backend; only the root of
+    # deepagents' artifacts moves.
+    artifacts = Path(os.path.realpath(settings.work)) / ARTIFACTS_DIR
+    backend = CompositeBackend(default=guarded, routes={}, artifacts_root=str(artifacts))
     return create_deep_agent(
         model,
         [_ask_user_tool(questioner), *tools],

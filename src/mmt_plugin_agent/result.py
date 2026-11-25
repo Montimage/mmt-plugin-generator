@@ -59,6 +59,9 @@ class CommandRecord:
     #: The mmt-plugin command, when known without parsing ``command`` (an
     #: envelope the work folder holds).
     name: str | None = None
+    #: When the shell ran it (``time.time_ns()`` before and after).
+    started_ns: int | None = None
+    ended_ns: int | None = None
 
     @property
     def mmt_command(self) -> str | None:

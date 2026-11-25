@@ -255,3 +255,18 @@ def test_only_ask_user_writes_questions_md(
     backend.questioner.ask("capture?", "synthetic", "capture")
     assert backend.edit(str(work / "questions.md"), "capture?", "x").error is not None
     assert (work / "questions.md").read_text().count("## Q") == 1
+
+
+def test_a_large_tool_result_is_offloaded_in_the_work_folder(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli()
+    work = tmp_path / "work"
+    # Over deepagents' threshold (20000 tokens, 4 characters each), under the
+    # shell's 100000-byte cap.
+    model = scripted([step(call("execute", command="yes x | head -c 90000")), "DONE"])
+    PluginAgent(model, work_dir=work).new(spec=SPEC)
+    offloaded = work.resolve() / ".agent" / "large_tool_results"
+    files = list(offloaded.iterdir())
+    assert len(files) == 1 and files[0].read_text().count("x") >= 40000
+    assert str(offloaded) in model.tool_results()[0]

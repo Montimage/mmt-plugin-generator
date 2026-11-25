@@ -169,7 +169,7 @@ def _parser() -> argparse.ArgumentParser:
     evals.add_argument("--out", required=True, metavar="FILE", help="the results table (.md)")
     evals.add_argument("--case", action="append", default=[], help="only this case")
     evals.add_argument("--cases", metavar="DIR", help="the cases directory")
-    evals.add_argument("--sdk", metavar="PREFIX", help="the mmt-dpi prefix")
+    evals.add_argument("--sdk", metavar="PREFIX", help="the mmt-dpi prefix (default: MMT_BASE)")
     evals.add_argument("--cc", default="gcc", help="the compiler (default: gcc)")
     evals.add_argument("--skills", metavar="DIR", help="the skills directory")
     evals.add_argument("--work", metavar="DIR", help="keep the cases' work folders here")
@@ -240,7 +240,12 @@ def _run(args: argparse.Namespace, json_out: bool) -> AgentResult:
         )
     result = _consume(events, json_out)
     while result.status == "waiting" and result.question is not None:
-        answer = _answer(result.question)
+        try:
+            answer = _answer(result.question)
+        except BaseException:
+            # No answer (stdin ended, Ctrl-C): the run will not be resumed.
+            agent.release(result.thread_id)
+            raise
         result = _consume(agent.stream_resume(result.thread_id, answer), json_out)
     return result
 
@@ -356,6 +361,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{TOOL} {__version__}")
         return _emit(_envelope("version", result=version), json_out, quiet=True)
     if args.command is None:
+        if json_out:
+            error = AgentError(ExitCode.USAGE, "agent.usage", "no command given", f"{TOOL} --help")
+            return _emit(_envelope(None, error=error), json_out)
         parser.print_help(sys.stderr)
         return int(ExitCode.USAGE)
     try:

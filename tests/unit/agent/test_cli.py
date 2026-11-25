@@ -7,7 +7,7 @@ from __future__ import annotations
 import ast
 import io
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -315,3 +315,80 @@ def test_doctor_fails_an_sdk_under_opt_mmt(
     checks = {c["id"]: c for c in envelope["result"]["checks"]}
     assert checks["sdk"]["status"] == "fail"
     assert "private prefix" in checks["sdk"]["hint"]
+
+
+def test_json_without_a_command_is_one_usage_envelope(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope = _main([], capsys)
+    assert code == 2
+    assert envelope["error"]["code"] == "agent.usage"
+    assert envelope["error"]["message"] == "no command given"
+    assert envelope["error"]["hint"] == "mmt-plugin-agent --help"
+
+
+def test_stdin_ending_at_a_question_releases_the_run(
+    tmp_path: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_cli()
+    work = tmp_path / "w"
+    ask = step(call("ask_user", question="capture?", recommended="synthetic", kind="capture"))
+    _use(monkeypatch, scripted([ask, "DONE"]))
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    args = ["new", "--spec", str(SPEC), "--work", str(work), "--model", "a:b", "--interactive"]
+    code, envelope = _main(args, capsys)
+    assert code == 2
+    assert envelope["error"]["code"] == "agent.no-answer"
+    assert _snapshots(tmp_path) == []
+
+
+class _Interrupted(ScriptedModel):
+    """Ctrl-C while the model's provider answers."""
+
+    def _generate(self, *args: Any, **kwargs: Any) -> Any:
+        raise KeyboardInterrupt
+
+
+def test_ctrl_c_releases_the_run(
+    tmp_path: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_cli()
+    _use(monkeypatch, _Interrupted(scripts={"": []}))
+    args = ["new", "--spec", str(SPEC), "--work", str(tmp_path / "w"), "--model", "a:b"]
+    code, envelope = _main(args, capsys)
+    assert code == 130
+    assert envelope["error"]["code"] == "interrupted"
+    assert _snapshots(tmp_path) == []
+
+
+def test_a_consumer_that_stops_reading_releases_the_run(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli()
+    model = scripted([step(call("execute", command="true")), "DONE"])
+    agent = PluginAgent(model, work_dir=tmp_path / "w")
+    events = agent.stream(spec=SPEC)
+    assert isinstance(events, Generator)
+    assert next(events).kind == "step"
+    assert len(_snapshots(tmp_path)) == 1
+    events.close()
+    assert _snapshots(tmp_path) == []
+    assert agent._runs == {}
+
+
+def test_release_forgets_a_waiting_run(tmp_path: Path, fake_cli: Callable[..., FakeCli]) -> None:
+    fake_cli()
+    ask = step(call("ask_user", question="capture?", recommended="synthetic", kind="capture"))
+    agent = PluginAgent(scripted([ask, "DONE"]), work_dir=tmp_path / "w", mode="interactive")
+    result = agent.new(spec=SPEC)
+    assert result.status == "waiting"
+    assert len(_snapshots(tmp_path)) == 1
+    agent.release(result.thread_id)
+    assert _snapshots(tmp_path) == []
+    assert agent._runs == {}

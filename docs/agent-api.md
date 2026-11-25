@@ -167,7 +167,10 @@ methods are:
   `AgentResult`. Every loop command gives a `step`, a `command` and an
   `envelope` event.
 - `resume(thread_id, answer)` (and `stream_resume`) answers the question
-  a `waiting` run stopped at, in the same `PluginAgent`.
+  a `waiting` run stopped at, in the same `PluginAgent`; `release(thread_id)`
+  forgets a `waiting` run that will not be resumed (it removes the run's
+  skills snapshot). A run that ends, fails, is interrupted or whose events
+  are no longer read is released on its own.
 - `doctor()` returns the `DoctorReport` of `mmt-plugin-agent doctor`.
 
 `AgentResult` has `status` (`done`, `incomplete`, `eval_failed`,
@@ -245,13 +248,16 @@ app.invoke({"messages": [{"role": "user", "content": request_text(spec="spec.md"
 `mmt-plugin-agent eval` has each `--model` draft every case of
 `skills/mmt-plugin-generator/evals/cases/` (or those `--case` names),
 unattended and without the capture evaluation, then judges it with the
-checks of `evals/run_evals.py`: each envelope of the agent's loop against
-the skill's contract, each fix at what the failed run reported, no packet
+checks of `evals/run_evals.py`: each envelope of the agent's loop (from
+the command's output, else from the file it saved in the work folder's
+`runs/` while it ran) against the skill's contract, each fix at what the failed run reported, no packet
 test deleted or rewritten, the final loop, run again, green, and an
 update's label, id, profile, parents and packet tests kept. Unlike the
 scripted evals, the loop need not stop where the case's script does. It
 writes a table per model and case to `--out` (Markdown) and the same with
-`.json`; it exits 6 when a case fails.
+`.json`; it exits 6 when a case fails. Without `--sdk` it uses `MMT_BASE`,
+as a run does. A model that puts its work folder or project elsewhere
+than the brief says fails the case with that one problem.
 
 ```sh
 mmt-plugin-agent eval --model anthropic:claude-sonnet-5-5 --model ollama:qwen3-coder --sdk "$MMT_BASE" --out results.md
@@ -264,7 +270,9 @@ whatever the user running `mmt-plugin-agent` can. Its guards are defence
 in depth:
 
 - The file tools write only in the work folder, an update's project and
-  the temporary directory, never in the skills (links followed).
+  the temporary directory, never in the skills (links followed). What
+  deepagents takes out of the context (large tool results, summarized
+  history) goes to `<work>/.agent/`.
 - The shell refuses `sudo`, `--system`, any path under `/opt/mmt`, and
   `--force` unattended (interactive: only after a yes). A refused command
   is not run.

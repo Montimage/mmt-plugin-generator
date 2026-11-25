@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import itertools
 import json
+import os
 import re
 import shutil
 import sys
@@ -31,7 +32,7 @@ from mmt_plugin_agent.api import PluginAgent
 from mmt_plugin_agent.errors import AgentError
 from mmt_plugin_agent.graph import DEFAULT_TIMEOUT
 from mmt_plugin_agent.policy import mmt_plugin_command
-from mmt_plugin_agent.result import AgentResult, loop_runs
+from mmt_plugin_agent.result import AgentResult, CommandRecord, envelope_of, loop_runs
 from mmt_plugin_agent.skills import SKILL_NAME, resolve_skills_dir
 
 if TYPE_CHECKING:
@@ -40,6 +41,49 @@ if TYPE_CHECKING:
 __all__ = ["CaseOutcome", "ModelEvalReport", "load_run_evals", "run_model_evals"]
 
 _PROFILE = re.compile(r'^\s*profile: "([^"]+)"', re.MULTILINE)
+
+#: How far a saved envelope's time may lie outside its command's: file
+#: times come from a coarser clock, on some file systems to 2 seconds.
+_CLOCK_SLACK_NS = 2_000_000_000
+
+
+def saved_envelope(work: Path, record: CommandRecord, run: int) -> dict[str, Any] | None:
+    """The envelope a loop command saved in the work folder while it ran,
+    ``<work>/runs/run-<n>/<command>.json`` (``mmt-plugin ... > FILE`` prints
+    nothing): the file of that command written in the command's time,
+    ``run-<run>``'s first, else the one written last. None when there is none."""
+    name = record.mmt_command
+    if name is None or record.started_ns is None or record.ended_ns is None:
+        return None
+    low, high = record.started_ns - _CLOCK_SLACK_NS, record.ended_ns + _CLOCK_SLACK_NS
+    try:
+        dirs = list((work / "runs").iterdir())
+    except OSError:
+        return None
+    found = []
+    for path in dirs:
+        saved = path / f"{name}.json"
+        try:
+            mtime = saved.stat().st_mtime_ns
+        except OSError:
+            continue
+        if low <= mtime <= high:
+            found.append((path.name != f"run-{run}", -mtime, saved))
+    for _, _, saved in sorted(found):
+        try:
+            env = envelope_of(saved.read_text("utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if env is not None:
+            return env
+    return None
+
+
+def _exit_code(record: CommandRecord, env: dict[str, Any] | None) -> int | None:
+    code = None if env is None else env.get("exit_code")
+    if isinstance(code, int) and not isinstance(code, bool):
+        return code
+    return record.mmt_exit_code
 
 
 def load_run_evals(skills: Path) -> ModuleType:
@@ -210,8 +254,24 @@ class _Case:
         assert result is not None
         return result, snapshots
 
-    def check_runs(self, result: AgentResult, snapshots: list[dict[str, str]]) -> set[str]:
-        """The agent's loop runs; the packet tests they protect."""
+    def misplaced(self, result: AgentResult) -> str | None:
+        """Why the agent's work folder or project is not where the brief
+        puts them, or None."""
+        expected = self.project.resolve()
+        if result.work.resolve() != self.agent_work.resolve():
+            return (
+                f"the model nested its work folder at {result.work}; the brief says "
+                f"{self.agent_work} is the work folder, with the project at {expected}"
+            )
+        if result.project is not None and result.project.resolve() != expected:
+            return f"the model put the project at {result.project}; the brief says {expected}"
+        return None
+
+    def check_runs(
+        self, result: AgentResult, snapshots: list[dict[str, str]], *, project: bool = True
+    ) -> set[str]:
+        """The agent's loop runs; the packet tests they protect. Without
+        ``project``, only the envelopes are checked."""
         rev, runner = self.rev, self.runner
         contract = runner.contract
         basic = f"tests/{self.case['params']['label']}-basic.yaml"
@@ -222,28 +282,33 @@ class _Case:
         states = [*snapshots, final]
         runs = loop_runs(result.commands)
         for n, run in enumerate(runs, 1):
+            seen = []
             for record in run.commands:
-                env = record.envelope
+                env = record.envelope or saved_envelope(result.work, record, n)
+                code = _exit_code(record, env)
+                seen.append((record, env, code))
                 if env is None:
                     self.problems.append(
-                        f"run {n}: {record.mmt_command}: no envelope in its output"
+                        f"run {n}: {record.mmt_command}: no envelope in its output "
+                        "or in the work folder's runs/"
                     )
                     continue
                 _, found = rev.check_envelope(
                     json.dumps(env) + "\n",
                     "",
-                    record.mmt_exit_code,
+                    code,
                     record.mmt_command,
                     contract,
                     sdk=self.sdk is not None,
                 )
                 self.problems += [f"run {n}: {record.mmt_command}: {p}" for p in found]
-            failed = next((r for r in run.commands if r.mmt_exit_code != 0), None)
-            if failed is not None and n < len(states):
-                step = rev.Step(
-                    n, [], failed.mmt_command, failed.mmt_exit_code, "", "", failed.envelope
-                )
+            failed = next((s for s in seen if s[2] != 0), None)
+            if project and failed is not None and n < len(states):
+                record, env, code = failed
+                step = rev.Step(n, [], record.mmt_command, code, "", "", env)
                 self.problems += rev.fix_problems(step, states[n - 1], states[n], n + 1)
+        if not project:
+            return protected
         for n, (before, after) in enumerate(itertools.pairwise(states), 1):
             if runner.seed is None:
                 protected |= {p for p in before if p.startswith("tests/") and p != basic}
@@ -295,6 +360,8 @@ def run_model_evals(
     root = Path(work_root).resolve() if work_root else out_path.parent / f"{out_path.stem}-work"
     case_root = Path(cases_dir).resolve() if cases_dir else rev.CASES_DIR
     dirs = [d for d in rev.case_dirs(case_root) if not cases or d.name in cases]
+    # As PluginAgent: MMT_BASE when no sdk is given.
+    sdk = sdk if sdk is not None else os.environ.get("MMT_BASE") or None
     prefix = None if sdk is None else Path(sdk).resolve()
     report = ModelEvalReport()
     for model in models:
@@ -327,8 +394,14 @@ def run_model_evals(
                     )
                     result, snapshots = case.drive(agent)
                     status, runs = result.status, result.loop_runs
-                    protected = case.check_runs(result, snapshots)
-                    green = case.final(protected)
+                    misplaced = case.misplaced(result)
+                    if misplaced is not None:
+                        # The project checks would read a project that is not there.
+                        case.problems.append(misplaced)
+                        case.check_runs(result, snapshots, project=False)
+                    else:
+                        protected = case.check_runs(result, snapshots)
+                        green = case.final(protected)
             except Exception as exc:
                 # One case's failure (the provider, a broken case) is its row
                 # of the table; the other cases still run.

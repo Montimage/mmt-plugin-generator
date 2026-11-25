@@ -262,6 +262,13 @@ class PluginAgent:
 
         yield from self._drive(self._waiting(thread_id), Command(resume=answer))
 
+    def release(self, thread_id: str) -> None:
+        """Forget a ``waiting`` run that will not be resumed: remove its
+        skills snapshot. A run that ended is released already."""
+        run = self._runs.get(thread_id)
+        if run is not None:
+            self._release(run)
+
     def doctor(self) -> DoctorReport:
         """What this machine has of what a run needs."""
         return run_doctor(
@@ -398,15 +405,20 @@ class PluginAgent:
 
         state = _Stream()
         failure: Exception | None = None
+        ended = False
         try:
             for chunk in run.graph.stream(graph_input, self._config(run), stream_mode="updates"):
                 yield from self._chunk(run, chunk, state)
+            ended = True
         except GraphRecursionError:
+            ended = True
             state.message = f"stopped after {RECURSION_LIMIT} graph steps: NOT GREEN"
         except Exception as exc:
+            ended = True
             failure = exc
         finally:
             modified = self._check_skills(run)
+            self._release_unless_waiting(run, ended, state)
         if failure is not None:
             self._abort(run, failure, modified)
         yield self._finish(run, state, modified)
@@ -416,18 +428,23 @@ class PluginAgent:
 
         state = _Stream()
         failure: Exception | None = None
+        ended = False
         try:
             async for chunk in run.graph.astream(
                 graph_input, self._config(run), stream_mode="updates"
             ):
                 for event in self._chunk(run, chunk, state):
                     yield event
+            ended = True
         except GraphRecursionError:
+            ended = True
             state.message = f"stopped after {RECURSION_LIMIT} graph steps: NOT GREEN"
         except Exception as exc:
+            ended = True
             failure = exc
         finally:
             modified = self._check_skills(run)
+            self._release_unless_waiting(run, ended, state)
         if failure is not None:
             self._abort(run, failure, modified)
         yield self._finish(run, state, modified)
@@ -516,6 +533,14 @@ class PluginAgent:
         """The run is over: remove its skills snapshot and forget it."""
         remove_tree(run.snapshot)
         self._runs.pop(run.thread_id, None)
+
+    def _release_unless_waiting(self, run: _Run, ended: bool, state: _Stream) -> None:
+        """A run left before its end (Ctrl-C, a consumer that stops reading
+        the events) is released, unless it stopped at a question, which
+        ``resume()`` may still answer. One that ended is released by
+        ``_finish`` or ``_abort``."""
+        if not ended and state.question is None:
+            self._release(run)
 
     def _abort(self, run: _Run, failure: Exception, modified: Sequence[str]) -> NoReturn:
         """The graph raised (the model's provider, an I/O error): release the

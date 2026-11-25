@@ -4,6 +4,7 @@ guards of ``policy.py`` (needs the agent extra)."""
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -163,7 +164,16 @@ class GuardedShellBackend(LocalShellBackend):
             )
             if not is_yes(answer):
                 return self._refuse(command, f"--force was not allowed (answer: {answer})")
+        started = time.time_ns()
         response = super().execute(command, timeout=timeout)
         if self.on_command is not None:
-            self.on_command(CommandRecord(command, response.exit_code, response.output))
+            self.on_command(
+                CommandRecord(
+                    command,
+                    response.exit_code,
+                    response.output,
+                    started_ns=started,
+                    ended_ns=time.time_ns(),
+                )
+            )
         return response

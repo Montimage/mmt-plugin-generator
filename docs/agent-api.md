@@ -48,7 +48,7 @@ The `agent` stage of the `Dockerfile` is the place to run the agent: it
 holds mmt-dpi as a private prefix (`/opt/sdk`, `MMT_BASE`), gcc and clang,
 tshark, libpcap's headers, a docker CLI, mmt-plugin with the agent extra
 from `uv.lock`, and the skills, root-owned and read-only, in
-`/opt/mmt-plugin-skills`. The agent runs as the unprivileged user `agent`.
+`/opt/mmt-plugin-skills`. Its default user is the unprivileged `agent`.
 
 ```sh
 make agent-image
@@ -56,7 +56,11 @@ make agent-run AGENT_ARGS='new --spec /in/skills/mmt-plugin-generator/evals/case
 ```
 
 `agent-run` mounts the current directory read-only at `/in` and
-`./agent-work` as the work folder, and passes the model's settings
+`./agent-work` at `/work`, the working directory, and runs the image as
+your uid (`--user "$(id -u):$(id -g)"`, `HOME=/tmp`), so the agent can
+write `./agent-work` whatever uid the image's `agent` has, and you own
+what it writes. Neither user is root, and the skills are read-only for
+both. Run the image by hand with the same flags. It passes the model's settings
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OLLAMA_HOST`,
 `MMT_PLUGIN_AGENT_MODEL`, `MMT_PLUGIN_AGENT_NUM_CTX`) from your environment by name. cyberlab is not
 in the image, and the image has no Docker socket: see [The

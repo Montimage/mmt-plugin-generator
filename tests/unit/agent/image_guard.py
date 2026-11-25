@@ -1,8 +1,13 @@
 """Run inside the agent image, as its user (CI's agent job): the agent's
-shell and file tools cannot change the image's skills (P5).
+shell and file tools cannot change the image's skills (P5), and can write
+the work folder.
 
     docker run --rm --network none -v "$PWD/tests/unit/agent/image_guard.py:/tmp/g.py:ro" \\
         mmt-plugin-agent:local /opt/mmt-plugin/bin/python /tmp/g.py
+
+The argument, when given, is the work folder (default ``~/guard-work``):
+CI also runs it as the runner's uid, a host folder mounted at ``/work``,
+with ``make agent-run``'s flags (``--user``, ``HOME=/tmp``).
 
 Not a pytest module: the image has no pytest. It prints PASS or fails.
 """
@@ -10,6 +15,7 @@ Not a pytest module: the image has no pytest. It prints PASS or fails.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -38,14 +44,16 @@ def main() -> None:
         f"echo x >> {SKILL_MD}; echo append=$?; touch {SKILLS}/new.md; echo create=$?; "
         f"chmod u+w {SKILL_MD}; echo chmod=$?"
     )
+    work = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.home() / "guard-work"
+    probe = work / "probe.txt"
     model = Model(
         responses=[
             _call(0, "write_file", file_path=str(SKILLS / "new.md"), content="x"),
             _call(1, "execute", command=shell),
+            _call(2, "write_file", file_path=str(probe), content="probe\n"),
             AIMessage(content="DONE"),
         ]
     )
-    work = Path.home() / "guard-work"
     spec = SKILLS / "mmt-plugin-generator" / "evals" / "cases" / "spec-telem" / "spec.md"
     result = PluginAgent(model, work_dir=work).new(spec=spec)
     (record,) = result.commands
@@ -54,7 +62,8 @@ def main() -> None:
     assert SKILL_MD.read_bytes() == before
     assert not (SKILLS / "new.md").exists()
     assert result.skills_modified == []
-    print(f"PASS: uid {os.geteuid()} cannot write {SKILLS}")
+    assert probe.read_text("utf-8") == "probe\n", probe
+    print(f"PASS: uid {os.geteuid()} cannot write {SKILLS}, wrote {probe}")
 
 
 if __name__ == "__main__":

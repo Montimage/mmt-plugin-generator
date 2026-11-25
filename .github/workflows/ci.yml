@@ -256,6 +256,27 @@ jobs:
         run: |
           docker run --rm --network none mmt-plugin-agent:ci \
             sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test'
+      - name: The agent writes a host-owned work folder as the host's uid
+        # make agent-run's flags (--user, HOME=/tmp, the work folder at /work):
+        # the runner's uid with a folder it owns (0755), then a uid the image
+        # does not know with a folder only that uid owns. The guard creates
+        # its work folder and writes a file there; the skills stay read-only.
+        run: |
+          for user in "$(id -u):$(id -g)" 4242:4242; do
+            uid="${user%%:*}"
+            dir="$RUNNER_TEMP/agent-work-$uid"
+            mkdir -m 0755 "$dir"
+            if [ "$uid" != "$(id -u)" ]; then
+              docker run --rm --network none --user 0:0 -v "$dir:/work" mmt-plugin-agent:ci \
+                sh -euc "chown $user /work && chmod 0755 /work"
+            fi
+            docker run --rm --network none --user "$user" -e HOME=/tmp \
+              -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
+              -v "$dir:/work" -w /work mmt-plugin-agent:ci \
+              /opt/mmt-plugin/bin/python /opt/image_guard.py /work/guard-work
+            [ "$(stat -c %u "$dir/guard-work/probe.txt")" = "$uid" ]
+            grep -qx probe "$dir/guard-work/probe.txt"
+          done
 
   container:
     name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})

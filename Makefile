@@ -9,8 +9,9 @@
 #                         with its agent extra (#161, docs/agent-api.md)
 #   make agent-run AGENT_ARGS='new --spec /in/spec.md --json'
 #                         run it on the current directory, mounted at /in
-#                         read-only, a work folder in ./agent-work; the model
-#                         key from the environment (ANTHROPIC_API_KEY, ...)
+#                         read-only, a work folder in ./agent-work (/work),
+#                         as your uid with HOME=/tmp; the model key from the
+#                         environment (ANTHROPIC_API_KEY, ...)
 #
 # The repo is mounted read-only and the check runs as your uid, with no
 # network, so it leaves no files behind. On an SELinux host, pass
@@ -61,10 +62,14 @@ agent-image:
 
 # The model's key comes from the environment by name only (-e NAME), never on
 # the command line. No Docker socket: mounting one gives the agent root on
-# the host (docs/agent-api.md, "The sandbox").
+# the host (docs/agent-api.md, "The sandbox"). It runs as your uid, so it can
+# write ./agent-work (the image's user `agent` has another uid on a Linux
+# host); /home/agent is that user's (0750), so the work folder is /work and
+# HOME is /tmp. CI's agent job runs the image with the same flags.
 agent-run:
 	mkdir -p agent-work
-	$(CONTAINER) run --rm -it $(USERNS_OPT) -e ANTHROPIC_API_KEY -e OPENAI_API_KEY \
+	$(CONTAINER) run --rm -it --user "$$(id -u):$$(id -g)" $(USERNS_OPT) -e HOME=/tmp \
+		-e ANTHROPIC_API_KEY -e OPENAI_API_KEY \
 		-e OPENAI_BASE_URL -e OLLAMA_HOST -e MMT_PLUGIN_AGENT_MODEL -e MMT_PLUGIN_AGENT_NUM_CTX \
-		-v "$(CURDIR):/in:$(MOUNT_OPTS)" -v "$(CURDIR)/agent-work:/home/agent/work" \
-		-w /home/agent/work $(AGENT_IMAGE) mmt-plugin-agent $(AGENT_ARGS)
+		-v "$(CURDIR):/in:$(MOUNT_OPTS)" -v "$(CURDIR)/agent-work:/work" \
+		-w /work $(AGENT_IMAGE) mmt-plugin-agent $(AGENT_ARGS)

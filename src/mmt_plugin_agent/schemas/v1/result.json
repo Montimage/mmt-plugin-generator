@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Montimage/mmt-plugin-generator/schemas/agent/v1/result.json",
+  "title": "mmt-plugin-agent new and update: result",
+  "description": "AgentResult.to_json(): the run's status, its work folder and project, its last loop run, the evaluation and what could not be checked.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "thread_id",
+    "work",
+    "project",
+    "loop",
+    "loop_runs",
+    "evaluation",
+    "drift",
+    "unchecked",
+    "report_path",
+    "questions_path",
+    "question",
+    "skills_modified",
+    "commands",
+    "message"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "done",
+        "incomplete",
+        "eval_failed",
+        "not_green",
+        "blocked",
+        "failed",
+        "waiting"
+      ]
+    },
+    "thread_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work": {
+      "type": "string"
+    },
+    "project": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "loop": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "number",
+            "project",
+            "commands",
+            "test_summary",
+            "green"
+          ],
+          "properties": {
+            "number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "commands": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "test_summary": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "green": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "loop_runs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evaluation": {
+      "enum": [
+        "pass",
+        "fail",
+        "not_done",
+        "skipped"
+      ]
+    },
+    "drift": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "unchecked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "report_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "questions_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "question": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "text",
+            "recommended"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "capture",
+                "force",
+                "other"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "recommended": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "skills_modified": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "mmt_command",
+          "exit_code",
+          "refused",
+          "error_code"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "mmt_command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "refused": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}

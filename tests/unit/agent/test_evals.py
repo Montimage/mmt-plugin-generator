@@ -9,16 +9,15 @@ import os
 import re
 import shlex
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from mmt_plugin_agent import evals, run_model_evals
-from mmt_plugin_agent.evals import load_run_evals, saved_envelope
+from mmt_plugin_agent.evals import load_run_evals
 from mmt_plugin_agent.policy import LOOP_COMMANDS, mmt_plugin_command
-from mmt_plugin_agent.result import CommandRecord
+from mmt_plugin_agent.result import AgentResult, CommandRecord
 
 from .fakes import ScriptedModel, call, step
 
@@ -145,65 +144,241 @@ def test_envelopes_redirected_to_the_work_folder_are_checked(
     assert outcome.ok
 
 
-def test_a_saved_envelope_counts_only_when_written_while_its_command_ran(
-    tmp_path: Path,
+def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> list[Any]:
+    """The live telem-update run (L8): the entry check saved in run-0, a
+    heredoc that names validate, the loop as one shell for-loop over ``$c``
+    (no command name in its text), run-0's files then moved into run-1, the
+    edits, and the loop again into run-2."""
+    runs = agent / "runs"
+    p = shlex.quote(str(project))
+
+    def loop(n: int) -> list[dict[str, Any]] | str:
+        dest = shlex.quote(str(runs / f"run-{n}"))
+        return step(
+            call(
+                "execute",
+                command=(
+                    f"mkdir -p {dest} && for c in 'validate --no-sdk --sdk-profile 1.10.2' "
+                    "'generate --sdk-profile 1.10.2'; do n=${c%% *}; "
+                    f"mmt-plugin -C {p} --json $c > {dest}/$n.json; echo $n $?; done"
+                ),
+            )
+        )
+
+    run0 = shlex.quote(str(runs / "run-0"))
+    run1 = shlex.quote(str(runs / "run-1"))
+    notes = shlex.quote(str(agent / "plan.md"))
+    evals_dir = str(skills / "mmt-plugin-generator" / "evals")
+    apply = shlex.join([sys.executable, "-c", _APPLY, evals_dir, str(case_dir), str(project)])
+    return [
+        step(
+            call(
+                "execute",
+                command=f"mkdir -p {run0} && mmt-plugin -C {p} --json validate --no-sdk "
+                f"> {run0}/validate-nosdk.json",
+            )
+        ),
+        step(call("execute", command=f"cat > {notes} <<'EOF'\nvalidate, then generate\nEOF")),
+        loop(1),
+        step(call("execute", command=f"mv {run0}/validate-nosdk.json {run1}/ && rmdir {run0}")),
+        step(call("execute", command=apply)),
+        loop(2),
+        "DONE",
+    ]
+
+
+@pytest.mark.usefixtures("mmt_plugin_on_path")
+def test_the_runs_are_the_work_folders_whatever_the_shell_text(
+    tmp_path: Path, skills_copy: Path
 ) -> None:
-    saved = tmp_path / "runs" / "run-1" / "validate.json"
-    saved.parent.mkdir(parents=True)
-    env = {"schema_version": 1, "exit_code": 0, "command": "validate"}
-    saved.write_text(json.dumps(env))
-    now = time.time_ns()
-    command = "mmt-plugin -C p --json validate > runs/run-1/validate.json"
-    record = CommandRecord(command, 0, "", started_ns=now - 10**9, ended_ns=now + 10**9)
-    assert saved_envelope(tmp_path, record, 1) == env
-    old = CommandRecord(command, 0, "", started_ns=now - 100 * 10**9, ended_ns=now - 90 * 10**9)
-    assert saved_envelope(tmp_path, old, 1) is None
-    assert saved_envelope(tmp_path, CommandRecord(command, 0, ""), 1) is None
-
-
-def _saved(path: Path, env: dict[str, Any], mtime_ns: int) -> dict[str, Any]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(env))
-    os.utime(path, ns=(mtime_ns, mtime_ns))
-    return env
-
-
-def test_an_envelope_saved_under_another_name_is_its_commands(tmp_path: Path) -> None:
-    """L7, the live telem-update run: the entry check saved as
-    run-1/validate-nosdk.json, the loop's validate 0.2 s later as
-    run-1/validate.json; the shell numbers them runs 1 and 2. Each command
-    gets its own envelope, a misnamed one too, and none is taken twice."""
-    t = time.time_ns()
-    runs = tmp_path / "runs"
-    env = {"schema_version": 1, "exit_code": 0, "command": "validate"}
-    nosdk = _saved(runs / "run-1/validate-nosdk.json", {**env, "context": {"sdk": None}}, t + 50)
-    loop = _saved(runs / "run-1/validate.json", {**env, "context": {"sdk": "/sdk"}}, t + 2 * 10**8)
-    _saved(runs / "run-1/generate.json", {**env, "command": "generate"}, t + 3 * 10**8)
-    first = CommandRecord(
-        "mmt-plugin --json validate --no-sdk p > runs/run-1/validate-nosdk.json",
-        0,
-        "",
-        started_ns=t,
-        ended_ns=t + 10**8,
+    case_dir = skills_copy / "mmt-plugin-generator" / "evals" / "cases" / "telem-update"
+    root = tmp_path / "evals"
+    work = root / "ScriptedModel" / "telem-update"
+    script = _diag_script(skills_copy, case_dir, work / "agent", work / "check" / "telem")
+    model = ScriptedModel(scripts={f"{case_dir}/": script})
+    report = run_model_evals(
+        [model],
+        out=tmp_path / "r.md",
+        skills_dir=skills_copy,
+        work_root=root,
+        cases=["telem-update"],
     )
-    second = CommandRecord(
-        'cd p && mmt-plugin --json validate > "$W/runs/run-1/validate.json"',
-        0,
-        "",
-        started_ns=t + 10**8,
-        ended_ns=t + 25 * 10**7,
+    (outcome,) = report.outcomes
+    runs = work / "agent" / "runs"
+    assert sorted(p.name for p in runs.iterdir()) == ["run-1", "run-2"]
+    assert (runs / "run-1" / "validate-nosdk.json").is_file()
+    assert outcome.problems == []
+    assert outcome.ok
+    records = [json.loads(line) for line in (work / "commands.jsonl").read_text().splitlines()]
+    assert len(records) == 6
+    assert set(records[0]) == {
+        "command",
+        "mmt_command",
+        "exit_code",
+        "mmt_exit_code",
+        "refused",
+        "started_ns",
+        "ended_ns",
+    }
+    assert records[0]["mmt_command"] == "validate"
+    assert all(isinstance(r["started_ns"], int) for r in records)
+
+
+def _envelope(command: str, code: int = 0, line: int = 3) -> dict[str, Any]:
+    failed = code != 0
+    return {
+        "schema_version": 1,
+        "tool": {"name": "mmt-plugin", "version": "0"},
+        "command": command,
+        "ok": not failed,
+        "exit_code": code,
+        "error": (
+            {"class": "model", "code": "model.unknown-attribute", "message": "no msgtype"}
+            if failed
+            else None
+        ),
+        "diagnostics": (
+            [
+                {
+                    "severity": "error",
+                    "code": "model.unknown-attribute",
+                    "message": "no msgtype",
+                    "location": {"file": "plugin.yaml", "line": line},
+                }
+            ]
+            if failed
+            else []
+        ),
+        "context": {"project": ".", "sdk": {"prefix": None}},
+        "result": None if failed else {},
+    }
+
+
+_T0 = 1_700_000_000 * 10**9
+_MODEL = "a\nb\nc: val(msgtype) == 3\nd\n"
+
+
+def _work_case(
+    tmp_path: Path, skills_copy: Path, runs: dict[str, dict[str, dict[str, Any]]]
+) -> tuple[evals._Case, AgentResult]:
+    """spec-telem's checks on a work folder holding ``runs`` (directory:
+    file: envelope), ``run-<n>/validate.json`` written at ``_T0 + n`` s."""
+    rev = load_run_evals(skills_copy)
+    case_dir = skills_copy / "mmt-plugin-generator" / "evals" / "cases" / "spec-telem"
+    work = tmp_path / "case"
+    case = evals._Case(
+        rev,
+        case_dir,
+        work,
+        sdk=None,
+        cc="gcc",
+        cli=[sys.executable, "-m", "mmt_plugin"],
+        timeout=60,
     )
-    claimed: set[Path] = set()
-    assert saved_envelope(tmp_path, first, 1, claimed=claimed) == nosdk
-    assert saved_envelope(tmp_path, second, 2, claimed=claimed) == loop
-    assert claimed == {runs / "run-1/validate-nosdk.json", runs / "run-1/validate.json"}
-    # No file name in the command (a variable): the one written while it ran.
-    command = 'mmt-plugin --json validate --no-sdk p > "$OUT"'
-    by_time = CommandRecord(command, 0, "", started_ns=t, ended_ns=t + 10**8)
-    assert saved_envelope(tmp_path, by_time, 2) == nosdk
-    # Nothing left for a third validate; generate's envelope is not one.
-    third = CommandRecord("mmt-plugin --json validate p > /tmp/v", 0, "", started_ns=t, ended_ns=t)
-    assert saved_envelope(tmp_path, third, 3, claimed=claimed) is None
+    for directory, files in runs.items():
+        n = int(directory.split("-")[1])
+        for name, env in files.items():
+            path = case.agent_work / "runs" / directory / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(env, indent=2) + "\n")
+            when = _T0 + n * 10**9 - (10**8 if name != "validate.json" else 0)
+            os.utime(path, ns=(when, when))
+    result = AgentResult(status="done", thread_id="t", work=case.agent_work)
+    return case, result
+
+
+def _project(case: evals._Case, files: dict[str, str]) -> dict[str, str]:
+    for rel, text in files.items():
+        path = case.project / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return dict(files)
+
+
+def _problems(case: evals._Case) -> list[str]:
+    return [*case.runner.result.problems, *case.problems]
+
+
+def test_an_entry_check_next_to_the_loop_is_checked_as_its_own(
+    tmp_path: Path, skills_copy: Path
+) -> None:
+    """L7 and L8: run-1 holds the entry check (validate-nosdk.json, run-0's,
+    moved) and the loop's envelopes; shell records that name no command."""
+    ok = {"validate.json": _envelope("validate"), "generate.json": _envelope("generate")}
+    case, result = _work_case(
+        tmp_path,
+        skills_copy,
+        {"run-1": {**ok, "validate-nosdk.json": _envelope("validate")}, "run-2": ok},
+    )
+    state = _project(case, {"plugin.yaml": _MODEL})
+    result.commands = [
+        CommandRecord('for c in "validate" "generate"; do mmt-plugin --json $c; done', 0, "")
+    ]
+    case.check_runs(result, [(_T0, state)])
+    assert _problems(case) == []
+    # An entry check that breaks the contract is reported at its file.
+    bad = case.agent_work / "runs/run-1/validate-nosdk.json"
+    bad.write_text(json.dumps({**_envelope("validate"), "ok": False}))
+    case.check_runs(result, [(_T0, state)])
+    assert _problems(case) == [
+        "runs/run-1/validate-nosdk.json: ok is False with exit_code 0",
+    ]
+
+
+def test_a_failed_runs_fix_must_touch_what_it_reported(tmp_path: Path, skills_copy: Path) -> None:
+    ok = {"validate.json": _envelope("validate"), "generate.json": _envelope("generate")}
+    failed = {"validate.json": _envelope("validate", 3, line=3)}
+    before = {"plugin.yaml": _MODEL}
+    elsewhere = {"plugin.yaml": _MODEL.replace("a\n", "z\n")}
+    fixed = {"plugin.yaml": _MODEL.replace("msgtype", "msg_type")}
+    case, result = _work_case(tmp_path, skills_copy, {"run-1": failed, "run-2": ok})
+    # Snapshots: before run 1 (at _T0 + 0.5 s), then before run 2.
+    _project(case, elsewhere)
+    case.check_runs(result, [(_T0, before), (_T0 + 15 * 10**8, elsewhere)])
+    assert _problems(case) == [
+        "run 2: the edits do not touch plugin.yaml:3 (model.unknown-attribute)"
+    ]
+    case, result = _work_case(tmp_path / "fixed", skills_copy, {"run-1": failed, "run-2": ok})
+    _project(case, fixed)
+    case.check_runs(result, [(_T0, before), (_T0 + 15 * 10**8, fixed)])
+    assert _problems(case) == []
+
+
+def test_a_loop_command_without_its_envelope_is_a_problem(
+    tmp_path: Path, skills_copy: Path
+) -> None:
+    case, result = _work_case(
+        tmp_path,
+        skills_copy,
+        {
+            "run-1": {"validate.json": _envelope("validate")},
+            "run-2": {
+                "validate.json": _envelope("validate"),
+                "generate.json": _envelope("validate"),
+            },
+        },
+    )
+    state = _project(case, {"plugin.yaml": _MODEL})
+    case.check_runs(result, [(_T0, state)])
+    assert _problems(case) == [
+        "runs/run-2/generate.json: command is 'validate', not 'generate'",
+        "runs/run-1: generate: no envelope (generate.json)",
+    ]
+
+
+def test_a_rewritten_packet_test_is_a_problem(tmp_path: Path, skills_copy: Path) -> None:
+    ok = {"validate.json": _envelope("validate"), "generate.json": _envelope("generate")}
+    case, result = _work_case(tmp_path, skills_copy, {"run-1": ok})
+    seed = skills_copy / "mmt-plugin-generator/evals/cases/telem-update/project"
+    reading = (seed / "tests/telem-reading.yaml").read_text()
+    model = (seed / "plugin.yaml").read_text()
+    before = {"plugin.yaml": model, "tests/telem-reading.yaml": reading}
+    _project(case, {**before, "tests/telem-reading.yaml": reading.replace("value: 2", "value: 7")})
+    case.check_runs(result, [(_T0, before)])
+    problems = _problems(case)
+    assert len(problems) == 1
+    assert problems[0].startswith("run 1: ")
+    assert problems[0].endswith(" in tests/telem-reading.yaml")
 
 
 def test_without_sdk_the_eval_uses_mmt_base(

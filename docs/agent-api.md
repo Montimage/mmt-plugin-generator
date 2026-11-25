@@ -254,11 +254,21 @@ app.invoke({"messages": [{"role": "user", "content": request_text(spec="spec.md"
 `mmt-plugin-agent eval` has each `--model` draft every case of
 `skills/mmt-plugin-generator/evals/cases/` (or those `--case` names),
 unattended and without the capture evaluation, then judges it with the
-checks of `evals/run_evals.py`: each envelope of the agent's loop (from
-the command's output, else from the file it saved in the work folder's
-`runs/` while it ran) against the skill's contract, each fix at what the failed run reported, no packet
+checks of `evals/run_evals.py`: each envelope of the agent's loop against
+the skill's contract, each fix at what the failed run reported, no packet
 test deleted or rewritten, the final loop, run again, green, and an
-update's label, id, profile, parents and packet tests kept. Unlike the
+update's label, id, profile, parents and packet tests kept. The loop runs
+are the work folder's, as for `result.loop`: each `runs/run-<n>/` with a
+`validate.json` is one run, in numeric order; its `<command>.json` are its
+loop commands, which run in order up to the first that exits non-zero (one
+before it missing is a problem), and every other envelope there (an entry
+check such as `validate-nosdk.json`) is checked as its own command. The
+project before a run is the one the eval saw at the last tool call before
+its `validate.json` was written (the file's time), and each failed run's
+fix is what changed before the next. Only when the work folder records no
+run are the runs the shell's, with the envelopes in the commands' output.
+What the agent's shell ran (command, exit codes, times) is in
+`commands.jsonl` in the case's work folder. Unlike the
 scripted evals, the loop need not stop where the case's script does. It
 writes a table per model and case to `--out` (Markdown) and the same with
 `.json`; it exits 6 when a case fails. Without `--sdk` it uses `MMT_BASE`,

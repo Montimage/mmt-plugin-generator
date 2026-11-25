@@ -23,7 +23,7 @@ import sys
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
@@ -31,120 +31,85 @@ from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin_agent.api import PluginAgent
 from mmt_plugin_agent.errors import AgentError
 from mmt_plugin_agent.graph import DEFAULT_TIMEOUT
-from mmt_plugin_agent.policy import _tokens, mmt_plugin_command
-from mmt_plugin_agent.result import AgentResult, CommandRecord, envelope_of, loop_runs
+from mmt_plugin_agent.policy import LOOP_COMMANDS
+from mmt_plugin_agent.result import AgentResult, envelope_of, loop_runs
 from mmt_plugin_agent.skills import SKILL_NAME, resolve_skills_dir
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
-__all__ = ["CaseOutcome", "ModelEvalReport", "load_run_evals", "run_model_evals"]
+__all__ = [
+    "CaseOutcome",
+    "ModelEvalReport",
+    "SavedRun",
+    "load_run_evals",
+    "run_model_evals",
+    "saved_runs",
+]
 
 _PROFILE = re.compile(r'^\s*profile: "([^"]+)"', re.MULTILINE)
-_RUN_DIR = re.compile(r"run-[0-9]+")
-
-#: How far a saved envelope's time may lie outside its command's: file
-#: times come from a coarser clock, on some file systems to 2 seconds.
-_CLOCK_SLACK_NS = 2_000_000_000
+_RUN_DIR = re.compile(r"run-([0-9]+)")
 
 
-def _saved_to(command: str) -> list[tuple[str, str]]:
-    """The ``run-<k>/<file>.json`` each mmt-plugin segment of ``command``
-    redirects or tees its output to (``> runs/run-1/validate-nosdk.json``),
-    in order: the trailing two parts of the path, whatever the shell's
-    directory."""
+@dataclass
+class SavedRun:
+    """One ``runs/run-<n>/`` of the work folder: the envelopes the skill
+    saved there (SKILL.md, Step 4). ``loop`` holds each ``<command>.json``
+    whose envelope it is; ``others`` the directory's other envelopes, by
+    file name (an entry check such as ``validate-nosdk.json``)."""
+
+    number: int
+    path: Path
+    loop: dict[str, dict[str, Any]] = field(default_factory=dict)
+    others: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    #: When its ``validate.json`` was written (its mtime): the run's start.
+    started_ns: int | None = None
+
+
+def saved_runs(work: Path) -> list[SavedRun]:
+    """Every ``<work>/runs/run-<n>/``, in numeric order. A run of the loop
+    is one with ``validate.json``, as for ``result.work_loop``."""
     try:
-        tokens = _tokens(command)
-    except ValueError:
-        return []
-    out: list[tuple[str, str]] = []
-    target = False
-    in_mmt = in_tee = False
-    for i, token in enumerate(tokens):
-        if token in (">", ">>", ">|", ">&", "&>", "&>>", "<", "<<", "<<<"):
-            # 2> is stderr and < an input: not the envelope.
-            target = in_mmt and "<" not in token and not (i > 0 and tokens[i - 1] == "2")
-            continue
-        if token and all(c in "|&;()<>" for c in token):
-            in_tee = in_mmt and token == "|"
-            if token != "|":
-                in_mmt = False
-            target = False
-            continue
-        if target or (in_tee and not token.startswith("-") and PurePosixPath(token).name != "tee"):
-            parts = PurePosixPath(token).parts
-            if len(parts) >= 2 and _RUN_DIR.fullmatch(parts[-2]) and parts[-1].endswith(".json"):
-                out.append((parts[-2], parts[-1]))
-            target = False
-            continue
-        name = PurePosixPath(token).name
-        if name == "mmt-plugin" or (token == "mmt_plugin" and i >= 1 and tokens[i - 1] == "-m"):
-            in_mmt, in_tee = True, False
-    return out
-
-
-def saved_envelope(
-    work: Path, record: CommandRecord, run: int, *, claimed: set[Path] | None = None
-) -> dict[str, Any] | None:
-    """The envelope a loop command saved in the work folder while it ran,
-    ``<work>/runs/run-<k>/*.json`` (``mmt-plugin ... > FILE`` prints nothing),
-    whatever the file's name: a file written in the command's time whose
-    envelope is that command's. The files the command redirects to first
-    (in order), then one written while it ran (not in the clock's slack), then
-    ``run-<run>``'s, then ``<command>.json``, then the newest. A file in
-    ``claimed`` is another command's; the one taken is added to it. None
-    when there is none."""
-    name = record.mmt_command
-    if name is None or record.started_ns is None or record.ended_ns is None:
-        return None
-    start, end = record.started_ns, record.ended_ns
-    low, high = start - _CLOCK_SLACK_NS, end + _CLOCK_SLACK_NS
-    runs = work / "runs"
-    targets: dict[Path, int] = {}
-    for k, f in _saved_to(record.command):
-        targets.setdefault(runs / k / f, len(targets))
-    try:
-        files = [p for d in runs.iterdir() if d.is_dir() for p in d.glob("*.json")]
+        dirs = list((work / "runs").iterdir())
     except OSError:
-        return None
-    found = []
-    for saved in files:
-        if claimed is not None and saved in claimed:
+        return []
+    runs = []
+    for path in dirs:
+        found = _RUN_DIR.fullmatch(path.name)
+        if found is None or not path.is_dir():
             continue
-        try:
-            mtime = saved.stat().st_mtime_ns
-        except OSError:
-            continue
-        if low <= mtime <= high:
-            key = (
-                targets.get(saved, len(targets)),
-                not start <= mtime <= end,
-                saved.parent.name != f"run-{run}",
-                saved.name != f"{name}.json",
-                -mtime,
-            )
-            found.append((key, saved))
-    for _, saved in sorted(found):
-        try:
-            env = envelope_of(saved.read_text("utf-8"))
-        except (OSError, UnicodeDecodeError):
-            continue
-        if env is None:
-            continue
-        # Another command's envelope; one without "command" only as <command>.json.
-        if env.get("command", name if saved.name == f"{name}.json" else None) != name:
-            continue
-        if claimed is not None:
-            claimed.add(saved)
-        return env
-    return None
+        run = SavedRun(int(found.group(1)), path)
+        for saved in sorted(path.glob("*.json")):
+            try:
+                text = saved.read_text("utf-8")
+                mtime = saved.stat().st_mtime_ns
+            except (OSError, UnicodeDecodeError):
+                continue
+            env = envelope_of(text)
+            if env is None:
+                continue
+            if saved.stem in LOOP_COMMANDS:
+                run.loop[saved.stem] = env
+                if saved.stem == "validate":
+                    run.started_ns = mtime
+            else:
+                run.others.append((saved.name, env))
+        runs.append(run)
+    runs.sort(key=lambda run: run.number)
+    return runs
 
 
-def _exit_code(record: CommandRecord, env: dict[str, Any] | None) -> int | None:
-    code = None if env is None else env.get("exit_code")
-    if isinstance(code, int) and not isinstance(code, bool):
-        return code
-    return record.mmt_exit_code
+def _state_at(snapshots: Sequence[tuple[int, dict[str, str]]], when: int | None) -> dict[str, str]:
+    """The project as the last snapshot taken by ``when`` saw it (the
+    first one when none was, or ``when`` is unknown)."""
+    if not snapshots:
+        return {}
+    state = snapshots[0][1]
+    for taken, snap in snapshots:
+        if when is None or taken > when:
+            break
+        state = snap
+    return state
 
 
 def load_run_evals(skills: Path) -> ModuleType:
@@ -302,18 +267,38 @@ class _Case:
         pdl = str(params["pdl"]).replace("{case}", str(self.case_dir))
         return {"pdl": pdl, "instructions": told}
 
-    def drive(self, agent: PluginAgent) -> tuple[AgentResult, list[dict[str, str]]]:
-        """Run the agent; the project before each of its loop runs."""
-        snapshots: list[dict[str, str]] = []
+    def drive(self, agent: PluginAgent) -> tuple[AgentResult, list[tuple[int, dict[str, str]]]]:
+        """Run the agent; the project before each of its tool calls, with
+        the ``time.time_ns()`` it was taken at (a step event comes before
+        its tool runs)."""
+        snapshots: list[tuple[int, dict[str, str]]] = []
         result = None
         for event in agent.stream(**self.request()):
-            if event.kind == "step" and event.data.get("tool") == "execute":
-                found = mmt_plugin_command(str(event.data["args"].get("command", "")))
-                if found is not None and found[0] == "validate":
-                    snapshots.append(_snapshot(self.rev, self.project))
+            if event.kind == "step":
+                snapshots.append((time.time_ns(), _snapshot(self.rev, self.project)))
             result = event.result or result
         assert result is not None
         return result, snapshots
+
+    def save_commands(self, result: AgentResult) -> None:
+        """What the agent's shell ran, one JSON line per command, in
+        ``<case work>/commands.jsonl``: to diagnose a failing row."""
+        lines = [
+            json.dumps(
+                {
+                    "command": record.command,
+                    "mmt_command": record.mmt_command,
+                    "exit_code": record.exit_code,
+                    "mmt_exit_code": record.mmt_exit_code,
+                    "refused": record.refused,
+                    "started_ns": record.started_ns,
+                    "ended_ns": record.ended_ns,
+                }
+            )
+            + "\n"
+            for record in result.commands
+        ]
+        (self.work / "commands.jsonl").write_text("".join(lines), "utf-8")
 
     def misplaced(self, result: AgentResult) -> str | None:
         """Why the agent's work folder or project is not where the brief
@@ -328,46 +313,95 @@ class _Case:
             return f"the model put the project at {result.project}; the brief says {expected}"
         return None
 
+    def _loop(self, result: AgentResult) -> list[tuple[str, int | None, dict[str, Any], bool]]:
+        """The agent's loop runs, each with its label, when it started and
+        its envelopes by command and whether the work folder saved them;
+        every envelope checked against the contract.
+
+        The work folder's ``runs/run-<n>/`` (``saved_runs``) are the runs,
+        each started when its ``validate.json`` was written; each of their
+        envelopes is checked, an entry check too. Only when the work folder
+        records no run, the shell's (``loop_runs``), with the envelopes in
+        the commands' output: shell text (variables, loops) cannot say which
+        command ran, so it is only that fallback, and a run there may stop
+        short (an entry check is a ``validate`` too)."""
+        sdk = self.sdk is not None
+        contract = self.runner.contract
+
+        def check(where: str, command: str | None, env: dict[str, Any]) -> None:
+            _, found = self.rev.check_envelope(
+                json.dumps(env) + "\n", "", env.get("exit_code"), command, contract, sdk=sdk
+            )
+            self.problems.extend(f"{where}: {p}" for p in found)
+
+        runs: list[tuple[str, int | None, dict[str, Any], bool]] = []
+        saved = saved_runs(result.work)
+        if any("validate" in run.loop for run in saved):
+            for run in saved:
+                where = f"runs/{run.path.name}"
+                for name, env in run.loop.items():
+                    # The file names the command: a generate.json holding
+                    # validate's envelope breaks the contract.
+                    check(f"{where}/{name}.json", name, env)
+                for file_name, env in run.others:
+                    check(f"{where}/{file_name}", env.get("command"), env)
+                if "validate" in run.loop:
+                    runs.append((where, run.started_ns, run.loop, True))
+            return runs
+        for shell in loop_runs(result.commands):
+            where = f"run {shell.number}"
+            envelopes: dict[str, Any] = {}
+            for record in shell.commands:
+                printed = record.envelope
+                command = record.mmt_command
+                if printed is None:
+                    self.problems.append(
+                        f"{where}: {command}: no envelope in its output, and the work "
+                        "folder's runs/ records no run"
+                    )
+                    continue
+                check(f"{where}: {command}", command, printed)
+                envelopes.setdefault(command or "", printed)
+            runs.append((where, shell.commands[0].started_ns, envelopes, False))
+        return runs
+
     def check_runs(
-        self, result: AgentResult, snapshots: list[dict[str, str]], *, project: bool = True
+        self,
+        result: AgentResult,
+        snapshots: Sequence[tuple[int, dict[str, str]]],
+        *,
+        project: bool = True,
     ) -> set[str]:
-        """The agent's loop runs; the packet tests they protect. Without
-        ``project``, only the envelopes are checked."""
+        """The agent's loop runs (``_loop``); the packet tests they protect.
+        A run's loop commands run in order up to the first that exits non-zero
+        (its stop); in the work folder, one before it with no envelope is a
+        problem. The project
+        before a run is the last snapshot taken by its start; each failed
+        run's fix is the change to the next run's. Without ``project``, only
+        the envelopes are checked."""
         rev, runner = self.rev, self.runner
-        contract = runner.contract
+        names = LOOP_COMMANDS if self.sdk is not None else LOOP_COMMANDS[:2]
         basic = f"tests/{self.case['params']['label']}-basic.yaml"
         protected: set[str] = set()
         if runner.seed is not None:
             protected = {p for p in runner.seed if p.startswith("tests/")}
+        runs = self._loop(result)
         final = _snapshot(rev, self.project)
-        states = [*snapshots, final]
-        runs = loop_runs(result.commands)
-        claimed: set[Path] = set()
-        for n, run in enumerate(runs, 1):
-            seen = []
-            for record in run.commands:
-                env = record.envelope or saved_envelope(result.work, record, n, claimed=claimed)
-                code = _exit_code(record, env)
-                seen.append((record, env, code))
+        states = [*(_state_at(snapshots, started) for _, started, _, _ in runs), final]
+        for n, (where, _, envelopes, saved) in enumerate(runs, 1):
+            failed = None
+            for name in names:
+                env = envelopes.get(name)
                 if env is None:
-                    self.problems.append(
-                        f"run {n}: {record.mmt_command}: no envelope in its output "
-                        "or in the work folder's runs/"
-                    )
-                    continue
-                _, found = rev.check_envelope(
-                    json.dumps(env) + "\n",
-                    "",
-                    code,
-                    record.mmt_command,
-                    contract,
-                    sdk=self.sdk is not None,
-                )
-                self.problems += [f"run {n}: {record.mmt_command}: {p}" for p in found]
-            failed = next((s for s in seen if s[2] != 0), None)
-            if project and failed is not None and n < len(states):
-                record, env, code = failed
-                step = rev.Step(n, [], record.mmt_command, code, "", "", env)
+                    if saved:
+                        self.problems.append(f"{where}: {name}: no envelope ({name}.json)")
+                    break
+                if env.get("exit_code") != 0:
+                    failed = name, env
+                    break
+            if project and failed is not None:
+                name, env = failed
+                step = rev.Step(n, [], name, env.get("exit_code"), "", "", env)
                 self.problems += rev.fix_problems(step, states[n - 1], states[n], n + 1)
         if not project:
             return protected
@@ -455,6 +489,7 @@ def run_model_evals(
                         timeout=timeout,
                     )
                     result, snapshots = case.drive(agent)
+                    case.save_commands(result)
                     status, runs = result.status, result.loop_runs
                     misplaced = case.misplaced(result)
                     if misplaced is not None:

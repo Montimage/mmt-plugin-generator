@@ -507,8 +507,9 @@ protocol model. A Python rewrite is planned in
   schemas are `src/mmt_plugin_agent/schemas/v1/`. The `Dockerfile`'s
   `agent` stage (`make agent-image`) is its sandbox: mmt-dpi in `/opt/sdk`,
   the skills root-owned and read-only in `/opt/mmt-plugin-skills`, the user
-  `agent`. `mypy-agent.ini` checks it (the default `uv run mypy` excludes
-  it). Tests in `tests/unit/agent/` (a scripted model and a fake
+  `agent`; `make agent-run` mounts the checkout read-only at `/in`, each
+  `.env` and `.env.*` masked with `/dev/null`. `mypy-agent.ini` checks
+  it (the default `uv run mypy` excludes it). Tests in `tests/unit/agent/` (a scripted model and a fake
   `mmt-plugin`, `fakes.py`; not collected without the extra; `image_guard.py`
   runs inside the image) and `tests/unit/test_agent_extra.py` (the console
   script without the extra).
@@ -580,8 +581,10 @@ protocol model. A Python rewrite is planned in
   ruff, `mypy --config-file mypy-agent.ini`, `tests/unit/agent` (the
   `docs/agent-api.md` example among them), `tests/unit/skill` and
   `tests/unit/docs`, then builds the agent image and runs
-  `tests/unit/agent/image_guard.py`, its doctor and a project from `init`
-  to `test` in it. `.github/workflows/release.yml` (above) runs alongside it.
+  `tests/unit/agent/image_guard.py` (also with an `/in` whose `.env` holds
+  the key, masked as `agent-run` masks it, and failing unmasked), its
+  doctor and a project from `init` to `test` in it.
+  `.github/workflows/release.yml` (above) runs alongside it.
 
 ## Commands
 

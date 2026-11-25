@@ -7,9 +7,14 @@ process's ``/proc/<pid>/environ`` (the agent's, PID 1 here, included).
         -v "$PWD/tests/unit/agent/image_guard.py:/tmp/g.py:ro" \\
         mmt-plugin-agent:local /opt/mmt-plugin/bin/python /tmp/g.py
 
-The argument, when given, is the work folder (default ``~/guard-work``):
-CI also runs it as the runner's uid, a host folder mounted at ``/work``,
-with ``make agent-run``'s flags (``--user``, ``HOME=/tmp``).
+The first argument, when given, is the work folder (default
+``~/guard-work``): CI also runs it as the runner's uid, a host folder
+mounted at ``/work``, with ``make agent-run``'s flags (``--user``,
+``HOME=/tmp``). The second, when given, is ``agent-run``'s input folder
+(``/in``), which must hold a ``.env`` with the key: the shell must see the
+file and find the key in nothing it can read there, which holds only when
+the ``.env`` is masked as ``agent-run`` masks it
+(``-v /dev/null:/in/.env:ro``).
 
 Not a pytest module: the image has no pytest. It prints PASS or fails.
 """
@@ -17,6 +22,7 @@ Not a pytest module: the image has no pytest. It prints PASS or fails.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -65,21 +71,31 @@ def main() -> None:
         f"chmod u+w {SKILL_MD}; echo chmod=$?"
     )
     work = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.home() / "guard-work"
+    inputs = Path(sys.argv[2]) if len(sys.argv) > 2 else None
     probe = work / "probe.txt"
-    model = Model(
-        responses=[
-            _call(0, "write_file", file_path=str(SKILLS / "new.md"), content="x"),
-            _call(1, "execute", command=shell),
-            _call(2, "write_file", file_path=str(probe), content="probe\n"),
-            _call(3, "execute", command=_ENVIRON),
-            AIMessage(content="DONE"),
-        ]
-    )
+    calls = [
+        _call(0, "write_file", file_path=str(SKILLS / "new.md"), content="x"),
+        _call(1, "execute", command=shell),
+        _call(2, "write_file", file_path=str(probe), content="probe\n"),
+        _call(3, "execute", command=_ENVIRON),
+    ]
+    if inputs is not None:
+        # What the shell can read under /in: the .env is there, and no file
+        # holds the key (the dummy, so naming it in the command is harmless).
+        key = shlex.quote(os.environ["ANTHROPIC_API_KEY"])
+        listing = f"ls -A {inputs} | grep -cx .env; grep -rlsF -- {key} {inputs}; echo in=done"
+        calls.append(_call(4, "execute", command=listing))
+    model = Model(responses=[*calls, AIMessage(content="DONE")])
     spec = SKILLS / "mmt-plugin-generator" / "evals" / "cases" / "spec-telem" / "spec.md"
     result = PluginAgent(model, work_dir=work).new(spec=spec)
-    record, environ = result.commands
+    record, environ, *rest = result.commands
     assert environ.output.splitlines()[:2] == ["0", "environ=done"], environ.output
     assert os.environ["ANTHROPIC_API_KEY"] not in environ.output
+    if inputs is not None:
+        (seen_in,) = rest
+        lines = seen_in.output.splitlines()
+        assert lines[:1] == ["1"], f"the shell sees no {inputs}/.env: {seen_in.output}"
+        assert lines[1:2] == ["in=done"], f"the key is readable under {inputs}: {seen_in.output}"
     for step in ("append", "create", "chmod"):
         assert f"{step}=" in record.output and f"{step}=0" not in record.output, record.output
     assert SKILL_MD.read_bytes() == before
@@ -89,6 +105,7 @@ def main() -> None:
     print(
         f"PASS: uid {os.geteuid()} cannot write {SKILLS}, wrote {probe}, "
         "read no provider key from /proc/*/environ"
+        + (f" or under {inputs}" if inputs is not None else "")
     )
 
 

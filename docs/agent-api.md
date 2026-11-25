@@ -60,7 +60,22 @@ make agent-run AGENT_ARGS='new --spec /in/skills/mmt-plugin-generator/evals/case
 your uid (`--user "$(id -u):$(id -g)"`, `HOME=/tmp`), so the agent can
 write `./agent-work` whatever uid the image's `agent` has, and you own
 what it writes. Neither user is root, and the skills are read-only for
-both. Run the image by hand with the same flags. It passes the model's settings
+both. `/in` must hold no secret: the agent's shell can read every file
+there, and `.gitignore` does not apply to a mount. `agent-run` masks
+each `.env` and `.env.*` of the current directory with `/dev/null`
+(`-v /dev/null:/in/.env:ro`); keep any other secret out of the directory,
+or mount a folder holding only the inputs at `/in`. Run the image by hand
+with the same flags, the masks included (one `-v /dev/null:/in/<name>:ro`
+for each `.env` file the directory has; here `.env`):
+
+```sh
+mkdir -p agent-work
+docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp -e ANTHROPIC_API_KEY \
+  -v "$PWD:/in:ro" -v /dev/null:/in/.env:ro -v "$PWD/agent-work:/work" -w /work \
+  mmt-plugin-agent:local mmt-plugin-agent new --spec /in/spec.md --json
+```
+
+It passes the model's settings
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OLLAMA_HOST`,
 `MMT_PLUGIN_AGENT_MODEL`, `MMT_PLUGIN_AGENT_NUM_CTX`) from your environment by name. cyberlab is not
 in the image, and the image has no Docker socket: see [The

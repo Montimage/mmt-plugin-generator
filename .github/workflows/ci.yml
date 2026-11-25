@@ -261,7 +261,15 @@ jobs:
         # the runner's uid with a folder it owns (0755), then a uid the image
         # does not know with a folder only that uid owns. The guard creates
         # its work folder and writes a file there; the skills stay read-only.
+        # An input folder at /in holds a .env with the key, masked as
+        # agent-run masks it (-v /dev/null:/in/.env:ro): the guard's shell
+        # sees the file and finds the key nowhere under /in. Unmasked, the
+        # guard must fail (it reads the key there).
         run: |
+          in="$RUNNER_TEMP/agent-in"
+          mkdir -m 0755 "$in"
+          printf 'ANTHROPIC_API_KEY=dummy-not-a-real-key-123456\n' > "$in/.env"
+          chmod 0644 "$in/.env"
           for user in "$(id -u):$(id -g)" 4242:4242; do
             uid="${user%%:*}"
             dir="$RUNNER_TEMP/agent-work-$uid"
@@ -273,11 +281,20 @@ jobs:
             docker run --rm --network none --user "$user" -e HOME=/tmp \
               -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
               -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
+              -v "$in:/in:ro" -v /dev/null:/in/.env:ro \
               -v "$dir:/work" -w /work mmt-plugin-agent:ci \
-              /opt/mmt-plugin/bin/python /opt/image_guard.py /work/guard-work
+              /opt/mmt-plugin/bin/python /opt/image_guard.py /work/guard-work /in
             [ "$(stat -c %u "$dir/guard-work/probe.txt")" = "$uid" ]
             grep -qx probe "$dir/guard-work/probe.txt"
           done
+          if out="$(docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
+              -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
+              -v "$in:/in:ro" -v "$RUNNER_TEMP/agent-work-$(id -u):/work" -w /work \
+              mmt-plugin-agent:ci /opt/mmt-plugin/bin/python /opt/image_guard.py /work/unmasked /in 2>&1)"; then
+            echo "the guard passed with /in/.env unmasked"; exit 1
+          fi
+          printf '%s\n' "$out" | grep -qF 'the key is readable under /in'
 
   container:
     name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})

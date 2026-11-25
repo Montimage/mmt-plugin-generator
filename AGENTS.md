@@ -491,12 +491,13 @@ protocol model. A Python rewrite is planned in
   integrations, each pinned for Python 3.11+ only, so `pip install
   mmt-plugin` still pulls only jinja2. Public API in `__all__`:
   `PluginAgent` (`new`, `update`, `anew`, `aupdate`, `stream`, `resume`,
-  `doctor`), `build_graph` (the compiled graph, a LangGraph subgraph),
+  `release`, `doctor`), `build_graph` (the compiled graph, a LangGraph subgraph),
   `request_text`, `run_model_evals`; `cli.py` imports only those names.
   `backend.py`: the shell (`LocalShellBackend`, real paths, an allowlisted
   environment without secrets) refuses `sudo`, `--system`, `/opt/mmt` and,
   unattended, `--force`; the file tools write only in the work folder, an
-  update's project and the temp dir, never the skills. The skills are read
+  update's project and the temp dir, never the skills; deepagents' offloaded
+  tool results and history go to `<work>/.agent/`. The skills are read
   from a read-only copy in `~/.cache/mmt-plugin-agent/`; a run that changed
   the source tree is restored and failed (`agent.skills-modified`).
   `questions.py`: the `ask_user` tool (an interrupt, `on_question`, or

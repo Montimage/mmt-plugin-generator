@@ -91,6 +91,7 @@ def test_the_brief_states_the_mode_and_the_flags(
     assert "Compiler: clang." in system
     assert "skip it: the user passed --no-eval" in system
     assert str(tmp_path / "w") in system
+    assert "Never write or edit" in system and "questions.md yourself." in system
 
 
 @pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])

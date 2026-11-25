@@ -18,6 +18,8 @@ __all__ = [
     "LOOP_COMMANDS",
     "CommandCheck",
     "check_command",
+    "is_secret",
+    "is_system_prefix",
     "is_within",
     "mmt_plugin_command",
     "shell_env",
@@ -69,6 +71,11 @@ _ENV_SECRET = re.compile(r"_API_KEY$|_TOKEN$|SECRET|PASSWORD|CREDENTIAL", re.IGN
 _SYSTEM_PREFIX = PurePosixPath("/opt/mmt")
 
 
+def is_secret(name: str) -> bool:
+    """Whether a variable named ``name`` holds a key or another credential."""
+    return _ENV_SECRET.search(name) is not None
+
+
 def shell_env(environ: Mapping[str, str]) -> dict[str, str]:
     """The environment of the agent's shell: the allowed names of
     ``environ``, without secrets, and no byte-code files."""
@@ -78,7 +85,7 @@ def shell_env(environ: Mapping[str, str]) -> dict[str, str]:
             name.startswith(rule[:-1]) if rule.endswith("*") else name == rule
             for rule in _ENV_ALLOWED
         )
-        if allowed and not _ENV_SECRET.search(name):
+        if allowed and not is_secret(name):
             out[name] = value
     out["PYTHONDONTWRITEBYTECODE"] = "1"
     return out
@@ -96,6 +103,19 @@ class CommandCheck:
 
     refused: str | None = None
     force: bool = False
+
+
+def is_system_prefix(path: str | os.PathLike[str]) -> bool:
+    """Whether ``path`` is ``/opt/mmt`` or below it, as given or once its
+    links are resolved."""
+
+    def under(p: PurePosixPath) -> bool:
+        return p == _SYSTEM_PREFIX or _SYSTEM_PREFIX in p.parents
+
+    # The path as given first: resolving it looks at the system prefix.
+    return under(PurePosixPath(os.path.abspath(path))) or under(
+        PurePosixPath(os.path.realpath(path))
+    )
 
 
 def _under_system_prefix(token: str) -> bool:

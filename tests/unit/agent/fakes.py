@@ -38,10 +38,12 @@ class ScriptedModel(BaseChatModel):
     messages, so a resumed thread goes on where it stopped. A step is a list
     of tool calls, or the final text. ``scripts`` maps a marker of the first
     user message to its script (a subagent's task has its own); ``""``
-    matches any. Every history it saw is kept in ``seen``."""
+    matches any. Every history it saw is kept in ``seen``. With ``fail``,
+    a call past the end of the script raises it, as a provider does."""
 
     scripts: dict[str, list[Any]]
     seen: list[list[BaseMessage]] = Field(default_factory=list)
+    fail: str | None = None
 
     @property
     def _llm_type(self) -> str:
@@ -62,6 +64,8 @@ class ScriptedModel(BaseChatModel):
         markers = sorted(self.scripts, key=len, reverse=True)
         script = next(self.scripts[k] for k in markers if k in first)
         n = sum(isinstance(m, AIMessage) for m in messages)
+        if n >= len(script) and self.fail is not None:
+            raise RuntimeError(self.fail)
         reply = script[n] if n < len(script) else "DONE"
         if isinstance(reply, str):
             message = AIMessage(content=reply)
@@ -85,8 +89,10 @@ class ScriptedModel(BaseChatModel):
         return out
 
 
-def scripted(script: Script, **more: Script) -> ScriptedModel:
-    return ScriptedModel(scripts={"": list(script), **{k: list(v) for k, v in more.items()}})
+def scripted(script: Script, *, fail: str | None = None, **more: Script) -> ScriptedModel:
+    return ScriptedModel(
+        scripts={"": list(script), **{k: list(v) for k, v in more.items()}}, fail=fail
+    )
 
 
 _FAKE_CLI = """#!{python}

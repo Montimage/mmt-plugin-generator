@@ -223,3 +223,95 @@ def test_the_cli_imports_only_the_public_api() -> None:
                 assert node.module == "mmt_plugin.exitcodes", node.module
         elif isinstance(node, ast.Import):
             assert not any(a.name.startswith("mmt_plugin") for a in node.names)
+
+
+KEY = "your-key-placeholder-0123456789"
+
+
+def _snapshots(tmp_path: Path) -> list[Path]:
+    root = tmp_path / "cache" / "mmt-plugin-agent"
+    return list(root.iterdir()) if root.is_dir() else []
+
+
+def test_a_provider_error_is_still_one_envelope(
+    tmp_path: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_cli()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
+    work, sdk = tmp_path / "w", tmp_path / "sdk"
+    _use(monkeypatch, scripted([], fail=f"401 invalid x-api-key {KEY}"))
+    args = ["new", "--spec", str(SPEC), "--sdk", str(sdk), "--work", str(work)]
+    code = agent_cli.main(["--json", *args, "--model", "anthropic:any"])
+    out = capsys.readouterr().out
+    envelope = json.loads(out)
+    _schema("envelope.json").validate(envelope)
+    assert code == envelope["exit_code"] == 1
+    assert envelope["error"]["class"] == "internal"
+    assert envelope["error"]["code"] == "agent.unexpected"
+    assert envelope["error"]["message"].startswith("RuntimeError: 401 invalid x-api-key")
+    assert KEY not in out
+    assert _snapshots(tmp_path) == []
+
+
+def test_a_skills_change_is_reported_when_the_model_then_fails(
+    tmp_path: Path,
+    skills_copy: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_cli()
+    skill = skills_copy / "mmt-plugin-generator/SKILL.md"
+    before = skill.read_bytes()
+    change = step(call("execute", command=f"echo changed >> {skill}"))
+    _use(monkeypatch, scripted([change], fail="rate limited"))
+    args = ["new", "--spec", str(SPEC), "--work", str(tmp_path / "w"), "--skills"]
+    code, envelope = _main([*args, str(skills_copy), "--model", "a:b"], capsys)
+    assert code == 6
+    assert envelope["error"]["code"] == "agent.skills-modified"
+    assert "mmt-plugin-generator/SKILL.md" in envelope["error"]["message"]
+    assert "RuntimeError: rate limited" in envelope["error"]["message"]
+    assert skill.read_bytes() == before
+    assert _snapshots(tmp_path) == []
+
+
+@pytest.mark.parametrize("given", ["flag", "env"])
+def test_an_sdk_under_opt_mmt_is_refused_before_the_run(
+    tmp_path: Path,
+    fake_cli: Callable[..., FakeCli],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    given: str,
+) -> None:
+    fake_cli()
+    model = scripted(["DONE"])
+    _use(monkeypatch, model)
+    args = ["new", "--spec", str(SPEC), "--work", str(tmp_path / "w"), "--model", "a:b"]
+    if given == "flag":
+        args += ["--sdk", "/opt/mmt"]
+    else:
+        monkeypatch.setenv("MMT_BASE", "/opt/mmt/dpi/..")
+    code, envelope = _main(args, capsys)
+    assert code == 4, envelope["error"]
+    assert envelope["error"]["code"] == "agent.system-sdk"
+    assert "private prefix" in envelope["error"]["hint"]
+    assert model.seen == []
+
+
+def test_doctor_fails_an_sdk_under_opt_mmt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("mmt-plugin", "gcc"):
+        (bin_dir / tool).write_text("#!/bin/sh\nexit 0\n")
+        (bin_dir / tool).chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    code, envelope = _main(["doctor", "--sdk", "/opt/mmt", "--model", "a:b"], capsys)
+    assert code == 4, envelope
+    checks = {c["id"]: c for c in envelope["result"]["checks"]}
+    assert checks["sdk"]["status"] == "fail"
+    assert "private prefix" in checks["sdk"]["hint"]

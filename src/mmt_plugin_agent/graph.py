@@ -97,6 +97,9 @@ def system_prompt(settings: RunSettings, skills: Path) -> str:
         "- Evaluation: "
         + ("skip it: the user passed --no-eval." if s.no_eval else "do it (SKILL.md, Step 6)."),
         f"- The skill's files ({skills}) are read-only: read them, never write there.",
+        "- Ask every question with the ask_user tool: it is what writes",
+        f"  {s.work / 'questions.md'} (SKILL.md's questions.md). Never write or edit",
+        "  questions.md yourself.",
         "- Run commands with the execute tool. Its shell refuses sudo, --system, any path",
         "  under /opt/mmt, and --force unless the user allows it.",
         "- mmt-plugin is on PATH. Save each loop envelope with tee, as SKILL.md says.",

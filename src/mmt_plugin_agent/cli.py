@@ -367,6 +367,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.command,
             error=AgentError(ExitCode.INTERRUPTED, "interrupted", "interrupted", None),
         )
+    except Exception as exc:
+        # The model's provider (a bad key, a rate limit, an endpoint down) or
+        # an I/O error: still one envelope, its message without secrets.
+        envelope = _envelope(args.command, error=AgentError.unexpected(exc))
     return _emit(envelope, json_out, quiet=True)
 
 

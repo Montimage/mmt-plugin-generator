@@ -6,18 +6,19 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin_agent import models
 from mmt_plugin_agent.doctor import MIN_PYTHON, DoctorReport, run_doctor
 from mmt_plugin_agent.errors import AgentError
 from mmt_plugin_agent.graph import DEFAULT_TIMEOUT, RunSettings, compile_graph, request_text
-from mmt_plugin_agent.policy import LOOP_COMMANDS
+from mmt_plugin_agent.policy import LOOP_COMMANDS, is_system_prefix
 from mmt_plugin_agent.questions import Question, Questioner, RunMode
 from mmt_plugin_agent.result import AgentEvent, AgentResult, CommandRecord, build_result, loop_runs
 from mmt_plugin_agent.skills import (
@@ -89,6 +90,7 @@ class _Run:
     records: list[CommandRecord] = field(default_factory=list)
     seen: int = 0
     loops: int = 0
+    started_ns: int = field(default_factory=time.time_ns)
 
 
 @dataclass
@@ -135,7 +137,15 @@ class PluginAgent:
             )
         self.model = model
         sdk = sdk if sdk is not None else os.environ.get("MMT_BASE") or None
-        self.sdk = None if sdk is None else Path(sdk).resolve()
+        self._sdk_given = None if sdk is None else Path(os.path.abspath(sdk))
+        # Refused at the run (an SDK prefix under /opt/mmt), and not resolved.
+        self.sdk = (
+            None
+            if self._sdk_given is None
+            else self._sdk_given
+            if is_system_prefix(self._sdk_given)
+            else self._sdk_given.resolve()
+        )
         self.cc = cc or os.environ.get("CC") or "gcc"
         self.work_dir = None if work_dir is None else Path(work_dir)
         self.mode: RunMode = mode
@@ -286,6 +296,16 @@ class PluginAgent:
         thread_id: str | None,
     ) -> tuple[_Run, str]:
         _require_extra()
+        if self._sdk_given is not None and is_system_prefix(self._sdk_given):
+            raise AgentError(
+                ExitCode.SDK,
+                "agent.system-sdk",
+                f"the SDK prefix {self._sdk_given} is under /opt/mmt, which the skill never "
+                "uses (SKILL.md, Rule 3): the agent's shell refuses every command that names it",
+                "extract the mmt-dpi package into a private prefix and pass it with --sdk "
+                "(or MMT_BASE); AGENTS.md, 'A private prefix can also come from the "
+                "published package'",
+            )
         inputs = [p for p in (spec, pcap, pdl, project) if p is not None]
         if len(inputs) != 1 or (project is not None) != (change is not None):
             raise AgentError(
@@ -377,19 +397,25 @@ class PluginAgent:
         from langgraph.errors import GraphRecursionError
 
         state = _Stream()
+        failure: Exception | None = None
         try:
             for chunk in run.graph.stream(graph_input, self._config(run), stream_mode="updates"):
                 yield from self._chunk(run, chunk, state)
         except GraphRecursionError:
             state.message = f"stopped after {RECURSION_LIMIT} graph steps: NOT GREEN"
+        except Exception as exc:
+            failure = exc
         finally:
             modified = self._check_skills(run)
+        if failure is not None:
+            self._abort(run, failure, modified)
         yield self._finish(run, state, modified)
 
     async def _adrive(self, run: _Run, graph_input: Any) -> AsyncIterator[AgentEvent]:
         from langgraph.errors import GraphRecursionError
 
         state = _Stream()
+        failure: Exception | None = None
         try:
             async for chunk in run.graph.astream(
                 graph_input, self._config(run), stream_mode="updates"
@@ -398,8 +424,12 @@ class PluginAgent:
                     yield event
         except GraphRecursionError:
             state.message = f"stopped after {RECURSION_LIMIT} graph steps: NOT GREEN"
+        except Exception as exc:
+            failure = exc
         finally:
             modified = self._check_skills(run)
+        if failure is not None:
+            self._abort(run, failure, modified)
         yield self._finish(run, state, modified)
 
     def _chunk(self, run: _Run, chunk: Any, state: _Stream) -> list[AgentEvent]:
@@ -460,7 +490,7 @@ class PluginAgent:
             if (
                 name in LOOP_COMMANDS
                 and not record.refused
-                and (record.exit_code != 0 or name == last)
+                and (record.mmt_exit_code != 0 or name == last)
             ):
                 runs = loop_runs(run.records[: run.seen])
                 if runs and len(runs) > run.loops:
@@ -482,10 +512,30 @@ class PluginAgent:
             return []
         return restore(run.source, run.files)
 
+    def _release(self, run: _Run) -> None:
+        """The run is over: remove its skills snapshot and forget it."""
+        remove_tree(run.snapshot)
+        self._runs.pop(run.thread_id, None)
+
+    def _abort(self, run: _Run, failure: Exception, modified: Sequence[str]) -> NoReturn:
+        """The graph raised (the model's provider, an I/O error): release the
+        run, and report a skills change before the failure itself."""
+        self._release(run)
+        if modified:
+            raise AgentError(
+                ExitCode.TEST,
+                "agent.skills-modified",
+                "the run changed the skills directory ("
+                + ", ".join(modified)
+                + "); it was restored. Then the run failed: "
+                + AgentError.unexpected(failure).message,
+                "run in the agent container, where the skills are read-only",
+            ) from failure
+        raise failure
+
     def _finish(self, run: _Run, state: _Stream, modified: Sequence[str]) -> AgentEvent:
         if state.question is None:
-            remove_tree(run.snapshot)
-            self._runs.pop(run.thread_id, None)
+            self._release(run)
         result = build_result(
             thread_id=run.thread_id,
             work=run.settings.work,
@@ -496,6 +546,7 @@ class PluginAgent:
             message=state.message,
             question=state.question,
             skills_modified=modified,
+            since_ns=run.started_ns,
         )
         return AgentEvent("done", result.status, result.to_json(), result)
 

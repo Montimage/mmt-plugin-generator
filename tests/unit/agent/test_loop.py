@@ -5,12 +5,16 @@ events for every loop command (P7)."""
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from mmt_plugin_agent import PluginAgent
+from mmt_plugin_agent.result import CommandRecord
 
 from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
 
@@ -146,3 +150,103 @@ def test_blocked_is_the_final_reply_not_a_word_of_the_report(
     model = scripted([*loop(work / "project", sdk), *files, report_step, reply])
     agent = PluginAgent(model, sdk=sdk, work_dir=work, allow_synthetic=True)
     assert agent.new(spec=SPEC).status == status
+
+
+def _env(command: str, code: int) -> str:
+    return json.dumps({"schema_version": 1, "command": command, "exit_code": code}) + "\n"
+
+
+def test_a_piped_command_has_mmt_plugins_exit_code() -> None:
+    piped = CommandRecord("mmt-plugin --json test | tee t.json", 0, _env("test", 6))
+    assert piped.exit_code == 0 and piped.mmt_exit_code == 6
+    silent = CommandRecord("mmt-plugin --json test > t.json", 6, "")
+    assert silent.mmt_exit_code == 6
+
+
+def test_a_loop_piped_through_tee_is_not_green_when_mmt_plugin_fails(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli({"test": [6]})
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    project, saved = work / "project", tmp_path / "saved"
+    saved.mkdir()
+    model = scripted(
+        [
+            *(
+                step(
+                    call(
+                        "execute",
+                        command=f"mmt-plugin -C {project} --json {name} --sdk {sdk} "
+                        f"| tee {saved / name}.json",
+                    )
+                )
+                for name in ("validate", "generate", "build", "test")
+            ),
+            *done_files(work),
+            "DONE",
+        ]
+    )
+    events = list(_agent(model, work, sdk).stream(spec=SPEC))
+    result = events[-1].result
+    assert result is not None
+    assert result.status == "not_green"
+    assert result.loop is not None
+    assert result.loop.exit_codes() == {"validate": 0, "generate": 0, "build": 0, "test": 6}
+    assert [e.message for e in events if e.kind == "loop"] == ["loop run 1: not green"]
+
+
+def _live_loop(work: Path, sdk: Path, n: int) -> list[dict[str, object]] | str:
+    """A loop run as a live model wrote it: a variable, cd, a for loop, tee."""
+    return step(
+        call(
+            "execute",
+            command=f'P={work}; cd "$P/project" && mkdir -p ../runs/run-{n} && '
+            "for c in validate generate build test; do "
+            f"mmt-plugin -C . --json $c --sdk {sdk} | tee ../runs/run-{n}/$c.json; done",
+        )
+    )
+
+
+def test_the_loop_is_the_work_folders_last_run(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli({"test": [6, 0]})
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    model_yaml = step(
+        call("write_file", file_path=str(work / "project/plugin.yaml"), content="schema: 1\n")
+    )
+    model = scripted(
+        [
+            model_yaml,
+            _live_loop(work, sdk, 1),
+            _live_loop(work, sdk, 2),
+            *done_files(work),
+            "DONE: green, PASS",
+        ]
+    )
+    result = _agent(model, work, sdk).new(spec=SPEC)
+    assert result.status == "done", result.to_json()
+    assert result.project == work / "project"
+    assert result.loop_runs == 2
+    assert result.loop is not None
+    assert result.loop.number == 2
+    assert result.loop.exit_codes() == {"validate": 0, "generate": 0, "build": 0, "test": 0}
+    assert result.loop.test_summary() == {"total": 2, "passed": 2, "failed": 0}
+    assert result.to_json()["loop"]["project"] == str(work / "project")
+
+
+def test_an_earlier_runs_envelopes_do_not_count(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli({"test": [6]})
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    old = work / "runs" / "run-9"
+    old.mkdir(parents=True)
+    hour_ago = time.time() - 3600
+    for name in ("validate", "generate", "build", "test"):
+        (old / f"{name}.json").write_text(_env(name, 0))
+        os.utime(old / f"{name}.json", (hour_ago, hour_ago))
+    model = scripted([*loop(work / "project", sdk), "NOT GREEN: test fails"])
+    result = _agent(model, work, sdk).new(spec=SPEC)
+    assert result.status == "not_green"
+    assert result.loop is not None and result.loop.exit_codes()["test"] == 6

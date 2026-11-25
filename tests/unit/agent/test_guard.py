@@ -243,3 +243,15 @@ def test_sudo_and_the_system_prefix_never_reach_the_shell(
     result = PluginAgent(model, work_dir=tmp_path / "w").new(spec=SPEC)
     assert cli.calls() == []
     assert [r.exit_code for r in result.commands] == [REFUSED_EXIT, REFUSED_EXIT]
+
+
+def test_only_ask_user_writes_questions_md(
+    setup: tuple[Path, Path, GuardedShellBackend],
+) -> None:
+    work, _, backend = setup
+    error = backend.write(str(work / "questions.md"), "## Q1: capture?\n").error
+    assert error is not None and "ask_user" in error
+    assert not (work / "questions.md").exists()
+    backend.questioner.ask("capture?", "synthetic", "capture")
+    assert backend.edit(str(work / "questions.md"), "capture?", "x").error is not None
+    assert (work / "questions.md").read_text().count("## Q") == 1

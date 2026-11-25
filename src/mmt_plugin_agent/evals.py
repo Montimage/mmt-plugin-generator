@@ -232,16 +232,16 @@ class _Case:
                 _, found = rev.check_envelope(
                     json.dumps(env) + "\n",
                     "",
-                    record.exit_code,
+                    record.mmt_exit_code,
                     record.mmt_command,
                     contract,
                     sdk=self.sdk is not None,
                 )
                 self.problems += [f"run {n}: {record.mmt_command}: {p}" for p in found]
-            failed = next((r for r in run.commands if r.exit_code != 0), None)
+            failed = next((r for r in run.commands if r.mmt_exit_code != 0), None)
             if failed is not None and n < len(states):
                 step = rev.Step(
-                    n, [], failed.mmt_command, failed.exit_code, "", "", failed.envelope
+                    n, [], failed.mmt_command, failed.mmt_exit_code, "", "", failed.envelope
                 )
                 self.problems += rev.fix_problems(step, states[n - 1], states[n], n + 1)
         for n, (before, after) in enumerate(itertools.pairwise(states), 1):

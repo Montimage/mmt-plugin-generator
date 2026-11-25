@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mmt_plugin_agent.models import ENV_MODEL, model_spec
+from mmt_plugin_agent.policy import is_system_prefix
 from mmt_plugin_agent.skills import ENV_SKILLS, SKILL_NAME, find_skills_dir
 
 __all__ = ["MIN_PYTHON", "DoctorCheck", "DoctorReport", "run_doctor"]
@@ -111,6 +112,18 @@ def _mmt_plugin_checks(sdk: Path | None, cc: str) -> list[DoctorCheck]:
                 "warn",
                 "no SDK prefix: the run stops after generate",
                 "pass --sdk PREFIX (or set MMT_BASE) to a private mmt-dpi prefix",
+            )
+        )
+        return checks
+    if is_system_prefix(sdk):
+        checks.append(
+            DoctorCheck(
+                "sdk",
+                "fail",
+                f"{sdk} is under /opt/mmt, which the skill never uses (SKILL.md, Rule 3)",
+                "extract the mmt-dpi package into a private prefix and pass it with --sdk "
+                "(or MMT_BASE); AGENTS.md, 'A private prefix can also come from the "
+                "published package'",
             )
         )
         return checks

@@ -30,7 +30,8 @@ class GuardedShellBackend(LocalShellBackend):
     """Real paths (``virtual_mode=False``), shell commands in the work folder.
 
     The file tools write only under ``writable`` and never under
-    ``protected`` (the skills), symbolic links followed. The shell refuses
+    ``protected`` (the skills), symbolic links followed, and never
+    ``questions.md``, which only the ``ask_user`` tool writes. The shell refuses
     ``sudo``, ``--system`` and ``/opt/mmt``, and runs ``--force`` only with
     leave, which an unattended run never gives. Every command is reported to
     ``on_command``. A shell command can still write anything the user can:
@@ -52,6 +53,7 @@ class GuardedShellBackend(LocalShellBackend):
         self.writable = [Path(os.path.realpath(p)) for p in writable]
         self.protected = [Path(os.path.realpath(p)) for p in protected]
         self.questioner = questioner
+        self.questions = Path(os.path.realpath(questioner.questions_path))
         self.on_command = on_command
 
     def refusal(self, file_path: str) -> str | None:
@@ -64,6 +66,11 @@ class GuardedShellBackend(LocalShellBackend):
             is_within(real, root) for root in self.writable
         ):
             return f"permission denied: {file_path} is read-only for the agent"
+        if real == self.questions:
+            return (
+                f"permission denied: {file_path} is written only by the ask_user tool: "
+                "ask the question with ask_user"
+            )
         return None
 
     def write(self, file_path: str, content: str) -> WriteResult:

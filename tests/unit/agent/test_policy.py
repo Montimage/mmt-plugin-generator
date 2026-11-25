@@ -3,9 +3,13 @@ environment it passes on (``mmt_plugin_agent.policy``)."""
 
 from __future__ import annotations
 
+from pathlib import Path, PurePosixPath
+
 import pytest
 
-from mmt_plugin_agent.policy import check_command, mmt_plugin_command, shell_env
+from mmt_plugin_agent import policy
+from mmt_plugin_agent.errors import redact
+from mmt_plugin_agent.policy import check_command, is_system_prefix, mmt_plugin_command, shell_env
 
 
 @pytest.mark.parametrize(
@@ -91,3 +95,22 @@ def test_the_shell_gets_the_allowed_variables_without_secrets() -> None:
         "UV_CACHE_DIR": "/c",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+
+
+def test_an_sdk_prefix_under_the_system_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert is_system_prefix("/opt/mmt") and is_system_prefix("/opt/mmt/dpi/..")
+    assert not is_system_prefix("/opt/mmt-sdk") and not is_system_prefix(tmp_path)
+    # A link to it, with a stand-in system prefix: tests never look at /opt/mmt.
+    system = tmp_path / "system"
+    (system / "dpi").mkdir(parents=True)
+    monkeypatch.setattr(policy, "_SYSTEM_PREFIX", PurePosixPath(system))
+    (tmp_path / "sdk").symlink_to(system / "dpi")
+    assert is_system_prefix(tmp_path / "sdk")
+
+
+def test_secrets_are_redacted_from_messages() -> None:
+    env = {"ANTHROPIC_API_KEY": "abcdefgh12345678", "HOME": "/home/agent"}
+    text = redact("bad key abcdefgh12345678, or sk-proj-0123456789abc, in /home/agent", env)
+    assert text == "bad key <ANTHROPIC_API_KEY>, or <key>, in /home/agent"

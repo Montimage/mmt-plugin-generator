@@ -1,9 +1,11 @@
-"""What a run returns: the loop as the shell saw it, the work folder's
-report, and the events ``PluginAgent.stream()`` yields."""
+"""What a run returns: the loop as the work folder records it (else as the
+shell saw it), the work folder's report, and the events
+``PluginAgent.stream()`` yields."""
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +24,7 @@ __all__ = [
     "build_result",
     "envelope_of",
     "loop_runs",
+    "work_loop",
 ]
 
 Status = Literal["done", "incomplete", "eval_failed", "not_green", "blocked", "failed", "waiting"]
@@ -52,9 +55,14 @@ class CommandRecord:
     exit_code: int | None
     output: str
     refused: str | None = None
+    #: The mmt-plugin command, when known without parsing ``command`` (an
+    #: envelope the work folder holds).
+    name: str | None = None
 
     @property
     def mmt_command(self) -> str | None:
+        if self.name is not None:
+            return self.name
         found = mmt_plugin_command(self.command)
         return found[0] if found else None
 
@@ -66,6 +74,17 @@ class CommandRecord:
     @property
     def envelope(self) -> dict[str, Any] | None:
         return None if self.mmt_command is None else envelope_of(self.output)
+
+    @property
+    def mmt_exit_code(self) -> int | None:
+        """mmt-plugin's exit code: its envelope's when the output holds one
+        (``mmt-plugin ... | tee FILE`` exits with tee's code, and the
+        agent's ``/bin/sh`` has no pipefail), else the shell's."""
+        env = self.envelope
+        code = None if env is None else env.get("exit_code")
+        if isinstance(code, int) and not isinstance(code, bool):
+            return code
+        return self.exit_code
 
     def to_json(self) -> dict[str, Any]:
         env = self.envelope
@@ -88,7 +107,7 @@ class LoopRun:
     project: str | None = None
 
     def exit_codes(self) -> dict[str, int | None]:
-        return {c.mmt_command or "": c.exit_code for c in self.commands}
+        return {c.mmt_command or "": c.mmt_exit_code for c in self.commands}
 
     def test_summary(self) -> dict[str, Any] | None:
         for record in self.commands:
@@ -130,6 +149,70 @@ def loop_runs(records: Sequence[CommandRecord]) -> list[LoopRun]:
             runs.append(LoopRun(len(runs) + 1, project=record.project))
         runs[-1].commands.append(record)
     return runs
+
+
+_RUN_DIR = re.compile(r"run-([0-9]+)")
+
+#: How much older than the run's start an envelope may look: file times
+#: come from a coarser clock, on some file systems to 2 seconds.
+_CLOCK_SLACK_NS = 2_000_000_000
+
+
+def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int] | None:
+    """The last loop run the work folder records, and how many it records.
+
+    SKILL.md, Step 4 saves each loop command's envelope as
+    ``<work>/runs/run-<n>/<command>.json``. A run counts when it has
+    ``validate.json``; its commands are the envelopes in loop order, up to
+    the first one missing. With ``since_ns`` (a ``time.time_ns()``), only
+    runs whose envelopes were all written since count: an earlier run's
+    work folder may be reused. None when no run counts."""
+    runs: list[tuple[int, LoopRun]] = []
+    try:
+        dirs = list((work / "runs").iterdir())
+    except OSError:
+        return None
+    for path in dirs:
+        found = _RUN_DIR.fullmatch(path.name)
+        if found is None or not path.is_dir():
+            continue
+        number = int(found.group(1))
+        records: list[CommandRecord] = []
+        fresh = True
+        for name in LOOP_COMMANDS:
+            saved = path / f"{name}.json"
+            try:
+                stat = saved.stat()
+                text = saved.read_text("utf-8")
+            except (OSError, UnicodeDecodeError):
+                break
+            if since_ns is not None and stat.st_mtime_ns < since_ns - _CLOCK_SLACK_NS:
+                fresh = False
+                break
+            env = envelope_of(text)
+            code = None if env is None else env.get("exit_code")
+            records.append(
+                CommandRecord(str(saved), code if isinstance(code, int) else None, text, name=name)
+            )
+        if fresh and records and records[0].mmt_command == "validate":
+            runs.append((number, LoopRun(number, records)))
+    if not runs:
+        return None
+    runs.sort(key=lambda item: item[0])
+    return runs[-1][1], len(runs)
+
+
+def _project(work: Path, given: Path | None, shell: str | None) -> Path | None:
+    """The project: the one the run was given, else ``<work>/project``
+    (the brief's), else the ``-C`` of the shell's last loop run when it
+    names a project (not a shell variable such as ``$P``)."""
+    if given is not None:
+        return given
+    if (work / "project" / "plugin.yaml").is_file():
+        return work / "project"
+    if shell is None or "$" in shell or "`" in shell:
+        return None
+    return Path(shell) if Path(shell).is_absolute() else work / shell
 
 
 @dataclass
@@ -211,13 +294,20 @@ def build_result(
     message: str,
     question: Question | None = None,
     skills_modified: Sequence[str] = (),
+    since_ns: int | None = None,
 ) -> AgentResult:
-    """The result of a run from what its shell ran and its work folder."""
+    """The result of a run from its work folder and what its shell ran.
+
+    The loop is the work folder's last run (``work_loop``, the envelopes
+    the skill saves), else the shell's: the command text the model wrote
+    (variables, ``&&`` chains, loops) is only a fallback."""
     runs = loop_runs(records)
-    last = runs[-1] if runs else None
-    if project is None and last is not None and last.project is not None:
-        candidate = Path(last.project)
-        project = candidate if candidate.is_absolute() else work / candidate
+    shell_last = runs[-1] if runs else None
+    saved = work_loop(work, since_ns=since_ns)
+    last, count = saved if saved is not None else (shell_last, len(runs))
+    project = _project(work, project, None if shell_last is None else shell_last.project)
+    if saved is not None and last is not None:
+        last.project = None if project is None else str(project)
     info = _manifest(work).get("eval")
     evaluation_info: dict[str, Any] = info if isinstance(info, dict) else {}
     verdict = str(evaluation_info.get("verdict") or "").lower()
@@ -262,7 +352,7 @@ def build_result(
         work=work,
         project=project,
         loop=last,
-        loop_runs=len(runs),
+        loop_runs=count,
         with_sdk=with_sdk,
         evaluation=evaluation,
         drift=drift if isinstance(drift, int) else None,

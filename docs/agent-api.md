@@ -132,11 +132,11 @@ are in `src/mmt_plugin_agent/schemas/v1/`: `envelope.json`, and
 | Exit | Class | When |
 |---|---|---|
 | 0 | success | Done, or green with the evaluation not done (`incomplete`). |
-| 1 | internal | A bug, or the run returned no result. |
+| 1 | internal | The model's provider failed (a bad key, a rate limit, an endpoint down) or an I/O error (`agent.unexpected`, its message without secrets), a bug, or the run returned no result. |
 | 2 | usage | Bad arguments, no model (`agent.no-model`), a model string without a provider (`agent.bad-model`). |
 | 3 | model | An input that is not there (`agent.bad-input`). |
-| 4 | sdk | The environment: no Python 3.11 or extra (`agent.needs-extra`), no skills (`agent.skills-not-found`), `doctor` with a failed check (`agent.doctor-failed`). |
-| 6 | test | Not green (`agent.not-green`), the evaluation failed (`agent.eval-failed`), `BLOCKED` (`agent.blocked`), the skills were changed (`agent.skills-modified`), an eval case failed (`agent.eval-cases-failed`). |
+| 4 | sdk | The environment: no Python 3.11 or extra (`agent.needs-extra`), no skills (`agent.skills-not-found`), an SDK prefix under `/opt/mmt` (`agent.system-sdk`: extract the package into a private prefix), `doctor` with a failed check (`agent.doctor-failed`). |
+| 6 | test | Not green (`agent.not-green`), the evaluation failed (`agent.eval-failed`), `BLOCKED` (`agent.blocked`), the skills were changed (`agent.skills-modified`, even when the run then failed), an eval case failed (`agent.eval-cases-failed`). |
 | 130 | interrupted | Ctrl-C. |
 
 ## The Python API
@@ -168,7 +168,9 @@ methods are:
 `AgentResult` has `status` (`done`, `incomplete`, `eval_failed`,
 `not_green`, `blocked`, `failed`, `waiting`), `ok`, `thread_id`, `work`,
 `project`, `loop` (the last loop run: its commands' exit codes, the test
-summary, `green(with_sdk)`), `loop_runs`, `evaluation` (`pass`, `fail`,
+summary, `green(with_sdk)`; read from the envelopes the skill saves in
+`<work>/runs/run-<n>/` during this run, else from the shell commands, each
+with mmt-plugin's exit code from its envelope), `loop_runs`, `evaluation` (`pass`, `fail`,
 `not_done`, `skipped`, from `manifest.json`), `drift` (the open drifts),
 `unchecked`, `report_path`, `questions_path`, `question`,
 `skills_modified`, `commands` and `message` (the model's last reply);

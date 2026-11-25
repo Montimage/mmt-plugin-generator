@@ -65,6 +65,6 @@ agent-image:
 agent-run:
 	mkdir -p agent-work
 	$(CONTAINER) run --rm -it $(USERNS_OPT) -e ANTHROPIC_API_KEY -e OPENAI_API_KEY \
-		-e OPENAI_BASE_URL -e OLLAMA_HOST -e MMT_PLUGIN_AGENT_MODEL \
+		-e OPENAI_BASE_URL -e OLLAMA_HOST -e MMT_PLUGIN_AGENT_MODEL -e MMT_PLUGIN_AGENT_NUM_CTX \
 		-v "$(CURDIR):/in:$(MOUNT_OPTS)" -v "$(CURDIR)/agent-work:/home/agent/work" \
 		-w /home/agent/work $(AGENT_IMAGE) mmt-plugin-agent $(AGENT_ARGS)

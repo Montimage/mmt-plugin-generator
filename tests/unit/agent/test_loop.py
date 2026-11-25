@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from mmt_plugin_agent import PluginAgent
-from mmt_plugin_agent.result import CommandRecord
+from mmt_plugin_agent.result import CommandRecord, build_result, work_folder
 
 from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
 
@@ -279,3 +279,69 @@ def test_a_failed_run_over_an_earlier_green_one_is_not_green(
     assert result.loop is not None
     assert result.loop.number == 2
     assert result.loop.exit_codes() == {"validate": 3}
+
+
+def _vllm_shaped(root: Path) -> Path:
+    """A work folder as a vLLM model left it: everything one level down, in
+    the ``<label>-plugin/`` the skill names when no folder is given."""
+    inner = root / "telem-plugin"
+    run = inner / "runs" / "run-1"
+    run.mkdir(parents=True)
+    for name in ("validate", "generate", "build"):
+        (run / f"{name}.json").write_text(_env(name, 0))
+    summary = {"total": 2, "passed": 2, "failed": 0}
+    (run / "test.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "test",
+                "exit_code": 0,
+                "result": {"summary": summary},
+            }
+        )
+    )
+    (inner / "project").mkdir()
+    (inner / "project" / "plugin.yaml").write_text("schema: 1\n")
+    (inner / "REPORT.md").write_text("# Report\n")
+    manifest = {"schema": 1, "eval": {"verdict": "PASS", "drift": {"checked": True, "open": 0}}}
+    (inner / "manifest.json").write_text(json.dumps(manifest))
+    return inner
+
+
+def test_a_work_folder_one_level_down_is_the_work_folder(tmp_path: Path) -> None:
+    work = tmp_path / "run"
+    inner = _vllm_shaped(work)
+    (work / "questions.md").write_text("# Questions\n")
+    assert work_folder(work) == inner
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=[],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE: green",
+    )
+    assert result.status == "done", result.to_json()
+    assert result.work == inner
+    assert result.project == inner / "project"
+    assert result.report_path == inner / "REPORT.md"
+    assert result.questions_path == work / "questions.md"
+    assert result.loop is not None and result.loop.green(True)
+
+
+def test_a_work_folder_is_not_looked_for_below_when_it_is_one_or_ambiguous(
+    tmp_path: Path,
+) -> None:
+    work = tmp_path / "run"
+    _vllm_shaped(work)
+    (work / "runs").mkdir()
+    assert work_folder(work) == work
+    other = tmp_path / "two"
+    _vllm_shaped(other)
+    (other / "second" / "runs").mkdir(parents=True)
+    assert work_folder(other) == other
+    assert work_folder(tmp_path / "missing") == tmp_path / "missing"
+    empty = tmp_path / "empty"
+    (empty / "project").mkdir(parents=True)
+    assert work_folder(empty) == empty

@@ -24,6 +24,7 @@ __all__ = [
     "build_result",
     "envelope_of",
     "loop_runs",
+    "work_folder",
     "work_loop",
 ]
 
@@ -201,17 +202,37 @@ def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int]
     return runs[-1][1], len(runs)
 
 
-def _project(work: Path, given: Path | None, shell: str | None) -> Path | None:
+def _is_work_folder(path: Path) -> bool:
+    return (path / "runs").is_dir() or (path / "manifest.json").is_file()
+
+
+def work_folder(work: Path) -> Path:
+    """The skill's work folder: ``work``, unless it has no ``runs/`` and
+    no ``manifest.json`` and exactly one of its subfolders has one (a model
+    that made its own ``<label>-plugin/`` in the folder it was given)."""
+    if _is_work_folder(work):
+        return work
+    try:
+        found = [p for p in work.iterdir() if p.is_dir() and _is_work_folder(p)]
+    except OSError:
+        return work
+    return found[0] if len(found) == 1 else work
+
+
+def _project(
+    work: Path, given: Path | None, shell: str | None, cwd: Path | None = None
+) -> Path | None:
     """The project: the one the run was given, else ``<work>/project``
     (the brief's), else the ``-C`` of the shell's last loop run when it
-    names a project (not a shell variable such as ``$P``)."""
+    names a project (not a shell variable such as ``$P``), relative to
+    ``cwd`` (by default ``work``)."""
     if given is not None:
         return given
     if (work / "project" / "plugin.yaml").is_file():
         return work / "project"
     if shell is None or "$" in shell or "`" in shell:
         return None
-    return Path(shell) if Path(shell).is_absolute() else work / shell
+    return Path(shell) if Path(shell).is_absolute() else (cwd or work) / shell
 
 
 @dataclass
@@ -299,12 +320,17 @@ def build_result(
 
     The loop is the work folder's last run (``work_loop``, the envelopes
     the skill saves), else the shell's: the command text the model wrote
-    (variables, ``&&`` chains, loops) is only a fallback."""
+    (variables, ``&&`` chains, loops) is only a fallback. The work folder
+    is ``work_folder(work)``, which the result reports as its ``work``."""
+    given_work = work
+    work = work_folder(given_work)
     runs = loop_runs(records)
     shell_last = runs[-1] if runs else None
     saved = work_loop(work, since_ns=since_ns)
     last, count = saved if saved is not None else (shell_last, len(runs))
-    project = _project(work, project, None if shell_last is None else shell_last.project)
+    project = _project(
+        work, project, None if shell_last is None else shell_last.project, given_work
+    )
     if saved is not None and last is not None:
         last.project = None if project is None else str(project)
     info = _manifest(work).get("eval")
@@ -327,7 +353,10 @@ def build_result(
     if isinstance(drift_info, dict) and drift_info.get("checked") is False:
         unchecked.append("drift: not checked (no tshark)")
     report = work / "REPORT.md"
-    questions = work / "questions.md"
+    # The ask_user tool writes questions.md in the folder the run was given.
+    questions = given_work / "questions.md"
+    if not questions.is_file():
+        questions = work / "questions.md"
     green = last is not None and last.green(with_sdk)
     status: Status
     if skills_modified:

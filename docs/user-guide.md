@@ -892,7 +892,9 @@ uv run mmt-plugin-agent new --spec skills/mmt-plugin-generator/evals/cases/spec-
 
 - Models: `anthropic:<model>` (`ANTHROPIC_API_KEY`), `openai:<model>` with
   `OPENAI_BASE_URL` for vLLM or another OpenAI-compatible server, and
-  `ollama:<model>`; `--model` or `MMT_PLUGIN_AGENT_MODEL`.
+  `ollama:<model>` (its context length, `num_ctx`, is 65536 tokens unless
+  `MMT_PLUGIN_AGENT_NUM_CTX` says otherwise); `--model` or
+  `MMT_PLUGIN_AGENT_MODEL`.
 - Modes: `--unattended` (the default) writes each question the skill asks
   to `<work>/questions.md` with the default it takes, never waits for
   input and never uses `--force`; `--interactive` asks on the terminal.

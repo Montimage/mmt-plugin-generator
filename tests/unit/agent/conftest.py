@@ -29,6 +29,7 @@ def _isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     no model from the environment."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv("MMT_PLUGIN_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("MMT_PLUGIN_AGENT_NUM_CTX", raising=False)
     monkeypatch.delenv("MMT_PLUGIN_SKILLS", raising=False)
     monkeypatch.delenv("MMT_BASE", raising=False)
     monkeypatch.chdir(tmp_path)

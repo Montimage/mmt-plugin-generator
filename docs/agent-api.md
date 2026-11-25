@@ -58,7 +58,7 @@ make agent-run AGENT_ARGS='new --spec /in/skills/mmt-plugin-generator/evals/case
 `agent-run` mounts the current directory read-only at `/in` and
 `./agent-work` as the work folder, and passes the model's settings
 (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OLLAMA_HOST`,
-`MMT_PLUGIN_AGENT_MODEL`) from your environment by name. cyberlab is not
+`MMT_PLUGIN_AGENT_MODEL`, `MMT_PLUGIN_AGENT_NUM_CTX`) from your environment by name. cyberlab is not
 in the image, and the image has no Docker socket: see [The
 sandbox](#the-sandbox).
 
@@ -73,9 +73,14 @@ integrations:
 |---|---|---|
 | Anthropic | `anthropic:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
 | vLLM, or any OpenAI-compatible server | `openai:<served model name>` | `OPENAI_BASE_URL` (the server's `/v1` URL), `OPENAI_API_KEY` (any value the server accepts) |
-| Ollama | `ollama:<model>`, e.g. `ollama:qwen3-coder` | `OLLAMA_HOST` when it is not `localhost:11434` |
+| Ollama | `ollama:<model>`, e.g. `ollama:qwen3-coder` | `OLLAMA_HOST` when it is not `localhost:11434`; `MMT_PLUGIN_AGENT_NUM_CTX`, the context length (`num_ctx`) in tokens, 65536 by default |
 
-The model needs tool calling. Keys stay in the environment: the agent's
+The model needs tool calling. Ollama's own context length (2048 or 4096
+tokens) is shorter than the agent's system prompt and tools, and Ollama
+then drops the start of the conversation, the request with it: the agent
+passes `num_ctx` to an `ollama:` model, 65536 tokens unless
+`MMT_PLUGIN_AGENT_NUM_CTX` says otherwise (a model object is used as it
+is). Keys stay in the environment: the agent's
 shell never sees a variable whose name ends in `_API_KEY` or `_TOKEN`, or
 holds `SECRET`, `PASSWORD` or `CREDENTIAL`, and `doctor` never prints one.
 

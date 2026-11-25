@@ -9,6 +9,7 @@ Section 12 lists every point where this design goes beyond or against the plan, 
 - Distribution: `mmt-plugin` (PyPI/uv name, unchanged). Binary: `mmt-plugin`. Module: `python -m mmt_plugin`. Entry: `mmt_plugin.cli:main(argv) -> int` (unchanged signature).
 - Parser: **argparse** (stdlib, already in place). Decision D1.
 - Platform: Linux (amd64, arm64). `--help` says so; macOS best-effort, no CI.
+- `mmt-plugin-agent` (#161, [`docs/agent-api.md`](../agent-api.md)) ships in the same distribution, behind the `agent` extra (Python 3.11+). Its `--json` envelope follows sections 5 and 6 (`tool.name` `mmt-plugin-agent`, codes `agent.*`, its own schemas in `mmt_plugin_agent/schemas/v1/`); its event stream is API-only (`PluginAgent.stream()`): the CLI prints no NDJSON.
 
 ## 2. Command tree
 

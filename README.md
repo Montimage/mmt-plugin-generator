@@ -171,6 +171,18 @@ install into `/opt/mmt`. CI extracts the ubuntu-24.04 one into a private
 prefix after `tests/fetch_mmt_dpi_package.sh` has verified it; the
 [user guide](docs/user-guide.md#get-mmt-dpi) and `AGENTS.md` show how.
 
+## Run the skill headless: mmt-plugin-agent
+
+`mmt-plugin-agent` runs the [mmt-plugin-generator skill](skills/mmt-plugin-generator/SKILL.md) with a LangGraph agent and any LLM provider LangChain supports (Anthropic, vLLM or another OpenAI-compatible server, Ollama), from the command line or from Python. It needs the `agent` extra and Python 3.11 or later; `mmt-plugin` alone still installs only jinja2.
+
+<!-- doc:skip needs the agent extra, an mmt-dpi SDK and a model key -->
+```sh
+uv sync --extra agent
+uv run mmt-plugin-agent new --spec spec.md --sdk "$MMT_BASE" --model anthropic:claude-sonnet-5-5 --unattended --allow-synthetic
+```
+
+Unattended runs write each question to `questions.md` and never wait for input or use `--force`; `--interactive` asks on the terminal. The agent's shell has no isolation of its own: run it in the agent container (`make agent-image`), where the skills are read-only and it is not root. [docs/agent-api.md](docs/agent-api.md) has the install, the container, the models, the run modes, the exit codes and the Python API.
+
 ## Documentation
 
 - [User guide](docs/user-guide.md): installing, a project from `init` to
@@ -195,6 +207,9 @@ prefix after `tests/fetch_mmt_dpi_package.sh` has verified it; the
   an existing plugin project, evaluates it on a capture of the protocol
   (found, or generated when there is none), and keeps everything that made
   it in a work folder.
+- [mmt-plugin-agent](docs/agent-api.md): the skill headless, with any LLM
+  provider: the command line, the Python API, the container and the model
+  evals.
 - [Brand assets](assets/logo/): the logo SVGs, and `brand-showcase.html`
   with the colours and type.
 

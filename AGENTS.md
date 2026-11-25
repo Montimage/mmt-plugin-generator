@@ -482,6 +482,35 @@ protocol model. A Python rewrite is planned in
   drift and one with, open then accepted; needs `MMT_GOLDEN_SDK` and
   `libpcap-dev`, and tshark for its tshark run, which skips without it
   unless `MMT_REQUIRE_TSHARK=1`).
+- `src/mmt_plugin_agent/` (#161, `docs/agent-api.md`): `mmt-plugin-agent`,
+  a LangGraph agent (deepagents) that runs `skills/mmt-plugin-generator/`
+  headless with any LangChain chat model (`provider:model` through
+  `init_chat_model`, or a model object). It is the `agent` extra of the
+  same distribution (`[tool.uv.build-backend] module-name` lists both
+  packages), deepagents 0.7.32 and the anthropic, openai and ollama
+  integrations, each pinned for Python 3.11+ only, so `pip install
+  mmt-plugin` still pulls only jinja2. Public API in `__all__`:
+  `PluginAgent` (`new`, `update`, `anew`, `aupdate`, `stream`, `resume`,
+  `doctor`), `build_graph` (the compiled graph, a LangGraph subgraph),
+  `request_text`, `run_model_evals`; `cli.py` imports only those names.
+  `backend.py`: the shell (`LocalShellBackend`, real paths, an allowlisted
+  environment without secrets) refuses `sudo`, `--system`, `/opt/mmt` and,
+  unattended, `--force`; the file tools write only in the work folder, an
+  update's project and the temp dir, never the skills. The skills are read
+  from a read-only copy in `~/.cache/mmt-plugin-agent/`; a run that changed
+  the source tree is restored and failed (`agent.skills-modified`).
+  `questions.py`: the `ask_user` tool (an interrupt, `on_question`, or
+  `<work>/questions.md` and the safe default). `evals.py`: `mmt-plugin-agent
+  eval` loads `run_evals.py` by path and judges each model's drafts of every
+  case with its `Runner`, `snapshot` and `fix_problems`. The envelope's
+  schemas are `src/mmt_plugin_agent/schemas/v1/`. The `Dockerfile`'s
+  `agent` stage (`make agent-image`) is its sandbox: mmt-dpi in `/opt/sdk`,
+  the skills root-owned and read-only in `/opt/mmt-plugin-skills`, the user
+  `agent`. `mypy-agent.ini` checks it (the default `uv run mypy` excludes
+  it). Tests in `tests/unit/agent/` (a scripted model and a fake
+  `mmt-plugin`, `fakes.py`; not collected without the extra; `image_guard.py`
+  runs inside the image) and `tests/unit/test_agent_extra.py` (the console
+  script without the extra).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
@@ -546,7 +575,12 @@ protocol model. A Python rewrite is planned in
   `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
-  SDK). `.github/workflows/release.yml` (above) runs alongside it.
+  SDK). The `agent` job (#161, Python 3.12, `uv sync --extra agent`) runs
+  ruff, `mypy --config-file mypy-agent.ini`, `tests/unit/agent` (the
+  `docs/agent-api.md` example among them), `tests/unit/skill` and
+  `tests/unit/docs`, then builds the agent image and runs
+  `tests/unit/agent/image_guard.py`, its doctor and a project from `init`
+  to `test` in it. `.github/workflows/release.yml` (above) runs alongside it.
 
 ## Commands
 

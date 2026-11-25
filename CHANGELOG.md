@@ -9,6 +9,26 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `mmt-plugin-agent` (#161, `docs/agent-api.md`): a LangGraph agent
+  (deepagents) that runs the mmt-plugin-generator skill headless, with any
+  LangChain chat model (`anthropic:`, `openai:` with `OPENAI_BASE_URL` for
+  vLLM, `ollama:`). The `agent` extra, Python 3.11+ only; without it
+  `mmt-plugin` still installs only jinja2. Commands `new` (`--spec`,
+  `--pcap`, `--pdl`), `update`, `doctor` and `eval` (every eval case per
+  model, a results table), a `--json` envelope in the style of
+  `docs/design/cli.md`, and a Python API (`PluginAgent`, `build_graph`).
+  Unattended runs write each question to `questions.md` and never wait for
+  input or use `--force`; `--interactive` stops at a question and resumes.
+  The agent cannot write the skills: its file tools refuse them, it reads a
+  read-only copy, and a run that changed them is restored and failed. The
+  `Dockerfile`'s `agent` stage (`make agent-image`) is its sandbox.
+- The skill's run modes (#161): unattended runs record each question with
+  its recommended answer in `<work>/questions.md` and go on with the safe
+  default; every synthetic capture needs leave (the capture question), and
+  without it the evaluation is skipped and reported as not done. A cyberlab
+  installed locally (`$CYBERLAB_DIR`) is used before `asm`. Skill version
+  0.4.0.
+
 - `plugin.yaml` key `plugins`: the other plugins to load with this one, a
   parent plugin first, each a project directory or a built `.so` file
   relative to the directory of `plugin.yaml` (#145). `mmt-plugin test`

@@ -125,6 +125,16 @@ def system_prompt(settings: RunSettings, skills: Path) -> str:
     return "\n".join(lines)
 
 
+def _is_file(value: str) -> bool:
+    """Whether a FILE|TEXT value names a file. A text that is no possible path
+    (a component over NAME_MAX, a NUL byte) is text: pathlib raises on it
+    before Python 3.14."""
+    try:
+        return Path(value).is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def request_text(
     *,
     spec: Path | None = None,
@@ -136,10 +146,10 @@ def request_text(
 ) -> str:
     """The user message of a run: what to build or change."""
     if project is not None:
-        given = Path(change) if change is not None else None
+        given = Path(change) if change is not None and _is_file(change) else None
         what = (
             f"the change described in {given.resolve()}"
-            if given is not None and given.is_file()
+            if given is not None
             else f"this change: {change}"
         )
         text = f"Update the existing mmt-dpi plugin project {project} with {what}."

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from mmt_plugin_agent import PluginAgent
+from mmt_plugin_agent import PluginAgent, request_text
 from mmt_plugin_agent.result import CommandRecord, build_result, work_folder
 
 from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
@@ -132,6 +132,28 @@ def test_an_update_runs_on_the_project_in_place(
     assert result.status == "done"
     first = model.seen[0]
     assert any("add a status message" in str(m.content) for m in first)
+
+
+def test_a_change_text_too_long_for_a_path_is_text(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli()
+    project = tmp_path / "telem"
+    project.mkdir()
+    (project / "plugin.yaml").write_text("protocol:\n  label: telem\n")
+    sdk = tmp_path / "sdk"
+    change = "add a status message " * 20
+    assert len(change) > 255
+    model = scripted([*loop(project, sdk), *done_files(tmp_path / "telem-work"), "DONE"])
+    result = PluginAgent(model, sdk=sdk).update(project, change=change)
+    assert result.status == "done"
+    assert any(f"this change: {change}" in str(m.content) for m in model.seen[0])
+    assert request_text(project=project, change="a\0b").endswith("this change: a\0b.")
+    described = tmp_path / "change.md"
+    described.write_text("add a status message\n")
+    assert f"the change described in {described}" in request_text(
+        project=project, change=str(described)
+    )
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,8 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
 from mmt_plugin_agent import PluginAgent
 
 from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
@@ -125,3 +127,22 @@ def test_an_update_runs_on_the_project_in_place(
     assert result.status == "done"
     first = model.seen[0]
     assert any("add a status message" in str(m.content) for m in first)
+
+
+@pytest.mark.parametrize(
+    ("reply", "report", "status"),
+    [
+        ("BLOCKED: the project's plugin.lock is a directory", "# Report\n", "blocked"),
+        ("DONE: green, PASS", "cyberlab: Result: BLOCKED (no Docker), synthetic\n", "done"),
+    ],
+)
+def test_blocked_is_the_final_reply_not_a_word_of_the_report(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli], reply: str, report: str, status: str
+) -> None:
+    fake_cli()
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    files = done_files(work)
+    report_step = step(call("write_file", file_path=str(work / "REPORT.md"), content=report))
+    model = scripted([*loop(work / "project", sdk), *files, report_step, reply])
+    agent = PluginAgent(model, sdk=sdk, work_dir=work, allow_synthetic=True)
+    assert agent.new(spec=SPEC).status == status

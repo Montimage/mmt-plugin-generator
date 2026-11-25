@@ -240,13 +240,13 @@ def build_result(
     report = work / "REPORT.md"
     questions = work / "questions.md"
     green = last is not None and last.green(with_sdk)
-    report_text = report.read_text("utf-8") if report.is_file() else ""
     status: Status
     if skills_modified:
         status = "failed"
     elif question is not None:
         status = "waiting"
-    elif "BLOCKED" in report_text or message.strip().endswith("BLOCKED"):
+    elif message.strip().upper().startswith("BLOCKED"):
+        # The brief's last line: DONE, NOT GREEN or BLOCKED, then the reason.
         status = "blocked"
     elif not green:
         status = "not_green"

@@ -69,23 +69,43 @@ def resolve_skills_dir(explicit: str | os.PathLike[str] | None = None) -> Path:
     return found
 
 
+#: How ``tree_files`` records a symbolic link: this prefix, then its target.
+_LINK = b"\0mmt-plugin-agent symlink\0"
+
+
 def _skipped(rel: str) -> bool:
     parts = rel.split("/")
     return "__pycache__" in parts or rel.endswith(".pyc")
 
 
 def tree_files(root: Path) -> dict[str, bytes]:
-    """Every regular file under ``root`` by relative path, without byte code."""
+    """Every regular file under ``root`` by relative path, without byte code,
+    and every symbolic link (to a file or a directory, never followed) as
+    ``_LINK`` and its target, so that a link the agent plants changes the
+    digest."""
     files: dict[str, bytes] = {}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
-        for name in sorted(filenames):
+        dirnames.sort()
+        for name in sorted([*dirnames, *filenames]):
             path = Path(dirpath) / name
             rel = path.relative_to(root).as_posix()
-            if _skipped(rel) or path.is_symlink() or not path.is_file():
+            if _skipped(rel):
                 continue
-            files[rel] = path.read_bytes()
+            if path.is_symlink():
+                files[rel] = _LINK + os.fsencode(os.readlink(path))
+            elif path.is_file():
+                files[rel] = path.read_bytes()
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
     return files
+
+
+def _place(target: Path, data: bytes) -> None:
+    """Write one entry of ``tree_files`` at ``target``, whose parents are
+    real directories: a file, or a link when ``data`` records one."""
+    if data.startswith(_LINK):
+        os.symlink(os.fsdecode(data[len(_LINK) :]), target)
+    else:
+        target.write_bytes(data)
 
 
 def digest(files: Mapping[str, bytes]) -> str:
@@ -123,26 +143,47 @@ def make_snapshot(files: Mapping[str, bytes], key: str, root: Path | None = None
     for rel, data in files.items():
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        target.chmod(0o444)
+        _place(target, data)
+        if not target.is_symlink():
+            target.chmod(0o444)
     for dirpath, _, _ in os.walk(dest, topdown=False):
         os.chmod(dirpath, 0o555)
     return dest
 
 
+def _remove(path: Path) -> None:
+    """Remove a file, a link (never what it points to) or a directory."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _real_parents(source: Path, rel: str) -> Path:
+    """``source / rel`` with every parent below ``source`` a real directory:
+    a link or a file in the way is removed, so nothing is written through
+    a link the agent planted."""
+    current = source
+    for part in rel.split("/")[:-1]:
+        current = current / part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            _remove(current)
+        current.mkdir(exist_ok=True)
+    return source / rel
+
+
 def restore(source: Path, files: Mapping[str, bytes]) -> list[str]:
     """Make ``source`` hold ``files`` again; the paths it changed, added
-    back or removed."""
+    back or removed. Links are removed or written as links, never followed."""
     now = tree_files(source)
-    changed = []
-    for rel in sorted(set(now) | set(files)):
-        if now.get(rel) == files.get(rel):
-            continue
-        changed.append(rel)
+    changed = sorted(rel for rel in set(now) | set(files) if now.get(rel) != files.get(rel))
+    for rel in sorted((r for r in changed if r not in files), reverse=True):
         target = source / rel
-        if rel in files:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(files[rel])
-        else:
-            target.unlink()
+        if target.is_symlink() or target.exists():
+            _remove(target)
+    for rel in (r for r in changed if r in files):
+        target = _real_parents(source, rel)
+        if target.is_symlink() or target.exists():
+            _remove(target)
+        _place(target, files[rel])
     return changed

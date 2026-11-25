@@ -169,6 +169,30 @@ def test_a_run_that_changes_the_skills_fails_and_restores_them(
     assert (skills_copy / "mmt-plugin-generator/references/evals.md").is_file()
 
 
+def test_a_link_planted_in_the_skills_is_undone_without_writing_through_it(
+    tmp_path: Path, skills_copy: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    fake_cli()
+    skill = skills_copy / SKILL_MD
+    before = skill.read_bytes()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("the user's file\n")
+    refs = skills_copy / "mmt-plugin-generator" / "references"
+    plant = (
+        f"rm {skill} && ln -s {outside} {skill} && mv {refs} {tmp_path}/refs "
+        f"&& ln -s {tmp_path}/refs {refs} && ln -s /etc {skills_copy}/etc"
+    )
+    model = scripted([step(call("execute", command=plant)), "DONE"])
+    agent = PluginAgent(model, work_dir=tmp_path / "work", skills_dir=skills_copy)
+    result = agent.new(spec=SPEC)
+    assert result.status == "failed"
+    assert "etc" in result.skills_modified and SKILL_MD in result.skills_modified
+    assert outside.read_text() == "the user's file\n"
+    assert not skill.is_symlink() and skill.read_bytes() == before
+    assert not refs.is_symlink() and (refs / "capture.md").is_file()
+    assert not (skills_copy / "etc").exists() and not (skills_copy / "etc").is_symlink()
+
+
 def test_a_subagent_shares_the_guarded_backend(
     tmp_path: Path, skills_copy: Path, fake_cli: Callable[..., FakeCli]
 ) -> None:

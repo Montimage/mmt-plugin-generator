@@ -95,8 +95,9 @@ def is_secret(name: str) -> bool:
 
 def _without_userinfo(item: str, proxy: bool) -> str:
     """``item`` without the ``user:password@`` of its URL: always for a
-    proxy (also without a scheme, ``u:p@host:3128``), else only when it has
-    a password (``DOCKER_HOST=ssh://user@host`` stays)."""
+    proxy (also without a scheme, ``u:p@host:3128``) and an http(s) URL
+    (a user name alone can be a token), else only when it has a password
+    (``DOCKER_HOST=ssh://user@host`` stays)."""
     scheme, sep, rest = item.partition("://")
     if not sep:
         if not proxy:
@@ -111,7 +112,7 @@ def _without_userinfo(item: str, proxy: bool) -> str:
     if "@" not in authority:
         return item
     userinfo, host = authority.rsplit("@", 1)
-    if not proxy and ":" not in userinfo:
+    if not proxy and ":" not in userinfo and scheme.lower() not in ("http", "https"):
         return item
     return f"{scheme}{sep}{host}{rest[end:]}"
 

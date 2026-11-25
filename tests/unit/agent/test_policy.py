@@ -131,6 +131,7 @@ def test_uv_passes_only_its_own_settings_not_its_index_urls() -> None:
             "https://a.example/x, https://b.example/y",
         ),
         ("MMT_BASE", "/home/u@corp/sdk", "/home/u@corp/sdk"),
+        ("MMT_X", "https://tok@h/x", "https://h/x"),
     ],
 )
 def test_the_shell_gets_urls_without_their_credentials(name: str, value: str, passed: str) -> None:

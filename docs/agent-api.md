@@ -202,7 +202,9 @@ with mmt-plugin's exit code from its envelope), `loop_runs`, `evaluation` (`pass
 `skills_modified`, `commands`, `message` (the model's last reply) and
 `eval_leave` (`capture`, `synthetic` or `None`: the leave the run had for
 the evaluation; `skipped_with_leave` is an `incomplete` run that had it,
-and is not `ok`); `to_json()` is the command line's `result`.
+and is not `ok`) and `environ_readable` (`None`, or why the shell could
+read the agent's own environment: see [Models](#models)); `to_json()` is
+the command line's `result`.
 
 This example runs in CI with a scripted model
 (`tests/unit/agent/test_docs_example.py`):
@@ -315,8 +317,8 @@ in depth:
   `XDG_*`, proxies, `DOCKER_*`, uv's `UV_CACHE_DIR`, `UV_LOCKED`,
   `UV_NO_CACHE`, `UV_OFFLINE`, `UV_PYTHON`, `UV_TOOL_DIR` and
   `UV_TOOL_BIN_DIR`, not its index URLs, ...) without secrets: no
-  variable named as one (see [Models](#models)), no URL's password, and a
-  proxy URL without its user name and password. On Linux the shell cannot
+  variable named as one (see [Models](#models)), no URL's password, and no
+  user name in a proxy or http(s) URL. On Linux the shell cannot
   read the agent's own environment either; elsewhere it can (see
   [Models](#models)).
 

@@ -191,6 +191,72 @@ jobs:
       - name: Run the console script
         run: uv run mmt-plugin --version
 
+  agent:
+    # mmt-plugin-agent (#161): the agent extra needs Python 3.11+, so its
+    # tests and its mypy run here; the python job above runs without the
+    # extra, where tests/unit/agent is not collected.
+    name: Agent (Python 3.12, agent extra)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Pinned uv, as in the python job.
+      UV_VERSION: 0.12.10
+      UV_SHA256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+      UV_PYTHON: '3.12'
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/uv" --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Install the package with the agent extra from uv.lock
+        run: |
+          uv sync --extra agent
+          uv run python -c 'import deepagents, langgraph, langchain'
+      - name: Ruff lint
+        run: uv run ruff check
+      - name: Mypy (the agent and its tests)
+        run: uv run mypy --config-file mypy-agent.ini
+      - name: Pytest (the agent, with the docs/agent-api.md example; the skill; the docs)
+        run: uv run pytest tests/unit/agent tests/unit/test_agent_extra.py tests/unit/skill tests/unit/docs
+      - name: Build the agent image
+        run: |
+          docker version --format 'docker {{.Server.Version}} {{.Server.Arch}}'
+          make agent-image AGENT_IMAGE=mmt-plugin-agent:ci MMT_DPI_TAG="$MMT_DPI_TAG"
+      - name: The image's user cannot change its skills (P5)
+        # As the image's own unprivileged user: the agent's shell and file
+        # tools against the root-owned, read-only skills, then the doctor.
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/tests/unit/agent/image_guard.py:/tmp/image_guard.py:ro" \
+            mmt-plugin-agent:ci /opt/mmt-plugin/bin/python /tmp/image_guard.py
+          docker run --rm --network none mmt-plugin-agent:ci \
+            mmt-plugin-agent --json doctor --model anthropic:none > "$RUNNER_TEMP/doctor.json"
+          python3 - "$RUNNER_TEMP/doctor.json" <<'EOF'
+          import json, sys
+          checks = {c["id"]: c["status"] for c in json.load(open(sys.argv[1]))["result"]["checks"]}
+          for name in ("agent-extra", "mmt-plugin", "sdk", "compiler", "tshark", "libpcap", "skills"):
+              assert checks[name] == "pass", (name, checks)
+          print("doctor in the image:", checks)
+          EOF
+      - name: A project from init to test in the image
+        run: |
+          docker run --rm --network none mmt-plugin-agent:ci \
+            sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test'
+
   container:
     name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

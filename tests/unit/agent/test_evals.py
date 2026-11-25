@@ -146,7 +146,7 @@ def test_envelopes_redirected_to_the_work_folder_are_checked(
 
 def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> list[Any]:
     """The live telem-update run (L8): the entry check saved in run-0, a
-    heredoc that names validate, the loop as one shell for-loop over ``$c``
+    heredoc holding a validate command line, the loop as one shell for-loop over ``$c``
     (no command name in its text), run-0's files then moved into run-1, the
     edits, and the loop again into run-2."""
     runs = agent / "runs"
@@ -178,7 +178,14 @@ def _diag_script(skills: Path, case_dir: Path, agent: Path, project: Path) -> li
                 f"> {run0}/validate-nosdk.json",
             )
         ),
-        step(call("execute", command=f"cat > {notes} <<'EOF'\nvalidate, then generate\nEOF")),
+        step(
+            call(
+                "execute",
+                command=f"cat > {notes} <<'EOF'\nmmt-plugin -C {p} --json validate --no-sdk\nEOF",
+            )
+        ),
+        # A model's turn takes seconds: nothing ties the heredoc to an envelope.
+        step(call("execute", command="sleep 3")),
         loop(1),
         step(call("execute", command=f"mv {run0}/validate-nosdk.json {run1}/ && rmdir {run0}")),
         step(call("execute", command=apply)),
@@ -210,7 +217,7 @@ def test_the_runs_are_the_work_folders_whatever_the_shell_text(
     assert outcome.problems == []
     assert outcome.ok
     records = [json.loads(line) for line in (work / "commands.jsonl").read_text().splitlines()]
-    assert len(records) == 6
+    assert len(records) == 7
     assert set(records[0]) == {
         "command",
         "mmt_command",

@@ -4,9 +4,10 @@
 with ``MMT_RELEASE_DIST=OUT_DIR`` these tests check them: exactly the wheel,
 the sdist, the schemas tarball and ``SHA256SUMS``, each named with this
 checkout's version (``mmt_plugin.__version__``); every file of
-``src/mmt_plugin/`` in the wheel and the sdist, byte for byte, so every JSON
-Schema (``schemas/cli/v1/`` included) ships in both; the wheel's metadata
-and console script; every schema in the schemas tarball, reproducibly
+``src/mmt_plugin/`` and ``src/mmt_plugin_agent/`` in the wheel and the sdist,
+byte for byte, so every JSON Schema (``schemas/cli/v1/`` included) ships in
+both; the wheel's metadata (only jinja2 without an extra, #161) and console
+scripts; every schema in the schemas tarball, reproducibly
 packed; and ``SHA256SUMS`` matching the files. Without the variable they
 skip, unless ``MMT_REQUIRE_RELEASE_DIST=1`` (``.github/workflows/release.yml``)::
 
@@ -30,6 +31,17 @@ from mmt_plugin import __version__
 
 REPO = Path(__file__).resolve().parents[3]
 PACKAGE = REPO / "src" / "mmt_plugin"
+#: The distribution's packages: the tool and its agent (#161).
+PACKAGES = ("mmt_plugin", "mmt_plugin_agent")
+#: The ``agent`` extra's requirements, each for Python 3.11+ only.
+AGENT_EXTRA = [
+    "deepagents",
+    "langgraph",
+    "langchain",
+    "langchain-anthropic",
+    "langchain-openai",
+    "langchain-ollama",
+]
 DIST_ENV = "MMT_RELEASE_DIST"
 REQUIRE_ENV = "MMT_REQUIRE_RELEASE_DIST"
 
@@ -52,16 +64,17 @@ def dist() -> Path:
 
 
 def _package_files() -> dict[str, bytes]:
-    """The package's tracked files, by path relative to ``src/``."""
+    """The packages' tracked files, by path relative to ``src/``."""
     listed = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files", "-z", "--", "src/mmt_plugin"],
+        ["git", "-C", str(REPO), "ls-files", "-z", "--", *(f"src/{p}/" for p in PACKAGES)],
         check=True,
         capture_output=True,
     ).stdout.decode()
     files = {}
     for name in filter(None, listed.split("\0")):
         files[name.removeprefix("src/")] = (REPO / name).read_bytes()
-    assert files, "git ls-files lists nothing under src/mmt_plugin"
+    for package in PACKAGES:
+        assert any(n.startswith(f"{package}/") for n in files), f"nothing under src/{package}"
     return files
 
 
@@ -88,7 +101,9 @@ def test_the_wheel_holds_every_package_file(dist: Path) -> None:
         unexpected = {
             n
             for n in names
-            if not n.startswith((f"mmt_plugin-{__version__}.dist-info/", "mmt_plugin/"))
+            if not n.startswith(
+                (f"mmt_plugin-{__version__}.dist-info/", *(f"{p}/" for p in PACKAGES))
+            )
         }
         assert not unexpected, unexpected
 
@@ -104,11 +119,20 @@ def test_the_wheel_metadata_and_console_script(dist: Path) -> None:
     assert metadata["License-Expression"] == "Apache-2.0"
     assert metadata.get_all("License-File") == ["LICENSE"]
     assert metadata["Description-Content-Type"] == "text/markdown"
-    assert [r.split(">")[0].split("<")[0] for r in metadata.get_all("Requires-Dist", [])] == [
-        "jinja2"
-    ]
+    requires = metadata.get_all("Requires-Dist", [])
+    # pip install mmt-plugin, without the extra, pulls only jinja2 (#161).
+    plain = [r for r in requires if ";" not in r]
+    assert [r.split(">")[0].split("<")[0] for r in plain] == ["jinja2"]
+    extra = [r for r in requires if ";" in r]
+    assert [r.split("==")[0] for r in extra] == AGENT_EXTRA
+    for requirement in extra:
+        marker = requirement.split(";", 1)[1]
+        assert "extra == 'agent'" in marker, requirement
+        assert "python_full_version >= '3.11'" in marker, requirement
+    assert metadata.get_all("Provides-Extra") == ["agent"]
     assert "[console_scripts]" in entry_points
     assert "mmt-plugin = mmt_plugin.cli:main" in entry_points
+    assert "mmt-plugin-agent = mmt_plugin_agent.cli:main" in entry_points
 
 
 def test_the_sdist_holds_every_package_file(dist: Path) -> None:

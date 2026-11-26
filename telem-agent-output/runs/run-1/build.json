@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "build",
+  "ok": false,
+  "exit_code": 5,
+  "error": {
+    "class": "build",
+    "code": "build.missing-hook",
+    "message": "1 hook is not defined: telem_hook_extract_readings",
+    "hint": "add it to src/telem_impl.c, as generated/telem_mmt_plugin.h declares it"
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "build.missing-hook",
+      "message": "hook telem_hook_extract_readings is not defined",
+      "hint": "define int telem_hook_extract_readings(const ipacket_t *packet, mmt_proto_index_t proto_index, attribute_t *extracted_data) in src/telem_impl.c; generated/telem_mmt_plugin.h declares it",
+      "location": {
+        "file": "src/telem_impl.c",
+        "line": null,
+        "column": null,
+        "end_line": null,
+        "end_column": null
+      },
+      "related": []
+    }
+  ],
+  "context": {
+    "project": "project",
+    "sdk": {
+      "prefix": "/opt/sdk",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "profile": "1.10.2",
+    "build_dir": "build",
+    "stages": [
+      {
+        "name": "generate",
+        "status": "up-to-date"
+      },
+      {
+        "name": "compile",
+        "status": "ran"
+      },
+      {
+        "name": "hooks",
+        "status": "failed"
+      },
+      {
+        "name": "link",
+        "status": "skipped"
+      }
+    ],
+    "artifact": null,
+    "cc": {
+      "path": "/usr/bin/gcc",
+      "version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "cflags": [
+      "-std=gnu11",
+      "-O2",
+      "-fPIC",
+      "-fstack-protector-strong",
+      "-U_FORTIFY_SOURCE",
+      "-D_FORTIFY_SOURCE=2",
+      "-Wall",
+      "-Wextra",
+      "-Werror"
+    ],
+    "ldflags": [
+      "-shared",
+      "-Wl,-z,relro",
+      "-Wl,-z,now",
+      "-Wl,-z,defs"
+    ],
+    "commands": [
+      "/usr/bin/gcc -std=gnu11 -O2 -fPIC -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -Wall -Wextra -Werror -I /work/plugin-work-5c743542/project/generated -I /work/plugin-work-5c743542/project/src -I /opt/sdk/dpi/include -MD -MF /work/plugin-work-5c743542/project/build/obj/generated/telem_mmt_plugin.d -c /work/plugin-work-5c743542/project/generated/telem_mmt_plugin.c -o /work/plugin-work-5c743542/project/build/obj/generated/telem_mmt_plugin.o",
+      "/usr/bin/gcc -std=gnu11 -O2 -fPIC -fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -Wall -Wextra -Werror -I /work/plugin-work-5c743542/project/generated -I /work/plugin-work-5c743542/project/src -I /opt/sdk/dpi/include -MD -MF /work/plugin-work-5c743542/project/build/obj/src/telem_impl.d -c /work/plugin-work-5c743542/project/src/telem_impl.c -o /work/plugin-work-5c743542/project/build/obj/src/telem_impl.o"
+    ],
+    "up_to_date": false,
+    "dry_run": false
+  }
+}

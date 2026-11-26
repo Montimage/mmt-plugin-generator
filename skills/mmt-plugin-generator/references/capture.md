@@ -50,7 +50,9 @@ Write each command that made `capture.pcap` in `make-capture.sh`.
 Copy it into `<work>/inputs/` (record it in `SOURCES.md`), check it as
 above, and cut it into `<work>/capture/capture.pcap` if it is large. When
 it does not hold the protocol under the parent the user named, stop and ask:
-the selector or the capture is wrong.
+the selector or the capture is wrong. Unattended (`SKILL.md`, Run modes):
+write that question in `questions.md`, keep the selector the spec gives,
+and go on to the next item of Step 1 without this capture.
 
 ## Find one
 
@@ -84,10 +86,12 @@ Recording and crafting go through the `cyberlab` skill
 smallest isolated Docker lab (one server, one client, one tcpdump sidecar
 on an internal network), or crafts a trace with no network, checks the
 trace against expectations written before it exists, tears the lab down,
-and hands back the trace with its provenance. Acquire it as `SKILL.md`,
-*Dependency Preflight*, says, read its `SKILL.md`, and follow it as a
-calling skill: derive its mission brief from the request and the spec,
-never ask the user.
+and hands back the trace with its provenance. A cyberlab installed
+locally (`$CYBERLAB_DIR`) is used as it is; otherwise acquire it as
+`SKILL.md`, *Dependency Preflight*, says. Read its `SKILL.md`, and follow
+it as a calling skill: derive its mission brief from the request and the
+spec, never ask the user. Without Docker, cyberlab can neither record nor
+check a lab: only a synthetic capture is left, with leave for it.
 
 | Brief line | What this skill puts there |
 |---|---|
@@ -123,7 +127,9 @@ directions, every reply type (`+ - : $ *`), `RESULT PASS`.
 
 ### Generate one
 
-Last resort: a synthetic capture from the spec. Write `payloads.txt` (one
+Last resort: a synthetic capture from the spec, only with leave for it
+(the capture question, `SKILL.md` Step 1; an unattended run has it only
+when the request grants it). Write `payloads.txt` (one
 hex payload per line, `c:` client to server, the default, `s:` server to
 client) before the plugin exists, so that no value comes from what the
 plugin outputs:
@@ -167,7 +173,9 @@ segmentation.
 
 ## Nothing works
 
-No capture found, none can be recorded, and the spec has too little to
-generate one (no field values, no example): stop and ask the user for a
-capture, or for permission to skip the evaluation. A skipped evaluation is
-written in `REPORT.md` with the reason.
+No capture found, none can be recorded, and no leave for a synthetic one,
+or the spec has too little to generate one (no field values, no example):
+ask the capture question (`SKILL.md` Step 1): a capture, leave for a
+synthetic one, or leave to skip the evaluation. Unattended: write it in
+`questions.md`, skip the evaluation and report it as not done. A skipped
+evaluation is written in `REPORT.md` and `manifest.json` with the reason.

@@ -191,6 +191,111 @@ jobs:
       - name: Run the console script
         run: uv run mmt-plugin --version
 
+  agent:
+    # mmt-plugin-agent (#161): the agent extra needs Python 3.11+, so its
+    # tests and its mypy run here; the python job above runs without the
+    # extra, where tests/unit/agent is not collected.
+    name: Agent (Python 3.12, agent extra)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Pinned uv, as in the python job.
+      UV_VERSION: 0.12.10
+      UV_SHA256: 173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b
+      UV_PYTHON: '3.12'
+      UV_LOCKED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned uv
+        run: |
+          [ "$(uname -m)" = x86_64 ] || { echo "runner arch is $(uname -m), expected x86_64"; exit 1; }
+          target=uv-x86_64-unknown-linux-gnu
+          dir="$RUNNER_TEMP/uv"
+          mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/$target.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$target.tar.gz"
+          echo "$UV_SHA256  $dir/$target.tar.gz" | sha256sum -c -
+          tar -xzf "$dir/$target.tar.gz" -C "$dir" --strip-components=1 "$target/uv"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/uv" --version | grep -qF "uv $UV_VERSION " || { echo "uv is not $UV_VERSION"; exit 1; }
+      - name: Install the package with the agent extra from uv.lock
+        run: |
+          uv sync --extra agent
+          uv run python -c 'import deepagents, langgraph, langchain'
+      - name: Ruff lint
+        run: uv run ruff check
+      - name: Mypy (the agent and its tests)
+        run: uv run mypy --config-file mypy-agent.ini
+      - name: Pytest (the agent, with the docs/agent-api.md example; the skill; the docs)
+        run: uv run pytest tests/unit/agent tests/unit/test_agent_extra.py tests/unit/skill tests/unit/docs
+      - name: Build the agent image
+        run: |
+          docker version --format 'docker {{.Server.Version}} {{.Server.Arch}}'
+          make agent-image AGENT_IMAGE=mmt-plugin-agent:ci MMT_DPI_TAG="$MMT_DPI_TAG"
+      - name: The image's user cannot change its skills (P5)
+        # As the image's own unprivileged user: the agent's shell and file
+        # tools against the root-owned, read-only skills, then the doctor.
+        run: |
+          docker run --rm --network none -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
+            -v "$PWD/tests/unit/agent/image_guard.py:/tmp/image_guard.py:ro" \
+            mmt-plugin-agent:ci /opt/mmt-plugin/bin/python /tmp/image_guard.py
+          docker run --rm --network none mmt-plugin-agent:ci \
+            mmt-plugin-agent --json doctor --model anthropic:none > "$RUNNER_TEMP/doctor.json"
+          python3 - "$RUNNER_TEMP/doctor.json" <<'EOF'
+          import json, sys
+          checks = {c["id"]: c["status"] for c in json.load(open(sys.argv[1]))["result"]["checks"]}
+          for name in ("agent-extra", "mmt-plugin", "sdk", "compiler", "tshark", "libpcap", "skills", "environ"):
+              assert checks[name] == "pass", (name, checks)
+          print("doctor in the image:", checks)
+          EOF
+      - name: A project from init to test in the image
+        run: |
+          docker run --rm --network none mmt-plugin-agent:ci \
+            sh -euc 'cd /tmp && mmt-plugin init demo && mmt-plugin -C demo test'
+      - name: The agent writes a host-owned work folder as the host's uid
+        # make agent-run's flags (--user, HOME=/tmp, the work folder at /work):
+        # the runner's uid with a folder it owns (0755), then a uid the image
+        # does not know with a folder only that uid owns. The guard creates
+        # its work folder and writes a file there; the skills stay read-only.
+        # An input folder at /in holds a .env with the key, masked as
+        # agent-run masks it (-v /dev/null:/in/.env:ro): the guard's shell
+        # sees the file and finds the key nowhere under /in. Unmasked, the
+        # guard must fail (it reads the key there).
+        run: |
+          in="$RUNNER_TEMP/agent-in"
+          mkdir -m 0755 "$in"
+          printf 'ANTHROPIC_API_KEY=dummy-not-a-real-key-123456\n' > "$in/.env"
+          chmod 0644 "$in/.env"
+          for user in "$(id -u):$(id -g)" 4242:4242; do
+            uid="${user%%:*}"
+            dir="$RUNNER_TEMP/agent-work-$uid"
+            mkdir -m 0755 "$dir"
+            if [ "$uid" != "$(id -u)" ]; then
+              docker run --rm --network none --user 0:0 -v "$dir:/work" mmt-plugin-agent:ci \
+                sh -euc "chown $user /work && chmod 0755 /work"
+            fi
+            docker run --rm --network none --user "$user" -e HOME=/tmp \
+              -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
+              -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
+              -v "$in:/in:ro" -v /dev/null:/in/.env:ro \
+              -v "$dir:/work" -w /work mmt-plugin-agent:ci \
+              /opt/mmt-plugin/bin/python /opt/image_guard.py /work/guard-work /in
+            [ "$(stat -c %u "$dir/guard-work/probe.txt")" = "$uid" ]
+            grep -qx probe "$dir/guard-work/probe.txt"
+          done
+          if out="$(docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -e ANTHROPIC_API_KEY=dummy-not-a-real-key-123456 \
+              -v "$PWD/tests/unit/agent/image_guard.py:/opt/image_guard.py:ro" \
+              -v "$in:/in:ro" -v "$RUNNER_TEMP/agent-work-$(id -u):/work" -w /work \
+              mmt-plugin-agent:ci /opt/mmt-plugin/bin/python /opt/image_guard.py /work/unmasked /in 2>&1)"; then
+            echo "the guard passed with /in/.env unmasked"; exit 1
+          fi
+          printf '%s\n' "$out" | grep -qF 'the key is readable under /in'
+
   container:
     name: Container NDN check (ubuntu-24.04, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

@@ -9,7 +9,7 @@ import pytest
 
 from mmt_plugin.codegen import generate
 from mmt_plugin.pdl.model import Offsets, Scope
-from mmt_plugin.pluginyaml import PluginYamlError, dumps, load, profile_pin
+from mmt_plugin.pluginyaml import PluginYamlError, dumps, load, profile_pin, protocol_label
 from mmt_plugin.semantics import AnalysedModel, analyse
 
 from .corpus import REPO, profile
@@ -337,6 +337,17 @@ def test_the_profile_pin() -> None:
     read = load(HEAD + "sdk:\n  profile: '1.10.2'\n", filename="plugin.yaml")
     assert read.sdk_profile == "1.10.2"
     assert read.model.offsets is Offsets.ABSOLUTE
+
+
+def test_the_protocol_label() -> None:
+    assert protocol_label(HEAD) == "p"
+    assert protocol_label(HEAD.replace("label: p", "label: Telem")) == "Telem"
+    assert protocol_label("schema: 1\n") is None
+    assert protocol_label("not: [yaml\n") is None
+    assert protocol_label("- a\n") is None
+    assert protocol_label("schema: 1\nprotocol: 3\n") is None
+    assert protocol_label(HEAD.replace("label: p", "label: 3")) is None
+    assert protocol_label(HEAD.replace("  label: p\n", "")) is None
 
 
 def test_the_example_of_the_format_page_generates() -> None:

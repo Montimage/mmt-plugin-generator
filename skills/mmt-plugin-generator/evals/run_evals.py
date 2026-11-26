@@ -106,16 +106,19 @@ __all__ = [
     "CaseResult",
     "Contract",
     "EvalError",
+    "Runner",
     "Step",
     "case_dirs",
     "check_envelope",
     "command_of",
+    "fix_problems",
     "load_case",
     "load_contract",
     "main",
     "run_case",
     "run_cli",
     "skill_blocks",
+    "snapshot",
 ]
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -599,7 +602,7 @@ def apply_edits(edits: Iterable[Mapping[str, Any]], case_dir: Path, project: Pat
                 path.write_text(text, "utf-8")
 
 
-def _snapshot(project: Path) -> dict[str, str]:
+def snapshot(project: Path) -> dict[str, str]:
     """The project's text files, by path, outside what the tool writes."""
     out: dict[str, str] = {}
     for path in sorted(project.rglob("*")):
@@ -631,7 +634,7 @@ def _changed(before: str | None, after: str | None) -> tuple[set[int], list[str]
     return lines, texts
 
 
-def _fix_problems(
+def fix_problems(
     failure: Step, before: Mapping[str, str], after: Mapping[str, str], run: int
 ) -> list[str]:
     """Whether run ``run``'s edits touch every located error of ``failure``."""
@@ -835,7 +838,11 @@ class CaseResult:
         return not self.problems and self.green
 
 
-class _Runner:
+class Runner:
+    """Runs one case (``run``); its steps (``execute``, ``baseline``,
+    ``check_tests``, ``check_green``) also check a project an agent drafted
+    (``mmt-plugin-agent eval``)."""
+
     def __init__(
         self,
         case_dir: Path,
@@ -906,7 +913,7 @@ class _Runner:
         if update:
             # An existing project: its own pin is the profile (SKILL.md).
             shutil.copytree(self.case_dir / self.case["project"], self.project, symlinks=True)
-            self.seed = _snapshot(self.project)
+            self.seed = snapshot(self.project)
             pin = _PROFILE.search(self.seed.get("plugin.yaml", ""))
             if pin is None:
                 raise EvalError(f"{self.case['id']}: the project pins no sdk.profile")
@@ -928,18 +935,18 @@ class _Runner:
             # before the update is the user's (SKILL.md), not a case's run.
             if not self.baseline(loop):
                 return self.result
-            protected = {p for p in _snapshot(self.project) if p.startswith("tests/")}
+            protected = {p for p in snapshot(self.project) if p.startswith("tests/")}
         else:
             basic = f"tests/{self.case['params']['label']}-basic.yaml"
             protected = {
-                p for p in _snapshot(self.project) if p.startswith("tests/") and p != basic
+                p for p in snapshot(self.project) if p.startswith("tests/") and p != basic
             }
         failure: Step | None = None
         steps: list[Step] = []
         for n, run in enumerate(self.case["runs"], 1):
-            before = _snapshot(self.project)
+            before = snapshot(self.project)
             apply_edits(run["edits"], self.case_dir, self.project)
-            after = _snapshot(self.project)
+            after = snapshot(self.project)
             protected |= {
                 e["write"]
                 for e in run["edits"]
@@ -947,7 +954,7 @@ class _Runner:
             }
             self.check_tests(n, protected, before, after)
             if failure is not None:
-                self.result.problems += _fix_problems(failure, before, after, n)
+                self.result.problems += fix_problems(failure, before, after, n)
             steps, failure = [], None
             for args in loop:
                 step = self.execute(n, args)
@@ -1075,7 +1082,7 @@ class _Runner:
                 problems.append(f"green: {rel} does not expect the id {ident}")
         if self.seed is not None:
             problems += _kept(self.seed.get("plugin.yaml", ""), model)
-            now = _snapshot(self.project)
+            now = snapshot(self.project)
             tests = [p for p in now if re.fullmatch(r"tests/[^/]+\.yaml", p)]
             if all(self.seed.get(p) == now[p] for p in tests):
                 problems.append("green: the update adds or changes no packet test")
@@ -1118,9 +1125,9 @@ def run_case(
 ) -> CaseResult:
     """Run one case in ``work`` (an empty directory): with ``sdk``, every loop
     command; without, ``validate`` and ``generate``."""
-    runner = _Runner(
+    runner = Runner(
         case_dir,
-        cli=cli or [sys.executable, "-m", "mmt_plugin"],
+        cli=cli or [sys.executable, "-I", "-m", "mmt_plugin"],
         work=work,
         sdk=sdk,
         cc=cc,

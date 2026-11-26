@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Montimage/mmt-plugin-generator/schemas/agent/v1/envelope.json",
+  "title": "mmt-plugin-agent --json envelope",
+  "description": "One JSON document per run of mmt-plugin-agent --json, in the style of docs/design/cli.md, section 6. result is the command's: schemas/v1/result.json for new and update.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "command",
+    "ok",
+    "exit_code",
+    "error",
+    "diagnostics",
+    "context",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "mmt-plugin-agent"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "command": {
+      "enum": [
+        null,
+        "new",
+        "update",
+        "doctor",
+        "eval",
+        "version"
+      ]
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        130
+      ]
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "class",
+            "code",
+            "message",
+            "hint"
+          ],
+          "properties": {
+            "class": {
+              "enum": [
+                "internal",
+                "usage",
+                "model",
+                "sdk",
+                "build",
+                "test",
+                "state",
+                "interrupted"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "pattern": "^(agent\\.[a-z][a-z0-9-]*|interrupted)$"
+            },
+            "message": {
+              "type": "string"
+            },
+            "hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "hint"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "note"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^agent\\.[a-z][a-z0-9-]*$"
+          },
+          "message": {
+            "type": "string"
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object"
+    },
+    "result": {}
+  }
+}

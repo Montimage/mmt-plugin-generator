@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "label": "telem",
+  "id": 963,
+  "parent": "udp:dport=5684",
+  "sdk_profile": "1.10.2",
+  "created": "2025-01-01T00:00:00Z",
+  "updated": "2025-01-01T00:00:00Z",
+  "tools": {
+    "mmt-plugin": "0.1.0",
+    "sdk": "/opt/sdk (mmt-dpi 1.10.2)",
+    "cc": "gcc 13.3.0",
+    "tshark": "4.2.2"
+  },
+  "files": {
+    "inputs/spec.md": "1d916701a8e333c3a7fd8e30a92089e18a50146300abeaf90dbd6ab6fa4e86a7",
+    "capture/capture.pcap": "249a4dedad50c50e379f78d3c90846bd9682ca98f8104254f981f8d8d66922c9",
+    "project/plugin.yaml": "612f17ca881ec14bf8da753000b4c7773dd96b8f1f864747df44978d983a13a5",
+    "project/src/telem_impl.c": "0c79dcc4c62013c7384a8c4d9103760fcad1baa970b47e86da24110818752780",
+    "project/build/mmtp_telem.so": "287beb3bafb77beec56d6e7040f1f690544fc831fa2db14b9e71aaf34a18628d"
+  },
+  "loop_runs": 3,
+  "capture_origin": "synthetic",
+  "eval": {
+    "verdict": "PASS",
+    "recall": 1.0,
+    "report": "eval/report.md",
+    "drift": {"checked": true, "open": 0, "accepted": 0}
+  },
+  "questions": "questions.md"
+}

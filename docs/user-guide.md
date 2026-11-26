@@ -873,6 +873,44 @@ python3 -c 'import json; d = json.load(open("validate.json")); print(d["exit_cod
 [`docs/design/cli.md`](design/cli.md#6-the---json-envelope-shared-by-every-command).
 To write plugins with an AI agent, or to update an existing project, see
 the [mmt-plugin-generator skill](../skills/mmt-plugin-generator/SKILL.md).
+To run that skill without a coding assistant, see the next section.
+
+## Run the skill headless: mmt-plugin-agent
+
+`mmt-plugin-agent` runs the mmt-plugin-generator skill with a LangGraph
+agent and any chat model LangChain supports, from the command line or
+from Python. It is the `agent` extra, which needs Python 3.11 or newer;
+`mmt-plugin` alone still installs only jinja2. From a checkout:
+
+<!-- doc:skip needs the agent extra, an mmt-dpi SDK and a model key -->
+```sh
+uv sync --extra agent
+uv run mmt-plugin-agent doctor --sdk "$MMT_BASE"
+uv run mmt-plugin-agent new --spec skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md \
+    --sdk "$MMT_BASE" --model anthropic:claude-sonnet-5-5 --unattended --allow-synthetic --json
+```
+
+- Models: `anthropic:<model>` (`ANTHROPIC_API_KEY`), `openai:<model>` with
+  `OPENAI_BASE_URL` for vLLM or another OpenAI-compatible server, and
+  `ollama:<model>` (its context length, `num_ctx`, is 65536 tokens unless
+  `MMT_PLUGIN_AGENT_NUM_CTX` says otherwise); `--model` or
+  `MMT_PLUGIN_AGENT_MODEL`.
+- Modes: `--unattended` (the default) writes each question the skill asks
+  to `<work>/questions.md` with the default it takes, never waits for
+  input and never uses `--force`; `--interactive` asks on the terminal.
+  Without a capture and without `--allow-synthetic`, the evaluation is
+  not done, and the result says so. With either, a green run that did
+  not evaluate the plugin exits 6 (`agent.evaluation-skipped`).
+- Exit codes are `mmt-plugin`'s classes: 0 done (or green with the
+  evaluation not done and no leave for it), 2 usage, 3 input, 4 environment (no extra, no
+  skills, a failed `doctor` check), 6 not green or failed.
+- The agent's shell has no isolation: it can do what you can. Run it in the
+  agent container (`make agent-image`), where its user is not root and the
+  skills are read-only; a mounted Docker socket gives it root on the host.
+
+[`docs/agent-api.md`](agent-api.md) has the command line, the Python API
+(`PluginAgent`, `build_graph` as a LangGraph subgraph), the model evals
+and the sandbox in full.
 
 ## Settings and where they come from
 

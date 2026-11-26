@@ -16,6 +16,19 @@ dependencies = [
     "jinja2>=3.1.6,<4",
 ]
 
+[project.optional-dependencies]
+# The LangGraph agent, mmt-plugin-agent (docs/agent-api.md). deepagents needs
+# Python 3.11+: on 3.10 the extra installs nothing, and mmt-plugin-agent says
+# so. `pip install mmt-plugin` alone still pulls only jinja2.
+agent = [
+    "deepagents==0.7.32; python_version >= '3.11'",
+    "langgraph==1.2.18; python_version >= '3.11'",
+    "langchain==1.4.7; python_version >= '3.11'",
+    "langchain-anthropic==1.7.7; python_version >= '3.11'",
+    "langchain-openai==1.7.3; python_version >= '3.11'",
+    "langchain-ollama==1.1.0; python_version >= '3.11'",
+]
+
 [project.urls]
 Homepage = "https://github.com/Montimage/mmt-plugin-generator"
 Documentation = "https://github.com/Montimage/mmt-plugin-generator/blob/main/docs/user-guide.md"
@@ -23,6 +36,7 @@ Issues = "https://github.com/Montimage/mmt-plugin-generator/issues"
 
 [project.scripts]
 mmt-plugin = "mmt_plugin.cli:main"
+mmt-plugin-agent = "mmt_plugin_agent.cli:main"
 
 [dependency-groups]
 dev = [
@@ -35,6 +49,10 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Both packages in one distribution; mmt_plugin_agent needs the agent extra.
+module-name = ["mmt_plugin", "mmt_plugin_agent"]
 
 [tool.uv]
 # Supply-chain cooldown: resolve only releases at least two weeks old when
@@ -63,6 +81,9 @@ files = [
 # The skill's eval runner and capture scripts are scripts (run_evals,
 # make_pcap, pcap_eval), which tests/unit/skill imports.
 mypy_path = "src:skills/mmt-plugin-generator/evals:skills/mmt-plugin-generator/scripts"
+# The agent and its tests need the agent extra (Python 3.11+), which plain
+# `uv sync` does not install: mypy-agent.ini checks them.
+exclude = ["^src/mmt_plugin_agent/", "^tests/unit/agent/"]
 strict = true
 warn_unreachable = true
 

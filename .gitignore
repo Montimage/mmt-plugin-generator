@@ -7,3 +7,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 /dist/
+# make agent-run's work folder (#161): captures, never committed.
+/agent-work/
+# Local secrets (a model provider's key for mmt-plugin-agent): never committed.
+.env

@@ -12,7 +12,7 @@ import pytest
 
 from mmt_plugin_agent import PluginAgent, Question
 
-from .fakes import FakeCli, call, done_files, loop, scripted, step
+from .fakes import FakeCli, call, done_files, evaluate, loop, scripted, step
 
 SPEC = Path(__file__).resolve().parents[3] / (
     "skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md"
@@ -100,7 +100,9 @@ def test_interactive_stops_at_the_capture_question_and_resumes(
 ) -> None:
     fake_cli()
     work, sdk = tmp_path / "work", tmp_path / "sdk"
-    model = scripted([_ask(), *loop(work / "project", sdk), *done_files(work), "DONE"])
+    model = scripted(
+        [_ask(), *loop(work / "project", sdk), evaluate(work, sdk), *done_files(work), "DONE"]
+    )
     agent = PluginAgent(model, sdk=sdk, work_dir=work, mode="interactive")
     first = asyncio.run(agent.anew(spec=SPEC)) if use_async else agent.new(spec=SPEC)
     assert first.status == "waiting"
@@ -160,3 +162,106 @@ def test_interactive_force_runs_only_with_leave(
     assert [q.kind for q in asked] == ["force"]
     assert command in asked[0].text
     assert (cli.calls() == [["-C", "p", "--json", "generate", "--force"]]) is runs
+
+
+def test_a_finished_run_deletes_its_thread_checkpoints(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    """R3: the shared checkpointer does not accumulate every run's state:
+    a run that ends deletes its thread; a waiting one keeps it."""
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    fake_cli()
+    checkpointer = InMemorySaver()
+    ask = step(call("ask_user", question="capture?", recommended="synthetic", kind="capture"))
+    agent = PluginAgent(
+        scripted([ask, "DONE"]),
+        work_dir=tmp_path / "w",
+        mode="interactive",
+        checkpointer=checkpointer,
+    )
+    from langchain_core.runnables import RunnableConfig
+
+    first = agent.new(spec=SPEC)
+    assert first.status == "waiting"
+    thread = first.thread_id
+    config = RunnableConfig(configurable={"thread_id": thread})
+    assert checkpointer.get_tuple(config) is not None, "a waiting run keeps its checkpoints"
+    agent.release(thread)
+    assert checkpointer.get_tuple(config) is None
+    work = tmp_path / "w2"
+    model = scripted([step(call("execute", command="true")), "DONE"])
+    done_agent = PluginAgent(model, work_dir=work, checkpointer=checkpointer)
+    result = done_agent.new(spec=SPEC)
+    ended = RunnableConfig(configurable={"thread_id": result.thread_id})
+    assert checkpointer.get_tuple(ended) is None, "a run that ends deletes them"
+
+
+def test_a_duplicate_active_thread_id_is_a_usage_error(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    """R3: two active runs never share one thread (its checkpoints would
+    mix); a released run's id is free again."""
+    from mmt_plugin_agent import AgentError
+
+    fake_cli()
+    ask = step(call("ask_user", question="capture?", recommended="synthetic", kind="capture"))
+    agent = PluginAgent(scripted([ask, "DONE"]), work_dir=tmp_path / "w", mode="interactive")
+    first = agent.new(spec=SPEC)
+    assert first.status == "waiting"
+    with pytest.raises(AgentError, match="still active") as caught:
+        agent.new(spec=SPEC, thread_id=first.thread_id)
+    assert caught.value.code == "agent.duplicate-thread"
+    agent.release(first.thread_id)
+    again = agent.new(spec=SPEC, thread_id=first.thread_id)
+    assert again.thread_id == first.thread_id
+
+
+@pytest.mark.parametrize(
+    "thread_id",
+    ["../escape", "a/b", "/abs", ".", "..", ".hidden", "a b", "a;rm", "", "x" * 129],
+)
+def test_a_path_shaped_thread_id_is_a_usage_error(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli], thread_id: str
+) -> None:
+    """R4: the thread id is part of the snapshot's directory name: it is
+    one safe file-name component, never a path."""
+    from mmt_plugin_agent import AgentError
+
+    fake_cli()
+    agent = PluginAgent(scripted(["DONE"]), work_dir=tmp_path / "w")
+    with pytest.raises(AgentError, match="not a safe name") as caught:
+        agent.new(spec=SPEC, thread_id=thread_id)
+    assert caught.value.code == "agent.bad-thread"
+    assert agent._runs == {}
+
+
+@pytest.mark.parametrize("thread_id", ["run-1", "my.run_2", "abc123", "x" * 128])
+def test_a_simple_thread_id_is_accepted(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli], thread_id: str
+) -> None:
+    fake_cli()
+    agent = PluginAgent(scripted(["DONE"]), work_dir=tmp_path / "w")
+    assert agent.new(spec=SPEC, thread_id=thread_id).thread_id == thread_id
+
+
+def test_the_pcap_entry_is_the_evaluations_capture_by_default(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    """R5: ``new --pcap X`` gives a capture of the protocol: the brief does
+    not say none was given, and the run has leave for the evaluation."""
+    fake_cli()
+    pcap = tmp_path / "telem.pcap"
+    pcap.write_bytes(b"not a real capture")
+    model = scripted(["DONE"])
+    result = PluginAgent(model, work_dir=tmp_path / "w").new(pcap=pcap)
+    system = str(model.seen[0][0].content)
+    assert f"the user gave one: {pcap.resolve()}" in system
+    assert "ask the capture question" not in system
+    assert result.eval_leave == "capture"
+    # An explicit capture still wins.
+    other = tmp_path / "other.pcap"
+    other.write_bytes(b"")
+    model2 = scripted(["DONE"])
+    PluginAgent(model2, work_dir=tmp_path / "w2", capture=other).new(pcap=pcap)
+    assert f"the user gave one: {other.resolve()}" in str(model2.seen[0][0].content)

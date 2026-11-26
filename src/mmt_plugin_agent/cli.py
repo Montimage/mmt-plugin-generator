@@ -117,7 +117,11 @@ def _run_options(parser: argparse.ArgumentParser) -> None:
         help="ask each question on the terminal and wait for the answer",
     )
     parser.set_defaults(mode="unattended")
-    parser.add_argument("--capture", metavar="FILE", help="a capture of the protocol")
+    parser.add_argument(
+        "--capture",
+        metavar="FILE",
+        help="a capture of the protocol (default: the --pcap capture)",
+    )
     parser.add_argument(
         "--allow-synthetic",
         action="store_true",

@@ -1127,7 +1127,7 @@ def run_case(
     command; without, ``validate`` and ``generate``."""
     runner = Runner(
         case_dir,
-        cli=cli or [sys.executable, "-m", "mmt_plugin"],
+        cli=cli or [sys.executable, "-I", "-m", "mmt_plugin"],
         work=work,
         sdk=sdk,
         cc=cc,

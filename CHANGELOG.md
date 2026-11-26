@@ -57,6 +57,51 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Fixed
 
+- `mmt-plugin-agent` (#162): the result's loop and evaluation fail closed.
+  Trusted evidence comes only from executions the backend controls: a
+  shell command in the strict form (`[timeout N] mmt-plugin ARGS...` or
+  the evaluation's `pcap_eval.py`, optionally with a single trailing
+  `| tee PATH`) is not run through the shell — the backend runs this
+  installation's own `mmt_plugin` module with exactly the parsed
+  arguments, captures the process's real exit code and output, and
+  performs the tee itself. Shell loops, extra operators, redirections,
+  substitutions, echoed envelopes, shadowing or indirect executables may
+  still run but prove nothing, and the envelopes in `runs/run-<n>/` are
+  audit artifacts only. The interpreter runs in isolated mode (the eval
+  harness's too) so the model-writable work folder cannot shadow the
+  `mmt_plugin` module; a trusted record counts as a loop step's success
+  only with a parseable envelope of the same command whose exit code is
+  the process's (exit 0 alone — `--help` — proves nothing). And the
+  strict form is not enough: the arguments must bind the run. A loop
+  command is trusted only as the skill's exact shapes (`-C <project>
+  --json validate|generate --sdk <sdk>`, `build|test` with `--cc <cc>`
+  too; without an SDK `--no-sdk --sdk-profile <profile>` or
+  `--sdk-profile <profile>`), with the run's own project — its `-C`
+  resolved with every link followed, so a symlink planted at
+  `<work>/project` is never the project — SDK and compiler; another
+  project, SDK or compiler, or any further argument, is no evidence.
+  Green needs validate's `parents-exist` check `pass`, as the skill's
+  Done says. The evaluation's verdict is the backend's own executions,
+  never `manifest.json` (audit only): the strict form of the skill's
+  `scripts/pcap_eval.py`, resolved inside the read-only skills copy,
+  byte for byte the script the run started with, with the run's SDK,
+  compiler and capture, its output under the work folder, no `--help`,
+  and `--plugin` inside `<project>/build`, named `mmtp_*.so` and byte
+  for byte the `.so` the last trusted build or test
+  left there — and only after a trusted green loop of the
+  same run and before any later trusted build or test: the evaluation of
+  that build, never of a binary a rebuild replaced. Exit 0 is its PASS,
+  exit 1 its FAIL, the last verdict decides. A thread id is validated as
+  a safe
+  file-name component, two active runs of one `PluginAgent` cannot share
+  one (`agent.duplicate-thread`), and a run that ends or is released
+  deletes its thread's checkpoints. `new --pcap FILE` is the evaluation's
+  capture when `--capture` is absent. The skills tree's digest records
+  each entry's kind, executable bit and directories, the snapshot keeps
+  the executable bit, restore puts it back, and a special file is never
+  silently ignored (`agent.skills-special` in the source, removed when
+  planted). `mmt-plugin-agent eval --case` with a name that matches no
+  case is a usage error (exit 2, `agent.bad-case`), never a vacuous pass.
 - `mmt-plugin test`: a session test with an unknown key in its `session`
   mapping (a misspelt `atributes`, which turned off the check that
   unlisted attributes are absent) is `model.bad-packet-test` (exit 3), and

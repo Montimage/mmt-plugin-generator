@@ -52,6 +52,18 @@ def fake_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., F
         cli = FakeCli(tmp_path / "fake-cli", plan)
         for name, value in cli.env().items():
             monkeypatch.setenv(name, value)
+        # The backend's trusted executions run the fakes: mmt-plugin is the
+        # fake binary, and any validated evaluation script resolves to the
+        # fake pcap_eval.py.
+        from mmt_plugin_agent import backend
+
+        monkeypatch.setattr(backend, "mmt_plugin_argv", lambda: [str(cli.bin / "mmt-plugin")])
+        monkeypatch.setattr(
+            backend, "evaluation_argv", lambda script: [str(cli.bin / "pcap_eval.py")]
+        )
+        monkeypatch.setattr(
+            backend, "evaluation_script_ok", lambda script, protected, expected=None: True
+        )
         return cli
 
     return make

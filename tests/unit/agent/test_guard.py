@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import pytest
 from mmt_plugin_agent import PluginAgent
 from mmt_plugin_agent.backend import REFUSED_EXIT, GuardedShellBackend
 from mmt_plugin_agent.questions import Questioner
+from mmt_plugin_agent.result import CommandRecord
 
 from .fakes import FakeCli, call, done_files, loop, scripted, step
 
@@ -24,8 +26,15 @@ SPEC = Path(__file__).resolve().parents[3] / (
 SKILL_MD = "mmt-plugin-generator/SKILL.md"
 
 
-def _backend(work: Path, skills: Path, writable: Path | None = None) -> GuardedShellBackend:
-    questioner = Questioner(mode="unattended", work=work, allow_synthetic=False)
+def _backend(
+    work: Path,
+    skills: Path,
+    writable: Path | None = None,
+    sdk: Path | None = None,
+    capture: Path | None = None,
+    allow_synthetic: bool = False,
+) -> GuardedShellBackend:
+    questioner = Questioner(mode="unattended", work=work, allow_synthetic=allow_synthetic)
     return GuardedShellBackend(
         work=work,
         writable=[writable or work],
@@ -33,6 +42,8 @@ def _backend(work: Path, skills: Path, writable: Path | None = None) -> GuardedS
         questioner=questioner,
         env={"PATH": os.environ["PATH"]},
         timeout=30,
+        sdk=sdk,
+        capture=capture,
     )
 
 
@@ -277,3 +288,113 @@ def test_a_large_tool_result_is_offloaded_in_the_work_folder(
     files = list(offloaded.iterdir())
     assert len(files) == 1 and files[0].read_text().count("x") >= 40000
     assert str(offloaded) in model.tool_results()[0]
+
+
+def _records(backend: GuardedShellBackend) -> list[CommandRecord]:
+    """Collect the backend's command records."""
+    seen: list[CommandRecord] = []
+    backend.on_command = seen.append
+    return seen
+
+
+def test_a_strict_evaluation_inside_the_skills_is_trusted_outside_is_not(
+    tmp_path: Path, skills_copy: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R1.4/R2: the backend itself runs the strict evaluation form when the
+    script resolves inside the protected skills copy and its arguments bind
+    the run; the same strict text naming a copy outside, or arguments of
+    another run, falls back to the shell, untrusted."""
+    work = tmp_path / "work"
+    work.mkdir()
+    sdk = tmp_path / "sdk"
+    backend = _backend(work, skills_copy, sdk=sdk, allow_synthetic=True)
+    probe = skills_copy / "mmt-plugin-generator" / "scripts" / "pcap_eval.py"
+    probe.write_text("import sys; print('probe ran'); sys.exit(0)\n")
+    backend._evaluation = probe.read_bytes()
+    # The plugin the evaluation names is the one a trusted build leaves:
+    # the backend scans <project>/build after each trusted build or test.
+    monkeypatch.setattr(
+        "mmt_plugin_agent.backend.mmt_plugin_argv",
+        lambda: [sys.executable, "-c", "import sys; sys.exit(0)"],
+    )
+    project = work / "project"
+    plugin = project / "build" / "mmtp_telem.so"
+    plugin.parent.mkdir(parents=True)
+    plugin.write_bytes(b"fake plugin\n")
+    capture = work / "capture.pcap"
+    capture.write_bytes(b"x")
+    records = _records(backend)
+    backend.execute(f"mmt-plugin -C {project} --json build --sdk {sdk} --cc gcc")
+    assert records[-1].trusted is True
+
+    def evaluation(script: Path) -> str:
+        return (
+            f"python3 {script} --sdk {sdk} --plugin {plugin} --label telem --parent tcp "
+            f"--capture {capture} --out {work}/eval --cc gcc"
+        )
+
+    response = backend.execute(evaluation(probe))
+    assert response.exit_code == 0 and "probe ran" in response.output
+    assert records[-1].trusted is True and records[-1].evaluation is True
+    probe.write_text("import sys; print('changed ran'); sys.exit(0)\n")
+    before = len(records)
+    backend.execute(evaluation(probe))
+    assert len(records) == before + 1
+    changed = records[-1]
+    assert changed.trusted is False, "a changed copy is the shell's, untrusted"
+    probe.write_bytes(backend._evaluation)
+    outside = work / "pcap_eval.py"
+    outside.write_text("import sys; print('outside ran'); sys.exit(0)\n")
+    before = len(records)
+    response = backend.execute(evaluation(outside))
+    assert len(records) == before + 1
+    outer = records[-1]
+    assert outer.trusted is False, "a copy outside the skills is the shell's, untrusted"
+
+
+def test_a_strict_mmt_plugin_is_the_backends_own_execution(
+    setup: tuple[Path, Path, GuardedShellBackend], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R1.1/R1.2: the strict form is executed by the backend, not the shell:
+    the argv is the isolated module, tee is the backend's own write, and a
+    shadowing package in the work folder cannot replace it."""
+    work, _skills, backend = setup
+    ran: list[list[str]] = []
+
+    def probe(argv: list[str]) -> list[str]:
+        ran.append(argv)
+        return argv
+
+    monkeypatch.setattr(
+        "mmt_plugin_agent.backend.mmt_plugin_argv",
+        lambda: probe(
+            [sys.executable, "-I", "-c", "import sys; print('{}'); sys.exit(3)".format("real")]
+        ),
+    )
+    shadow = work / "mmt_plugin"
+    shadow.mkdir()
+    (shadow / "__init__.py").write_text("")
+    (shadow / "__main__.py").write_text('print("shadowed")\n')
+    records = _records(backend)
+    response = backend.execute(
+        "mmt-plugin -C project --json validate --no-sdk --sdk-profile 1.10.2"
+        " | tee runs/run-1/validate.json"
+    )
+    assert response.exit_code == 3
+    assert records[-1].trusted is True and records[-1].name == "validate"
+    assert "shadowed" not in response.output
+    assert (work / "runs/run-1/validate.json").is_file(), "the backend tees stdout itself"
+    assert "-I" in ran[0] or "-I" in (ran[0][1:3] if ran else []), ran
+
+
+def test_a_shell_loop_shape_is_not_trusted(
+    setup: tuple[Path, Path, GuardedShellBackend],
+) -> None:
+    """R1: ``for c in ...; done``, ``&&``, redirections and substitutions
+    run in the shell for utility, but the records are never trusted."""
+    _work, _skills, backend = setup
+    records = _records(backend)
+    backend.execute("for c in validate test; do echo $c; done")
+    backend.execute("echo hi > out.txt")
+    backend.execute("echo $(echo nested)")
+    assert all(not r.trusted for r in records)

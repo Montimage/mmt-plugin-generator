@@ -21,13 +21,17 @@ __all__ = [
     "CommandCheck",
     "check_command",
     "environ_failure",
+    "evaluation_args",
     "hide_environ",
     "is_secret",
     "is_system_prefix",
     "is_within",
+    "loop_subcommand",
     "mmt_plugin_command",
     "readable_ancestors",
+    "realpath_of",
     "shell_env",
+    "trusted_invocation",
 ]
 
 #: The four loop commands of the skill (SKILL.md, Step 4), in order.
@@ -320,7 +324,12 @@ def _segments(tokens: Iterable[str]) -> list[list[str]]:
 
 def mmt_plugin_command(command: str) -> tuple[str, str | None] | None:
     """The mmt-plugin command a shell command runs (``validate``, ...) and
-    its ``-C`` project, or None when it runs no mmt-plugin command."""
+    its ``-C`` project, or None when it runs no mmt-plugin command.
+
+    The command name is the first argument that is not an option, so a
+    parameterized one (``$c`` in a shell loop) is not a loop command, but
+    its non-None return still means mmt-plugin was invoked with a
+    subcommand."""
     try:
         tokens = _tokens(command)
     except ValueError:
@@ -348,3 +357,252 @@ def mmt_plugin_command(command: str) -> tuple[str, str | None] | None:
                 return arg, project
         return None
     return None
+
+
+"""One strict, directly executable invocation, as ``trusted_invocation``
+parses it: ``kind`` is ``mmt-plugin`` or ``evaluation``, ``argv`` its
+arguments (for ``evaluation``, the script path first), ``subcommand`` the
+mmt-plugin subcommand, ``tee`` the tee target, ``timeout`` the ``timeout``
+prefix's seconds."""
+
+TrustedInvocation = tuple[str, list[str], str | None, str | None, int | None]
+
+#: Shell punctuation and substitution characters a trusted invocation never
+#: holds: they would make the shell, not the backend, decide what runs.
+_UNSAFE = frozenset("$`\\*?[];|&<>(){}")
+
+
+def _shell_tokens(command: str) -> list[str] | None:
+    """The command's tokens, shell operators apart, or None when the shell
+    itself could not parse it."""
+    import shlex
+
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def trusted_invocation(command: str) -> TrustedInvocation | None:
+    """The strict invocation a shell command is, or None when it is anything
+    else.
+
+    The strict form is exactly ``[timeout N] TOOL ARGS...``, optionally
+    followed by ``| tee PATH`` — one simple command, no shell operators,
+    substitutions, redirections or expansions, where TOOL is ``mmt-plugin``
+    or the evaluation's ``pcap_eval.py`` (run directly or through
+    ``python``/``python3``). Only this form is parsed exactly as the shell
+    would run it, so the backend can execute it itself and trust what it
+    captures; everything else the shell runs is untrusted evidence.
+    """
+    tokens = _shell_tokens(command)
+    if not tokens:
+        return None
+    tee = None
+    if len(tokens) >= 3 and tokens[-3:-1] == ["|", "tee"]:
+        tee = tokens[-1]
+        tokens = tokens[:-3]
+    if any(set(token) & _UNSAFE for token in tokens) or (tee and set(tee) & _UNSAFE):
+        return None
+    timeout = None
+    if len(tokens) >= 3 and tokens[0] == "timeout" and tokens[1].isdigit():
+        timeout = int(tokens[1])
+        tokens = tokens[2:]
+    if not tokens:
+        return None
+    first, rest = tokens[0], tokens[1:]
+    if first == "mmt-plugin":
+        if not rest:
+            return None
+        return ("mmt-plugin", list(rest), _subcommand_of(rest), tee, timeout)
+    script = None
+    args: list[str] = []
+    if first in ("python", "python3") and rest:
+        script, args = rest[0], rest[1:]
+    elif PurePosixPath(first).name == "pcap_eval.py":
+        script, args = first, rest
+    if script is not None and PurePosixPath(script).name == "pcap_eval.py":
+        return ("evaluation", [script, *args], None, tee, timeout)
+    return None
+
+
+def _subcommand_of(args: list[str]) -> str | None:
+    """The first argument of a tokenized mmt-plugin invocation that is not
+    an option or an option's value."""
+    with_value = {"-C", "--project", "--sdk", "--cc", "--sdk-profile", "--out", "-o"}
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in with_value:
+            i += 2
+        elif arg.startswith("-"):
+            i += 1
+        else:
+            return arg
+    return None
+
+
+def realpath_of(token: str, cwd: Path) -> str:
+    """The real path a command token resolves to, against ``cwd`` when it is
+    relative, links followed."""
+    return os.path.realpath(token if os.path.isabs(token) else str(cwd / token))
+
+
+def loop_subcommand(
+    args: list[str], *, project: Path, sdk: Path | None, cc: str, cwd: Path
+) -> str | None:
+    """The loop command a strict mmt-plugin argument vector is evidence of,
+    or None when it is anything else.
+
+    The only trusted shapes are the skill's own (SKILL.md, Step 4), token
+    for token: ``-C <project> --json <command>``, with the run's SDK
+    ``--sdk <sdk>`` (validate, generate) plus the run's compiler ``--cc
+    <cc>`` in that order (build, test), or without an SDK ``--no-sdk
+    --sdk-profile <profile>`` (validate) or ``--sdk-profile <profile>``
+    (generate). The project, the SDK and the compiler are the run's own:
+    a green loop of another project, against another SDK, with another
+    compiler, in another order or with any further argument (a ``--model``,
+    a ``--dry-run``, a packet selection, a second ``-C``) is no evidence of
+    this run's. The ``-C`` target is resolved against ``cwd`` with its
+    links followed, so a symlink planted at the expected project path does
+    not resolve to it either.
+    """
+    if len(args) < 4 or args[0] != "-C" or args[2] != "--json":
+        return None
+    if realpath_of(args[1], cwd) != str(project):
+        return None
+    command = args[3]
+    if command not in LOOP_COMMANDS:
+        return None
+    tail = args[4:]
+    if sdk is None:
+        if command not in LOOP_COMMANDS[:2]:
+            return None
+        flags = ["--no-sdk", "--sdk-profile"] if command == "validate" else ["--sdk-profile"]
+        if len(tail) != len(flags) + 1 or tail[:-1] != flags:
+            return None
+        if not tail[-1] or tail[-1].startswith("-"):
+            return None
+        return command
+    want = ["--sdk"] if command in LOOP_COMMANDS[:2] else ["--sdk", "--cc"]
+    if len(tail) != 2 * len(want) or tail[::2] != want:
+        return None
+    sdk_token, *values = tail[1::2]
+    if realpath_of(sdk_token, cwd) != str(sdk):
+        return None
+    if values and values[0] != cc:
+        return None
+    return command
+
+
+#: pcap_eval.py's options (``scripts/pcap_eval.py``): the ones that take a
+#: value at most once, the repeatable ones and the bare flag. Anything
+#: else is not the script's interface, so the invocation is not trusted.
+_EVAL_ONCE = frozenset(
+    {
+        "--sdk",
+        "--plugin",
+        "--label",
+        "--parent",
+        "--capture",
+        "--out",
+        "--cc",
+        "--expect-filter",
+        "--scope-filter",
+        "--min-recall",
+        "--min-agreement",
+        "--max-foreign",
+    }
+)
+_EVAL_REPEAT = frozenset({"--decode-as", "--field", "--accept"})
+_EVAL_BARE = frozenset({"--synthetic"})
+
+#: The options the script requires; each bound to the run.
+_EVAL_REQUIRED = ("--sdk", "--plugin", "--label", "--parent", "--capture", "--out")
+
+
+def _same_bytes(a: Path, b: Path) -> bool:
+    """Whether two files hold the same bytes: a copy of the configured
+    capture inside the work folder is still that capture."""
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def evaluation_args(
+    tokens: list[str],
+    *,
+    project: Path,
+    sdk: Path | None,
+    cc: str,
+    capture: Path | None,
+    work: Path,
+    work_capture: bool,
+    cwd: Path,
+) -> dict[str, list[str]] | None:
+    """The evaluation script's arguments when they bind the run, by option,
+    or None when the invocation is no evidence of it.
+
+    The skill's capture evaluation (SKILL.md, Step 6) counts only with the
+    run's own SDK and compiler, the plugin built in the run's project
+    (``<project>/build``, named ``mmtp_*.so`` as ``build`` names its
+    output), its output under the work folder, and the capture the run
+    was given: the configured one or a byte-for-byte copy of it inside
+    the work folder, else a capture inside the work folder when the run
+    allows one (``work_capture``: leave for a synthetic one, or a user to
+    answer the capture question). Every path is resolved with its links
+    followed. ``--help`` exits 0 and evaluates nothing, so it is never
+    evidence. The field mapping, the filters and the accepted drifts are
+    the evaluation's own configuration, audited in its report: they are
+    not bound.
+    """
+    if not tokens or any(t in ("-h", "--help") for t in tokens):
+        return None
+    values: dict[str, list[str]] = {}
+    i = 0
+    while i < len(tokens):
+        key, eq, inline = tokens[i].partition("=")
+        i += 1
+        if key in _EVAL_BARE:
+            if eq:
+                return None
+            values.setdefault(key, []).append("")
+            continue
+        if key not in _EVAL_ONCE and key not in _EVAL_REPEAT:
+            return None
+        if eq:
+            values.setdefault(key, []).append(inline)
+        elif i < len(tokens) and not tokens[i].startswith("-"):
+            values.setdefault(key, []).append(tokens[i])
+            i += 1
+        else:
+            return None
+    if sdk is None:
+        return None
+    if any(len(values.get(key, [])) != 1 for key in _EVAL_REQUIRED) or any(
+        len(values.get(key, [])) > 1 for key in _EVAL_ONCE
+    ):
+        return None
+    if len(values.get("--cc", [])) != 1 or values["--cc"][0] != cc:
+        return None
+    if realpath_of(values["--sdk"][0], cwd) != str(sdk):
+        return None
+    if not is_within(Path(realpath_of(values["--out"][0], cwd)), work):
+        return None
+    plugin = Path(realpath_of(values["--plugin"][0], cwd))
+    if not is_within(plugin, project / "build"):
+        return None
+    if not (plugin.name.startswith("mmtp_") and plugin.name.endswith(".so")):
+        return None
+    found = realpath_of(values["--capture"][0], cwd)
+    if capture is not None:
+        if found != str(capture) and not (
+            is_within(Path(found), work) and _same_bytes(Path(found), capture)
+        ):
+            return None
+    elif not work_capture or not is_within(Path(found), work):
+        return None
+    return values

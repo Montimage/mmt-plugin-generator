@@ -40,8 +40,19 @@ def test_the_api_example_runs(
     project = work / "project"
     model = scripted(
         [
-            step(call("execute", command=f"mmt-plugin -C {project} --json validate --no-sdk")),
-            step(call("execute", command=f"mmt-plugin -C {project} --json generate")),
+            step(
+                call(
+                    "execute",
+                    command=f"mmt-plugin -C {project} --json validate "
+                    "--no-sdk --sdk-profile 1.10.2",
+                )
+            ),
+            step(
+                call(
+                    "execute",
+                    command=f"mmt-plugin -C {project} --json generate --sdk-profile 1.10.2",
+                )
+            ),
             *done_files(work, None),
             "DONE",
         ]

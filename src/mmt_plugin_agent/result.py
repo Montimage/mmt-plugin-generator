@@ -1,11 +1,11 @@
-"""What a run returns: the loop as the work folder records it (else as the
-shell saw it), the work folder's report, and the events
-``PluginAgent.stream()`` yields."""
+"""What a run returns: the loop as the shell observed it, corroborated by
+the envelopes the work folder records, the work folder's report, and the
+events ``PluginAgent.stream()`` yields."""
 
 from __future__ import annotations
 
 import json
-import re
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,9 +23,9 @@ __all__ = [
     "Status",
     "build_result",
     "envelope_of",
+    "loop_evidence",
     "loop_runs",
     "work_folder",
-    "work_loop",
 ]
 
 Status = Literal["done", "incomplete", "eval_failed", "not_green", "blocked", "failed", "waiting"]
@@ -62,6 +62,17 @@ class CommandRecord:
     #: When the shell ran it (``time.time_ns()`` before and after).
     started_ns: int | None = None
     ended_ns: int | None = None
+    #: True when the backend itself executed this command, without the
+    #: shell (``trusted_invocation``): the executable is the installation's
+    #: own, the arguments exactly the parsed tokens, the exit code and the
+    #: output the process's own — the only evidence the model cannot forge.
+    trusted: bool = False
+    #: True when this trusted execution is the skill's capture evaluation,
+    #: its arguments bound to the run by the backend (the canonical
+    #: ``pcap_eval.py``, the run's SDK and compiler, the project's build
+    #: output, the capture, no ``--help``): exit 0 is the evaluation's
+    #: PASS, exit 1 its FAIL — never anything ``manifest.json`` says.
+    evaluation: bool = False
 
     @property
     def mmt_command(self) -> str | None:
@@ -81,14 +92,34 @@ class CommandRecord:
 
     @property
     def mmt_exit_code(self) -> int | None:
-        """mmt-plugin's exit code: its envelope's when the output holds one
-        (``mmt-plugin ... | tee FILE`` exits with tee's code, and the
-        agent's ``/bin/sh`` has no pipefail), else the shell's."""
+        """mmt-plugin's exit code, when it is known. A trusted record's exit
+        code is the process's own — the backend ran it, tee and all, so it
+        is authoritative even at 0. Otherwise its envelope's when the output
+        holds one, but the shell's text is the model's: an envelope in
+        untrusted output is evidence of nothing but failure. Without an
+        envelope, a non-zero shell exit code is a failure whoever it belongs
+        to, but a zero one is not mmt-plugin's success: the output may be
+        redirected to a file, lost in a pipe or written by something else,
+        so None (unknown)."""
+        if self.trusted:
+            # The process's exit code is real, but exit 0 alone is not the
+            # loop step's success: ``mmt-plugin validate --help`` exits 0
+            # and validates nothing, and without ``--json`` there is no
+            # envelope at all. A trusted record is the step's evidence only
+            # with a parseable envelope of the same command, whose exit
+            # code is the process's; anything else is unknown.
+            env = envelope_of(self.output)
+            if env is None or env.get("command") != self.mmt_command:
+                return None
+            code = env.get("exit_code")
+            if not isinstance(code, int) or isinstance(code, bool) or code != self.exit_code:
+                return None
+            return code
         env = self.envelope
         code = None if env is None else env.get("exit_code")
         if isinstance(code, int) and not isinstance(code, bool):
             return code
-        return self.exit_code
+        return self.exit_code or None
 
     def to_json(self) -> dict[str, Any]:
         env = self.envelope
@@ -121,6 +152,22 @@ class LoopRun:
                 return summary if isinstance(summary, dict) else None
         return None
 
+    def parents_exist(self) -> str | None:
+        """The status of validate's ``parents-exist`` check in this run,
+        or None when its envelope does not say."""
+        for record in self.commands:
+            if record.mmt_command == "validate":
+                env = record.envelope or {}
+                checks = (env.get("result") or {}).get("checks")
+                if not isinstance(checks, list):
+                    return None
+                for check in checks:
+                    if isinstance(check, dict) and check.get("id") == "parents-exist":
+                        status = check.get("status")
+                        return status if isinstance(status, str) else None
+                return None
+        return None
+
     def green(self, with_sdk: bool) -> bool:
         need = LOOP_COMMANDS if with_sdk else LOOP_COMMANDS[:2]
         codes = self.exit_codes()
@@ -128,6 +175,9 @@ class LoopRun:
             return False
         if not with_sdk:
             return True
+        # SKILL.md, Done: validate's parents-exist check is pass.
+        if self.parents_exist() != "pass":
+            return False
         summary = self.test_summary() or {}
         total = summary.get("total", 0)
         return isinstance(total, int) and total >= 1 and summary.get("passed") == total
@@ -155,54 +205,48 @@ def loop_runs(records: Sequence[CommandRecord]) -> list[LoopRun]:
     return runs
 
 
-_RUN_DIR = re.compile(r"run-([0-9]+)")
+def _record_project(record: CommandRecord, cwd: Path) -> str:
+    """The real path a trusted loop command targets: its ``-C`` resolved
+    against the backend's working directory (the cwd the backend ran it
+    with), or that directory when no ``-C`` is given."""
+    target = record.project
+    if target is None:
+        return os.path.realpath(cwd)
+    path = target if os.path.isabs(target) else str(cwd / target)
+    return os.path.realpath(path)
 
-#: How much older than the run's start an envelope may look: file times
-#: come from a coarser clock, on some file systems to 2 seconds.
-_CLOCK_SLACK_NS = 2_000_000_000
 
+def loop_evidence(records: Sequence[CommandRecord], cwd: Path, *, project: Path) -> list[LoopRun]:
+    """The loop runs of one run of the agent, failing closed.
 
-def work_loop(work: Path, *, since_ns: int | None = None) -> tuple[LoopRun, int] | None:
-    """The last loop run the work folder records, and how many it records.
-
-    SKILL.md, Step 4 saves each loop command's envelope as
-    ``<work>/runs/run-<n>/<command>.json``. A run counts when it has
-    ``validate.json``; its commands are the envelopes in loop order, up to
-    the first one missing. With ``since_ns`` (a ``time.time_ns()``), an
-    envelope written before it is missing: an earlier run's work folder may
-    be reused. None when no run counts."""
-    runs: list[tuple[int, LoopRun]] = []
-    try:
-        dirs = list((work / "runs").iterdir())
-    except OSError:
-        return None
-    for path in dirs:
-        found = _RUN_DIR.fullmatch(path.name)
-        if found is None or not path.is_dir():
+    The only evidence is the backend's own executions (``CommandRecord``
+    ``trusted``): the executable is this installation's ``mmt_plugin``
+    module in isolated mode, the arguments exactly the tokens of the strict
+    invocation, the exit code and output the process's own, and the output
+    holds a parseable envelope of the same command whose exit code is the
+    process's — exit 0 alone proves nothing (``--help`` exits 0). Every
+    step must target ``project`` (its ``-C``, resolved against ``cwd``):
+    a green loop of another project is no evidence of this one's.
+    Everything else the shell ran — shell loops, pipelines the backend did
+    not execute, redirections, substitutions, envelopes in shell text,
+    shadowing executables — is the model's word, and the envelopes in
+    ``runs/run-<n>/`` are files the model can write: audit artifacts, never
+    proof. Each ``validate`` evidence starts a new run."""
+    # The expected path with its parent resolved but the final component
+    # lexical: a symlink planted at the project path itself resolves the
+    # ``-C`` target away from it, never towards it.
+    expected = os.path.join(os.path.realpath(project.parent), project.name)
+    runs: list[LoopRun] = []
+    for record in records:
+        command = record.mmt_command
+        if command not in LOOP_COMMANDS or record.refused or not record.trusted:
             continue
-        number = int(found.group(1))
-        records: list[CommandRecord] = []
-        for name in LOOP_COMMANDS:
-            saved = path / f"{name}.json"
-            try:
-                stat = saved.stat()
-                text = saved.read_text("utf-8")
-            except (OSError, UnicodeDecodeError):
-                break
-            if since_ns is not None and stat.st_mtime_ns < since_ns - _CLOCK_SLACK_NS:
-                # Left by an earlier run: as if missing.
-                break
-            env = envelope_of(text)
-            code = None if env is None else env.get("exit_code")
-            records.append(
-                CommandRecord(str(saved), code if isinstance(code, int) else None, text, name=name)
-            )
-        if records and records[0].mmt_command == "validate":
-            runs.append((number, LoopRun(number, records)))
-    if not runs:
-        return None
-    runs.sort(key=lambda item: item[0])
-    return runs[-1][1], len(runs)
+        if _record_project(record, cwd) != expected:
+            continue
+        if command == "validate" or not runs:
+            runs.append(LoopRun(len(runs) + 1, project=record.project))
+        runs[-1].commands.append(record)
+    return runs
 
 
 def _is_work_folder(path: Path) -> bool:
@@ -332,40 +376,74 @@ def build_result(
     message: str,
     question: Question | None = None,
     skills_modified: Sequence[str] = (),
-    since_ns: int | None = None,
     capture: bool = False,
     allow_synthetic: bool = False,
     environ_readable: str | None = None,
 ) -> AgentResult:
-    """The result of a run from its work folder and what its shell ran.
+    """The result of a run from what its shell ran, corroborated by its
+    work folder.
 
-    The loop is the work folder's last run (``work_loop``, the envelopes
-    the skill saves), else the shell's: the command text the model wrote
-    (variables, ``&&`` chains, loops) is only a fallback. The work folder
-    is ``work_folder(work)``, which the result reports as its ``work``.
-    ``capture`` and ``allow_synthetic``: the run was given a capture, or
-    leave for a synthetic one, so a green run with an SDK whose evaluation
-    is not done skipped it (``AgentResult.skipped_with_leave``)."""
+    The loop is ``loop_evidence``'s: only the backend's own executions
+    (``CommandRecord`` ``trusted``) are evidence — the work folder is the
+    model's to write and shell text can be forged, so artifacts and shell
+    envelopes alone never make a step succeed. For the same reason
+    ``manifest.json``'s PASS counts only when the backend ran the capture
+    evaluation itself (exit 0). The
+    work folder is ``work_folder(work)``, which the result reports as its
+    ``work``. ``capture`` and ``allow_synthetic``: the run was given a
+    capture, or leave for a synthetic one, so a green run with an SDK whose
+    evaluation is not done skipped it (``AgentResult.skipped_with_leave``)."""
     given_work = work
     work = work_folder(given_work)
-    runs = loop_runs(records)
-    shell_last = runs[-1] if runs else None
-    saved = work_loop(work, since_ns=since_ns)
-    last, count = saved if saved is not None else (shell_last, len(runs))
-    project = _project(
-        work, project, None if shell_last is None else shell_last.project, given_work
-    )
-    if saved is not None and last is not None:
+    expected = project if project is not None else work / "project"
+    runs = loop_evidence(records, given_work, project=expected)
+    last = runs[-1] if runs else None
+    count = len(runs)
+    project = _project(work, project, None if last is None else last.project, given_work)
+    if last is not None:
         last.project = None if project is None else str(project)
     info = _manifest(work).get("eval")
     evaluation_info: dict[str, Any] = info if isinstance(info, dict) else {}
     verdict = str(evaluation_info.get("verdict") or "").lower()
-    if verdict in ("pass", "fail"):
-        evaluation = verdict
+    # The evaluation's verdict is the backend's own executions, never
+    # manifest.json (the model's to write: audit only, for the details and
+    # the drift). A trusted evaluation counts only after a trusted green
+    # loop in the same run and before any later trusted build or test: it
+    # is the evaluation *of that build* (SKILL.md, Done), and a rebuild
+    # after it is not the binary it measured. The last verdict decides: a
+    # FAIL fixed and evaluated again is the PASS.
+    positions = {id(record): i for i, record in enumerate(records)}
+    green_ends = [
+        positions[id(run.commands[-1])] for run in runs if run.commands and run.green(with_sdk)
+    ]
+    last_build = max(
+        (
+            i
+            for i, record in enumerate(records)
+            if record.trusted and not record.refused and record.mmt_command in ("build", "test")
+        ),
+        default=-1,
+    )
+    verdicts = [
+        record.exit_code
+        for i, record in enumerate(records)
+        if record.evaluation
+        and record.trusted
+        and not record.refused
+        and any(end < i for end in green_ends)
+        and i > last_build
+        and record.exit_code in (0, 1)
+    ]
+    trusted_verdict = verdicts[-1] if verdicts else None
+    if trusted_verdict == 0:
+        evaluation = "pass"
+    elif trusted_verdict == 1 or verdict == "fail":
+        evaluation = "fail"
     elif no_eval:
         evaluation = "skipped"
     else:
         evaluation = "not_done"
+    eval_backed = trusted_verdict == 0
     drift_info = evaluation_info.get("drift")
     drift = drift_info.get("open") if isinstance(drift_info, dict) else None
     leave = None
@@ -376,7 +454,13 @@ def build_result(
         unchecked.append("build and test: no SDK")
     if evaluation == "not_done":
         reason = evaluation_info.get("reason")
-        if with_sdk and leave is not None:
+        if verdict == "pass" and not eval_backed:
+            unchecked.append(
+                "evaluation: not done (manifest.json's PASS is the model's say-so: "
+                "no trusted run of the capture evaluation (pcap_eval.py) of the green "
+                "build reached exit 0)"
+            )
+        elif with_sdk and leave is not None:
             flag = "--capture" if leave == "capture" else "--allow-synthetic"
             why = f"the model skipped the evaluation it had leave for ({flag})"
             unchecked.append(f"evaluation: not done ({why}{f': {reason}' if reason else ''})")

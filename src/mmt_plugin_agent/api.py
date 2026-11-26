@@ -3,8 +3,10 @@ headless on one request and returns its result (``docs/agent-api.md``)."""
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import os
+import re
 import sys
 import time
 import uuid
@@ -22,6 +24,8 @@ from mmt_plugin_agent.policy import LOOP_COMMANDS, environ_failure, is_system_pr
 from mmt_plugin_agent.questions import Question, Questioner, RunMode
 from mmt_plugin_agent.result import AgentEvent, AgentResult, CommandRecord, build_result, loop_runs
 from mmt_plugin_agent.skills import (
+    SKILL_NAME,
+    TreeEntry,
     digest,
     make_snapshot,
     remove_tree,
@@ -78,12 +82,33 @@ def _input(path: str | os.PathLike[str] | None, what: str) -> Path | None:
     return found
 
 
+#: A thread id is the LangGraph thread's key and part of the run's skills
+#: snapshot directory name, so it is one safe file name component: no
+#: separators, no ``.`` or ``..``, nothing the shell or a path reads
+#: specially. With this shape the two uses never diverge.
+_THREAD_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+
+
+def _checked_thread_id(thread_id: str | None) -> str | None:
+    """``thread_id`` when it is safe both as the LangGraph thread key and as
+    part of the snapshot's directory name; a usage error otherwise."""
+    if thread_id is None or _THREAD_ID.fullmatch(thread_id):
+        return thread_id
+    raise AgentError(
+        ExitCode.USAGE,
+        "agent.bad-thread",
+        f"the thread id {thread_id!r} is not a safe name: use 1 to 128 characters of "
+        "letters, digits, dots, dashes and underscores, starting with a letter or digit",
+        "pass --thread-id with a simple id, or none for a random one",
+    )
+
+
 @dataclass
 class _Run:
     thread_id: str
     settings: RunSettings
     source: Path
-    files: Mapping[str, bytes]
+    files: Mapping[str, TreeEntry]
     digest: str
     snapshot: Path
     graph: CompiledStateGraph[Any, Any, Any, Any]
@@ -332,15 +357,23 @@ class PluginAgent:
                     f"{project} is not a project: it has no plugin.yaml",
                     "pass a project directory (it holds plugin.yaml), or use new",
                 )
+        capture_input = _input(pcap, "capture")
         text = request_text(
             spec=_input(spec, "spec"),
-            pcap=_input(pcap, "capture"),
+            pcap=capture_input,
             pdl=_input(pdl, "PDL"),
             project=found,
             change=change,
             instructions=instructions,
         )
-        thread = thread_id or uuid.uuid4().hex
+        thread = _checked_thread_id(thread_id) or uuid.uuid4().hex
+        if thread in self._runs:
+            raise AgentError(
+                ExitCode.USAGE,
+                "agent.duplicate-thread",
+                f"a run with thread id {thread} is still active in this PluginAgent",
+                "wait for it to end, release() it, or pass another thread id",
+            )
         if self.work_dir is not None:
             work = self.work_dir.resolve()
         elif found is not None:
@@ -366,7 +399,9 @@ class PluginAgent:
             sdk=self.sdk,
             cc=self.cc,
             mode=self.mode,
-            capture=self.capture,
+            # The capture of the pcap entry is a capture of the protocol:
+            # it is the evaluation's when none is given (SKILL.md, Step 1).
+            capture=self.capture if self.capture is not None else capture_input,
             allow_synthetic=self.allow_synthetic,
             no_eval=self.no_eval,
             timeout=self.timeout,
@@ -382,6 +417,10 @@ class PluginAgent:
 
             self._checkpointer = InMemorySaver()
         records: list[CommandRecord] = []
+        evaluation = files.get(f"{SKILL_NAME}/scripts/pcap_eval.py")
+        evaluation_bytes = (
+            evaluation.data if evaluation is not None and evaluation.kind == "file" else None
+        )
         graph = compile_graph(
             model,
             settings,
@@ -392,6 +431,7 @@ class PluginAgent:
             tools=self.tools,
             checkpointer=self._checkpointer,
             on_command=records.append,
+            evaluation=evaluation_bytes,
         )
         run = _Run(thread, settings, source, files, tree_digest, snapshot, graph, records)
         self._runs[thread] = run
@@ -530,9 +570,15 @@ class PluginAgent:
         return restore(run.source, run.files)
 
     def _release(self, run: _Run) -> None:
-        """The run is over: remove its skills snapshot and forget it."""
+        """The run is over: remove its skills snapshot, drop its thread's
+        checkpoints (a released run is never resumed: the shared checkpointer
+        would otherwise keep every run's state forever) and forget it."""
         remove_tree(run.snapshot)
         self._runs.pop(run.thread_id, None)
+        delete = getattr(self._checkpointer, "delete_thread", None)
+        if callable(delete):
+            with contextlib.suppress(Exception):  # best effort: the run is over either way
+                delete(run.thread_id)
 
     def _release_unless_waiting(self, run: _Run, ended: bool, state: _Stream) -> None:
         """A run left before its end (Ctrl-C, a consumer that stops reading
@@ -571,7 +617,6 @@ class PluginAgent:
             message=state.message,
             question=state.question,
             skills_modified=modified,
-            since_ns=run.started_ns,
             capture=run.settings.capture is not None,
             allow_synthetic=run.settings.allow_synthetic,
             environ_readable=environ_failure(),

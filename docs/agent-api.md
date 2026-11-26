@@ -132,7 +132,9 @@ that runs the agent needs root.
 
 The capture question (the skill's Step 1): when no capture is given
 (`--capture FILE`) or found, the skill asks for one, for leave to make a
-synthetic one, or for leave to skip the evaluation. `--allow-synthetic`
+synthetic one, or for leave to skip the evaluation. The capture of the
+pcap entry (`new --pcap FILE`) is a capture of the protocol: it is the
+evaluation's capture unless `--capture` names another. `--allow-synthetic`
 answers it with a synthetic capture; unattended without it, the evaluation
 is skipped and reported as not done (status `incomplete`, exit 0, the
 warning `agent.evaluation-not-done`). With `--capture` or `--allow-synthetic`
@@ -162,8 +164,8 @@ mmt-plugin-agent --version
 The options of `new` and `update`: `--sdk PREFIX` (default `MMT_BASE`),
 `--cc` (default `CC`, else gcc), `--work DIR` (default
 `./plugin-work-<id>` for `new`, `<project>-work` next to the project for
-`update`), `--model`, `--unattended` or `--interactive`, `--capture`,
-`--allow-synthetic`, `--no-eval`, `--skills`, `--thread-id` and
+`update`), `--model`, `--unattended` or `--interactive`, `--capture` (default: the `--pcap`
+capture), `--allow-synthetic`, `--no-eval`, `--skills`, `--thread-id` and
 `--instructions TEXT` (more for the request, such as the label, id and
 parent to use). `--json` prints one envelope.
 
@@ -209,17 +211,21 @@ methods are:
 - `resume(thread_id, answer)` (and `stream_resume`) answers the question
   a `waiting` run stopped at, in the same `PluginAgent`; `release(thread_id)`
   forgets a `waiting` run that will not be resumed (it removes the run's
-  skills snapshot). A run that ends, fails, is interrupted or whose events
-  are no longer read is released on its own.
+  skills snapshot and its thread's checkpoints). A run that ends, fails,
+  is interrupted or whose events are no longer read is released on its own.
+  A caller-given `thread_id` is one safe file-name component (letters,
+  digits, dots, dashes, underscores, at most 128 characters, starting with
+  a letter or digit: it is part of the snapshot's directory name) and no
+  two active runs of one `PluginAgent` share it
+  (`agent.duplicate-thread`).
 - `doctor()` returns the `DoctorReport` of `mmt-plugin-agent doctor`.
 
 `AgentResult` has `status` (`done`, `incomplete`, `eval_failed`,
 `not_green`, `blocked`, `failed`, `waiting`), `ok`, `thread_id`, `work`,
 `project`, `loop` (the last loop run: its commands' exit codes, the test
-summary, `green(with_sdk)`; read from the envelopes the skill saves in
-`<work>/runs/run-<n>/` during this run, else from the shell commands, each
-with mmt-plugin's exit code from its envelope), `loop_runs`, `evaluation` (`pass`, `fail`,
-`not_done`, `skipped`, from `manifest.json`), `drift` (the open drifts),
+summary, `green(with_sdk)`), `loop_runs`, `evaluation` (`pass`, `fail`,
+`not_done`, `skipped`, the backend's own executions of the evaluation),
+`drift` (the open drifts),
 `unchecked`, `report_path`, `questions_path`, `question`,
 `skills_modified`, `commands`, `message` (the model's last reply) and
 `eval_leave` (`capture`, `synthetic` or `None`: the leave the run had for
@@ -227,6 +233,58 @@ the evaluation; `skipped_with_leave` is an `incomplete` run that had it,
 and is not `ok`) and `environ_readable` (`None`, or why the shell could
 read the agent's own environment: see [Models](#models)); `to_json()` is
 the command line's `result`.
+
+The loop's evidence fails closed. The only evidence is what the backend
+executes itself: when a shell command is exactly the strict form —
+`[timeout N] mmt-plugin ARGS...` or the evaluation's `pcap_eval.py`,
+optionally followed by `| tee PATH`, with no other shell operators,
+substitutions or redirections — the backend does not use the shell. It
+runs this installation's own `mmt_plugin` module (never a name the PATH
+or the work folder could shadow), with exactly the parsed arguments,
+captures the process's real exit code and output, and performs the tee
+itself after validating the destination. Anything else — shell loops,
+extra operators, redirections, substitutions, envelopes printed by echo
+or heredoc, shadowing executables, indirect invocations — may still run
+for utility, but it is the model's word and proves nothing. The envelopes
+in `runs/run-<n>/` are audit artifacts, never evidence, and the test
+summary comes from the trusted output only.
+
+The strict form is not enough: the arguments must bind the run. A loop
+command is trusted only as the skill's own shapes, exactly — `mmt-plugin
+-C <project> --json validate|generate --sdk <sdk>` and `... build|test
+--sdk <sdk> --cc <cc>` (without an SDK, `validate --no-sdk --sdk-profile
+<profile>` and `generate --sdk-profile <profile>`) — with the run's own
+project, SDK and compiler. The project is the run's, its `-C` resolved
+with every link followed: a symlink planted at `<work>/project` is never
+the project, and a green loop of another project, against another SDK,
+with another compiler or with any further argument (a `--model`, a
+`--dry-run`, a packet selection) runs in the shell but proves nothing.
+Green is the skill's Done: in one loop run all four exit 0, `test`'s
+summary has `failed` 0 and `passed` equal to `total` with `total` at
+least 1, and `validate`'s `parents-exist` check is `pass`.
+
+`manifest.json` is the model's to write: audit only. The evaluation's
+verdict is the backend's own executions — the strict form `python3
+<skill>/scripts/pcap_eval.py ...` (or the script directly), resolved
+inside the read-only skills copy and still byte for byte the script the
+run started with, so it is the skill's own script, never a copy the
+model wrote or a version it changed and changed back. Its arguments bind
+the run the same way: the run's SDK and compiler, no `--help` (it exits
+0 and evaluates nothing), the output under the work folder, the capture
+the run was given (the configured one or a byte-for-byte copy of it
+inside the work folder, else one inside the work folder when the run
+allows a synthetic one), and `--plugin` inside `<project>/build`, named
+`mmtp_*.so` as `build` names its output and byte for byte the `.so` the
+last trusted build or test left there — a file the model
+rewrote afterwards, or one the loop never built, is not it. And it counts
+only after a trusted green loop of the same run and before any later
+trusted build or test: it is the evaluation *of that build*, and a
+rebuild after it is not the binary it measured. Exit 0 is the
+evaluation's PASS, exit 1 its FAIL, the last verdict decides; anything
+else never happened. The Python script is the trusted entrypoint
+although it compiles its C runner itself: what the backend trusts is
+those bytes, and the exit code of the process it ran. Otherwise the
+evaluation is not done, however green the loop.
 
 This example runs in CI with a scripted model
 (`tests/unit/agent/test_docs_example.py`):
@@ -309,7 +367,8 @@ What the agent's shell ran (command, exit codes, times) is in
 `commands.jsonl` in the case's work folder. Unlike the
 scripted evals, the loop need not stop where the case's script does. It
 writes a table per model and case to `--out` (Markdown) and the same with
-`.json`; it exits 6 when a case fails. Without `--sdk` it uses `MMT_BASE`,
+`.json`; it exits 6 when a case fails. A `--case` name that matches no
+case is a usage error (exit 2, `agent.bad-case`), never a vacuous pass. Without `--sdk` it uses `MMT_BASE`,
 as a run does. A model that puts its work folder or project elsewhere
 than the brief says fails the case with that one problem.
 

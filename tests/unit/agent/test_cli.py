@@ -19,7 +19,7 @@ import mmt_plugin_agent.models
 from mmt_plugin_agent import PluginAgent
 from mmt_plugin_agent import cli as agent_cli
 
-from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
+from .fakes import FakeCli, ScriptedModel, call, done_files, evaluate, loop, scripted, step
 
 PACKAGE = Path(mmt_plugin_agent.__file__).resolve().parent
 SCHEMAS = PACKAGE / "schemas" / "v1"
@@ -51,7 +51,7 @@ def _use(monkeypatch: pytest.MonkeyPatch, model: ScriptedModel) -> None:
 
 
 def _script(work: Path, sdk: Path) -> list[Any]:
-    return [*loop(work / "project", sdk), *done_files(work), "DONE: green"]
+    return [*loop(work / "project", sdk), evaluate(work, sdk), *done_files(work), "DONE: green"]
 
 
 def test_new_prints_its_result_in_one_envelope(
@@ -64,7 +64,9 @@ def test_new_prints_its_result_in_one_envelope(
     work, sdk = tmp_path / "w", tmp_path / "sdk"
     _use(monkeypatch, scripted(_script(work, sdk)))
     args = ["new", "--spec", str(SPEC), "--sdk", str(sdk), "--work", str(work)]
-    code, envelope = _main([*args, "--model", "anthropic:any", "--unattended"], capsys)
+    code, envelope = _main(
+        [*args, "--model", "anthropic:any", "--unattended", "--allow-synthetic"], capsys
+    )
     assert code == 0
     assert envelope["command"] == "new"
     _schema("result.json").validate(envelope["result"])
@@ -83,8 +85,12 @@ def test_the_cli_and_the_api_give_the_same_result(
     cli_work, api_work = tmp_path / "cli", tmp_path / "api"
     _use(monkeypatch, scripted(_script(cli_work, sdk)))
     args = ["new", "--spec", str(SPEC), "--sdk", str(sdk), "--work", str(cli_work)]
-    _, envelope = _main([*args, "--model", "x:y", "--thread-id", "t1"], capsys)
-    api = PluginAgent(scripted(_script(api_work, sdk)), sdk=sdk, work_dir=api_work)
+    _, envelope = _main(
+        [*args, "--model", "x:y", "--thread-id", "t1", "--allow-synthetic"], capsys
+    )
+    api = PluginAgent(
+        scripted(_script(api_work, sdk)), sdk=sdk, work_dir=api_work, allow_synthetic=True
+    )
     result = api.new(spec=SPEC, thread_id="t1").to_json()
     from_cli = json.loads(json.dumps(envelope["result"]).replace(str(cli_work), "<work>"))
     from_api = json.loads(json.dumps(result).replace(str(api_work), "<work>"))

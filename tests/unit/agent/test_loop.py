@@ -17,7 +17,7 @@ import pytest
 from mmt_plugin_agent import PluginAgent, request_text
 from mmt_plugin_agent.result import CommandRecord, build_result, work_folder
 
-from .fakes import FakeCli, ScriptedModel, call, done_files, loop, scripted, step
+from .fakes import FakeCli, ScriptedModel, call, done_files, evaluate, loop, scripted, step
 
 SPEC = Path(__file__).resolve().parents[3] / (
     "skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md"
@@ -32,7 +32,9 @@ def test_a_green_loop_is_done(tmp_path: Path, fake_cli: Callable[..., FakeCli]) 
     cli = fake_cli()
     work, sdk = tmp_path / "work", tmp_path / "sdk"
     project = work / "project"
-    model = scripted([*loop(project, sdk), *done_files(work), "DONE: green, PASS"])
+    model = scripted(
+        [*loop(project, sdk), evaluate(work, sdk), *done_files(work), "DONE: green, PASS"]
+    )
     events = list(_agent(model, work, sdk).stream(spec=SPEC))
     result = events[-1].result
     assert result is not None
@@ -63,7 +65,7 @@ def test_a_failed_run_then_a_fix_is_two_loop_runs(
     work, sdk = tmp_path / "work", tmp_path / "sdk"
     project = work / "project"
     first = step(call("execute", command=f"mmt-plugin -C {project} --json validate --sdk {sdk}"))
-    model = scripted([first, *loop(project, sdk), *done_files(work), "DONE"])
+    model = scripted([first, *loop(project, sdk), evaluate(work, sdk), *done_files(work), "DONE"])
     events = list(_agent(model, work, sdk).stream(spec=SPEC))
     result = events[-1].result
     assert result is not None and result.status == "done"
@@ -96,8 +98,19 @@ def test_without_an_sdk_validate_and_generate_are_the_loop(
     project = work / "project"
     model = scripted(
         [
-            step(call("execute", command=f"mmt-plugin -C {project} --json validate --no-sdk")),
-            step(call("execute", command=f"mmt-plugin -C {project} --json generate")),
+            step(
+                call(
+                    "execute",
+                    command=f"mmt-plugin -C {project} --json validate "
+                    "--no-sdk --sdk-profile 1.10.2",
+                )
+            ),
+            step(
+                call(
+                    "execute",
+                    command=f"mmt-plugin -C {project} --json generate --sdk-profile 1.10.2",
+                )
+            ),
             *done_files(work, verdict=None),
             "DONE without an SDK",
         ]
@@ -110,7 +123,9 @@ def test_without_an_sdk_validate_and_generate_are_the_loop(
 def test_anew_runs_the_same_loop(tmp_path: Path, fake_cli: Callable[..., FakeCli]) -> None:
     fake_cli()
     work, sdk = tmp_path / "work", tmp_path / "sdk"
-    model = scripted([*loop(work / "project", sdk), *done_files(work), "DONE"])
+    model = scripted(
+        [*loop(work / "project", sdk), evaluate(work, sdk), *done_files(work), "DONE"]
+    )
     result = asyncio.run(_agent(model, work, sdk).anew(spec=SPEC))
     assert result.status == "done"
     assert result.loop_runs == 1
@@ -125,8 +140,17 @@ def test_an_update_runs_on_the_project_in_place(
     (project / "plugin.yaml").write_text("protocol:\n  label: telem\n")
     sdk = tmp_path / "sdk"
     work = tmp_path / "telem-work"
-    model = scripted([*loop(project, sdk), *done_files(work), "DONE"])
-    result = PluginAgent(model, sdk=sdk).update(project, change="add a status message")
+    model = scripted(
+        [
+            *loop(project, sdk),
+            evaluate(work, sdk, project=project),
+            *done_files(work),
+            "DONE",
+        ]
+    )
+    result = PluginAgent(model, sdk=sdk, allow_synthetic=True).update(
+        project, change="add a status message"
+    )
     assert result.work == work
     assert result.project == project
     assert result.status == "done"
@@ -144,8 +168,15 @@ def test_a_change_text_too_long_for_a_path_is_text(
     sdk = tmp_path / "sdk"
     change = "add a status message " * 20
     assert len(change) > 255
-    model = scripted([*loop(project, sdk), *done_files(tmp_path / "telem-work"), "DONE"])
-    result = PluginAgent(model, sdk=sdk).update(project, change=change)
+    model = scripted(
+        [
+            *loop(project, sdk),
+            evaluate(tmp_path / "telem-work", sdk, project=project),
+            *done_files(tmp_path / "telem-work"),
+            "DONE",
+        ]
+    )
+    result = PluginAgent(model, sdk=sdk, allow_synthetic=True).update(project, change=change)
     assert result.status == "done"
     assert any(f"this change: {change}" in str(m.content) for m in model.seen[0])
     assert request_text(project=project, change="a\0b").endswith("this change: a\0b.")
@@ -170,13 +201,21 @@ def test_blocked_is_the_final_reply_not_a_word_of_the_report(
     work, sdk = tmp_path / "work", tmp_path / "sdk"
     files = done_files(work)
     report_step = step(call("write_file", file_path=str(work / "REPORT.md"), content=report))
-    model = scripted([*loop(work / "project", sdk), *files, report_step, reply])
+    model = scripted(
+        [*loop(work / "project", sdk), evaluate(work, sdk), *files, report_step, reply]
+    )
     agent = PluginAgent(model, sdk=sdk, work_dir=work, allow_synthetic=True)
     assert agent.new(spec=SPEC).status == status
 
 
-def _env(command: str, code: int) -> str:
-    return json.dumps({"schema_version": 1, "command": command, "exit_code": code}) + "\n"
+def _env(command: str, code: int, summary: dict[str, int] | None = None) -> str:
+    env: dict[str, Any] = {"schema_version": 1, "command": command, "exit_code": code}
+    if summary is not None:
+        env["result"] = {"summary": summary}
+    if command == "validate":
+        checks = [{"id": "parents-exist", "status": "pass" if code == 0 else "fail"}]
+        env["result"] = {**env.get("result", {}), "checks": checks}
+    return json.dumps(env) + "\n"
 
 
 def test_a_piped_command_has_mmt_plugins_exit_code() -> None:
@@ -184,6 +223,48 @@ def test_a_piped_command_has_mmt_plugins_exit_code() -> None:
     assert piped.exit_code == 0 and piped.mmt_exit_code == 6
     silent = CommandRecord("mmt-plugin --json test > t.json", 6, "")
     assert silent.mmt_exit_code == 6
+
+
+def test_without_an_envelope_a_zero_shell_exit_is_unknown_not_success() -> None:
+    """The shell's exit 0 is never mmt-plugin's success on its own: the
+    envelope may be in a redirected file, lost in a pipe, or the success of
+    another command of the chain."""
+    redirected = CommandRecord("mmt-plugin --json validate > validate.json", 0, "")
+    assert redirected.exit_code == 0 and redirected.mmt_exit_code is None
+    piped = CommandRecord("timeout 900 mmt-plugin --json test | tee t.json >/dev/null", 0, "")
+    assert piped.mmt_exit_code is None
+    plain = CommandRecord("mmt-plugin --json validate", 0, "")
+    assert plain.mmt_exit_code is None
+    failed = CommandRecord("timeout 900 mmt-plugin --json validate", 124, "")
+    assert failed.mmt_exit_code == 124
+
+
+def test_a_loop_without_envelopes_is_not_green_at_shell_exit_0(
+    tmp_path: Path, fake_cli: Callable[..., FakeCli]
+) -> None:
+    """R2: `timeout ... | tee` with the envelope lost down the pipe: the
+    shell's exit 0 is never mmt-plugin's success on its own."""
+    fake_cli()
+    work, sdk = tmp_path / "work", tmp_path / "sdk"
+    project = work / "project"
+    model = scripted(
+        [
+            *(
+                step(
+                    call(
+                        "execute",
+                        command=f"timeout 900 mmt-plugin -C {project} --json {name} --sdk {sdk} "
+                        "| tee /dev/null >/dev/null",
+                    )
+                )
+                for name in ("validate", "generate", "build", "test")
+            ),
+            "DONE: green",
+        ]
+    )
+    result = _agent(model, work, sdk).new(spec=SPEC)
+    assert result.status == "not_green", result.to_json()
+    assert result.loop is None, "untrusted shell evidence counts for nothing"
 
 
 def test_a_loop_piped_through_tee_is_not_green_when_mmt_plugin_fails(
@@ -199,8 +280,9 @@ def test_a_loop_piped_through_tee_is_not_green_when_mmt_plugin_fails(
                 step(
                     call(
                         "execute",
-                        command=f"mmt-plugin -C {project} --json {name} --sdk {sdk} "
-                        f"| tee {saved / name}.json",
+                        command=f"mmt-plugin -C {project} --json {name} --sdk {sdk}"
+                        + (" --cc gcc" if name in ("build", "test") else "")
+                        + f" | tee {saved / name}.json",
                     )
                 )
                 for name in ("validate", "generate", "build", "test")
@@ -218,16 +300,21 @@ def test_a_loop_piped_through_tee_is_not_green_when_mmt_plugin_fails(
     assert [e.message for e in events if e.kind == "loop"] == ["loop run 1: not green"]
 
 
-def _live_loop(work: Path, sdk: Path, n: int) -> list[dict[str, object]] | str:
-    """A loop run as a live model wrote it: a variable, cd, a for loop, tee."""
-    return step(
-        call(
-            "execute",
-            command=f'P={work}; cd "$P/project" && mkdir -p ../runs/run-{n} && '
-            "for c in validate generate build test; do "
-            f"mmt-plugin -C . --json $c --sdk {sdk} | tee ../runs/run-{n}/$c.json; done",
+def _live_loop(work: Path, sdk: Path, n: int) -> list[list[dict[str, Any]] | str]:
+    """A loop run in the strict form the backend executes itself: one simple
+    command per step, stdout tee'd to the run's folder (audit artifacts)."""
+    project = work / "project"
+    return [
+        step(
+            call(
+                "execute",
+                command=f"mmt-plugin -C {project} --json {name} --sdk {sdk}"
+                + (" --cc gcc" if name in ("build", "test") else "")
+                + f" | tee {work}/runs/run-{n}/{name}.json",
+            )
         )
-    )
+        for name in ("validate", "generate", "build", "test")
+    ]
 
 
 def test_the_loop_is_the_work_folders_last_run(
@@ -241,8 +328,9 @@ def test_the_loop_is_the_work_folders_last_run(
     model = scripted(
         [
             model_yaml,
-            _live_loop(work, sdk, 1),
-            _live_loop(work, sdk, 2),
+            *_live_loop(work, sdk, 1),
+            *_live_loop(work, sdk, 2),
+            evaluate(work, sdk),
             *done_files(work),
             "DONE: green, PASS",
         ]
@@ -292,11 +380,11 @@ def test_a_failed_run_over_an_earlier_green_one_is_not_green(
     second = step(
         call(
             "execute",
-            command=f'P={work}; cd "$P/project" && mmt-plugin -C . --json validate --sdk {sdk} '
-            "| tee ../runs/run-2/validate.json",
+            command=f"mmt-plugin -C {work}/project --json validate --sdk {sdk} "
+            f"| tee {work}/runs/run-2/validate.json",
         )
     )
-    model = scripted([model_yaml, _live_loop(work, sdk, 1), second, "NOT GREEN"])
+    model = scripted([model_yaml, *_live_loop(work, sdk, 1), second, "NOT GREEN"])
     result = _agent(model, work, sdk).new(spec=SPEC)
     assert result.status == "not_green"
     assert result.loop is not None
@@ -331,6 +419,45 @@ def _vllm_shaped(root: Path) -> Path:
     return inner
 
 
+def _shell_green(project: Path) -> list[CommandRecord]:
+    """A green loop as the backend's trusted executions record it: each
+    command in the strict form, targeting the run's project, its envelope
+    in its output."""
+    passed = {"total": 2, "passed": 2, "failed": 0}
+    return [
+        *(
+            CommandRecord(
+                f"mmt-plugin -C {project} --json {name} --sdk /sdk"
+                + (" --cc gcc" if name in ("build", "test") else ""),
+                0,
+                _env(name, 0),
+                trusted=True,
+            )
+            for name in ("validate", "generate", "build")
+        ),
+        CommandRecord(
+            f"mmt-plugin -C {project} --json test --sdk /sdk --cc gcc",
+            0,
+            _env("test", 0, passed),
+            trusted=True,
+        ),
+    ]
+
+
+def _window(command: str, seconds: float = 60.0, evaluation: bool = False) -> CommandRecord:
+    """A shell record invoking mmt-plugin, with a window around ``now``."""
+    now = time.time_ns()
+    return CommandRecord(
+        command,
+        0,
+        "",
+        started_ns=now - int(seconds * 10**9),
+        ended_ns=now,
+        trusted=True,
+        evaluation=evaluation,
+    )
+
+
 def test_a_work_folder_one_level_down_is_the_work_folder(tmp_path: Path) -> None:
     work = tmp_path / "run"
     inner = _vllm_shaped(work)
@@ -340,7 +467,10 @@ def test_a_work_folder_one_level_down_is_the_work_folder(tmp_path: Path) -> None
         thread_id="t",
         work=work,
         project=None,
-        records=[],
+        records=[
+            *_shell_green(inner / "project"),
+            _window("python3 x/pcap_eval.py --out eval", evaluation=True),
+        ],
         with_sdk=True,
         no_eval=False,
         message="DONE: green",
@@ -351,6 +481,211 @@ def test_a_work_folder_one_level_down_is_the_work_folder(tmp_path: Path) -> None
     assert result.report_path == inner / "REPORT.md"
     assert result.questions_path == work / "questions.md"
     assert result.loop is not None and result.loop.green(True)
+
+
+def test_artifacts_alone_never_make_a_green_loop(tmp_path: Path) -> None:
+    """R1: a model that writes runs/, manifest.json and REPORT.md with the
+    file tools, without running mmt-plugin at all, is not done."""
+    inner = _vllm_shaped(tmp_path / "run")
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE: green, PASS",
+    )
+    assert result.status == "not_green", result.to_json()
+    assert result.loop is None and result.loop_runs == 0
+    assert result.evaluation == "not_done"
+    assert result.unchecked == [
+        "evaluation: not done (manifest.json's PASS is the model's say-so: "
+        "no trusted run of the capture evaluation (pcap_eval.py) of the green "
+        "build reached exit 0)"
+    ]
+
+
+def test_artifacts_written_by_a_shell_without_mmt_plugin_are_no_evidence(
+    tmp_path: Path,
+) -> None:
+    """R1: envelopes written by echo or heredoc, in a shell that never
+    invokes mmt-plugin, corroborate nothing."""
+    inner = _vllm_shaped(tmp_path / "run")
+    now = time.time_ns()
+    forged = CommandRecord(
+        "mkdir -p runs/run-1 && cat > runs/run-1/validate.json <<'EOF'\n{}\nEOF",
+        0,
+        "",
+        started_ns=now - 30 * 10**9,
+        ended_ns=now,
+    )
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[forged],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+    )
+    assert result.status == "not_green"
+    assert result.loop is None
+
+
+def test_artifacts_corroborated_by_an_mmt_plugin_window_are_the_loop(
+    tmp_path: Path,
+) -> None:
+    """R1, the bypass: a shell loop over ``$c`` invokes mmt-plugin while the
+    envelopes are written, but it is not the strict form — the backend does
+    not execute it, so the artifacts are the model's word, never evidence."""
+    inner = _vllm_shaped(tmp_path / "run")
+    (inner / "manifest.json").write_text(json.dumps({"schema": 1}))
+    window = _window(
+        "for c in validate generate build test; do "
+        "mmt-plugin -C . --json $c | tee ../runs/run-1/$c.json; done"
+    )
+    window.trusted = False
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[window],
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "not_green", result.to_json()
+    assert result.loop is None
+
+
+def test_a_saved_envelope_the_shell_contradicts_is_never_a_success(
+    tmp_path: Path,
+) -> None:
+    """R1, the forged-overwrite bypass: one shell command runs a real but
+    failing validate, then overwrites the envelope with a forged success —
+    not the strict form, so neither its text nor the artifacts count."""
+    inner = _vllm_shaped(tmp_path / "run")
+    shell = CommandRecord(
+        "mmt-plugin -C project --json validate --sdk s | tee ../runs/run-1/validate.json; "
+        "echo '{\"exit_code\": 0}' > runs/run-1/validate.json",
+        0,
+        _env("validate", 3),
+        started_ns=time.time_ns() - 30 * 10**9,
+        ended_ns=time.time_ns(),
+    )
+    assert shell.trusted is False
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[shell],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+    )
+    assert result.status == "not_green", result.to_json()
+    assert result.loop is None
+
+
+def test_an_envelope_echoed_in_untrusted_shell_text_is_no_evidence(tmp_path: Path) -> None:
+    """R1: a model can print any envelope with echo or a heredoc: envelopes
+    in untrusted shell output never make a loop green."""
+    inner = _vllm_shaped(tmp_path / "run")
+    forged = [
+        CommandRecord(f"echo x; mmt-plugin --json {name} | tee t", 0, _env(name, 0), trusted=False)
+        for name in ("validate", "generate", "build", "test")
+    ]
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=forged,
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "not_green", result.to_json()
+    assert result.loop is None
+
+
+def test_a_shadowing_or_indirect_invocation_is_no_evidence(tmp_path: Path) -> None:
+    """R1: the trusted execution never comes from the PATH or the work
+    folder: a copied or shadowed ``mmt-plugin`` of the model's is shell
+    text, and an indirect ``sh -c`` is not the strict form either."""
+    inner = _vllm_shaped(tmp_path / "run")
+    shadowed = [
+        CommandRecord(f"./mmt-plugin --json {name}", 0, _env(name, 0))
+        for name in ("validate", "generate", "build")
+    ]
+    indirect = CommandRecord("sh -c 'mmt-plugin --json test'", 0, _env("test", 0))
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[*shadowed, indirect],
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "not_green"
+    assert result.loop is None
+
+
+def test_a_green_loop_is_done_when_the_evaluation_ran(tmp_path: Path) -> None:
+    inner = _vllm_shaped(tmp_path / "run")
+    records = [
+        *_shell_green(inner / "project"),
+        _window("python3 skill/scripts/pcap_eval.py --out eval", evaluation=True),
+    ]
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=records,
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+    )
+    assert result.status == "done" and result.evaluation == "pass", result.to_json()
+
+
+def test_a_manifest_pass_without_the_evaluation_run_is_not_done(tmp_path: Path) -> None:
+    """R1: manifest.json is the model's to write: its PASS needs the shell's
+    record of pcap_eval.py passing."""
+    inner = _vllm_shaped(tmp_path / "run")
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=_shell_green(inner / "project"),
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+        allow_synthetic=True,
+    )
+    assert result.status == "incomplete", result.to_json()
+    assert result.evaluation == "not_done"
+    assert result.unchecked == [
+        "evaluation: not done (manifest.json's PASS is the model's say-so: "
+        "no trusted run of the capture evaluation (pcap_eval.py) of the green "
+        "build reached exit 0)"
+    ]
+    # A trusted evaluation the backend ran to exit 1 is the evaluation's
+    # own FAIL verdict — never anything manifest.json says.
+    failed = _window("python3 x/pcap_eval.py --out eval", evaluation=True)
+    failed.exit_code = 1
+    result = build_result(
+        thread_id="t",
+        work=inner,
+        project=None,
+        records=[*_shell_green(inner / "project"), failed],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+    )
+    assert result.evaluation == "fail"
+    assert result.status == "eval_failed"
 
 
 def test_a_work_folder_is_not_looked_for_below_when_it_is_one_or_ambiguous(
@@ -385,7 +720,7 @@ def test_green_with_leave_and_no_evaluation_is_the_models_skip(
         thread_id="t",
         work=inner,
         project=None,
-        records=[],
+        records=_shell_green(inner / "project"),
         with_sdk=True,
         no_eval=False,
         message="DONE: green",
@@ -404,7 +739,12 @@ def test_green_with_leave_and_no_evaluation_is_the_models_skip(
 def test_without_leave_no_evaluation_is_still_incomplete_and_ok(tmp_path: Path) -> None:
     inner = _vllm_shaped(tmp_path / "run")
     (inner / "manifest.json").write_text(json.dumps({"schema": 1}))
-    kwargs: dict[str, Any] = {"thread_id": "t", "work": inner, "project": None, "records": []}
+    kwargs: dict[str, Any] = {
+        "thread_id": "t",
+        "work": inner,
+        "project": None,
+        "records": _shell_green(inner / "project"),
+    }
     result = build_result(**kwargs, with_sdk=True, no_eval=False, message="DONE")
     assert (result.status, result.ok, result.eval_leave) == ("incomplete", True, None)
     reason = "no capture, and no leave for a synthetic one"

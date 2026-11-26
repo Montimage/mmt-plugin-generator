@@ -101,9 +101,10 @@ args = sys.argv[1:]
 with open(os.environ["MMT_FAKE_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 plan = json.loads(open(os.environ["MMT_FAKE_PLAN"]).read())
-i, command = 0, None
+i, command, project = 0, None, None
 while i < len(args):
     if args[i] in ("-C", "--project"):
+        project = args[i + 1]
         i += 2
     elif args[i].startswith("-"):
         i += 1
@@ -120,6 +121,13 @@ result = {{}}
 if command == "test":
     passed = 2 if code == 0 else 1
     result = {{"summary": {{"total": 2, "passed": passed, "failed": 2 - passed}}}}
+if command == "validate":
+    result = {{"checks": [{{"id": "parents-exist", "status": "pass" if code == 0 else "fail"}}]}}
+if command in ("build", "test") and code == 0 and project:
+    build = os.path.join(project, "build")
+    os.makedirs(build, exist_ok=True)
+    with open(os.path.join(build, "mmtp_telem.so"), "wb") as so:
+        so.write(b"fake plugin\\n")
 error = None
 if code:
     failure = "test.packet-failed" if code == 6 else "model.schema"
@@ -140,9 +148,16 @@ sys.exit(code)
 """
 
 
+_FAKE_EVAL = """#!{python}
+import sys
+sys.exit(0)
+"""
+
+
 class FakeCli:
     """A fake ``mmt-plugin`` in ``bin``: each command exits with the next
-    code of its list in the plan (the last one repeats), default 0."""
+    code of its list in the plan (the last one repeats), default 0. A fake
+    ``pcap_eval.py`` (the capture evaluation, exit 0) is next to it."""
 
     def __init__(self, root: Path, plan: dict[str, list[int]] | None = None) -> None:
         self.bin = root / "bin"
@@ -154,6 +169,9 @@ class FakeCli:
         exe = self.bin / "mmt-plugin"
         exe.write_text(_FAKE_CLI.format(python=sys.executable))
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+        evaluation = self.bin / "pcap_eval.py"
+        evaluation.write_text(_FAKE_EVAL.format(python=sys.executable))
+        evaluation.chmod(evaluation.stat().st_mode | stat.S_IXUSR)
 
     def env(self) -> dict[str, str]:
         return {
@@ -166,12 +184,39 @@ class FakeCli:
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
 
-def loop(project: Path, sdk: Path) -> list[list[dict[str, Any]] | str]:
-    """The four loop commands of SKILL.md, one step each."""
-    return [
-        step(call("execute", command=f"mmt-plugin -C {project} --json {name} --sdk {sdk}"))
-        for name in ("validate", "generate", "build", "test")
-    ]
+def loop(project: Path, sdk: Path, cc: str = "gcc") -> list[list[dict[str, Any]] | str]:
+    """The four loop commands of SKILL.md, one step each, in the exact form
+    the backend executes itself: the run's SDK, and its compiler on build
+    and test."""
+    steps = []
+    for name in ("validate", "generate", "build", "test"):
+        command = f"mmt-plugin -C {project} --json {name} --sdk {sdk}"
+        if name in ("build", "test"):
+            command += f" --cc {cc}"
+        steps.append(step(call("execute", command=command)))
+    return steps
+
+
+def evaluate(
+    work: Path, sdk: Path, project: Path | None = None, cc: str = "gcc"
+) -> list[dict[str, Any]] | str:
+    """The capture evaluation of SKILL.md, Step 6, in its strict form: one
+    simple command the backend executes itself, its arguments binding the
+    run — the run's SDK and compiler, the plugin the fake build left in
+    the project, a capture inside the work folder. The path is the skill's
+    shape; the fake_cli fixture makes the backend run the fake instead."""
+    project = project or work / "project"
+    return step(
+        call(
+            "execute",
+            command=(
+                "python3 skills/mmt-plugin-generator/scripts/pcap_eval.py "
+                f"--sdk {sdk} --plugin {project}/build/mmtp_telem.so "
+                f"--label telem --parent tcp --capture {work}/capture.pcap "
+                f"--out {work}/eval --cc {cc}"
+            ),
+        )
+    )
 
 
 def done_files(work: Path, verdict: str | None = "PASS") -> list[list[dict[str, Any]] | str]:

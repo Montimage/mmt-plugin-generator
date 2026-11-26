@@ -190,6 +190,7 @@ def compile_graph(
     tools: Sequence[BaseTool] = (),
     checkpointer: Checkpointer | None = None,
     on_command: Callable[[CommandRecord], None] | None = None,
+    evaluation: bytes | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """The graph of one run, whose skills are ``skills`` (a read-only copy)."""
     from deepagents import create_deep_agent
@@ -202,6 +203,13 @@ def compile_graph(
     writable = [settings.work, Path(tempfile.gettempdir())]
     if settings.project is not None:
         writable.append(settings.project)
+    # What a trusted invocation is bound to. An update's project is already
+    # resolved; a new plugin's is the lexical <work>/project — its parent
+    # resolved, never the component itself, so a symlink planted there is
+    # not the project.
+    project = settings.project
+    if project is None:
+        project = Path(os.path.realpath(settings.work)) / "project"
     guarded = GuardedShellBackend(
         work=settings.work,
         writable=writable,
@@ -210,6 +218,11 @@ def compile_graph(
         env=shell_env(os.environ),
         timeout=settings.timeout,
         on_command=on_command,
+        evaluation=evaluation,
+        project=project,
+        sdk=settings.sdk,
+        cc=settings.cc,
+        capture=settings.capture,
     )
     # No routes: every path goes to the guarded backend; only the root of
     # deepagents' artifacts moves.
@@ -266,6 +279,10 @@ def build_graph(
     )
     source = resolve_skills_dir(skills_dir)
     files = tree_files(source)
+    evaluation = files.get(f"{SKILL_NAME}/scripts/pcap_eval.py")
+    evaluation_bytes = (
+        evaluation.data if evaluation is not None and evaluation.kind == "file" else None
+    )
     snapshot = make_snapshot(files, f"graph-{digest(files)[:16]}")
     questioner = Questioner(
         mode=mode, work=work, allow_synthetic=allow_synthetic, on_question=on_question
@@ -279,4 +296,5 @@ def build_graph(
         extra_skills=[Path(p).resolve() for p in extra_skills],
         tools=tools,
         checkpointer=checkpointer,
+        evaluation=evaluation_bytes,
     )

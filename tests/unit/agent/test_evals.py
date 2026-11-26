@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin_agent import evals, run_model_evals
 from mmt_plugin_agent.evals import load_run_evals
 from mmt_plugin_agent.policy import LOOP_COMMANDS, mmt_plugin_command
@@ -461,3 +462,31 @@ def test_a_nested_work_folder_is_one_clear_problem(tmp_path: Path, skills_copy: 
         f"{nested.parent} is the work folder, with the project at "
         f"{(nested.parent / 'project').resolve()}"
     ]
+
+
+def test_unmatched_case_names_are_a_usage_error(tmp_path: Path, skills_copy: Path) -> None:
+    """R7: ``--case`` naming only cases that do not exist is an input
+    error, never a vacuous pass."""
+    from mmt_plugin_agent import AgentError
+
+    with pytest.raises(AgentError) as caught:
+        run_model_evals(
+            [ScriptedModel(scripts={"": ["DONE"]})],
+            out=tmp_path / "r.md",
+            skills_dir=skills_copy,
+            work_root=tmp_path / "evals",
+            cases=["no-such-case"],
+        )
+    assert caught.value.code == "agent.bad-case"
+    assert caught.value.exit_code is ExitCode.USAGE
+    assert "no-such-case" in str(caught.value)
+    assert not (tmp_path / "r.md").exists()
+    # One real case among unmatched ones is still an error.
+    with pytest.raises(AgentError, match="no-such-case"):
+        run_model_evals(
+            [ScriptedModel(scripts={"": ["DONE"]})],
+            out=tmp_path / "r.md",
+            skills_dir=skills_copy,
+            work_root=tmp_path / "evals",
+            cases=["spec-telem", "no-such-case"],
+        )

@@ -68,7 +68,7 @@ class SavedRun:
 
 def saved_runs(work: Path) -> list[SavedRun]:
     """Every ``<work>/runs/run-<n>/``, in numeric order. A run of the loop
-    is one with ``validate.json``, as for ``result.work_loop``."""
+    is one with ``validate.json``, as for ``result.loop_evidence``."""
     try:
         dirs = list((work / "runs").iterdir())
     except OSError:
@@ -455,6 +455,15 @@ def run_model_evals(
     out_path = Path(out).resolve()
     root = Path(work_root).resolve() if work_root else out_path.parent / f"{out_path.stem}-work"
     case_root = Path(cases_dir).resolve() if cases_dir else rev.CASES_DIR
+    available = {d.name for d in rev.case_dirs(case_root)}
+    unmatched = sorted({c for c in cases} - available)
+    if unmatched:
+        raise AgentError(
+            ExitCode.USAGE,
+            "agent.bad-case",
+            f"no eval case named {', '.join(unmatched)} in {case_root}",
+            "pass --case with one of: " + ", ".join(sorted(available) or ["(none)"]),
+        )
     dirs = [d for d in rev.case_dirs(case_root) if not cases or d.name in cases]
     # As PluginAgent: MMT_BASE when no sdk is given.
     sdk = sdk if sdk is not None else os.environ.get("MMT_BASE") or None
@@ -473,7 +482,7 @@ def run_model_evals(
                 work,
                 sdk=prefix,
                 cc=cc,
-                cli=cli or [sys.executable, "-m", "mmt_plugin"],
+                cli=cli or [sys.executable, "-I", "-m", "mmt_plugin"],
                 timeout=timeout,
             )
             status, runs, green = "failed", 0, False

@@ -339,9 +339,17 @@ mmt-plugin -C <project> --json generate --sdk-profile <profile>
 
 `build` generates and `test` builds when their input is stale, but run all
 four: each one's envelope shows only its own stage. Save each envelope as
-`<work>/runs/run-<n>/<command>.json` (pipe stdout through `tee`), and after
-the run write `runs/run-<n>/notes.md`: the command that stopped, its
-`error.code` and `location`, and your fix.
+`<work>/runs/run-<n>/<command>.json` by appending `| tee <work>/runs/run-<n>/<command>.json`
+to the same simple command, and after the run write `runs/run-<n>/notes.md`:
+the command that stopped, its `error.code` and `location`, and your fix.
+
+Run each command exactly as written above: one simple command, no shell
+loops, variables, `cd`, `&&`, redirections or substitutions (an optional
+leading `timeout <seconds>` and the single trailing `| tee` are the only
+extras), with the run's own project, SDK prefix and compiler and nothing
+else — no `--model`, no `--dry-run`, no packet selection. The harness
+executes only this strict form itself and trusts its exit code and
+envelope; anything else still runs, but counts for nothing.
 
 ## Step 5: read the envelope and fix
 

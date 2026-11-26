@@ -3,7 +3,10 @@ guards of ``policy.py`` (needs the agent extra)."""
 
 from __future__ import annotations
 
+import hashlib
 import os
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -17,14 +20,58 @@ from deepagents.backends.protocol import (
     WriteResult,
 )
 
-from mmt_plugin_agent.policy import check_command, is_within
+from mmt_plugin_agent.policy import (
+    TrustedInvocation,
+    check_command,
+    evaluation_args,
+    is_within,
+    loop_subcommand,
+    realpath_of,
+    trusted_invocation,
+)
 from mmt_plugin_agent.questions import Questioner, is_yes
 from mmt_plugin_agent.result import CommandRecord
+from mmt_plugin_agent.skills import SKILL_NAME
 
 __all__ = ["REFUSED_EXIT", "GuardedShellBackend"]
 
 #: The exit code of a command the guard refused, as a shell's "cannot execute".
 REFUSED_EXIT = 126
+
+#: The evaluation script's path inside the skills directory.
+EVALUATION_SCRIPT = f"{SKILL_NAME}/scripts/pcap_eval.py"
+
+
+def mmt_plugin_argv() -> list[str]:
+    """How the backend runs mmt-plugin for a trusted invocation: the module
+    of this very installation, never a name the PATH resolves (a model can
+    write a shadowing ``mmt-plugin`` anywhere the user can write) — and in
+    isolated mode, so neither the model-writable working directory nor the
+    environment can put a shadowing ``mmt_plugin`` package on sys.path."""
+    return [sys.executable, "-I", "-m", "mmt_plugin"]
+
+
+def evaluation_argv(script: Path) -> list[str]:
+    """How the backend runs the evaluation's script for a trusted
+    invocation: in isolated mode, like mmt-plugin's."""
+    return [sys.executable, "-I", str(script)]
+
+
+def evaluation_script_ok(
+    script: Path, protected: Sequence[Path], expected: bytes | None = None
+) -> bool:
+    """Whether ``script`` (resolved) is the skill's own evaluation script:
+    inside the read-only skills copy and still byte for byte the one the run
+    started with. The bytes, not the path or the mode bits, are the proof:
+    the copy is only read-only to the file tools, never to a shell the user
+    could write with, and a shell could change it back before the end-of-run
+    digest check."""
+    if expected is None or not any(is_within(script, root) for root in protected):
+        return False
+    try:
+        return script.read_bytes() == expected
+    except OSError:
+        return False
 
 
 class GuardedShellBackend(LocalShellBackend):
@@ -49,6 +96,11 @@ class GuardedShellBackend(LocalShellBackend):
         env: Mapping[str, str],
         timeout: int,
         on_command: Callable[[CommandRecord], None] | None = None,
+        evaluation: bytes | None = None,
+        project: Path | None = None,
+        sdk: Path | None = None,
+        cc: str = "gcc",
+        capture: Path | None = None,
     ) -> None:
         super().__init__(root_dir=str(work), virtual_mode=False, timeout=timeout, env=dict(env))
         self.writable = [Path(os.path.realpath(p)) for p in writable]
@@ -56,6 +108,22 @@ class GuardedShellBackend(LocalShellBackend):
         self.questioner = questioner
         self.questions = Path(os.path.realpath(questioner.questions_path))
         self.on_command = on_command
+        self._agent_env = dict(env)
+        self._work = Path(os.path.realpath(work))
+        self._evaluation = evaluation
+        # The run's own project, SDK, compiler and capture: what a trusted
+        # invocation is bound to. ``project`` is already canonical (the
+        # caller's resolved update project, or the lexical <work>/project
+        # of a new plugin): it is never resolved again, so a symlink
+        # planted at the project path does not become the project.
+        self._project = project if project is not None else self._work / "project"
+        self._sdk = sdk
+        self._cc = cc
+        self._capture = capture
+        #: The sha256 of every ``<project>/build/*.so`` as the last trusted
+        #: build or test left it, by real path: the binaries the capture
+        #: evaluation is bound to.
+        self._so_hashes: dict[str, str] = {}
 
     def refusal(self, file_path: str) -> str | None:
         """Why the file tools may not write ``file_path``, or None."""
@@ -164,6 +232,11 @@ class GuardedShellBackend(LocalShellBackend):
             )
             if not is_yes(answer):
                 return self._refuse(command, f"--force was not allowed (answer: {answer})")
+        invocation = trusted_invocation(command)
+        if invocation is not None:
+            response = self._execute_trusted(command, invocation, timeout)
+            if response is not None:
+                return response
         started = time.time_ns()
         response = super().execute(command, timeout=timeout)
         if self.on_command is not None:
@@ -174,6 +247,132 @@ class GuardedShellBackend(LocalShellBackend):
                     response.output,
                     started_ns=started,
                     ended_ns=time.time_ns(),
+                )
+            )
+        return response
+
+    def _scan_build(self) -> None:
+        """The sha256 of every ``<project>/build/*.so`` as it is now, by real
+        path: run after a trusted build or test, so the capture evaluation's
+        ``--plugin`` is bound to the binary the loop left — a file the model
+        rewrote afterwards, or one the loop never built, is not it."""
+        self._so_hashes = {}
+        try:
+            entries = list(os.scandir(self._project / "build"))
+        except OSError:
+            return
+        for entry in entries:
+            if not entry.name.endswith(".so") or not entry.is_file():
+                continue
+            try:
+                self._so_hashes[os.path.realpath(entry.path)] = hashlib.sha256(
+                    Path(entry.path).read_bytes()
+                ).hexdigest()
+            except OSError:
+                continue
+
+    def _evaluation_ok(self, args: list[str]) -> bool:
+        """Whether the evaluation's arguments bind this run, and the plugin
+        they name is byte for byte the one the last trusted build or test
+        left in ``<project>/build``."""
+        parsed = evaluation_args(
+            args,
+            project=self._project,
+            sdk=self._sdk,
+            cc=self._cc,
+            capture=self._capture,
+            work=self._work,
+            work_capture=(
+                self.questioner.allow_synthetic or self.questioner.mode == "interactive"
+            ),
+            cwd=self._work,
+        )
+        if parsed is None:
+            return False
+        plugin = realpath_of(parsed["--plugin"][0], self._work)
+        if self._so_hashes.get(plugin) is None:
+            return False
+        try:
+            current = hashlib.sha256(Path(plugin).read_bytes()).hexdigest()
+        except OSError:
+            return False
+        return current == self._so_hashes[plugin]
+
+    def _execute_trusted(
+        self, command: str, invocation: TrustedInvocation, timeout: int | None
+    ) -> ExecuteResponse | None:
+        """Run a strict invocation directly, without the shell: the backend
+        chooses the executable (this installation's ``mmt_plugin`` module,
+        or the skill's own evaluation script), the arguments are exactly the
+        parsed tokens, and the exit code and output are the process's own —
+        evidence the model's shell text cannot forge. Tee is performed here,
+        after the destination is validated. Returns None to fall back to the
+        shell when the invocation is not one the backend can trust: the
+        loop's shapes bind the run's project, SDK and compiler exactly
+        (``loop_subcommand``), the evaluation's bind its script, capture,
+        output and plugin (``evaluation_args``); anything else may still
+        run, but proves nothing."""
+        kind, args, subcommand, tee, timeout_s = invocation
+        evaluation = False
+        if kind == "mmt-plugin":
+            subcommand = loop_subcommand(
+                args, project=self._project, sdk=self._sdk, cc=self._cc, cwd=self._work
+            )
+            if subcommand is None:
+                return None
+            argv = [*mmt_plugin_argv(), *args]
+        else:
+            script = Path(os.path.realpath(self._work / args[0]))
+            if not evaluation_script_ok(script, self.protected, self._evaluation):
+                return None
+            if not self._evaluation_ok(args[1:]):
+                return None
+            evaluation = True
+            argv = [*evaluation_argv(script), *args[1:]]
+        started = time.time_ns()
+        try:
+            ran = subprocess.run(
+                argv,
+                cwd=self._work,
+                env=self._agent_env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s or timeout,
+                check=False,
+            )
+            exit_code, stdout, stderr = ran.returncode, ran.stdout, ran.stderr
+        except subprocess.TimeoutExpired as timed_out:
+            exit_code = 124
+            out = timed_out.stdout or ""
+            err = timed_out.stderr or ""
+            stdout = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
+            stderr = err.decode("utf-8", "replace") if isinstance(err, bytes) else err
+            stderr += f"\ntimed out after {timeout_s or timeout}s"
+        except OSError as exc:
+            exit_code, stdout, stderr = 126, "", f"cannot execute: {exc}"
+        if subcommand in ("build", "test"):
+            self._scan_build()
+        output = stdout + stderr
+        if tee is not None:
+            why = self.refusal(tee)
+            if why is None:
+                target = Path(os.path.realpath(self._work / tee))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(stdout, "utf-8")
+            else:
+                output += f"\ntee: {why}"
+        response = ExecuteResponse(output=output, exit_code=exit_code)
+        if self.on_command is not None:
+            self.on_command(
+                CommandRecord(
+                    command,
+                    exit_code,
+                    output,
+                    started_ns=started,
+                    ended_ns=time.time_ns(),
+                    trusted=True,
+                    name=subcommand if kind == "mmt-plugin" else None,
+                    evaluation=evaluation,
                 )
             )
         return response

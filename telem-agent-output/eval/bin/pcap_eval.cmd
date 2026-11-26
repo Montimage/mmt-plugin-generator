@@ -1,0 +1,1 @@
+["gcc", "-O2", "-Wall", "-o", "/work/plugin-work-5c743542/eval/bin/pcap_eval", "/tmp/.cache/mmt-plugin-agent/skills-5c743542e33849c7a3e36f1835808c54-d65d3a297c6851a7/mmt-plugin-generator/scripts/pcap_eval.c", "-I/opt/sdk/dpi/include", "/opt/sdk/dpi/lib/libmmt_core.so.1.10.2", "-Wl,-rpath,/work/plugin-work-5c743542/eval/lib", "-ldl", "-lpcap"]

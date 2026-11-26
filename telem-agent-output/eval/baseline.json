@@ -1,0 +1,14 @@
+{
+  "capture": "/work/plugin-work-5c743542/capture/capture.pcap",
+  "label": "telem",
+  "registered": false,
+  "proto_id": 0,
+  "frames": 9,
+  "label_packets": 0,
+  "paths": {
+    "meta.ethernet.ip.udp.unknown": 9
+  },
+  "paths_other": 0,
+  "attributes": {},
+  "crashed": false
+}

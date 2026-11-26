@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "validate",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "project",
+    "sdk": {
+      "prefix": "/opt/sdk",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "format": "yaml",
+    "protocol": {
+      "label": "telem",
+      "name": "TELEM",
+      "id": 963
+    },
+    "checks": [
+      {
+        "id": "schema",
+        "status": "pass",
+        "detail": "plugin.yaml, schema 1"
+      },
+      {
+        "id": "semantics",
+        "status": "pass",
+        "detail": "7 attributes, 1 struct"
+      },
+      {
+        "id": "sdk-profile",
+        "status": "pass",
+        "detail": "1.10.2 (plugin.yaml)"
+      },
+      {
+        "id": "id-free",
+        "status": "pass",
+        "detail": "963: not in SDK 1.10.2 or 4 installed plugins"
+      },
+      {
+        "id": "name-free",
+        "status": "pass",
+        "detail": "TELEM: not in SDK 1.10.2 or 4 installed plugins"
+      },
+      {
+        "id": "parents-exist",
+        "status": "pass",
+        "detail": "udp"
+      },
+      {
+        "id": "load-order",
+        "status": "pass",
+        "detail": "mmtp_telem.so after libmmt_tcpip.so (C)"
+      },
+      {
+        "id": "id-range",
+        "status": "pass",
+        "detail": "963 in 950-999"
+      }
+    ]
+  }
+}

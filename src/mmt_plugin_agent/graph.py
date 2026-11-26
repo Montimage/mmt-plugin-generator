@@ -20,7 +20,9 @@ from mmt_plugin_agent.questions import Question, Questioner, QuestionKind, RunMo
 from mmt_plugin_agent.result import CommandRecord
 from mmt_plugin_agent.skills import (
     SKILL_NAME,
+    EvaluationCode,
     digest,
+    evaluation_code,
     make_snapshot,
     resolve_skills_dir,
     tree_files,
@@ -190,7 +192,7 @@ def compile_graph(
     tools: Sequence[BaseTool] = (),
     checkpointer: Checkpointer | None = None,
     on_command: Callable[[CommandRecord], None] | None = None,
-    evaluation: bytes | None = None,
+    evaluation: EvaluationCode | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """The graph of one run, whose skills are ``skills`` (a read-only copy)."""
     from deepagents import create_deep_agent
@@ -279,10 +281,6 @@ def build_graph(
     )
     source = resolve_skills_dir(skills_dir)
     files = tree_files(source)
-    evaluation = files.get(f"{SKILL_NAME}/scripts/pcap_eval.py")
-    evaluation_bytes = (
-        evaluation.data if evaluation is not None and evaluation.kind == "file" else None
-    )
     snapshot = make_snapshot(files, f"graph-{digest(files)[:16]}")
     questioner = Questioner(
         mode=mode, work=work, allow_synthetic=allow_synthetic, on_question=on_question
@@ -296,5 +294,5 @@ def build_graph(
         extra_skills=[Path(p).resolve() for p in extra_skills],
         tools=tools,
         checkpointer=checkpointer,
-        evaluation=evaluation_bytes,
+        evaluation=evaluation_code(files),
     )

@@ -24,9 +24,9 @@ from mmt_plugin_agent.policy import LOOP_COMMANDS, environ_failure, is_system_pr
 from mmt_plugin_agent.questions import Question, Questioner, RunMode
 from mmt_plugin_agent.result import AgentEvent, AgentResult, CommandRecord, build_result, loop_runs
 from mmt_plugin_agent.skills import (
-    SKILL_NAME,
     TreeEntry,
     digest,
+    evaluation_code,
     make_snapshot,
     remove_tree,
     resolve_skills_dir,
@@ -417,10 +417,6 @@ class PluginAgent:
 
             self._checkpointer = InMemorySaver()
         records: list[CommandRecord] = []
-        evaluation = files.get(f"{SKILL_NAME}/scripts/pcap_eval.py")
-        evaluation_bytes = (
-            evaluation.data if evaluation is not None and evaluation.kind == "file" else None
-        )
         graph = compile_graph(
             model,
             settings,
@@ -431,7 +427,7 @@ class PluginAgent:
             tools=self.tools,
             checkpointer=self._checkpointer,
             on_command=records.append,
-            evaluation=evaluation_bytes,
+            evaluation=evaluation_code(files),
         )
         run = _Run(thread, settings, source, files, tree_digest, snapshot, graph, records)
         self._runs[thread] = run

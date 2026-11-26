@@ -17,6 +17,7 @@ from mmt_plugin_agent import PluginAgent
 from mmt_plugin_agent.backend import REFUSED_EXIT, GuardedShellBackend
 from mmt_plugin_agent.questions import Questioner
 from mmt_plugin_agent.result import CommandRecord
+from mmt_plugin_agent.skills import EvaluationCode
 
 from .fakes import FakeCli, call, done_files, loop, scripted, step
 
@@ -310,7 +311,12 @@ def test_a_strict_evaluation_inside_the_skills_is_trusted_outside_is_not(
     backend = _backend(work, skills_copy, sdk=sdk, allow_synthetic=True)
     probe = skills_copy / "mmt-plugin-generator" / "scripts" / "pcap_eval.py"
     probe.write_text("import sys; print('probe ran'); sys.exit(0)\n")
-    backend._evaluation = probe.read_bytes()
+    runner = skills_copy / "mmt-plugin-generator" / "scripts" / "pcap_eval.c"
+    backend._evaluation = EvaluationCode(script=probe.read_bytes(), runner=runner.read_bytes())
+    # The project the loop builds: the canonical artifact's name comes
+    # from its plugin.yaml's label.
+    (work / "project").mkdir(exist_ok=True)
+    (work / "project" / "plugin.yaml").write_text("schema: 1\nprotocol:\n  label: telem\n")
     # The plugin the evaluation names is the one a trusted build leaves:
     # the backend scans <project>/build after each trusted build or test.
     monkeypatch.setattr(
@@ -342,7 +348,7 @@ def test_a_strict_evaluation_inside_the_skills_is_trusted_outside_is_not(
     assert len(records) == before + 1
     changed = records[-1]
     assert changed.trusted is False, "a changed copy is the shell's, untrusted"
-    probe.write_bytes(backend._evaluation)
+    probe.write_bytes(backend._evaluation.script)
     outside = work / "pcap_eval.py"
     outside.write_text("import sys; print('outside ran'); sys.exit(0)\n")
     before = len(records)

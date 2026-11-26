@@ -18,6 +18,7 @@ import pytest
 from mmt_plugin_agent.backend import GuardedShellBackend
 from mmt_plugin_agent.questions import Questioner
 from mmt_plugin_agent.result import CommandRecord, build_result
+from mmt_plugin_agent.skills import EvaluationCode
 
 
 def _env(command: str, code: int = 0, checks: str | None = "pass") -> str:
@@ -47,6 +48,8 @@ def _make_backend(
     scripts.mkdir(parents=True, exist_ok=True)
     probe_script = scripts / "pcap_eval.py"
     probe_script.write_text("import sys\nsys.exit(0)\n")
+    probe_runner = scripts / "pcap_eval.c"
+    probe_runner.write_text("/* probe */\n")
     sdk = tmp_path / "sdk"
     probe = (
         "import json, sys\n"
@@ -77,7 +80,9 @@ def _make_backend(
         questioner=questioner,
         env={"PATH": os.environ["PATH"]},
         timeout=30,
-        evaluation=probe_script.read_bytes(),
+        evaluation=EvaluationCode(
+            script=probe_script.read_bytes(), runner=probe_runner.read_bytes()
+        ),
         project=project,
         sdk=sdk,
         cc="gcc",
@@ -99,6 +104,7 @@ def _build(backend: GuardedShellBackend, work: Path, sdk: Path) -> Path:
     plugin = project / "build" / "mmtp_telem.so"
     plugin.parent.mkdir(parents=True, exist_ok=True)
     plugin.write_bytes(b"the build's plugin\n")
+    (project / "plugin.yaml").write_text("schema: 1\nprotocol:\n  label: telem\n  id: 977\n")
     backend.execute(f"mmt-plugin -C {project} --json build --sdk {sdk} --cc gcc")
     return plugin
 
@@ -489,7 +495,7 @@ def test_a_rebuild_after_the_evaluation_stales_it(tmp_path: Path) -> None:
     project = work / "project"
     project.mkdir(parents=True)
     green = _green_records(project)
-    rebuild = _green_records(project)[2:]  # build and test again
+    rebuild = _green_records(project)  # the loop again, a new validate-delimited run
     result = build_result(
         thread_id="t",
         work=work,
@@ -502,6 +508,31 @@ def test_a_rebuild_after_the_evaluation_stales_it(tmp_path: Path) -> None:
     )
     assert result.evaluation == "not_done", "the PASS measured the previous binary"
     assert result.status == "incomplete"
+
+
+def test_a_rebuild_in_the_same_run_muddies_the_green(tmp_path: Path) -> None:
+    """A build or test again inside the same run — no new validate, so no
+    new run — makes the run's commands no longer the loop's exact sequence
+    (two builds, two tests). Green is the exact sequence, one each: the
+    muddled run is not green however honest each exit code, and the model
+    must validate again — cheaply — to start a clean one."""
+    work = tmp_path / "work"
+    project = work / "project"
+    project.mkdir(parents=True)
+    green = _green_records(project)
+    rebuild = _green_records(project)[2:]  # build and test again, no validate
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=[*green, _eval_record(project, 0, 10), *rebuild],
+        with_sdk=True,
+        no_eval=False,
+        message="DONE",
+        allow_synthetic=True,
+    )
+    assert result.evaluation == "not_done"
+    assert result.status == "not_green"
 
 
 # --- finding 3: green needs validate's parents-exist pass -----------------
@@ -554,3 +585,402 @@ def test_the_eval_harness_runs_python_in_isolated_mode() -> None:
 
     source = (Path(evals.__file__)).read_text()
     assert '[sys.executable, "-I", "-m", "mmt_plugin"]' in source
+
+
+# --- the evaluation binds the canonical artifact and a fresh runner -------
+
+
+def test_a_sibling_plugin_is_never_the_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``mmtp_*.so`` the loop never linked — planted in ``build/`` next to
+    the canonical artifact, even byte for byte the same file — is not the
+    build the green loop left: the evaluation's ``--plugin`` binds
+    ``build/mmtp_<label>.so`` exactly, the name ``build`` itself derives
+    from the project's plugin.yaml."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    sibling = plugin.parent / "mmtp_evil.so"
+    sibling.write_bytes(plugin.read_bytes())
+    backend.execute(_evaluation(work, sdk, sibling, **{"--label": "evil"}))
+    assert records[-1].trusted is False, "a sibling of another name and label"
+    backend.execute(_evaluation(work, sdk, sibling))
+    assert records[-1].trusted is False, "even measured as the right label"
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is True, "the canonical artifact binds"
+
+
+def test_the_label_the_evaluation_measures_is_the_projects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--label`` names the protocol the runner measures: another label
+    measures another protocol's classification with the plugin loaded but
+    irrelevant — or nothing at all."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    backend.execute(_evaluation(work, sdk, plugin, **{"--label": "http"}))
+    assert records[-1].trusted is False
+    backend.execute(_evaluation(work, sdk, plugin, **{"--label": "TELEM"}))
+    assert records[-1].trusted is True, "case is the registration's, not the evidence's"
+
+
+def test_a_project_without_a_label_binds_no_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The canonical name comes from plugin.yaml, the same file ``build``
+    reads: no readable label, no canonical artifact, no trusted evaluation
+    — fail closed."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    project = work / "project"
+    (project / "plugin.yaml").write_text("schema: 1\nprotocol:\n  id: 977\n")
+    backend.execute(f"mmt-plugin -C {project} --json build --sdk {sdk} --cc gcc")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False, "no label in plugin.yaml"
+    (project / "plugin.yaml").unlink()
+    backend.execute(f"mmt-plugin -C {project} --json build --sdk {sdk} --cc gcc")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False, "no plugin.yaml at all"
+
+
+def test_a_renamed_label_moves_the_canonical_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The binding follows plugin.yaml as it is at the scan, not the file
+    that happens to sit in ``build/``: a project whose label is now
+    ``other`` has ``mmtp_other.so`` for its canonical artifact, and the
+    stale ``mmtp_telem.so`` no longer binds."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    project = work / "project"
+    other = plugin.parent / "mmtp_other.so"
+    other.write_bytes(b"the renamed build\n")
+    (project / "plugin.yaml").write_text("schema: 1\nprotocol:\n  label: other\n  id: 977\n")
+    backend.execute(f"mmt-plugin -C {project} --json build --sdk {sdk} --cc gcc")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False, "mmtp_telem.so is a leftover now"
+    backend.execute(_evaluation(work, sdk, other, **{"--label": "other"}))
+    assert records[-1].trusted is True, "mmtp_other.so is the canonical artifact"
+
+
+def test_a_preplanted_runner_cache_is_removed_before_the_evaluation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The script reuses ``<out>/bin/pcap_eval`` when the stamp next to it
+    names the same compile command, and both are the model's to write: a
+    planted binary with a planted stamp would run instead of the verified C
+    runner. The trusted execution removes both first, so what runs is
+    compiled now, from the runner whose bytes were checked."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    cache = work / "eval" / "bin"
+    cache.mkdir(parents=True)
+    planted = cache / "pcap_eval"
+    planted.write_bytes(b"planted runner\n")
+    stamp = cache / "pcap_eval.cmd"
+    stamp.write_text("the compile command line\n")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is True and records[-1].evaluation is True
+    assert not planted.exists(), "the planted binary is removed before the run"
+    assert not stamp.exists(), "and its stamp with it"
+
+
+def test_a_runner_cache_that_cannot_be_removed_is_not_trusted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the cache cannot be removed it may still be the planted binary
+    the compile would reuse: the execution falls back to the shell, its
+    output the model's say-so — fail closed."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    cache = work / "eval" / "bin" / "pcap_eval"
+    cache.mkdir(parents=True)  # a directory at the cache path: unlink fails
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False
+    assert records[-1].evaluation is False
+
+
+def test_a_changed_c_runner_is_never_trusted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The script compiles the C runner next to it, so the runner's bytes
+    are as much the evidence as the script's: a rewritten ``pcap_eval.c``
+    in the skills copy — the shell writes what the file tools may not —
+    makes the evaluation untrusted, the unchanged script notwithstanding."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    runner = tmp_path / "skills" / "mmt-plugin-generator" / "scripts" / "pcap_eval.c"
+    runner.write_text("/* planted */\n")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False
+    runner.unlink()
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is False, "and a missing one is no better"
+
+
+# --- finding 3: green is the exact ordered sequence, one each -------------
+
+
+def _sequence_result(tmp_path: Path, names: list[str], with_sdk: bool = True) -> Any:
+    """The result of one run of trusted loop commands ``names`` in order,
+    each exiting 0, all targeting the project."""
+    work = tmp_path / "work"
+    project = work / "project"
+    project.mkdir(parents=True)
+    now = time.time_ns()
+    records = []
+    for i, name in enumerate(names):
+        line = f"mmt-plugin -C {project} --json {name}"
+        if with_sdk:
+            line += " --sdk /sdk" + (" --cc gcc" if name in ("build", "test") else "")
+        else:
+            flags = "--no-sdk --sdk-profile" if name == "validate" else "--sdk-profile"
+            line += f" {flags} 1.10.2"
+        records.append(
+            CommandRecord(line, 0, _env(name), trusted=True, started_ns=now + i, ended_ns=now + i)
+        )
+    return build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=records,
+        with_sdk=with_sdk,
+        no_eval=True,
+        message="DONE",
+    )
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["validate", "generate", "build"],  # no test
+        ["validate", "generate", "test"],  # no build
+        ["validate", "build", "test"],  # no generate
+        ["generate", "build", "test"],  # no validate
+    ],
+    ids=["no-test", "no-build", "no-generate", "no-validate"],
+)
+def test_an_omission_is_never_green(tmp_path: Path, names: list[str]) -> None:
+    """Presence is not the sequence: a step missing is not the loop, however
+    green the exit codes of the others."""
+    result = _sequence_result(tmp_path, names)
+    assert result.status == "not_green"
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["validate", "generate", "test", "build"],
+        ["validate", "build", "generate", "test"],
+        ["generate", "validate", "build", "test"],
+        ["validate", "test", "generate", "build"],
+    ],
+    ids=["test-before-build", "build-before-generate", "generate-first", "test-second"],
+)
+def test_a_reordering_is_never_green(tmp_path: Path, names: list[str]) -> None:
+    """The loop certifies validate, generate, build, test *in that order*:
+    a test before its build measures a stale binary, a build before its
+    generate compiles stale sources — scrambled evidence is none."""
+    result = _sequence_result(tmp_path, names)
+    assert result.status == "not_green"
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ["validate", "generate", "build", "build", "test"],
+        ["validate", "generate", "generate", "build", "test"],
+        ["validate", "generate", "build", "test", "test"],
+    ],
+    ids=["build-twice", "generate-twice", "test-twice"],
+)
+def test_a_duplicate_is_never_green(tmp_path: Path, names: list[str]) -> None:
+    """One each: a step twice inside the run muddies which artifact the
+    green is of. The honest iteration starts a new run with validate."""
+    result = _sequence_result(tmp_path, names)
+    assert result.status == "not_green"
+
+
+def test_the_exact_sequence_is_green(tmp_path: Path) -> None:
+    result = _sequence_result(tmp_path, ["validate", "generate", "build", "test"])
+    assert result.status == "done", result.to_json()
+
+
+def test_a_step_run_untrusted_is_a_step_missing(tmp_path: Path) -> None:
+    """A step the shell ran — a pipeline, a loop, an indirect invocation —
+    is the model's word, not evidence: filtered out before the sequence is
+    read, it leaves the run short of the exact sequence, however green the
+    text around it."""
+    work = tmp_path / "work"
+    project = work / "project"
+    project.mkdir(parents=True)
+    green = _green_records(project)
+    generate = green[1]
+    untrusted = CommandRecord(
+        generate.command,
+        generate.exit_code,
+        generate.output,
+        trusted=False,  # the same text, run by the shell: no evidence
+        started_ns=generate.started_ns,
+        ended_ns=generate.ended_ns,
+    )
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=[green[0], untrusted, green[2], green[3]],
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "not_green", "validate, build, test without generate"
+
+
+def test_commands_of_another_project_do_not_break_the_sequence(tmp_path: Path) -> None:
+    """A run is this project's evidence: another project's loop commands,
+    filtered out before the sequence is read, neither complete it nor
+    corrupt it."""
+    work = tmp_path / "work"
+    project = work / "project"
+    project.mkdir(parents=True)
+    other = work / "other"
+    other.mkdir()
+    now = time.time_ns()
+    foreign = CommandRecord(
+        f"mmt-plugin -C {other} --json build --sdk /sdk --cc gcc",
+        0,
+        _env("build"),
+        trusted=True,
+        started_ns=now + 1,
+        ended_ns=now + 1,
+    )
+    green = _green_records(project)
+    records = [green[0], green[1], foreign, green[2], green[3]]
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=records,
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "done", result.to_json()
+
+
+def test_without_an_sdk_the_profiles_must_match(tmp_path: Path) -> None:
+    """No-SDK green is validate, generate pinning the *same* profile: a
+    model validated against one and generated for another was never checked
+    as it generated, and a missing pin is no pin."""
+    same = _sequence_result(tmp_path, ["validate", "generate"], with_sdk=False)
+    assert same.status == "done", same.to_json()
+    work = tmp_path / "w2"
+    project = work / "project"
+    project.mkdir(parents=True)
+    now = time.time_ns()
+    records = [
+        CommandRecord(
+            f"mmt-plugin -C {project} --json validate --no-sdk --sdk-profile 1.10.2",
+            0,
+            _env("validate"),
+            trusted=True,
+            started_ns=now,
+            ended_ns=now,
+        ),
+        CommandRecord(
+            f"mmt-plugin -C {project} --json generate --sdk-profile 1.9.0",
+            0,
+            _env("generate"),
+            trusted=True,
+            started_ns=now + 1,
+            ended_ns=now + 1,
+        ),
+    ]
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=records,
+        with_sdk=False,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "not_green", "one profile for validate, another for generate"
+
+
+def test_a_failed_loop_then_the_exact_sequence_is_green(tmp_path: Path) -> None:
+    """Incomplete failing loops are fine: the failed attempt is its own run,
+    the fix starts a new one with validate, and green is the exact sequence
+    of the last run."""
+    work = tmp_path / "work"
+    project = work / "project"
+    project.mkdir(parents=True)
+    now = time.time_ns()
+    failed = [
+        CommandRecord(
+            f"mmt-plugin -C {project} --json {name} --sdk /sdk"
+            + (" --cc gcc" if name in ("build", "test") else ""),
+            6 if name == "test" else 0,
+            _env(name, 6 if name == "test" else 0),
+            trusted=True,
+            started_ns=now + i,
+            ended_ns=now + i,
+        )
+        for i, name in enumerate(("validate", "generate", "build", "test"))
+    ]
+    green = _green_records(project)
+    result = build_result(
+        thread_id="t",
+        work=work,
+        project=None,
+        records=[*failed, *green],
+        with_sdk=True,
+        no_eval=True,
+        message="DONE",
+    )
+    assert result.status == "done", result.to_json()
+    assert result.loop_runs == 2
+
+
+def test_the_cache_is_gone_when_the_script_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The removal is not a cleanup afterwards: the script itself, asked,
+    finds no cache — the binary that runs is the one it compiles now, and
+    a planted one is gone before the process even starts."""
+    probe = (
+        "import os, sys\n"
+        "out = sys.argv[sys.argv.index('--out') + 1]\n"
+        "gone = not os.path.exists(os.path.join(out, 'bin', 'pcap_eval'))\n"
+        "gone = gone and not os.path.exists(os.path.join(out, 'bin', 'pcap_eval.cmd'))\n"
+        "sys.exit(0 if gone else 3)\n"
+    )
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch)
+    script = tmp_path / "skills" / "mmt-plugin-generator" / "scripts" / "pcap_eval.py"
+    script.write_text(probe)
+    runner = tmp_path / "skills" / "mmt-plugin-generator" / "scripts" / "pcap_eval.c"
+    backend._evaluation = EvaluationCode(script=probe.encode(), runner=runner.read_bytes())
+    records = _records(backend)
+    plugin = _build(backend, work, sdk)
+    (work / "capture.pcap").write_bytes(b"x")
+    cache = work / "eval" / "bin"
+    cache.mkdir(parents=True)
+    (cache / "pcap_eval").write_bytes(b"planted runner\n")
+    (cache / "pcap_eval.cmd").write_text("the compile command line\n")
+    backend.execute(_evaluation(work, sdk, plugin))
+    assert records[-1].trusted is True
+    assert records[-1].exit_code == 0, "the script itself found no cache when it ran"

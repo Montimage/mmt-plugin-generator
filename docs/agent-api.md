@@ -259,7 +259,16 @@ with every link followed: a symlink planted at `<work>/project` is never
 the project, and a green loop of another project, against another SDK,
 with another compiler or with any further argument (a `--model`, a
 `--dry-run`, a packet selection) runs in the shell but proves nothing.
-Green is the skill's Done: in one loop run all four exit 0, `test`'s
+Green is the skill's Done, and green is the exact sequence: within one
+loop run `validate`, `generate`, `build`, `test` — the first two without
+an SDK — one each, in that order, each exit 0. Presence is not enough:
+a `test` before its `build` measures a stale binary, a step twice
+muddies which artifact the green is of, and a step missing is not the
+loop, however green each exit code looks. A run that stopped short or
+failed is simply not green, and the honest iteration starts a new run
+with `validate`. Without an SDK the two commands must pin the *same*
+`--sdk-profile`: a model validated against one and generated for
+another was never checked as it generated. With an SDK, `test`'s
 summary has `failed` 0 and `passed` equal to `total` with `total` at
 least 1, and `validate`'s `parents-exist` check is `pass`.
 
@@ -268,23 +277,45 @@ verdict is the backend's own executions — the strict form `python3
 <skill>/scripts/pcap_eval.py ...` (or the script directly), resolved
 inside the read-only skills copy and still byte for byte the script the
 run started with, so it is the skill's own script, never a copy the
-model wrote or a version it changed and changed back. Its arguments bind
-the run the same way: the run's SDK and compiler, no `--help` (it exits
-0 and evaluates nothing), the output under the work folder, the capture
+model wrote or a version it changed and changed back. The C runner next
+to it is checked the same way: the script compiles `pcap_eval.c`, so its
+bytes are as much the evidence as the script's, and a rewritten or
+missing one is never trusted. And because the script reuses a cached
+runner in the model-writable `--out` when the stamp next to it matches —
+the stamp the model can write — the backend removes `bin/pcap_eval` and
+`bin/pcap_eval.cmd` immediately before the trusted run, so the binary
+that runs is compiled there and then from the verified source; when the
+cache cannot be removed the execution is not trusted either. The
+arguments bind the run the same way: the run's SDK and compiler, no
+`--help` (it exits 0 and evaluates nothing), the output under the work
+folder, the capture
 the run was given (the configured one or a byte-for-byte copy of it
 inside the work folder, else one inside the work folder when the run
-allows a synthetic one), and `--plugin` inside `<project>/build`, named
-`mmtp_*.so` as `build` names its output and byte for byte the `.so` the
-last trusted build or test left there — a file the model
-rewrote afterwards, or one the loop never built, is not it. And it counts
+allows a synthetic one), and `--plugin` the canonical artifact exactly:
+`<project>/build/mmtp_<label>.so`, the label as the project's
+`plugin.yaml` says it at the scan (the same file `build` reads for the
+same label), byte for byte the `.so` the last trusted build or test left
+there — a file the model rewrote afterwards, one the loop never built,
+or a `mmtp_*.so` sibling of another name is not it. `--label` is the
+project's own too: another label measures another protocol's
+classification with the plugin loaded but irrelevant. And it counts
 only after a trusted green loop of the same run and before any later
 trusted build or test: it is the evaluation *of that build*, and a
 rebuild after it is not the binary it measured. Exit 0 is the
 evaluation's PASS, exit 1 its FAIL, the last verdict decides; anything
-else never happened. The Python script is the trusted entrypoint
-although it compiles its C runner itself: what the backend trusts is
-those bytes, and the exit code of the process it ran. Otherwise the
+else never happened. What the backend trusts is those bytes, and the
+exit code of the process it ran. Otherwise the
 evaluation is not done, however green the loop.
+
+Two things the evidence cannot close, both inherent to the model running
+as the same user. A background process the model started can race the
+checks: rewrite the artifact or the runner between the byte check and
+the execution, or replant the runner cache between its removal and the
+compile. And anything the evidence names can be mutated after the run:
+the green loop's binary, the capture, the work folder itself are the
+model's to write once the backend has stopped watching. The evidence
+certifies what the backend itself executed and measured, at the moment
+it did — no more; the container is what keeps the rest honest.
 
 This example runs in CI with a scripted model
 (`tests/unit/agent/test_docs_example.py`):

@@ -12,6 +12,7 @@ from typing import Any
 
 from mmt_plugin_agent.backend import evaluation_script_ok, mmt_plugin_argv
 from mmt_plugin_agent.result import CommandRecord, build_result
+from mmt_plugin_agent.skills import EvaluationCode
 
 
 def _real(path: Path) -> Path:
@@ -207,11 +208,20 @@ def test_the_evaluation_script_must_be_the_skills_copy(tmp_path: Path) -> None:
     script = protected / "mmt-plugin-generator" / "scripts" / "pcap_eval.py"
     script.parent.mkdir(parents=True)
     script.write_text("print(1)\n")
-    original = b"print(1)\n"
+    runner = script.parent / "pcap_eval.c"
+    runner.write_text("/* the runner */\n")
+    original = EvaluationCode(script=b"print(1)\n", runner=b"/* the runner */\n")
     assert evaluation_script_ok(_real(script), [_real(protected)], original)
     assert not evaluation_script_ok(_real(script), [_real(protected)])
-    changed = b"print(2)\n"
+    changed = EvaluationCode(script=b"print(2)\n", runner=b"/* the runner */\n")
     assert not evaluation_script_ok(_real(script), [_real(protected)], changed)
+    # So is a changed C runner next to the unchanged script: the script
+    # compiles it, so its bytes are as much the evidence as the script's.
+    changed_runner = EvaluationCode(script=b"print(1)\n", runner=b"/* planted */\n")
+    assert not evaluation_script_ok(_real(script), [_real(protected)], changed_runner)
+    runner.unlink()
+    assert not evaluation_script_ok(_real(script), [_real(protected)], original)
+    runner.write_text("/* the runner */\n")
     outside = tmp_path / "scripts" / "pcap_eval.py"
     outside.parent.mkdir()
     outside.write_text("print(1)\n")

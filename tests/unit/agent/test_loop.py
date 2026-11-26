@@ -323,7 +323,11 @@ def test_the_loop_is_the_work_folders_last_run(
     fake_cli({"test": [6, 0]})
     work, sdk = tmp_path / "work", tmp_path / "sdk"
     model_yaml = step(
-        call("write_file", file_path=str(work / "project/plugin.yaml"), content="schema: 1\n")
+        call(
+            "write_file",
+            file_path=str(work / "project/plugin.yaml"),
+            content="schema: 1\nprotocol:\n  label: telem\n",
+        )
     )
     model = scripted(
         [
@@ -375,7 +379,11 @@ def test_a_failed_run_over_an_earlier_green_one_is_not_green(
         (old / f"{name}.json").write_text(_env(name, 0))
         os.utime(old / f"{name}.json", (hour_ago, hour_ago))
     model_yaml = step(
-        call("write_file", file_path=str(work / "project/plugin.yaml"), content="schema: 1\n")
+        call(
+            "write_file",
+            file_path=str(work / "project/plugin.yaml"),
+            content="schema: 1\nprotocol:\n  label: telem\n",
+        )
     )
     second = step(
         call(

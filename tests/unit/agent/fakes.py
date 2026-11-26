@@ -128,6 +128,10 @@ if command in ("build", "test") and code == 0 and project:
     os.makedirs(build, exist_ok=True)
     with open(os.path.join(build, "mmtp_telem.so"), "wb") as so:
         so.write(b"fake plugin\\n")
+    yaml = os.path.join(project, "plugin.yaml")
+    if not os.path.exists(yaml):
+        with open(yaml, "w") as f:
+            f.write("schema: 1\\nprotocol:\\n  label: telem\\n  id: 977\\n")
 error = None
 if code:
     failure = "test.packet-failed" if code == 6 else "model.schema"

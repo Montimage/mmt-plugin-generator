@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from mmt_plugin_agent.policy import LOOP_COMMANDS, mmt_plugin_command
+from mmt_plugin_agent.policy import LOOP_COMMANDS, mmt_plugin_command, trusted_invocation
 from mmt_plugin_agent.questions import Question
 
 __all__ = [
@@ -168,13 +168,37 @@ class LoopRun:
                 return None
         return None
 
+    def _sdk_profile(self, record: CommandRecord) -> str | None:
+        """The ``--sdk-profile`` value of a no-SDK loop command, from its
+        strict invocation (the backend executed exactly these tokens), or
+        None when it cannot be read off the command."""
+        invocation = trusted_invocation(record.command)
+        if invocation is None:
+            return None
+        _, args, _, _, _ = invocation
+        if len(args) >= 2 and args[-2] == "--sdk-profile":
+            return args[-1]
+        return None
+
     def green(self, with_sdk: bool) -> bool:
-        need = LOOP_COMMANDS if with_sdk else LOOP_COMMANDS[:2]
+        """Whether this run is green (SKILL.md, Done): the loop's exact
+        ordered sequence — ``validate``, ``generate``, ``build``, ``test``
+        with an SDK, the first two without — one each, in order, each
+        exiting 0. Presence is not enough: a ``test`` before its ``build``,
+        a command twice or a step missing proves nothing of the sequence
+        the skill certifies, however green each exit code looks. A run that
+        stopped short or failed is simply not green. Without an SDK the
+        two commands must pin the same profile: a model validated against
+        one and generated for another was never checked as it generated."""
+        need = list(LOOP_COMMANDS if with_sdk else LOOP_COMMANDS[:2])
+        if [c.mmt_command for c in self.commands] != need:
+            return False
         codes = self.exit_codes()
         if any(codes.get(name) != 0 for name in need):
             return False
         if not with_sdk:
-            return True
+            profiles = [self._sdk_profile(c) for c in self.commands]
+            return profiles[0] is not None and profiles[0] == profiles[1]
         # SKILL.md, Done: validate's parents-exist check is pass.
         if self.parents_exist() != "pass":
             return False

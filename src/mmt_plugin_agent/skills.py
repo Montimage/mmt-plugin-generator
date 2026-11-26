@@ -16,10 +16,14 @@ from mmt_plugin_agent.errors import AgentError
 
 __all__ = [
     "ENV_SKILLS",
+    "EVALUATION_SCRIPT",
     "IMAGE_SKILLS",
+    "RUNNER_SOURCE",
     "SKILL_NAME",
+    "EvaluationCode",
     "TreeEntry",
     "digest",
+    "evaluation_code",
     "find_skills_dir",
     "make_snapshot",
     "remove_tree",
@@ -35,6 +39,11 @@ ENV_SKILLS = "MMT_PLUGIN_SKILLS"
 IMAGE_SKILLS = Path("/opt/mmt-plugin-skills")
 #: A checkout: src/mmt_plugin_agent/ -> the repository's skills/.
 _CHECKOUT_SKILLS = Path(__file__).resolve().parents[2] / "skills"
+#: The evaluation script's path inside the skills directory, and the C
+#: runner next to it which the script compiles (``RUNNER_SRC`` of
+#: ``scripts/pcap_eval.py``).
+EVALUATION_SCRIPT = f"{SKILL_NAME}/scripts/pcap_eval.py"
+RUNNER_SOURCE = "pcap_eval.c"
 
 
 def _holds_skill(path: Path) -> bool:
@@ -83,6 +92,30 @@ class TreeEntry:
     kind: str  # "file", "dir", "link" or "special"
     data: bytes = b""
     executable: bool = False
+
+
+@dataclass(frozen=True)
+class EvaluationCode:
+    """The evaluation's code as the run started with it: the script's bytes
+    and the C runner's, which it compiles. Trusting the script alone would
+    trust nothing it runs: the runner is the measurement, and the script
+    reuses a cached binary of a model-writable ``--out`` when its stamp
+    matches, so a trusted execution also invalidates that cache first (the
+    backend's)."""
+
+    script: bytes
+    runner: bytes
+
+
+def evaluation_code(files: Mapping[str, TreeEntry]) -> EvaluationCode | None:
+    """The evaluation's startup code from the skills tree: the script and
+    the C runner, byte for byte; None when the tree holds no such pair (the
+    capture evaluation is then never trusted)."""
+    script = files.get(EVALUATION_SCRIPT)
+    runner = files.get(f"{SKILL_NAME}/scripts/{RUNNER_SOURCE}")
+    if script is None or script.kind != "file" or runner is None or runner.kind != "file":
+        return None
+    return EvaluationCode(script=script.data, runner=runner.data)
 
 
 def _skipped(rel: str) -> bool:

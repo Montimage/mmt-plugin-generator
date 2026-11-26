@@ -20,6 +20,7 @@ from deepagents.backends.protocol import (
     WriteResult,
 )
 
+from mmt_plugin.pluginyaml import protocol_label
 from mmt_plugin_agent.policy import (
     TrustedInvocation,
     check_command,
@@ -31,15 +32,16 @@ from mmt_plugin_agent.policy import (
 )
 from mmt_plugin_agent.questions import Questioner, is_yes
 from mmt_plugin_agent.result import CommandRecord
-from mmt_plugin_agent.skills import SKILL_NAME
+from mmt_plugin_agent.skills import RUNNER_SOURCE, EvaluationCode
 
 __all__ = ["REFUSED_EXIT", "GuardedShellBackend"]
 
 #: The exit code of a command the guard refused, as a shell's "cannot execute".
 REFUSED_EXIT = 126
 
-#: The evaluation script's path inside the skills directory.
-EVALUATION_SCRIPT = f"{SKILL_NAME}/scripts/pcap_eval.py"
+#: The cache the evaluation script reuses under ``--out`` when nothing asks
+#: it to rebuild: the runner binary and the stamp of the compile command.
+RUNNER_CACHE = ("bin/pcap_eval", "bin/pcap_eval.cmd")
 
 
 def mmt_plugin_argv() -> list[str]:
@@ -58,18 +60,21 @@ def evaluation_argv(script: Path) -> list[str]:
 
 
 def evaluation_script_ok(
-    script: Path, protected: Sequence[Path], expected: bytes | None = None
+    script: Path, protected: Sequence[Path], expected: EvaluationCode | None = None
 ) -> bool:
     """Whether ``script`` (resolved) is the skill's own evaluation script:
     inside the read-only skills copy and still byte for byte the one the run
-    started with. The bytes, not the path or the mode bits, are the proof:
+    started with, and so is the C runner next to it, which the script
+    compiles. The bytes, not the path or the mode bits, are the proof:
     the copy is only read-only to the file tools, never to a shell the user
     could write with, and a shell could change it back before the end-of-run
     digest check."""
     if expected is None or not any(is_within(script, root) for root in protected):
         return False
     try:
-        return script.read_bytes() == expected
+        if script.read_bytes() != expected.script:
+            return False
+        return (script.parent / RUNNER_SOURCE).read_bytes() == expected.runner
     except OSError:
         return False
 
@@ -96,7 +101,7 @@ class GuardedShellBackend(LocalShellBackend):
         env: Mapping[str, str],
         timeout: int,
         on_command: Callable[[CommandRecord], None] | None = None,
-        evaluation: bytes | None = None,
+        evaluation: EvaluationCode | None = None,
         project: Path | None = None,
         sdk: Path | None = None,
         cc: str = "gcc",
@@ -120,10 +125,13 @@ class GuardedShellBackend(LocalShellBackend):
         self._sdk = sdk
         self._cc = cc
         self._capture = capture
-        #: The sha256 of every ``<project>/build/*.so`` as the last trusted
-        #: build or test left it, by real path: the binaries the capture
-        #: evaluation is bound to.
-        self._so_hashes: dict[str, str] = {}
+        #: The canonical plugin artifact as the last trusted build or test
+        #: left it — its real path, its sha256 then and the project label
+        #: its name comes from — or None. The capture evaluation's
+        #: ``--plugin`` is bound to exactly this file: a sibling ``.so``
+        #: the loop never linked, a file the model rewrote afterwards, or
+        #: a measurement of another protocol is none of them it.
+        self._artifact: tuple[str, str, str] | None = None
 
     def refusal(self, file_path: str) -> str | None:
         """Why the file tools may not write ``file_path``, or None."""
@@ -251,30 +259,41 @@ class GuardedShellBackend(LocalShellBackend):
             )
         return response
 
-    def _scan_build(self) -> None:
-        """The sha256 of every ``<project>/build/*.so`` as it is now, by real
-        path: run after a trusted build or test, so the capture evaluation's
-        ``--plugin`` is bound to the binary the loop left — a file the model
-        rewrote afterwards, or one the loop never built, is not it."""
-        self._so_hashes = {}
+    def _project_label(self) -> str | None:
+        """The label of the run's project as ``plugin.yaml`` says it now,
+        or None when it cannot be read — then no artifact binds, and the
+        evaluation is never trusted. ``build`` reads the same file for the
+        same label, so the canonical artifact ``mmtp_<label>.so`` (its
+        lower-case form, as ``build`` names it) is the one the loop's own
+        build or test just produced; a file of any other name in ``build/``
+        is a sibling the loop never linked."""
         try:
-            entries = list(os.scandir(self._project / "build"))
+            text = (self._project / "plugin.yaml").read_text("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        return protocol_label(text)
+
+    def _scan_build(self) -> None:
+        """The canonical artifact as it is now: run after a trusted build
+        or test, so the capture evaluation's ``--plugin`` is bound to the
+        binary the loop left — a file the model rewrote afterwards, one the
+        loop never built, or a sibling of another name is not it."""
+        self._artifact = None
+        label = self._project_label()
+        if label is None:
+            return
+        artifact = self._project / "build" / f"mmtp_{label.lower()}.so"
+        try:
+            sha256 = hashlib.sha256(artifact.read_bytes()).hexdigest()
         except OSError:
             return
-        for entry in entries:
-            if not entry.name.endswith(".so") or not entry.is_file():
-                continue
-            try:
-                self._so_hashes[os.path.realpath(entry.path)] = hashlib.sha256(
-                    Path(entry.path).read_bytes()
-                ).hexdigest()
-            except OSError:
-                continue
+        self._artifact = (os.path.realpath(artifact), sha256, label)
 
-    def _evaluation_ok(self, args: list[str]) -> bool:
-        """Whether the evaluation's arguments bind this run, and the plugin
-        they name is byte for byte the one the last trusted build or test
-        left in ``<project>/build``."""
+    def _bound_evaluation(self, args: list[str]) -> dict[str, list[str]] | None:
+        """The evaluation's arguments when they bind this run: the run's
+        SDK, compiler, capture and output (``evaluation_args``), and the
+        plugin byte for byte the canonical artifact the last trusted build
+        or test left, measuring its own label — or None."""
         parsed = evaluation_args(
             args,
             project=self._project,
@@ -287,16 +306,42 @@ class GuardedShellBackend(LocalShellBackend):
             ),
             cwd=self._work,
         )
-        if parsed is None:
-            return False
+        if parsed is None or self._artifact is None:
+            return None
+        path, sha256, label = self._artifact
         plugin = realpath_of(parsed["--plugin"][0], self._work)
-        if self._so_hashes.get(plugin) is None:
-            return False
+        if plugin != path:
+            return None
+        # ``--label`` names the protocol the runner measures: the plugin's
+        # own, or the evaluation measures another protocol's classification
+        # (an SDK protocol's, say) with the plugin loaded but irrelevant.
+        if parsed["--label"][0].casefold() != label.casefold():
+            return None
         try:
             current = hashlib.sha256(Path(plugin).read_bytes()).hexdigest()
         except OSError:
+            return None
+        if current != sha256:
+            return None
+        return parsed
+
+    def _invalidate_runner_cache(self, parsed: Mapping[str, list[str]]) -> bool:
+        """Remove the runner cache of the evaluation's ``--out``: the binary
+        and its stamp, so the trusted run compiles the verified C runner
+        fresh instead of reusing whatever a model planted there with a
+        matching stamp (the script reuses ``bin/pcap_eval`` when its stamp
+        names the same compile command, and the stamp is the model's to
+        write). False when a file cannot be removed — the cache then stays
+        and the execution must not be trusted. A background process can
+        still race the compile that follows; that is inherent (the model
+        runs as the same user), as docs/agent-api.md says."""
+        out = Path(realpath_of(parsed["--out"][0], self._work))
+        try:
+            for name in RUNNER_CACHE:
+                (out / name).unlink(missing_ok=True)
+        except OSError:
             return False
-        return current == self._so_hashes[plugin]
+        return True
 
     def _execute_trusted(
         self, command: str, invocation: TrustedInvocation, timeout: int | None
@@ -325,7 +370,16 @@ class GuardedShellBackend(LocalShellBackend):
             script = Path(os.path.realpath(self._work / args[0]))
             if not evaluation_script_ok(script, self.protected, self._evaluation):
                 return None
-            if not self._evaluation_ok(args[1:]):
+            parsed = self._bound_evaluation(args[1:])
+            if parsed is None:
+                return None
+            # The script compiles its C runner into the model-writable
+            # --out and reuses a cached one whose stamp matches: remove the
+            # cache first, so the binary that runs is compiled now, from
+            # the runner verified above — never a preplanted one. When the
+            # cache cannot be removed the execution is not trusted either:
+            # it could be the planted binary.
+            if not self._invalidate_runner_cache(parsed):
                 return None
             evaluation = True
             argv = [*evaluation_argv(script), *args[1:]]

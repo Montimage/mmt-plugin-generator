@@ -383,15 +383,19 @@ class GuardedShellBackend(LocalShellBackend):
                 return None
             evaluation = True
             argv = [*evaluation_argv(script), *args[1:]]
+        # deepagents passes timeout=None when the model gives none: fall
+        # back to the backend's default, as LocalShellBackend.execute does.
+        limit = timeout_s or (timeout if timeout is not None else self._default_timeout)
         started = time.time_ns()
         try:
             ran = subprocess.run(
                 argv,
                 cwd=self._work,
                 env=self._agent_env,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=timeout_s or timeout,
+                timeout=limit,
                 check=False,
             )
             exit_code, stdout, stderr = ran.returncode, ran.stdout, ran.stderr
@@ -401,7 +405,7 @@ class GuardedShellBackend(LocalShellBackend):
             err = timed_out.stderr or ""
             stdout = out.decode("utf-8", "replace") if isinstance(out, bytes) else out
             stderr = err.decode("utf-8", "replace") if isinstance(err, bytes) else err
-            stderr += f"\ntimed out after {timeout_s or timeout}s"
+            stderr += f"\ntimed out after {limit}s"
         except OSError as exc:
             exit_code, stdout, stderr = 126, "", f"cannot execute: {exc}"
         if subcommand in ("build", "test"):

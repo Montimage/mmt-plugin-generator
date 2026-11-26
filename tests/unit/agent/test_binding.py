@@ -36,6 +36,7 @@ def _make_backend(
     *,
     capture: Path | None = None,
     project: Path | None = None,
+    timeout: int = 30,
 ) -> tuple[GuardedShellBackend, Path, Path]:
     """A backend bound to a run: its SDK at ``tmp_path/sdk``, gcc, the
     lexical ``<work>/project`` unless given, synthetic captures allowed.
@@ -79,7 +80,7 @@ def _make_backend(
         protected=[skills],
         questioner=questioner,
         env={"PATH": os.environ["PATH"]},
-        timeout=30,
+        timeout=timeout,
         evaluation=EvaluationCode(
             script=probe_script.read_bytes(), runner=probe_runner.read_bytes()
         ),
@@ -201,6 +202,26 @@ def test_a_timeout_prefix_and_a_tee_keep_the_exact_shape(
     )
     assert records[-1].trusted is True
     assert (work / "runs" / "validate.json").is_file()
+
+
+def test_a_trusted_command_without_a_timeout_gets_the_backend_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """deepagents passes timeout=None when the model gives none: a trusted
+    invocation still stops at the backend's default timeout, exit 124, like
+    the shell path."""
+    backend, work, sdk = _make_backend(tmp_path, monkeypatch, timeout=1)
+    monkeypatch.setattr(
+        "mmt_plugin_agent.backend.mmt_plugin_argv",
+        lambda: [sys.executable, "-c", "import time; time.sleep(30)"],
+    )
+    records = _records(backend)
+    started = time.monotonic()
+    response = backend.execute(f"mmt-plugin -C {work / 'project'} --json validate --sdk {sdk}")
+    assert time.monotonic() - started < 20
+    assert records[-1].trusted is True
+    assert response.exit_code == 124
+    assert "timed out after 1s" in response.output
 
 
 def test_a_relative_project_token_resolves_against_the_work_folder(

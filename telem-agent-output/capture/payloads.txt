@@ -1,0 +1,19 @@
+# TELEM synthetic payloads, written from the spec before the plugin exists.
+# example 1: reading, version 1, flags 2, seq 42, payload de ad be ef
+c:12 01 00 0c 00 00 00 2a de ad be ef
+# example 2: its acknowledgement
+s:10 02 00 08 00 00 00 2a
+# reading, all flags set, empty payload (length 8)
+c:1f 01 00 08 00 00 00 2b
+# reading, flags 0, 5-byte payload, sequence 255
+c:10 01 00 0d 00 00 00 ff 01 02 03 04 05
+# ack, flags 0, sequence 65535
+s:10 02 00 08 00 00 ff ff
+# reading, flags 1, largest sequence, 12-byte payload
+c:11 01 00 14 ff ff ff ff 00 01 02 03 04 05 06 07 08 09 0a 0b
+# ack with all flags, sequence 0
+s:1f 02 00 08 00 00 00 00
+# reading, 8-byte payload, sequence 1
+c:10 01 00 10 00 00 00 01 00 11 22 33 44 55 66 77
+# ack, largest sequence
+s:10 02 00 08 ff ff ff ff

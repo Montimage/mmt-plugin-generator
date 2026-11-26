@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "name": "mmt-plugin",
+    "version": "0.1.0"
+  },
+  "command": "run",
+  "ok": true,
+  "exit_code": 0,
+  "error": null,
+  "diagnostics": [],
+  "context": {
+    "project": "project",
+    "sdk": {
+      "prefix": "/opt/sdk",
+      "version": "1.10.2",
+      "profile": "1.10.2",
+      "source": "--sdk",
+      "profile_source": "plugin.yaml"
+    }
+  },
+  "result": {
+    "model": "plugin.yaml",
+    "profile": "1.10.2",
+    "build_dir": "build",
+    "capture": {
+      "path": "/work/plugin-work-5c743542/capture/capture.pcap",
+      "format": "pcap",
+      "linktype": 1
+    },
+    "dry_run": false,
+    "stages": [
+      {
+        "name": "build",
+        "status": "up-to-date"
+      },
+      {
+        "name": "runner",
+        "status": "ran"
+      },
+      {
+        "name": "capture",
+        "status": "ran"
+      }
+    ],
+    "plugins": [
+      "libmmt_business_app.so",
+      "libmmt_tcpip.so",
+      "libmmt_tdicom.so",
+      "libmmt_tmobile.so",
+      "mmtp_telem.so"
+    ],
+    "summary": {
+      "frames": 9,
+      "processed": 9,
+      "skipped": 0,
+      "classified": 9
+    },
+    "protocols": [
+      {
+        "name": "TELEM",
+        "id": 963,
+        "packets": 9,
+        "attributes": [
+          {
+            "id": 1,
+            "name": "version",
+            "type": "MMT_U8_DATA",
+            "packets": 9
+          },
+          {
+            "id": 2,
+            "name": "flags",
+            "type": "MMT_U8_DATA",
+            "packets": 9
+          },
+          {
+            "id": 3,
+            "name": "msg_type",
+            "type": "MMT_U8_DATA",
+            "packets": 9
+          },
+          {
+            "id": 4,
+            "name": "length",
+            "type": "MMT_U16_DATA",
+            "packets": 9
+          },
+          {
+            "id": 5,
+            "name": "sequence",
+            "type": "MMT_U32_DATA",
+            "packets": 9
+          },
+          {
+            "id": 6,
+            "name": "readings",
+            "type": "MMT_U32_DATA",
+            "packets": 0
+          },
+          {
+            "id": 7,
+            "name": "payload",
+            "type": "MMT_BINARY_DATA",
+            "packets": 5
+          },
+          {
+            "id": 4096,
+            "name": "p_hdr",
+            "type": "MMT_DATA_POINTER",
+            "packets": 9
+          },
+          {
+            "id": 4097,
+            "name": "p_data",
+            "type": "MMT_DATA_POINTER",
+            "packets": 9
+          },
+          {
+            "id": 4098,
+            "name": "p_payload",
+            "type": "MMT_DATA_POINTER",
+            "packets": 9
+          },
+          {
+            "id": 4099,
+            "name": "packet_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4100,
+            "name": "data_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4101,
+            "name": "payload_count",
+            "type": "MMT_U64_DATA",
+            "packets": 0
+          },
+          {
+            "id": 4102,
+            "name": "first_packet_time",
+            "type": "MMT_DATA_TIMEVAL",
+            "packets": 0
+          },
+          {
+            "id": 4103,
+            "name": "last_packet_time",
+            "type": "MMT_DATA_TIMEVAL",
+            "packets": 0
+          },
+          {
+            "id": 4104,
+            "name": "p_data_len",
+            "type": "MMT_U64_DATA",
+            "packets": 9
+          },
+          {
+            "id": 4105,
+            "name": "stats",
+            "type": "MMT_UNDEFINED_TYPE",
+            "packets": 0
+          }
+        ]
+      }
+    ],
+    "paths": [
+      {
+        "path": "meta.ethernet.ip.udp.TELEM",
+        "ids": [
+          1,
+          99,
+          178,
+          376,
+          963
+        ],
+        "packets": 9
+      }
+    ],
+    "paths_other": 0,
+    "stats": {
+      "elapsed_ms": 185,
+      "frames_per_second": 49
+    }
+  }
+}

@@ -32,8 +32,6 @@ import math
 import os
 import re
 import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -438,49 +436,22 @@ def _check_replay(
         assert seen == {n: expected.get(n) for n in names}, i
 
 
-def _run_with(program: Path, packets: Path, plugins: list[Path], sdk: Path) -> harness.HarnessRun:
-    """``harness check`` as ``harness.run`` runs it, with several plugins in
-    its plugin directory, next to the SDK's libmmt_tcpip.so."""
-    root = Path(tempfile.mkdtemp(prefix="mmt-plugin-test-", dir=packets.parent))
-    directory = root / "plugins"
-    directory.mkdir()
-    (directory / harness.TCPIP).symlink_to(os.path.realpath(sdk / "plugins" / harness.TCPIP))
-    for plugin in plugins:
-        (directory / plugin.name).symlink_to(os.path.realpath(plugin))
-    cwd = root / "run"
-    cwd.mkdir()
-    env = {k: v for k, v in os.environ.items() if k not in ("LD_LIBRARY_PATH", "LD_PRELOAD")}
-    env.update(MMT_DPI_PLUGINS_DIR=str(directory), LC_ALL="C")
-    proc = subprocess.run(
-        [str(program), "check", str(packets)],
-        cwd=cwd,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        errors="replace",
-        timeout=60,
-        check=False,
-    )
-    return harness.HarnessRun(proc.returncode, proc.stdout.splitlines(), proc.stderr)
-
-
 def test_the_ocpp_and_websocket_examples_share_tcp(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Both plugins in one plugin directory (mmtp_ocpp_example.so loads
-    first, both above TCP): an ocpp1.6 session is OCPP_EXAMPLE directly above
-    TCP, and a WebSocket session for another subprotocol stays
-    WEBSOCKET_EXAMPLE (examples/README.md, "OCPP 1.6-J")."""
+    """Both plugins in one plugin directory, both above TCP, each harness
+    loading the other plugin first (``harness.run``'s ``extra``, as for
+    plugin.yaml's ``plugins``; TCP runs OCPP's classification, weight 4,
+    before WebSocket's, 5, whichever loads first): an ocpp1.6 session is
+    OCPP_EXAMPLE directly above TCP, and a WebSocket session for another
+    subprotocol stays WEBSOCKET_EXAMPLE (examples/README.md, "OCPP 1.6-J")."""
     sdk = _sdk()
     monkeypatch.delenv("MMT_PLUGIN_SDK_PROFILE", raising=False)
     monkeypatch.chdir(tmp_path)
     ocpp = _ocpp_project(tmp_path, "ocpp", capsys)
     websocket = _ocpp_project(tmp_path, "websocket", capsys)
-    plugins = [
-        ocpp / "build" / "mmtp_ocpp_example.so",
-        websocket / "build" / "mmtp_websocket_example.so",
-    ]
+    ocpp_plugin = ocpp / "build" / "mmtp_ocpp_example.so"
+    websocket_plugin = websocket / "build" / "mmtp_websocket_example.so"
 
     frames: list[bytes] = []
     ocpp_want: dict[int, _Want | None] = {}
@@ -508,10 +479,20 @@ def test_the_ocpp_and_websocket_examples_share_tcp(
     packets = tmp_path / "both.bin"
     harness.write_packets(packets, [harness.Record(f, frame=True) for f in frames])
 
-    run = _run_with(ocpp / "build" / "test" / "harness", packets, plugins, sdk)
+    def both(project: Path, plugin: Path, other: Path) -> harness.HarnessRun:
+        return harness.run(
+            project / "build" / "test" / "harness",
+            ["check", str(packets)],
+            plugin,
+            sdk / "plugins",
+            timeout=60,
+            extra=[other],
+        )
+
+    run = both(ocpp, ocpp_plugin, websocket_plugin)
     _check_replay(run, _harness_names(ocpp), frames, ocpp_want)
 
-    run = _run_with(websocket / "build" / "test" / "harness", packets, plugins, sdk)
+    run = both(websocket, websocket_plugin, ocpp_plugin)
     assert harness.crash_reason(run, len(frames)) is None, run.stderr
     parsed = harness.parse_check(run.lines, _harness_names(websocket))
     assert parsed.malformed is None and parsed.error is None, run.lines

@@ -29,7 +29,14 @@ from mmt_plugin.pdl.parser import (
 from mmt_plugin.pluginyaml.nodes import Mapping, Node, Scalar, Sequence, YamlError, parse
 from mmt_plugin.pluginyaml.schema import validate
 
-__all__ = ["DIAGNOSTIC_CODES", "PluginYaml", "PluginYamlError", "load", "profile_pin"]
+__all__ = [
+    "DIAGNOSTIC_CODES",
+    "PluginYaml",
+    "PluginYamlError",
+    "load",
+    "profile_pin",
+    "protocol_label",
+]
 
 #: The codes of reading plugin.yaml (besides the PDL v1 syntax codes of its
 #: expressions), and of what only plugin.yaml says: a classification by
@@ -73,6 +80,25 @@ def profile_pin(text: str) -> str | None:
     profile = sdk.get("profile")
     if isinstance(profile, Scalar) and isinstance(profile.value, str):
         return profile.value
+    return None
+
+
+def protocol_label(text: str) -> str | None:
+    """``protocol.label`` of a ``plugin.yaml`` text, or ``None`` when it has
+    none or cannot be read (reading the model reports why). The label as
+    written: the plugin file is ``mmtp_<label>.so`` with it lower-cased."""
+    try:
+        root = parse(text)
+    except YamlError:
+        return None
+    if not isinstance(root, Mapping):
+        return None
+    protocol = root.get("protocol")
+    if not isinstance(protocol, Mapping):
+        return None
+    label = protocol.get("label")
+    if isinstance(label, Scalar) and isinstance(label.value, str):
+        return label.value
     return None
 
 
@@ -157,6 +183,7 @@ class _Builder:
             attributes = pdl.Attributes(self.elements(attributes_node), self.span(attributes_node))
         classify = root.get("classify_next")
         parents = root.get("parents")
+        plugins = root.get("plugins")
         return pdl.Model(
             defines=defines,
             properties=properties,
@@ -165,6 +192,7 @@ class _Builder:
             span=self.span(root),
             offsets=offsets,
             parents=() if parents is None else self.parents(parents),
+            plugins=() if plugins is None else self.plugins(plugins),
         )
 
     def defines(self, node: Node | None) -> tuple[pdl.Define, ...]:
@@ -214,6 +242,15 @@ class _Builder:
                     span=self.span(item),
                 )
             )
+        return tuple(out)
+
+    def plugins(self, node: Node) -> tuple[pdl.PluginRef, ...]:
+        assert isinstance(node, Sequence)
+        out = []
+        for item in node.items:
+            s = self.scalar(item)
+            assert isinstance(s.value, str)
+            out.append(pdl.PluginRef(s.value, self.span(s)))
         return tuple(out)
 
     def parent_classify(self, node: Node) -> pdl.ParentClassify:

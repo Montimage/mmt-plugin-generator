@@ -493,16 +493,16 @@ def test_an_error_outside_the_project_is_fixed_in_the_model_or_the_user_code() -
     before = {"plugin.yaml": "a\n", "src/x_impl.c": "int x;\n", "notes.txt": "n\n"}
     header = failed_step("/sdk/dpi/include/mmt_core.h")
     for path in ("src/x_impl.c", "plugin.yaml"):
-        assert run_evals._fix_problems(header, before, {**before, path: "b\n"}, 1) == []
+        assert run_evals.fix_problems(header, before, {**before, path: "b\n"}, 1) == []
     for after in (before, {**before, "notes.txt": "m\n"}, {**before, "src/sub/y.c": "y\n"}):
-        problems = run_evals._fix_problems(header, before, after, 1)
+        problems = run_evals.fix_problems(header, before, after, 1)
         assert problems == [
             "run 1: the edits change neither plugin.yaml nor src/*.c for "
             "/sdk/dpi/include/mmt_core.h (build.cc)"
         ]
     # Inside the project, the edit must still be at the reported line.
     impl = failed_step("src/x_impl.c", 1)
-    assert run_evals._fix_problems(impl, before, {**before, "plugin.yaml": "b\n"}, 1) == [
+    assert run_evals.fix_problems(impl, before, {**before, "plugin.yaml": "b\n"}, 1) == [
         "run 1: the edits do not touch src/x_impl.c:1 (build.cc)"
     ]
 

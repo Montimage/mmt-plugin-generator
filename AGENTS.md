@@ -59,11 +59,11 @@ protocol model. A Python rewrite is planned in
   harness `test` built, next to the WebSocket plugin; needs
   `MMT_GOLDEN_SDK`).
 - `ocip-plugin/` (#134): the work folder of the Cisco BroadWorks OCI-P
-  plugin for mmt-security rule 231 (`README.md`, `REPORT.md`,
+  plugin for mmt-security rule 232 (`README.md`, `REPORT.md`,
   `request.md`, `inputs/`, `runs/`, the synthetic capture and its
   evaluation). Its project, `ocip-plugin/project` (label `ocip`, id 960,
   registered name `OCIP`, parent `tcp` port 2208 in its hook), is not an
-  example: rule 231 reads `OCIP.*`, so it keeps its label and is not
+  example: rule 232 reads `OCIP.*`, so it keeps its label and is not
   under `examples/`. It is kept current (#138, option 1 of the three the
   issue weighed): regenerate it with the examples after a generator change
   or a version bump (`examples/README.md`, "Regenerating"; the release's
@@ -71,7 +71,9 @@ protocol model. A Python rewrite is planned in
   tests are written by `ocip-plugin/inputs/make_tests.py` (stdlib only)
   from the wire format, never by hand. Tests in `tests/unit/ocip/`:
   `test_project.py` (`validate --no-sdk`, `generate --check`, the tests
-  load and are what `make_tests.py` writes) and `test_sdk.py` (`validate`,
+  load and are what `make_tests.py` writes, and the sha256 that
+  `inputs/SOURCES.md` and `manifest.json` record are the files', the
+  `.so` the one `eval/` evaluated, #155) and `test_sdk.py` (`validate`,
   `build` and `test --sanitize` on a copy; needs `MMT_GOLDEN_SDK`).
 - `ndn_src/`: the NDN example plugin, kept building against mmt-dpi 1.10.2.
 - `tests/check_ndn_plugin.sh`: builds and loads the NDN example, and scans
@@ -206,6 +208,11 @@ protocol model. A Python rewrite is planned in
   against what `init_extraction()` registers with the installed plugins
   (`src/mmt_plugin/sdk/registry.py`: a child Python process loads
   `libmmt_core` with ctypes, without the plugin's own `mmtp_<label>.so`).
+  `plugin.yaml`'s `plugins` (#146, `src/mmt_plugin/plugins.py`): a parent
+  that is a named project's label exists (`parents-exist`, no installed
+  copy needed, `--no-sdk` too; a bad entry fails it with
+  `model.bad-plugin`), and `load-order` also requires `mmtp_<label>.so` to
+  sort after every named plugin's file (`model.load-order`).
   Without an SDK it exits 4 unless `--no-sdk`. `commands/modelio.py` reads
   `MODEL` (PDL v1 or `plugin.yaml`) for every command that takes one.
   Tests in `tests/unit/test_validate.py`
@@ -243,7 +250,10 @@ protocol model. A Python rewrite is planned in
   the plugin's own parent classification: its own `result.packets` entry
   (with `through`), a `<parent>` failure when the plugin is not directly
   above that protocol where the layers end, `next` not checked (mmt-dpi
-  1.10.2's TCP and UDP stop at a plugin's layer); the harness's records
+  1.10.2's TCP and UDP stop at a plugin's layer); `through` can also be
+  a plugin parent's label, a project `plugins` names (#147, `test=<id>`
+  optional): the frame is one of its packet tests with an mmt-dpi
+  `through`, its bytes the parent's header; the harness's records
   are a kind byte (0 a packet, 1 a whole frame), a length, the bytes. A
   session test (#99, `session.py`: `session` and `packets` instead of
   `bytes` and `expect`; `tests/corpus/README.md`, "Session files") is the
@@ -263,7 +273,15 @@ protocol model. A Python rewrite is planned in
   `--fuzz-count` packets, each in a harness of its own (a crash has its
   copy as `index` and its step as `packet`); `--bench` compares packets
   per second over the packet tests with an empty plugin
-  (`templates/baseline.c.j2`) and never changes the exit code. Tests in
+  (`templates/baseline.c.j2`) and never changes the exit code. The
+  model's `plugins` (#145, `src/mmt_plugin/plugins.py`: each a project
+  directory or a `.so` file relative to `plugin.yaml`, followed depth
+  first; a bad entry is `model.bad-plugin`) are built in the `build` stage
+  when stale (each project with its own `sdk.profile`) and loaded before
+  the plugin in every harness run (`harness.run`'s `extra`, linked as
+  `p<n>-<name>` so mmt-dpi's alphasort loads them in that order),
+  `result.plugins`; `validate` reads them too (#146), `through` (#147)
+  does not yet. Tests in
   `tests/unit/packettest/`: `test_testing.py`, `test_frames.py`,
   `test_session.py` and `test_command.py` (fake SDK, compiler and harness
   run), and `test_sdk.py`
@@ -472,6 +490,37 @@ protocol model. A Python rewrite is planned in
   drift and one with, open then accepted; needs `MMT_GOLDEN_SDK` and
   `libpcap-dev`, and tshark for its tshark run, which skips without it
   unless `MMT_REQUIRE_TSHARK=1`).
+- `src/mmt_plugin_agent/` (#161, `docs/agent-api.md`): `mmt-plugin-agent`,
+  a LangGraph agent (deepagents) that runs `skills/mmt-plugin-generator/`
+  headless with any LangChain chat model (`provider:model` through
+  `init_chat_model`, or a model object). It is the `agent` extra of the
+  same distribution (`[tool.uv.build-backend] module-name` lists both
+  packages), deepagents 0.7.32 and the anthropic, openai and ollama
+  integrations, each pinned for Python 3.11+ only, so `pip install
+  mmt-plugin` still pulls only jinja2. Public API in `__all__`:
+  `PluginAgent` (`new`, `update`, `anew`, `aupdate`, `stream`, `resume`,
+  `release`, `doctor`), `build_graph` (the compiled graph, a LangGraph subgraph),
+  `request_text`, `run_model_evals`; `cli.py` imports only those names.
+  `backend.py`: the shell (`LocalShellBackend`, real paths, an allowlisted
+  environment without secrets) refuses `sudo`, `--system`, `/opt/mmt` and,
+  unattended, `--force`; the file tools write only in the work folder, an
+  update's project and the temp dir, never the skills; deepagents' offloaded
+  tool results and history go to `<work>/.agent/`. The skills are read
+  from a read-only copy in `~/.cache/mmt-plugin-agent/`; a run that changed
+  the source tree is restored and failed (`agent.skills-modified`).
+  `questions.py`: the `ask_user` tool (an interrupt, `on_question`, or
+  `<work>/questions.md` and the safe default). `evals.py`: `mmt-plugin-agent
+  eval` loads `run_evals.py` by path and judges each model's drafts of every
+  case with its `Runner`, `snapshot` and `fix_problems`. The envelope's
+  schemas are `src/mmt_plugin_agent/schemas/v1/`. The `Dockerfile`'s
+  `agent` stage (`make agent-image`) is its sandbox: mmt-dpi in `/opt/sdk`,
+  the skills root-owned and read-only in `/opt/mmt-plugin-skills`, the user
+  `agent`; `make agent-run` mounts the checkout read-only at `/in`, each
+  `.env` and `.env.*` masked with `/dev/null`. `mypy-agent.ini` checks
+  it (the default `uv run mypy` excludes it). Tests in `tests/unit/agent/` (a scripted model and a fake
+  `mmt-plugin`, `fakes.py`; not collected without the extra; `image_guard.py`
+  runs inside the image) and `tests/unit/test_agent_extra.py` (the console
+  script without the extra).
 - User documentation (T5.2): `README.md` (CRLF), `docs/user-guide.md`
   (install from a checkout, a project from `init` to `install`, every
   command, `--json`, exit codes, settings), `docs/migration.md` (from the
@@ -536,7 +585,14 @@ protocol model. A Python rewrite is planned in
   `tests/unit/install/test_sdk.py`
   (`install`, `doctor` and `uninstall` in a temporary prefix) and
   `test_sdk_registry.py` (the run-time registry and `validate` against that
-  SDK). `.github/workflows/release.yml` (above) runs alongside it.
+  SDK). The `agent` job (#161, Python 3.12, `uv sync --extra agent`) runs
+  ruff, `mypy --config-file mypy-agent.ini`, `tests/unit/agent` (the
+  `docs/agent-api.md` example among them), `tests/unit/skill` and
+  `tests/unit/docs`, then builds the agent image and runs
+  `tests/unit/agent/image_guard.py` (also with an `/in` whose `.env` holds
+  the key, masked as `agent-run` masks it, and failing unmasked), its
+  doctor and a project from `init` to `test` in it.
+  `.github/workflows/release.yml` (above) runs alongside it.
 
 ## Commands
 

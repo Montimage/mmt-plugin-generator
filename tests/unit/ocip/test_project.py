@@ -3,18 +3,22 @@
 
 It is not an example (``tests/unit/examples`` enumerates ``examples/`` and
 expects ``*_example`` labels; its label ``ocip`` registers the name ``OCIP``
-that mmt-security rule 231 reads), so these tests keep it current
+that mmt-security rule 232 reads), so these tests keep it current
 instead: its ``plugin.yaml`` validates with the profile it pins,
 ``generate --check`` finds the committed ``generated/`` and ``plugin.lock``
 up to date (a generator change or a version bump makes it stale, as it
 makes every example stale), and its packet and session tests load and are
-what ``ocip-plugin/inputs/make_tests.py`` writes. ``test_sdk.py`` builds it
+what ``ocip-plugin/inputs/make_tests.py`` writes; the sha256 that
+``inputs/SOURCES.md`` and ``manifest.json`` record are the files' (#155).
+``test_sdk.py`` builds it
 and runs them against a real SDK.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,7 +85,7 @@ def test_the_tests_load_and_name_a_source() -> None:
     assert all((t.protocol, t.proto_id) == ("OCIP", 960) for t in tests)
     sessions = [t for t in tests if isinstance(t, SessionTest)]
     packets = [t for t in tests if isinstance(t, PacketTest)]
-    assert (len(packets), len(sessions)) == (10, 14)
+    assert (len(packets), len(sessions)) == (10, 19)
     # Every packet test also runs through TCP port 2208, the plugin's parent.
     assert all(t.through is not None and t.through.text == "tcp:dport=2208" for t in packets)
     for path in paths:
@@ -92,6 +96,45 @@ def test_the_tests_load_and_name_a_source() -> None:
         else:
             for attr in doc["expect"]["attributes"]:
                 assert str(attr.get("source", "")).strip(), (path, attr["name"])
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_the_recorded_hashes_are_the_files_on_disk() -> None:
+    # inputs/SOURCES.md and manifest.json record the sha256 of the work
+    # folder's files (#155): each must be the file's, except the build
+    # output, which is not committed (project/build/ is ignored).
+    rows = re.findall(
+        r"^\| `([^`]+)` \|.*\| `([0-9a-f]{64})` \|$",
+        (WORK / "inputs" / "SOURCES.md").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert rows, "no hash in inputs/SOURCES.md"
+    for name, digest in rows:
+        assert _sha256(WORK / "inputs" / name) == digest, f"inputs/SOURCES.md: {name}"
+    files: dict[str, str] = json.loads((WORK / "manifest.json").read_text(encoding="utf-8"))[
+        "files"
+    ]
+    # Every input SOURCES.md lists, SOURCES.md itself, make_tests.py, the
+    # capture, the model, the hooks and the plugin built from them.
+    assert set(files) == {f"inputs/{name}" for name, _ in rows} | {
+        "inputs/SOURCES.md",
+        "inputs/make_tests.py",
+        "capture/capture.pcap",
+        "project/plugin.yaml",
+        "project/src/ocip_impl.c",
+        "project/build/mmtp_ocip.so",
+    }
+    for name, digest in rows:
+        assert files[f"inputs/{name}"] == digest, f"manifest.json: inputs/{name}"
+    for name, digest in files.items():
+        if not name.startswith("project/build/"):
+            assert _sha256(WORK / name) == digest, f"manifest.json: {name}"
+    # The plugin the manifest records is the one the capture evaluation ran.
+    report = json.loads((WORK / "eval" / "report.json").read_text(encoding="utf-8"))
+    assert files["project/build/mmtp_ocip.so"] == report["plugin"]["sha256"]
 
 
 def test_the_tests_are_what_make_tests_writes(tmp_path: Path) -> None:

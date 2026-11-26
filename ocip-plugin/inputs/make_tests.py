@@ -112,7 +112,7 @@ def strval(msg, needle, name, src, typ="MMT_STRING_DATA", limit=63):
 
 def write_packet(stem, summary, msg, attrs, bytes_source, note=None):
     y = (
-        "# Packet test of the ocip plugin (mmt-security rule 231), written from the "
+        "# Packet test of the ocip plugin (mmt-security rule 232), written from the "
         "OCI-P wire format,\n"
         "# not from the plugin's output. Format and rules: tests/corpus/README.md\n"
         "schema: 1\n"
@@ -395,7 +395,7 @@ def step(frm, data, expect=None, retransmit=False, lost=0, text=None, back=0):
 
 def write_session(stem, summary, steps, source):
     y = (
-        "# Session test of the ocip plugin (mmt-security rule 231), written from the "
+        "# Session test of the ocip plugin (mmt-security rule 232), written from the "
         "OCI-P wire format:\n"
         "# its packets run in order, one TCP connection. Format and rules: "
         "tests/corpus/README.md, Session files\n"
@@ -610,7 +610,7 @@ write_session(
 srv_dtd = HEAD + b'<!DOCTYPE BroadsoftDocument SYSTEM "oci.dtd">' + AUTH_RESP[len(HEAD) :]
 write_session(
     "session-server-doctype",
-    "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 231 ignores it)",
+    "A server reply with a DOCTYPE: has_dtd 1, is_request 0 (rule 232 ignores it)",
     [
         step("client", oci(AUTH), ok(b"AuthenticationRequest", 1)),
         step(
@@ -741,5 +741,141 @@ write_session(
         step("client", v7[cut + 2 :], after_v7, text="PE ..., in order"),
     ],
     "gen_pcaps.py attack_v7_split, cut at '<!DOC', 'T' and 'Y'; T sent after Y",
+)
+# An in-order filler (#140): a segment the server drops (a bad checksum) but
+# the probe keeps arrives in order, then the real bytes at its sequence
+# number. The server's stream has the real bytes there, so a segment sent
+# over the last in-order one is also searched after the 17 bytes before it.
+# The bytes the probe took in order stay its view of the stream: the
+# segments after the filler report session_id and command_type from it
+# (the filler turned "<!DOC" into another "<!" declaration, so no dtd).
+INORDER = b"x" * 4
+write_session(
+    "session-inorder-filler-split-doctype",
+    "XXE V7: ...<!DOC, then a 4-byte filler in order (one the server drops), then TYPE "
+    "at the filler's sequence number, which completes the keyword the server reads",
+    [
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], text="...<!DOC"),
+        step("client", INORDER, [("has_dtd", 0), ("is_request", 1)], text="filler, in order"),
+        step("client", v7[cut : cut + 4], LATE, back=len(INORDER), text="TYPE, over the filler"),
+        step("client", v7[cut + 4 :], after_v7, text="the rest of the message, in order"),
+        step("server", ERR, SRV_ERR),
+    ],
+    "gen_pcaps.py attack_v7_split's two client segments, a filler crafted between them, "
+    "the second cut after 'TYPE'",
+)
+write_session(
+    "session-inorder-filler-overlap",
+    "XXE V7: ...<!DOC, then a 4-byte filler in order, then the whole TYPE ... at the "
+    "filler's sequence number, longer than it: found on that segment",
+    [
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], text="...<!DOC"),
+        step("client", INORDER, [("has_dtd", 0), ("is_request", 1)], text="filler, in order"),
+        step(
+            "client",
+            v7[cut:],
+            [
+                ("has_dtd", 1),
+                ("session_id", b"a1b2c3d4e5f6"),
+                ("command_type", b"AuthenticationRequest"),
+                ("is_request", 1),
+            ],
+            retransmit=True,
+            text="TYPE ..., over the filler and past it",
+        ),
+        step("server", ERR, SRV_ERR),
+    ],
+    "gen_pcaps.py attack_v7_split's two client segments, a filler crafted between them",
+)
+INORDER_LONG = b"x" * 16  # longer than "<!DOCTYPE": the keyword is wholly over it
+write_session(
+    "session-inorder-filler-whole-doctype",
+    "The XML declaration, then a 16-byte filler in order, then <!DOCTYPE ... at the "
+    "filler's sequence number: the keyword is wholly over the filler's bytes",
+    [
+        step("client", v7[:whole], [("has_dtd", 0), ("is_request", 1)], text="<?xml ...?>"),
+        step("client", INORDER_LONG, [("has_dtd", 0), ("is_request", 1)], text="filler, in order"),
+        step(
+            "client",
+            v7[whole:],
+            [
+                ("has_dtd", 1),
+                ("session_id", b"a1b2c3d4e5f6"),
+                ("command_type", b"AuthenticationRequest"),
+                ("is_request", 1),
+            ],
+            retransmit=True,
+            text="<!DOCTYPE ..., over the filler and past it",
+        ),
+        step("server", ERR, SRV_ERR),
+    ],
+    "gen_pcaps.py attack_v7_split's message, cut after its XML declaration, a filler "
+    "crafted between both parts",
+)
+# A documented limit (REPORT.md, "Not checked"; the header of src/ocip_impl.c):
+# only the last scanned segment's start is kept, so when the rest of the
+# message follows the filler in order before the real TYPE arrives, the real
+# bytes end before that start and are searched alone. The server reads
+# "<!DOCTYPE" (it drops the filler, queues the rest, then TYPE fills the
+# gap). This test pins the miss.
+write_session(
+    "session-inorder-filler-then-rest",
+    "Limit, pinned: ...<!DOC, a 4-byte filler in order, the rest of the message in order, "
+    "then TYPE at the filler's sequence number; has_dtd is 0 everywhere",
+    [
+        step("client", v7[:cut], [("has_dtd", 0), ("is_request", 1)], text="...<!DOC"),
+        step("client", INORDER, [("has_dtd", 0), ("is_request", 1)], text="filler, in order"),
+        step("client", v7[cut + 4 :], after_v7, text="the rest of the message, in order"),
+        step(
+            "client",
+            v7[cut : cut + 4],
+            [("has_dtd", 0), ("is_request", 1)],
+            back=len(INORDER) + len(v7) - cut - 4,
+            text="TYPE, over the filler, after the rest",
+        ),
+    ],
+    "gen_pcaps.py attack_v7_split's two client segments, a filler crafted between them, "
+    "the second cut after 'TYPE' and its two parts sent in reverse order",
+)
+# The control (#140): a segment sent over the last in-order one counts a
+# DOCTYPE only when that segment did not already report one, so a plain
+# retransmission of a benign segment reports has_dtd 0, and a retransmission
+# that repeats an attack segment and adds new bytes reports it only as it
+# did before #140 (0: its new bytes have none).
+write_session(
+    "session-overlap-control",
+    "A benign segment retransmitted (has_dtd 0), then an XXE, then a segment that "
+    "repeats it and adds a benign message (has_dtd 0, as before #140)",
+    [
+        step("client", oci(AUTH), ok(b"AuthenticationRequest", 1)),
+        step("client", oci(UG), ok(b"UserGetRequest22", 1)),
+        step(
+            "client",
+            oci(UG),
+            [("has_dtd", 0), ("is_request", 1)],
+            retransmit=True,
+            text="a plain retransmission of a benign segment",
+        ),
+        step(
+            "client",
+            v2,
+            [
+                ("has_dtd", 1),
+                ("dtd", D_OOB[:63]),
+                ("session_id", b"a1b2c3d4e5f6"),
+                ("command_type", b"AuthenticationRequest"),
+                ("is_request", 1),
+            ],
+        ),
+        step(
+            "client",
+            v2 + oci(UG),
+            ok(b"UserGetRequest22", 1),
+            retransmit=True,
+            text="the XXE again, then a UserGetRequest: only the new bytes are parsed",
+        ),
+        step("server", ERR, SRV_ERR),
+    ],
+    "gen_pcaps.py messages, with a retransmission and an overlapping segment",
 )
 print("wrote", sorted(os.listdir(OUT)))

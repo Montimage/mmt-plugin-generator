@@ -8,13 +8,16 @@ A session test is a schema 1 file with ``session`` instead of ``bytes`` and
 the server's port, ``dport`` or ``port``, and optionally the client's,
 ``sport``), the plugin's ``protocol`` and ``proto_id``, the
 ``attributes`` every packet of the plugin's checks (one a packet does not
-list must be absent), and ``packets``, its steps, in order:
+list must be absent), and ``packets``, its steps, in order. ``session``
+has no other key (``note`` is a comment), so a misspelt one is an error,
+not a check turned off (#124):
 
 - ``open: true``: the three-way handshake (SYN, SYN/ACK, ACK);
 - ``idle: N``: ``N`` seconds of other TCP traffic (the harness's packets
   are one second apart), one pure ACK of another connection a second;
 - ``from: client`` or ``from: server``: one segment of that side, its
-  payload ``bytes`` (none: a pure ACK), with the sequence and
+  payload ``bytes`` (none: a pure ACK; at most ``MAX_SEGMENT`` bytes, what
+  one IPv4/TCP frame carries, #124), with the sequence and
   acknowledgment numbers of a connection without loss; ``retransmit: true``
   sends it again at the sequence number of that side's previous segment
   with data, ``lost: N`` loses that side's next ``N`` bytes before it (the
@@ -45,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from mmt_plugin.testing.frames import Through, parse_through
+from mmt_plugin.testing.frames import PluginParent, Through, parse_through
 from mmt_plugin.testing.packets import (
     PROTOCOL,
     ExpectedAttribute,
@@ -65,6 +68,7 @@ from mmt_plugin.testing.packets import (
 
 __all__ = [
     "CLIENT_PORT",
+    "MAX_SEGMENT",
     "Connection",
     "SessionFrame",
     "SessionStep",
@@ -79,6 +83,9 @@ __all__ = [
 CLIENT_PORT = 49152
 #: The longest ``idle`` step, in seconds.
 MAX_IDLE = 3600
+#: The longest segment payload: an IPv4 packet's 65535 bytes less the IPv4
+#: and TCP headers (20 bytes each, no options).
+MAX_SEGMENT = 65535 - 20 - 20
 
 _MAC_CLIENT = bytes.fromhex("020000000001")
 _MAC_SERVER = bytes.fromhex("020000000002")
@@ -91,6 +98,7 @@ _SYN, _ACK, _PSH = 0x02, 0x10, 0x08
 #: The shortest Ethernet frame without its FCS (IEEE 802.3).
 _MIN_FRAME = 60
 _SIDES = ("client", "server")
+_SESSION_KEYS = {"through", "protocol", "proto_id", "attributes", "note"}
 _SEGMENT_KEYS = {
     "from",
     "bytes",
@@ -274,12 +282,18 @@ class SessionTest:
         return CLIENT_PORT if port is None else port
 
 
-def load_test(path: Path, shown: str, data_types: Collection[str]) -> PacketTest | SessionTest:
+def load_test(
+    path: Path,
+    shown: str,
+    data_types: Collection[str],
+    plugins: Mapping[str, PluginParent] | None = None,
+) -> PacketTest | SessionTest:
     """Read the packet test or the session test at ``path`` (``shown`` names
-    it in diagnostics); ``data_types`` are the SDK profile's data type names."""
+    it in diagnostics); ``data_types`` are the SDK profile's data type names,
+    ``plugins`` the plugin parents a packet test's ``through`` may name."""
     doc = read_doc(path, shown)
     if "session" not in doc:
-        return load_doc(doc, shown, data_types)
+        return load_doc(doc, shown, data_types, plugins)
     return _load_session(doc, shown, data_types)
 
 
@@ -289,6 +303,13 @@ def _load_session(doc: Mapping[str, Any], shown: str, data_types: Collection[str
             raise error(shown, f"a session test has no {key!r}: its packets are in 'packets'")
     test_id = need(shown, "the test", doc, "id", str)
     session = need(shown, "the test", doc, "session", dict)
+    unknown = sorted(set(session) - _SESSION_KEYS)
+    if unknown:
+        raise error(
+            shown,
+            f"session: unknown key {unknown[0]!r} "
+            "(keys: through, protocol, proto_id, attributes, note)",
+        )
     text = need(shown, "session", session, "through", str)
     try:
         through = parse_through(text)
@@ -376,6 +397,12 @@ def _step(
     if not isinstance(chunks, list):
         raise error(shown, f"{where}: 'bytes' must be a list")
     data = b"".join(hex_bytes(shown, f"{where}.bytes[{k}]", c) for k, c in enumerate(chunks))
+    if len(data) > MAX_SEGMENT:
+        raise error(
+            shown,
+            f"{where}: the segment has {len(data)} bytes; "
+            f"one IPv4/TCP frame carries at most {MAX_SEGMENT}",
+        )
     retransmit = item.get("retransmit", False)
     if not isinstance(retransmit, bool):
         raise error(shown, f"{where}: retransmit must be true or false")

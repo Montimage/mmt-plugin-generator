@@ -148,10 +148,12 @@ CODES: Mapping[str, str] = MappingProxyType(
         "knows; --force ignores it (a directory there, never)",
         "state.kept": "warning: a file generate no longer writes is kept, not removed",
         # `validate` (mmt_plugin.commands.validate, mmt_plugin.sdk.registry, #17).
-        "model.unknown-parent": "a parent protocol of the model is not in the SDK profile and "
-        "not registered by the installed plugins",
-        "model.load-order": "the plugin file name does not sort after libmmt_tcpip.so (C "
-        "locale or LC_COLLATE), so its parents are not registered when it loads",
+        "model.unknown-parent": "a parent protocol of the model is not in the SDK profile, not "
+        "the label of a project plugin.yaml's plugins names, and not registered by the "
+        "installed plugins",
+        "model.load-order": "the plugin file name does not sort after libmmt_tcpip.so, or "
+        "after the file of a plugin plugin.yaml's plugins names (C locale or LC_COLLATE), so "
+        "its parents are not registered when it loads",
         "sdk.registry-unavailable": "warning: the protocols the installed plugins register "
         "could not be read; only the SDK profile was checked",
         # Generated vs user code (mmt_plugin.codegen.hooks, #18); `build` (#19) reports it.
@@ -165,6 +167,10 @@ CODES: Mapping[str, str] = MappingProxyType(
         # `test` (mmt_plugin.commands.test, mmt_plugin.testing, #20).
         "model.bad-packet-test": "a packet test file is not a corpus schema 1 packet test "
         "(tests/corpus/README.md, Packet files)",
+        "model.bad-plugin": "an entry of plugin.yaml's plugins (test, validate) does not "
+        "exist, is neither a "
+        "project directory nor a .so file, cannot be read, is named twice, makes a cycle, or "
+        "has the plugin's own label or another named plugin's",
         "build.harness-failed": "the generated test harness does not compile against the SDK",
         "test.packet-failed": "a packet test failed: the classification, the next protocol or "
         "an attribute value is not the one the test expects",

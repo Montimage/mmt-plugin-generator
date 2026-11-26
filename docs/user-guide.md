@@ -74,15 +74,17 @@ Once a release is published ([`docs/releasing.md`](releasing.md)), each
 GitHub release of this repository carries the wheel, the sdist, the JSON
 Schemas of the `--json` output and of `plugin.yaml`
 (`mmt-plugin-schemas-<version>.tar.gz`), a `SHA256SUMS` and a provenance
-attestation. Install the wheel straight from the release, or from PyPI
-when the release is also published there:
+attestation. Install the wheel straight from the release:
 
 <!-- doc:skip needs a published release -->
 ```sh
 uv tool install https://github.com/Montimage/mmt-plugin-generator/releases/download/v0.1.0/mmt_plugin-0.1.0-py3-none-any.whl
-uv tool install mmt-plugin
 mmt-plugin --version
 ```
+
+mmt-plugin is not on PyPI yet. Once a release is also published there
+([`docs/releasing.md`](releasing.md), "Setup before the first release"),
+`uv tool install mmt-plugin` installs it too.
 
 `0.1.0` stands for the release's version. To check a downloaded asset,
 `sha256sum -c SHA256SUMS`, then
@@ -234,6 +236,23 @@ that the plugin file loads after `libmmt_tcpip.so`:
 mmt-plugin -C demo validate
 ```
 
+A parent that is another plugin's protocol is checked from that plugin's
+project, named under `plugins` in `plugin.yaml` (see
+[A parent that is another plugin](#a-parent-that-is-another-plugin)):
+
+- `parents-exist` accepts a parent that is the label of a named project,
+  or of a project one of them names, compared case-insensitively. The
+  project need not be built or installed, and the check passes with
+  `--no-sdk` too. A `.so` entry proves no parent (its protocol is known
+  only once it loads), and an entry `validate` cannot use fails the check
+  with `model.bad-plugin`, exit 3.
+- `load-order` also checks that `mmtp_<label>.so` sorts after the plugin
+  file of every named plugin (a project's `mmtp_<label>.so`, a `.so`
+  entry's own name), since mmt-dpi loads the plugins of a directory in file
+  name order and a parent must be registered first. A child labelled
+  `ocpp_example` under a parent labelled `websocket_example` fails it
+  (`model.load-order`, exit 3): `mmtp_ocpp_example.so` sorts first.
+
 `generate` writes `generated/demo_mmt_plugin.h` and `.c`, and `plugin.lock`,
 which records their hashes, the tool version and the profile. Commit all
 three. Re-running it on an unchanged model writes nothing, and
@@ -374,6 +393,60 @@ not check `next`: mmt-dpi 1.10.2 does not classify past a protocol a plugin
 attached under its TCP or UDP. With `--sanitize`, its random packets run
 behind the same headers.
 
+### A parent that is another plugin
+
+`test` loads the plugin next to the SDK's `libmmt_tcpip.so` only. When
+`<label>_hook_register_parents` attaches it under another plugin's
+protocol, that plugin must load first, or the registration fails and so
+does the load (`test.load-failed`, exit 6). Name it under `plugins` in
+`plugin.yaml`, a parent first: a project directory, or a built `.so` file,
+relative to the directory of `plugin.yaml`
+([`docs/plugin-yaml.md`](plugin-yaml.md#plugins)):
+
+```yaml
+plugins:
+  - "../parent"      # the parent plugin's project
+```
+
+`test` then builds each named project that is stale (as
+`mmt-plugin -C ../parent build` would, with that project's own
+`sdk.profile` unless `--sdk-profile` or `MMT_PLUGIN_SDK_PROFILE` says
+otherwise; with `--no-deps`, a stale one is `state.stale`, exit 7),
+and every harness run (the packets, the session tests, `--sanitize` and
+`--bench`) loads them, in that order, before the plugin, whatever their
+file names. `result.plugins` lists them in that order, each with its
+`project` and its `build` (`ran`, `up-to-date`, or `null` for a `.so`
+file). A plugin the named projects themselves name loads first, once. An
+entry that `test` cannot use (missing, neither a project nor a `.so` file,
+named twice, a cycle, this plugin's label) is `model.bad-plugin`, exit 3.
+The named plugins are not rebuilt with the sanitizers. `validate` reads the
+same list: it finds the parent in its project and checks that the plugin
+loads after it ([Validate and generate](#validate-and-generate)).
+
+A packet test's `through` can name such a parent by its label, when its
+project is named under `plugins` (a `.so` file named directly cannot be
+one):
+
+```yaml
+through: "parent"                     # parent's first packet test with through
+through: "parent:test=parent/basic"   # or the one with that id
+```
+
+The frame then starts with one of the parent project's packet tests
+(`tests/*.yaml`, in file order) whose own `through` names an mmt-dpi
+protocol: its lower layers (`ethernet:ethertype=0x88b6`, say), then its
+bytes up to its `expect.next` offset, or all of them when it names no next
+protocol, as the parent's header, then your test's bytes. `test=` picks
+that test by its id; without it, it is the first. Your plugin must be
+classified directly above the parent's protocol (its id from the parent's
+`plugin.yaml`), where the parent's header ends (`<parent>`, shown with the
+parent's label), and that run checks the attributes, not `next`, as above.
+A label that names no such project, or a project with no such packet
+test, is `model.bad-packet-test`, exit 3. A session test's
+`session.through` stays a `tcp` selector. mmt-dpi 1.10.2 does not classify
+a layer above a plugin it classified under TCP or UDP (#96), so a parent
+plugin above TCP or UDP cannot be tested this way; one above Ethernet can.
+
 ### Session tests
 
 A packet test is one packet, with no session around it. When what your
@@ -427,11 +500,12 @@ packets:
   (`dport`) and optionally the client's (`sport`); `protocol` and
   `proto_id` are the plugin's.
 - `session.attributes` lists attributes every packet of the plugin's
-  checks: one a packet does not list must be absent there.
+  checks: one a packet does not list must be absent there. `session` has
+  no other key (`note` is a comment), so a misspelt one is an error.
 - Each step of `packets` is `open: true` (the three-way handshake),
   `idle: N` (N seconds of other traffic, for mmt-dpi's timers), or a
   segment `from` the client or the server, its TCP payload in `bytes`
-  (none: a pure ACK), with `retransmit: true` to send it again at that
+  (none: a pure ACK; at most 65495 bytes, one IPv4/TCP frame), with `retransmit: true` to send it again at that
   side's previous sequence number, `lost: N` for bytes the capture
   lost before it, or `back: N` to send it `N` bytes before that side's
   next sequence number (a segment that arrives late, or one sent over
@@ -799,6 +873,44 @@ python3 -c 'import json; d = json.load(open("validate.json")); print(d["exit_cod
 [`docs/design/cli.md`](design/cli.md#6-the---json-envelope-shared-by-every-command).
 To write plugins with an AI agent, or to update an existing project, see
 the [mmt-plugin-generator skill](../skills/mmt-plugin-generator/SKILL.md).
+To run that skill without a coding assistant, see the next section.
+
+## Run the skill headless: mmt-plugin-agent
+
+`mmt-plugin-agent` runs the mmt-plugin-generator skill with a LangGraph
+agent and any chat model LangChain supports, from the command line or
+from Python. It is the `agent` extra, which needs Python 3.11 or newer;
+`mmt-plugin` alone still installs only jinja2. From a checkout:
+
+<!-- doc:skip needs the agent extra, an mmt-dpi SDK and a model key -->
+```sh
+uv sync --extra agent
+uv run mmt-plugin-agent doctor --sdk "$MMT_BASE"
+uv run mmt-plugin-agent new --spec skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md \
+    --sdk "$MMT_BASE" --model anthropic:claude-sonnet-5-5 --unattended --allow-synthetic --json
+```
+
+- Models: `anthropic:<model>` (`ANTHROPIC_API_KEY`), `openai:<model>` with
+  `OPENAI_BASE_URL` for vLLM or another OpenAI-compatible server, and
+  `ollama:<model>` (its context length, `num_ctx`, is 65536 tokens unless
+  `MMT_PLUGIN_AGENT_NUM_CTX` says otherwise); `--model` or
+  `MMT_PLUGIN_AGENT_MODEL`.
+- Modes: `--unattended` (the default) writes each question the skill asks
+  to `<work>/questions.md` with the default it takes, never waits for
+  input and never uses `--force`; `--interactive` asks on the terminal.
+  Without a capture and without `--allow-synthetic`, the evaluation is
+  not done, and the result says so. With either, a green run that did
+  not evaluate the plugin exits 6 (`agent.evaluation-skipped`).
+- Exit codes are `mmt-plugin`'s classes: 0 done (or green with the
+  evaluation not done and no leave for it), 2 usage, 3 input, 4 environment (no extra, no
+  skills, a failed `doctor` check), 6 not green or failed.
+- The agent's shell has no isolation: it can do what you can. Run it in the
+  agent container (`make agent-image`), where its user is not root and the
+  skills are read-only; a mounted Docker socket gives it root on the host.
+
+[`docs/agent-api.md`](agent-api.md) has the command line, the Python API
+(`PluginAgent`, `build_graph` as a LangGraph subgraph), the model evals
+and the sandbox in full.
 
 ## Settings and where they come from
 

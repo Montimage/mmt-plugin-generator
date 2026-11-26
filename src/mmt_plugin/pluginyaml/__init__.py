@@ -17,6 +17,7 @@ from mmt_plugin.pluginyaml.load import (
     PluginYamlError,
     load,
     profile_pin,
+    protocol_label,
 )
 from mmt_plugin.pluginyaml.schema import SCHEMA_PATH, load_schema
 
@@ -29,5 +30,6 @@ __all__ = [
     "load",
     "load_schema",
     "profile_pin",
+    "protocol_label",
     "to_document",
 ]

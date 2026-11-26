@@ -199,6 +199,64 @@ jobs:
             (cd "$GITHUB_WORKSPACE" && check "$UV_TOOL_BIN_DIR/mmt-plugin")
             echo "::endgroup::"
           done
+      - name: Install the wheel without and with the agent extra
+        # Without the extra the tool's environment holds only jinja2 (and
+        # MarkupSafe), and mmt-plugin-agent says what it needs (#161). With
+        # it, on Python 3.11+, the agent's doctor runs outside the checkout:
+        # no skills directory (exit 4, a hint), then the checkout's. On 3.10
+        # the extra installs nothing and the agent says so.
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          PYTHON: ${{ matrix.python }}
+        run: |
+          wheel="$RUNNER_TEMP/release/mmt_plugin-$VERSION-py3-none-any.whl"
+          envelope() {
+            python3 -c '
+          import json, sys
+          env = json.load(sys.stdin)
+          key, want = sys.argv[1], sys.argv[2]
+          got = env
+          for part in key.split("."):
+              got = got[int(part)] if part.isdigit() else got[part]
+          assert str(got) == want, (key, got, env)
+          print(key, "=", got)
+          ' "$@"
+          }
+          status() {
+            python3 -c '
+          import json, sys
+          checks = {c["id"]: c for c in json.load(sys.stdin)["result"]["checks"]}
+          check = checks[sys.argv[1]]
+          assert check["status"] == sys.argv[2], check
+          assert check["status"] == "pass" or check["hint"], check
+          print(sys.argv[1], check["status"], check["hint"])
+          ' "$@"
+          }
+          cd "$RUNNER_TEMP"
+          export UV_TOOL_DIR="$RUNNER_TEMP/tools-plain" UV_TOOL_BIN_DIR="$RUNNER_TEMP/bin-plain"
+          uv tool install --python "$PYTHON" "$wheel"
+          packages="$(uv pip list --python "$UV_TOOL_DIR/mmt-plugin/bin/python" --format json \
+            | python3 -c 'import json, sys; print(" ".join(sorted(p["name"].lower() for p in json.load(sys.stdin))))')"
+          [ "$packages" = "jinja2 markupsafe mmt-plugin" ] \
+            || { echo "pip install mmt-plugin pulls: $packages"; exit 1; }
+          "$UV_TOOL_BIN_DIR/mmt-plugin-agent" --json --version | envelope result.agent_extra False
+          export UV_TOOL_DIR="$RUNNER_TEMP/tools-agent" UV_TOOL_BIN_DIR="$RUNNER_TEMP/bin-agent"
+          uv tool install --python "$PYTHON" "mmt-plugin[agent] @ file://$wheel"
+          agent="$UV_TOOL_BIN_DIR/mmt-plugin-agent"
+          if [ "$PYTHON" = 3.10 ]; then
+            "$agent" --json --version | envelope result.agent_extra False
+            code=0; out="$("$agent" --json new --spec "$GITHUB_WORKSPACE/README.md" --model a:b)" || code=$?
+            [ "$code" = 4 ] || { echo "exit $code, expected 4"; exit 1; }
+            echo "$out" | envelope error.code agent.needs-extra
+          else
+            "$agent" --json --version | envelope result.agent_extra True
+            code=0; out="$("$agent" --json doctor)" || code=$?
+            [ "$code" = 4 ] || { echo "doctor exit $code, expected 4"; exit 1; }
+            echo "$out" | status skills fail
+            echo "$out" | status agent-extra pass
+            out="$("$agent" --json doctor --skills "$GITHUB_WORKSPACE/skills")" || true
+            echo "$out" | status skills pass
+          fi
 
   container:
     name: Release image (${{ matrix.arch }})

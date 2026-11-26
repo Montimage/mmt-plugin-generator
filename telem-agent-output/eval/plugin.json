@@ -1,0 +1,190 @@
+{
+  "capture": "/work/plugin-work-5c743542/capture/capture.pcap",
+  "label": "telem",
+  "registered": true,
+  "proto_id": 963,
+  "frames": 9,
+  "label_packets": 9,
+  "paths": {
+    "meta.ethernet.ip.udp.TELEM": 9
+  },
+  "paths_other": 0,
+  "attributes": {
+    "first_packet_time": {
+      "id": 4102,
+      "data_type": 11,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "data_count": {
+      "id": 4100,
+      "data_type": 4,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "last_packet_time": {
+      "id": 4103,
+      "data_type": 11,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "flags": {
+      "id": 2,
+      "data_type": 1,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "2": 1,
+        "0": 5,
+        "15": 2,
+        "1": 1
+      },
+      "other_values": 0
+    },
+    "p_data": {
+      "id": 4097,
+      "data_type": 5,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "0xaaaaf02b422a": 9
+      },
+      "other_values": 0
+    },
+    "stats": {
+      "id": 4105,
+      "data_type": 24,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "version": {
+      "id": 1,
+      "data_type": 1,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "1": 9
+      },
+      "other_values": 0
+    },
+    "msg_type": {
+      "id": 3,
+      "data_type": 1,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "1": 5,
+        "2": 4
+      },
+      "other_values": 0
+    },
+    "payload_count": {
+      "id": 4101,
+      "data_type": 4,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "readings": {
+      "id": 6,
+      "data_type": 3,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "p_hdr": {
+      "id": 4096,
+      "data_type": 5,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "0xaaaaf02b422a": 9
+      },
+      "other_values": 0
+    },
+    "length": {
+      "id": 4,
+      "data_type": 2,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "12": 1,
+        "8": 5,
+        "13": 1,
+        "20": 1,
+        "16": 1
+      },
+      "other_values": 0
+    },
+    "sequence": {
+      "id": 5,
+      "data_type": 3,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "42": 2,
+        "43": 1,
+        "255": 1,
+        "65535": 1,
+        "4294967295": 2,
+        "0": 1,
+        "1": 1
+      },
+      "other_values": 0
+    },
+    "packet_count": {
+      "id": 4099,
+      "data_type": 4,
+      "scope": 1,
+      "present": 0,
+      "values": {},
+      "other_values": 0
+    },
+    "p_data_len": {
+      "id": 4104,
+      "data_type": 4,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "18": 8,
+        "20": 1
+      },
+      "other_values": 0
+    },
+    "payload": {
+      "id": 7,
+      "data_type": 25,
+      "scope": 1,
+      "present": 5,
+      "values": {
+        "deadbeef": 1,
+        "": 1,
+        "0102030405": 1,
+        "000102030405060708090a0b": 1,
+        "0011223344556677": 1
+      },
+      "other_values": 0
+    },
+    "p_payload": {
+      "id": 4098,
+      "data_type": 5,
+      "scope": 1,
+      "present": 9,
+      "values": {
+        "0xaaaaf02b422a": 9
+      },
+      "other_values": 0
+    }
+  },
+  "crashed": false
+}

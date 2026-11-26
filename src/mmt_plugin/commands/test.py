@@ -10,24 +10,32 @@ Stages, reported in ``result.stages`` (``ran``, ``up-to-date``, ``failed``,
 ``stale`` or ``skipped``), each stopping the run with its class's exit code:
 
 0. read the model, find the SDK, the compiler and the profile (as
-   ``build``), and read every packet test (a bad one is
-   ``model.bad-packet-test``, exit 3); no packet test at all is the warning
-   ``test.no-packets``;
+   ``build``), the other plugins plugin.yaml's ``plugins`` names
+   (``mmt_plugin.plugins``, a parent first; a bad entry is
+   ``model.bad-plugin``, exit 3, reported in the ``build`` stage), and read
+   every packet test (a bad one is ``model.bad-packet-test``, exit 3); no
+   packet test at all is the warning ``test.no-packets``;
 1. ``build``: ``mmt-plugin build`` (``mmt_plugin.commands.build``), a no-op
    when the plugin is up to date; with ``--no-deps``, a plugin that is not
-   up to date is ``state.stale`` (exit 7) and nothing is built;
+   up to date is ``state.stale`` (exit 7) and nothing is built. Then each
+   named project's plugin is built the same way, in its own directory (its
+   own ``sdk.profile``), and each named plugin is loaded, in that order,
+   before the plugin in every harness run (``result.plugins``);
 2. ``harness``: the host harness (``mmt_plugin.testing.harness``) is
    generated into ``<build-dir>/test/harness.c`` and compiled against the
    SDK (``build.harness-failed``, exit 5);
 3. ``packets``: the harness loads the plugin next to the SDK's
-   ``libmmt_tcpip.so``, attaches it to Ethernet, and checks each packet's
+   ``libmmt_tcpip.so`` (and the named plugins), attaches it to Ethernet, and checks each packet's
    classification, next protocol and attribute values. A test with
    ``through`` runs a second time (its own ``result.packets`` entry, with
    ``through``): behind the lower layers its selector names
    (``mmt_plugin.testing.frames``), through mmt-dpi's stack, so the plugin's
    own parent classification must find it, directly above the selector's
    protocol and at the offset those layers end at (``<parent>``); its next
-   protocol is not checked there. A session test
+   protocol is not checked there. The selector may name a named project's
+   plugin (#147): the lower layers are then one of that project's packet
+   tests that runs through an mmt-dpi protocol, its bytes the parent's
+   header (``mmt_plugin.testing.frames``, ``PluginParent``). A session test
    (``mmt_plugin.testing.session``) runs its packets, one TCP connection,
    in order in a harness of its own, so the plugin keeps its session state
    from one packet to the next: one ``result.packets`` entry, with
@@ -58,13 +66,14 @@ the bench). Progress (a meter of the packets) shows only on a terminal.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import glob
 import json
 import math
 import os
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,15 +91,25 @@ from mmt_plugin.commands.build import (
     run_compiler,
 )
 from mmt_plugin.commands.generate import make_generation
-from mmt_plugin.commands.modelio import FORMATS, absolute, read_model, show_path
+from mmt_plugin.commands.modelio import (
+    FORMATS,
+    PROJECT_FILE,
+    ModelInput,
+    absolute,
+    parse_model,
+    read_model,
+    show_path,
+)
 from mmt_plugin.diagnostics import CliError, Diagnostic, Location, Severity
 from mmt_plugin.exitcodes import ExitCode
 from mmt_plugin.fsio import sha256_bytes, write_atomic
+from mmt_plugin.pdl import Model
+from mmt_plugin.plugins import NamedPlugin, PluginError, resolve
 from mmt_plugin.sdk.detect import DEFAULT_PREFIX, Sdk, require_sdk
 from mmt_plugin.sdk.profile import DATA_TYPE_GROUP, Profile
 from mmt_plugin.sdk.resolve import ENV_PROFILE, ProfileChoice, resolve_profile, sdk_context
 from mmt_plugin.testing import harness as harness_mod
-from mmt_plugin.testing.frames import build_frame
+from mmt_plugin.testing.frames import ParentFrame, PluginParent, build_frame
 from mmt_plugin.testing.fuzz import fuzz_packets, mutate_frames
 from mmt_plugin.testing.packets import (
     ExpectedParent,
@@ -123,6 +142,7 @@ __all__ = [
 #: The codes this command reports itself.
 DIAGNOSTIC_CODES = (
     "model.bad-packet-test",
+    "model.bad-plugin",
     "build.harness-failed",
     "test.packet-failed",
     "test.crash",
@@ -316,10 +336,44 @@ def _expected_parent(profile: Profile, packet: _Packet) -> ExpectedParent | None
     through = packet.test.through
     if not (packet.through or packet.session is not None) or through is None:
         return None
+    if through.plugin is not None:
+        return ExpectedParent(through.proto, through.plugin.proto_id, through.offset)
     parents = profile.parents
     return ExpectedParent(
         through.proto, parents.id_of(parents.id_for(through.proto)), through.offset
     )
+
+
+def _plugin_parents(
+    named: Sequence[NamedPlugin], project: Path, data_types: Collection[str]
+) -> dict[str, PluginParent]:
+    """The plugin parents a ``through`` selector may name: each named
+    project, with its packet tests (``<project>/tests/*.yaml``, in file
+    order) that run through an mmt-dpi protocol. A test of that project that
+    cannot be read, a session test and one through another plugin are not
+    among them (the project's own ``test`` reports them)."""
+    out: dict[str, PluginParent] = {}
+    for entry in named:
+        if entry.project is None or entry.label is None or entry.proto_id is None:
+            continue
+        frames: list[ParentFrame] = []
+        for path in sorted((entry.project / TESTS_DIR).glob("*.yaml")):
+            if not path.is_file():
+                continue
+            try:
+                test = load_test(path, show_path(path, project), data_types)
+            except PacketTestError:
+                continue
+            if not isinstance(test, PacketTest) or test.through is None:
+                continue
+            header = test.data
+            if test.next.kind == "proto" and test.next.offset is not None:
+                header = test.data[: test.next.offset]
+            frames.append(ParentFrame(test.id, test.through, header, entry.proto_id))
+        out[entry.label] = PluginParent(
+            entry.label, entry.proto_id, show_path(entry.project, project), tuple(frames)
+        )
+    return out
 
 
 @dataclass
@@ -332,6 +386,8 @@ class _Run:
     sanitize: dict[str, Any] | None = None
     bench: dict[str, Any] | None = None
     build_up_to_date: bool = False
+    #: ``result.plugins``: the named plugins, in load order.
+    plugins: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -344,6 +400,8 @@ class _Toolchain:
     core: Path
     test_dir: Path
     project: Path
+    #: The named plugins (plugin.yaml's ``plugins``), loaded before the plugin.
+    extra: tuple[Path, ...] = ()
 
     @property
     def sdk_plugins(self) -> Path:
@@ -484,14 +542,20 @@ class TestCommand:
     # --- stage 0 ---
 
     def _load_tests(
-        self, args: argparse.Namespace, project: Path, profile: Profile, run: _Run
+        self,
+        args: argparse.Namespace,
+        project: Path,
+        profile: Profile,
+        run: _Run,
+        named: Sequence[NamedPlugin] = (),
     ) -> tuple[list[_Test], CliError | None]:
         types = {c.name for c in profile.constants if c.group == DATA_TYPE_GROUP}
+        parents = _plugin_parents(named, project, types)
         tests: list[_Test] = []
         errors: list[Diagnostic] = []
         for path in packet_paths(args.packets, project):
             try:
-                tests.append(load_test(path, show_path(path, project), types))
+                tests.append(load_test(path, show_path(path, project), types, parents))
             except PacketTestError as exc:
                 errors.append(exc.diagnostic)
         seen: dict[str, str] = {}
@@ -583,6 +647,89 @@ class TestCommand:
             )
         if not sanitize:
             run.build_up_to_date = bool(outcome.result["up_to_date"])
+        return None
+
+    def _named(
+        self, args: argparse.Namespace, model: ModelInput, project: Path
+    ) -> list[NamedPlugin]:
+        """The plugins plugin.yaml's ``plugins`` names, in load order
+        (``PluginError`` on a bad entry); none for a PDL v1 model."""
+        if model.format != "yaml":
+            return []
+        parsed = parse_model(model)
+        if not parsed.plugins:
+            return []
+        path = project / PROJECT_FILE if args.model is None else absolute(args.model)
+
+        def read(file: Path) -> Model:
+            return parse_model(read_model(str(file), "yaml", project))
+
+        return resolve(parsed, path.parent, lambda p: show_path(p, project), read)
+
+    def _build_named(
+        self,
+        args: argparse.Namespace,
+        ctx: Context,
+        sdk: Sdk,
+        cc: Compiler,
+        named: Sequence[NamedPlugin],
+        project: Path,
+        run: _Run,
+    ) -> CliError | None:
+        """``build`` each named project, in its own directory, as
+        ``mmt-plugin -C <project> build`` would (its diagnostics' paths made
+        this project's); with ``--no-deps``, a stale one is ``state.stale``
+        and nothing is built. Fills ``result.plugins``."""
+        for entry in named:
+            record: dict[str, Any] = {
+                "path": show_path(entry.plugin, project),
+                "project": None if entry.project is None else show_path(entry.project, project),
+                "build": None,
+            }
+            run.plugins.append(record)
+            if entry.project is None or entry.model is None:
+                continue
+            where = record["project"]
+            command = BuildCommand(
+                pkg_config_dirs=self.pkg_config_dirs,
+                default_prefix=self.default_prefix,
+                cflags=CFLAGS,
+                ldflags=LDFLAGS,
+            )
+            ns = argparse.Namespace(
+                model=str(entry.model),
+                model_format="yaml",
+                sdk=sdk.prefix,
+                sdk_profile=args.sdk_profile,
+                cc=cc.path,
+                build_dir=None,
+                rebuild=False,
+                no_deps=args.no_deps,
+                dry_run=args.no_deps,
+                strict=args.strict,
+            )
+            try:
+                outcome = command.run(ns, dataclasses.replace(ctx, project=entry.project))
+            except CliError as exc:
+                record["build"] = "failed"
+                return CliError(exc.code, f"the plugin of {where}: {exc.message}", exc.hint)
+            seen = {(d.code, d.message, d.location) for d in run.diagnostics}
+            for d in outcome.diagnostics:
+                moved = _rebase(d, entry.project, project)
+                if (moved.code, moved.message, moved.location) not in seen:
+                    run.diagnostics.append(moved)
+            if outcome.error is not None:
+                error = outcome.error
+                record["build"] = "stale" if error.code == "state.stale" else "failed"
+                return CliError(error.code, f"the plugin of {where}: {error.message}", error.hint)
+            if args.no_deps and not outcome.result["up_to_date"]:
+                record["build"] = "stale"
+                return CliError(
+                    "state.stale",
+                    f"the plugin of {where} is not up to date (--no-deps)",
+                    f"run mmt-plugin -C {where} build first, or test without --no-deps",
+                )
+            record["build"] = "up-to-date" if outcome.result["up_to_date"] else "ran"
         return None
 
     # --- the harness ---
@@ -695,7 +842,17 @@ class TestCommand:
                 context=context,
             )
 
-        tests, error = self._load_tests(args, project, choice.profile, run)
+        named: list[NamedPlugin] = []
+        if generation is not None:  # else build reports why the model does not generate
+            try:
+                named = self._named(args, model, project)
+            except PluginError as exc:
+                run.diagnostics.append(exc.diagnostic)
+                run.stages["build"] = "failed"
+                return outcome(
+                    CliError("model.bad-plugin", exc.diagnostic.message, exc.diagnostic.hint)
+                )
+        tests, error = self._load_tests(args, project, choice.profile, run, named)
         run.packets = _entries(tests)
         if error is not None:
             return outcome(error)
@@ -715,7 +872,13 @@ class TestCommand:
             if run.stages["build"] == "skipped":
                 run.stages["build"] = "stale" if error.code == "state.stale" else "failed"
             return outcome(error)
-        run.stages["build"] = "up-to-date" if run.build_up_to_date else "ran"
+        error = self._build_named(args, ctx, sdk, cc, named, project, run)
+        if error is not None:
+            run.stages["build"] = "stale" if error.code == "state.stale" else "failed"
+            return outcome(error)
+        fresh = run.build_up_to_date and all(p["build"] != "ran" for p in run.plugins)
+        run.stages["build"] = "up-to-date" if fresh else "ran"
+        tools = dataclasses.replace(tools, extra=tuple(p.plugin for p in named))
         assert generation is not None  # build generated it
         if not tests:
             return outcome(None)
@@ -790,6 +953,10 @@ class TestCommand:
         records = {n: run.packets[n].record(k) for k, n in enumerate(pending)}
         sessions = [p for p in run.packets if p.session is not None]
         aliases = {p.id: p.alias or p.macro for p in tools.profile.parents.protocols()}
+        for p in run.packets:
+            through = p.test.through
+            if through is not None and through.plugin is not None:
+                aliases[through.plugin.proto_id] = through.proto
         packets_file = tools.test_dir / "packets.bin"
         with ctx.progress("packets", total=len(run.packets)) as progress:
             done = 0
@@ -807,6 +974,7 @@ class TestCommand:
                     ["check", str(packets_file)],
                     plugin,
                     tools.sdk_plugins,
+                    extra=tools.extra,
                     timeout=TIMEOUT + TIMEOUT_PER_PACKET * len(pending),
                     on_line=seen,
                     log=ctx.log,
@@ -925,6 +1093,7 @@ class TestCommand:
             ["check", str(packets_file)],
             plugin,
             tools.sdk_plugins,
+            extra=tools.extra,
             timeout=TIMEOUT + TIMEOUT_PER_PACKET * len(frames),
             log=ctx.log,
         )
@@ -970,7 +1139,8 @@ class TestCommand:
         return CliError(
             "test.load-failed",
             f"the harness cannot run the plugin: {reason}",
-            "check that the plugin loads next to libmmt_tcpip.so (mmt-plugin validate)",
+            "check that the plugin loads next to libmmt_tcpip.so (mmt-plugin validate), and"
+            " that plugins: in plugin.yaml names every plugin it attaches to, parents first",
         )
 
     # --- stage 4 ---
@@ -1022,6 +1192,7 @@ class TestCommand:
                     ["fuzz", str(packets_file)],
                     plugin,
                     tools.sdk_plugins,
+                    extra=tools.extra,
                     timeout=TIMEOUT + TIMEOUT_PER_PACKET * (len(packets) - start),
                     on_line=seen,
                     log=ctx.log,
@@ -1130,6 +1301,7 @@ class TestCommand:
                 ["fuzz", str(packets_file)],
                 plugin,
                 tools.sdk_plugins,
+                extra=tools.extra,
                 timeout=TIMEOUT + TIMEOUT_PER_PACKET * len(data),
                 log=ctx.log,
             )
@@ -1244,6 +1416,7 @@ class TestCommand:
                     ["bench", str(packets_file), str(rounds), str(BENCH_SAMPLES)],
                     target,
                     tools.sdk_plugins,
+                    extra=tools.extra,
                     timeout=TIMEOUT * 5,
                     log=ctx.log,
                 )
@@ -1279,6 +1452,19 @@ class TestCommand:
         )
 
 
+def _rebase(d: Diagnostic, root: Path, project: Path) -> Diagnostic:
+    """``d``, of a build in ``root`` (its paths relative to ``root`` when
+    inside it), with its paths as this project's diagnostics write them."""
+
+    def moved(loc: Location | None) -> Location | None:
+        if loc is None or loc.file.startswith("<") or Path(loc.file).is_absolute():
+            return loc
+        return dataclasses.replace(loc, file=show_path(absolute(root / loc.file), project))
+
+    related = [dataclasses.replace(r, location=moved(r.location)) for r in d.related]
+    return dataclasses.replace(d, location=moved(d.location), related=related)
+
+
 def _rate(samples: Sequence[float]) -> int:
     """The median of the samples, in packets per second."""
     ordered = sorted(samples)
@@ -1308,6 +1494,7 @@ def _result(
             "failed": counts["fail"] + counts["crash"],
             "skipped": counts["skipped"],
         },
+        "plugins": run.plugins,
         "packets": [p.to_json() for p in run.packets],
         "sanitize": run.sanitize,
         "bench": run.bench,

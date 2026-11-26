@@ -48,6 +48,8 @@ it is, re-run every step, and pick the work up where it stopped.
                        frames.jsonl, drift.jsonl (with tshark),
                        baseline.json, plugin.json
                        (bin/ and plugins/ are rebuilt: no need to keep them)
+  questions.md         unattended runs: each question, the recommended
+                       answer and the default taken (SKILL.md, Run modes)
   REPORT.md            the final report (SKILL.md, "Done")
   manifest.json        versions and hashes (below)
 ```
@@ -101,7 +103,10 @@ code.
 ```
 
 `eval.drift` is `report.json`'s `drift` without its items: `checked` false
-without tshark.
+without tshark. An evaluation that did not run (no capture and no leave
+for a synthetic one, or no SDK) is `"eval": {"verdict": "not done",
+"reason": "<why>"}`; `"questions": "questions.md"` names the questions
+file of an unattended run that has one.
 
 ## REPORT.md
 
@@ -132,9 +137,9 @@ Short, and written last:
    `pcap_eval.py` command of the last evaluation run, with its `--accept`
    flags (each accepted item of `drift.items` in `eval/report.json`: its
    key and reason).
-3. "Resume": what is left (a failing step, an open question, a drift that
-   is still a defect, a warning of the evaluation that was not explained),
-   or "nothing".
+3. "Resume": what is left (a failing step, an open question of
+   `questions.md`, a drift that is still a defect, a warning of the
+   evaluation that was not explained), or "nothing".
 
 ## Resuming from a work folder
 

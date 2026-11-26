@@ -9,7 +9,7 @@ import pytest
 
 from mmt_plugin.codegen import generate
 from mmt_plugin.pdl.model import Offsets, Scope
-from mmt_plugin.pluginyaml import PluginYamlError, dumps, load, profile_pin
+from mmt_plugin.pluginyaml import PluginYamlError, dumps, load, profile_pin, protocol_label
 from mmt_plugin.semantics import AnalysedModel, analyse
 
 from .corpus import REPO, profile
@@ -295,6 +295,38 @@ def test_a_parent_offset_must_fit_the_sdk_field() -> None:
     assert [d.code for d in info.value.diagnostics] == ["model.out-of-range"]
 
 
+def test_plugins_load_with_their_place_and_round_trip() -> None:
+    text = (
+        HEAD
+        + 'plugins:\n  - "../websocket"\n  - lib/mmtp_x.so\n'
+        + "attributes:\n  - name: a\n    type: MMT_U8_DATA\n    offset: 0\n"
+    )
+    model = load(text, filename="plugin.yaml").model
+    assert [p.path for p in model.plugins] == ["../websocket", "lib/mmtp_x.so"]
+    first, second = model.plugins
+    assert (first.span.line, first.span.column) == (7, 5)
+    assert (second.span.line, second.span.column) == (8, 5)
+    # The dump writes them after parents, before attributes, quoted where a
+    # plain value would not read back.
+    dumped = dumps(model)
+    assert 'plugins:\n  - "../websocket"\n  - lib/mmtp_x.so\nattributes:' in dumped
+    assert [p.path for p in load(dumped, filename="plugin.yaml").model.plugins] == [
+        "../websocket",
+        "lib/mmtp_x.so",
+    ]
+    # Loading other plugins changes nothing in the generated code.
+    without = HEAD + "attributes:\n  - name: a\n    type: MMT_U8_DATA\n    offset: 0\n"
+    assert (
+        generate(_analyse(text), profile()).files == generate(_analyse(without), profile()).files
+    )
+
+
+def test_a_model_without_plugins_dumps_none() -> None:
+    model = load(HEAD, filename="plugin.yaml").model
+    assert model.plugins == ()
+    assert "plugins" not in dumps(model)
+
+
 def test_the_profile_pin() -> None:
     assert profile_pin(HEAD + "sdk:\n  profile: '1.10.2'\n") == "1.10.2"
     assert profile_pin(HEAD) is None
@@ -305,6 +337,17 @@ def test_the_profile_pin() -> None:
     read = load(HEAD + "sdk:\n  profile: '1.10.2'\n", filename="plugin.yaml")
     assert read.sdk_profile == "1.10.2"
     assert read.model.offsets is Offsets.ABSOLUTE
+
+
+def test_the_protocol_label() -> None:
+    assert protocol_label(HEAD) == "p"
+    assert protocol_label(HEAD.replace("label: p", "label: Telem")) == "Telem"
+    assert protocol_label("schema: 1\n") is None
+    assert protocol_label("not: [yaml\n") is None
+    assert protocol_label("- a\n") is None
+    assert protocol_label("schema: 1\nprotocol: 3\n") is None
+    assert protocol_label(HEAD.replace("label: p", "label: 3")) is None
+    assert protocol_label(HEAD.replace("  label: p\n", "")) is None
 
 
 def test_the_example_of_the_format_page_generates() -> None:

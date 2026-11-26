@@ -5,7 +5,9 @@
 #   make test-container CONTAINER=podman
 #
 # Stages: `toolchain` is that image; `release` adds a released mmt-plugin
-# wheel to it (T5.3, see the end of this file and docs/releasing.md); `test`,
+# wheel to it (T5.3, see the end of this file and docs/releasing.md); `agent`
+# adds the wheel with its agent extra, tshark, libpcap, a docker CLI and the
+# read-only skills for mmt-plugin-agent (#161, docs/agent-api.md); `test`,
 # the default target, is the toolchain again, so `docker build .` and
 # `make container` build the test image and need no wheel.
 #
@@ -123,6 +125,7 @@ ARG REVISION=
 LABEL org.opencontainers.image.title="mmt-plugin" \
     org.opencontainers.image.description="Generate, build and test mmt-dpi protocol plugins (gcc, clang, mmt-dpi in /opt/mmt)" \
     org.opencontainers.image.source="https://github.com/Montimage/mmt-plugin-generator" \
+    org.opencontainers.image.licenses="Apache-2.0" \
     org.opencontainers.image.version="$VERSION" \
     org.opencontainers.image.revision="$REVISION"
 
@@ -132,6 +135,75 @@ RUN ln -s /opt/mmt-plugin/bin/mmt-plugin /usr/local/bin/mmt-plugin \
 
 WORKDIR /work
 CMD ["mmt-plugin", "--help"]
+
+# Agent image (#161): mmt-plugin-agent runs the mmt-plugin-generator skill
+# headless here, the container being its sandbox (docs/agent-api.md).
+#
+#   make agent-image
+#   docker build --target agent --build-arg WHEEL=mmt_plugin-<version>-py3-none-any.whl .
+#
+# - The agent extra's dependencies are uv.lock's, with their hashes.
+# - The SDK is a private prefix, /opt/sdk (MMT_BASE): the skill never uses
+#   /opt/mmt, so the toolchain's mmt-dpi package is moved there and purged,
+#   its absolute library links made relative (AGENTS.md, "A private prefix
+#   can also come from the published package").
+# - The skills are root-owned and read-only in /opt/mmt-plugin-skills, and
+#   the agent runs as the unprivileged user `agent`, so no shell command
+#   of the agent can change them.
+# - cyberlab is not in the image: it records captures through Docker, which
+#   needs the host's socket (root on the host: never by default). Without it
+#   the skill crafts synthetic captures, and only with leave
+#   (--allow-synthetic).
+FROM installer AS agent-installer
+
+RUN cd /tmp/mmt-plugin \
+    && /tmp/uv/uv export --frozen --no-dev --no-emit-project --no-header --extra agent \
+        --format requirements.txt -o requirements-agent.txt > /dev/null \
+    && /tmp/uv/uv pip install --python /opt/mmt-plugin/bin/python --require-hashes \
+        -r requirements-agent.txt \
+    && /opt/mmt-plugin/bin/mmt-plugin-agent --json --version \
+        | /opt/mmt-plugin/bin/python -c 'import json, sys; assert json.load(sys.stdin)["result"]["agent_extra"]'
+
+FROM toolchain AS agent
+
+ARG VERSION=
+ARG REVISION=
+LABEL org.opencontainers.image.title="mmt-plugin-agent" \
+    org.opencontainers.image.description="mmt-plugin-agent: the mmt-plugin-generator skill headless (mmt-dpi in /opt/sdk)" \
+    org.opencontainers.image.source="https://github.com/Montimage/mmt-plugin-generator" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.version="$VERSION" \
+    org.opencontainers.image.revision="$REVISION"
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        docker.io libpcap-dev tshark \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/sdk \
+    && cp -a /opt/mmt/. /opt/sdk/ \
+    && for l in /opt/sdk/dpi/lib/*.so; do \
+        [ -L "$l" ] && ln -sfn "$(basename "$(readlink "$l")")" "$l"; done \
+    && DEBIAN_FRONTEND=noninteractive apt-get purge -y mmt-dpi \
+    && rm -rf /opt/mmt \
+    && [ -f /opt/sdk/dpi/include/mmt_log.h ] && [ -f /opt/sdk/plugins/libmmt_tcpip.so ] \
+    && dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' \
+        > /usr/share/doc/mmt-test-image/packages.txt
+
+ENV MMT_BASE=/opt/sdk MMT_PLUGIN_SKILLS=/opt/mmt-plugin-skills
+
+COPY --from=agent-installer /opt/mmt-plugin /opt/mmt-plugin
+COPY skills/ /opt/mmt-plugin-skills/
+RUN ln -s /opt/mmt-plugin/bin/mmt-plugin /usr/local/bin/mmt-plugin \
+    && ln -s /opt/mmt-plugin/bin/mmt-plugin-agent /usr/local/bin/mmt-plugin-agent \
+    && find /opt/mmt-plugin-skills -name __pycache__ -prune -exec rm -rf {} + \
+    && chown -R root:root /opt/mmt-plugin-skills \
+    && chmod -R a-w,a+rX /opt/mmt-plugin-skills \
+    && useradd --create-home --shell /bin/bash agent \
+    && mmt-plugin --version && mmt-plugin-agent --version
+
+USER agent
+WORKDIR /home/agent
+CMD ["mmt-plugin-agent", "--help"]
 
 # The default target: the build and test image of T0.3 (`make container`,
 # `docker build .`), which needs no wheel.

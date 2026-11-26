@@ -24,7 +24,7 @@ also on a usage error, and nothing else. The skill reads these keys:
 | `diagnostics[].location` | `{file, line, column, end_line, end_column}` or `null` | `file` is relative to the project inside it, absolute outside it (a `build.cc` error or note in an SDK header); `line` and `column` are 1-based and may be `null` (a whole file). Edit there, unless `file` is outside the project. |
 | `diagnostics[].hint` | one line on how to fix it, or `null` | |
 | `diagnostics[].related[]` | other places (`"first defined here"`) | |
-| `result` | the command's own result, `null` on a usage error | `test`: `summary` and `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
+| `result` | the command's own result, `null` on a usage error | `test`: `summary`, `packets[].failures[]` (`attribute`, `expected`, `actual`; a session test's also `packet`) and `plugins[]` (the plugins `plugins:` names, in load order: `path`, `project`, `build`). `run`: `summary`, `paths[]` (`path`, `packets`) and `protocols[].attributes[]` (`name`, `packets`). |
 
 Keys not listed here may be added; ignore them. Paths in the envelope are
 relative to the project (`-C`) when inside it, absolute otherwise.
@@ -49,7 +49,12 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
   in the project before this session (stop and report instead). A failing
   entry with `through` ran through the plugin's parent: `<protocol>` there
   (not classified) or `<parent>` is fixed in `parents:` (its `classify`) or
-  in `<label>_hook_register_parents`. An entry with `session` is a session
+  in `<label>_hook_register_parents`. When `through` is a plugin parent's
+  label (a project under `plugins`), the frame is that project's packet
+  test (the first with `through`, or `test=<id>`): its lower layers and
+  its bytes, the parent's header; a `<parent>` offset is fixed in the hook's
+  classifier, or with `test=` naming a parent test whose bytes are the
+  header, never in the parent's tests. An entry with `session` is a session
   test: each failure's `packet` is the index of its step in the file's
   `packets`; a value that depends on earlier packets is fixed in the
   session hooks of `src/<label>_impl.c`.
@@ -70,13 +75,17 @@ one, else the file. Three cases name a file whose fix is often elsewhere:
 | 4 | sdk | Fix the environment: the SDK prefix (`--sdk`), the profile (`--sdk-profile`, `sdk.profile`) or the compiler (`--cc`). Never the model. |
 | 5 | build | Fix `src/<label>_impl.c` (or the model, when the error is in generated code) at each error's `location`. |
 | 6 | test | For each failing packet in `result.packets`, compare `attribute`, `expected` and `actual` with the spec, then fix whichever of the model and the test is wrong; never a test that was in the project before this session. |
-| 7 | state | Files on disk are not what the command needs: see the code. Never `--force` over a file you did not write. |
+| 7 | state | Files on disk are not what the command needs: see the code. Never `--force` over a file you did not write; unattended, never `--force` at all. |
 | 130 | interrupted | Run the command again. |
 
 ## Error codes
 
 A row is a code, or a family ending in `*`. Codes are the
 `diagnostics[].code` and `error.code` values; the first part is the class.
+
+Where a row says to ask, an unattended run (`SKILL.md`, Run modes) writes
+the question with its recommended answer to `<work>/questions.md` and
+takes the row's unattended default instead; it never passes `--force`.
 
 | Code | Action |
 |---|---|
@@ -90,7 +99,7 @@ A row is a code, or a family ending in `*`. Codes are the
 | `sdk.profile-fallback` | Warning: no profile for the SDK's version; the nearest one is used. Pin one with `sdk.profile` if it matters. |
 | `sdk.profile-default` | Warning: no SDK and no pinned profile. Pin `sdk.profile` in `plugin.yaml`. |
 | `sdk.cc-not-found` | Pass `--cc gcc` or `--cc clang` (one program, no arguments). |
-| `sdk.tshark-not-found` | `scaffold --tshark` needs tshark on `PATH`: ask the user to install it (Wireshark's command line), or drop `--tshark` for `scaffold`'s own proposal. Nothing was written. |
+| `sdk.tshark-not-found` | `scaffold --tshark` needs tshark on `PATH`: ask the user to install it (Wireshark's command line), or drop `--tshark` for `scaffold`'s own proposal. Nothing was written. Unattended: drop `--tshark` and record the question. |
 | `sdk.tshark-failed` | tshark failed or printed what does not parse: check each `--decode-as` rule against the message (a protocol tshark does not know), and that tshark reads the capture (`tshark -r`). Nothing was written. |
 | `sdk.registry-unavailable` | Warning: the installed plugins could not be listed, so the id and name were checked against the SDK headers only. Go on. |
 | `sdk.id-unchecked` | Warning from `init` without an SDK: `validate` with `--sdk` checks the id later. |
@@ -139,12 +148,13 @@ A row is a code, or a family ending in `*`. Codes are the
 | `model.default-byte-order` | Warning: set `protocol.encoding` (`network` for big-endian). |
 | `model.classifynext-without-encapsulation` | Warning: set `protocol.encapsulation: true` when `classify_next` is meant. |
 | `model.classify-port` | `port`, `sport` and `dport` classify only under `protocol: tcp`: under another parent, give `match` and `offset` from the start of the parent. |
-| `model.unknown-parent` | Name a parent the SDK profile or an installed plugin has (`ethernet`, `ip`, `udp`, `tcp`, ...). |
-| `model.load-order` | The label must make `mmtp_<label>.so` sort after `libmmt_tcpip.so`: choose another label. |
+| `model.unknown-parent` | Name a parent the SDK profile or an installed plugin has (`ethernet`, `ip`, `udp`, `tcp`, ...), or another plugin's label with its project under `plugins:` in `plugin.yaml`. |
+| `model.load-order` | The label must make `mmtp_<label>.so` sort after `libmmt_tcpip.so` and after the plugin file of every plugin `plugins:` names (the message names it): choose another label. |
 | `model.no-parent` | Warning from `init`: add a parent to `plugin.yaml`. |
 | `model.legacy-*` | Warnings from `import`: the converted model does what the spec says, not what the Java tool did. Check the attribute against the spec. |
 | `model.bad-packet-test` | The packet test file is not corpus schema 1 (`tests/corpus/README.md`, Packet files): fix it at the location. |
-| `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one. From `run`, a capture broken after its header still reports the counts of the frames before the break. |
+| `model.bad-plugin` | An entry of `plugins:` in `plugin.yaml` that `test` or `validate` cannot use, at the entry: fix the path (relative to the directory of `plugin.yaml`, to a project directory with its `plugin.yaml` or to a built `.so` file), name each plugin once, never this plugin itself or a project that names this one. |
+| `model.bad-pcap` | The capture cannot be read (`scaffold`, `run`): ask for another one (unattended: record the question and go on to the next item of Step 1 without it). From `run`, a capture broken after its header still reports the counts of the frames before the break. |
 | `model.unsupported-linktype` | `run`: mmt-dpi reads only Ethernet and Linux cooked captures: convert the capture (`editcap -T ether`) or get another one; never change the model for it. |
 | `model.no-payloads` | Nothing in the capture is under `--parent`: check the selector (port, direction, EtherType). |
 | `model.no-dissector` | `scaffold --tshark`: tshark has no dissector for the payloads (only `data`), or not the `--protocol` asked for; the message lists what it dissects there. Pass `--decode-as <layer>==<value>,<protocol>` for a protocol on a port tshark does not know, choose a listed `--protocol`, or drop `--tshark`. |
@@ -157,20 +167,20 @@ A row is a code, or a family ending in `*`. Codes are the
 | `build.runner-failed` | `run`: the capture runner does not compile against the SDK: check the SDK prefix and the compiler, then report. |
 | `test.packet-failed` | Compare each failure's `attribute`, `expected` and `actual` with the spec: fix the model (an offset, a type, a bit order) or the test (a wrong expected value). A test that was in the project before this session is never edited: fix the model, or stop and report when the spec contradicts the test. |
 | `test.crash` | The plugin crashed on a packet: check the lengths and conditions of variable-length attributes, and the user code. From `run`, the message names the frame: write its protocol bytes as a packet test and run `test --sanitize` on it. |
-| `test.load-failed` | The plugin does not load: check the hooks in `src/<label>_impl.c` (`register_parents` must return 1). From `run`, also each `--plugin` (a parent plugin it needs must be passed). |
+| `test.load-failed` | The plugin does not load: check the hooks in `src/<label>_impl.c` (`register_parents` must return 1). When the hook attaches the protocol under another plugin's, name that plugin's project (or `.so`) under `plugins:` in `plugin.yaml`, parents first (`docs/plugin-yaml.md`, Plugins). From `run`, also each `--plugin` (a parent plugin it needs must be passed). |
 | `test.no-match` | Warning from `run`: no packet of the capture has the protocol. Compare `result.paths` with the parent in `parents:` (its `classify`) or `<label>_hook_register_parents`; check that the capture carries the protocol. |
 | `test.other-linktype` | Warning from `run`: frames of another link type were not processed. Go on, or split the capture by interface. |
 | `test.unknown-protocol` | Warning from `run`: a `--protocol` no loaded plugin registers. Fix the name or pass its plugin with `--plugin`. |
 | `test.no-packets` | Warning: write packet tests in `tests/*.yaml`; a run without one is not green. |
 | `test.bench-failed` | Warning from `--bench`: go on. |
 | `state.stale` | Run the command without `--no-deps` (or `generate`) to bring the files up to date. |
-| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. A directory where a generated file goes: ask the user (`--force` does not replace it). |
-| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. A directory named `plugin.lock`: ask the user (`--force` does not replace it). |
+| `state.modified` | A file in `generated/` was edited by hand: edit the model instead; `--force` only if you made that edit. A directory where a generated file goes: ask the user (`--force` does not replace it). Unattended: leave it, record the question, stop BLOCKED. |
+| `state.invalid-lock` | `plugin.lock` cannot be read: if you did not write it, ask; else `generate --force`. A directory named `plugin.lock`: ask the user (`--force` does not replace it). Unattended: leave it, record the question, stop BLOCKED. |
 | `state.kept` | Warning: a file `generate` no longer writes was kept. Delete it if it is yours. |
-| `state.exists` | A file no install manifest lists is at the target: ask the user. |
-| `state.installed-modified` | An installed file was changed since install: ask the user. |
-| `state.invalid-manifest` | An install manifest cannot be read: ask the user. |
+| `state.exists` | A file no install manifest lists is at the target: ask the user. Unattended: install nothing, record the question. |
+| `state.installed-modified` | An installed file was changed since install: ask the user. Unattended: leave it, record the question. |
+| `state.invalid-manifest` | An install manifest cannot be read: ask the user. Unattended: leave it, record the question. |
 | `state.not-installed` | Warning from `uninstall`: nothing was installed. |
-| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. At a `model.pdl` (a project of an older `init`): the hint's `import` converts it; ask the user before you run it. |
+| `state.file-differs` | `init`: a project file has other content. Do not `--force` over the user's files; pick another `--dir`. At a `model.pdl` (a project of an older `init`): the hint's `import` converts it; ask the user before you run it. Unattended: pick another `--dir` and record the question. |
 | `state.not-a-project` | `init --dir` is not empty and not a project: pick an empty directory. |
-| `state.output-differs` | `import` or `scaffold` would replace a file with other content: `--force` only if you wrote it. |
+| `state.output-differs` | `import` or `scaffold` would replace a file with other content: `--force` only if you wrote it. Unattended: write to another file (`-o`, `--tests-dir`) instead. |

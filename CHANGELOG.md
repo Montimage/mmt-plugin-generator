@@ -9,6 +9,204 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Added
 
+- `mmt-plugin-agent` (#161, `docs/agent-api.md`): a LangGraph agent
+  (deepagents) that runs the mmt-plugin-generator skill headless, with any
+  LangChain chat model (`anthropic:`, `openai:` with `OPENAI_BASE_URL` for
+  vLLM, `ollama:`). The `agent` extra, Python 3.11+ only; without it
+  `mmt-plugin` still installs only jinja2. Commands `new` (`--spec`,
+  `--pcap`, `--pdl`), `update`, `doctor` and `eval` (every eval case per
+  model, a results table), a `--json` envelope in the style of
+  `docs/design/cli.md`, and a Python API (`PluginAgent`, `build_graph`).
+  Unattended runs write each question to `questions.md` and never wait for
+  input or use `--force`; `--interactive` stops at a question and resumes.
+  The agent cannot write the skills: its file tools refuse them, it reads a
+  read-only copy, and a run that changed them is restored and failed. The
+  `Dockerfile`'s `agent` stage (`make agent-image`) is its sandbox.
+- The skill's run modes (#161): unattended runs record each question with
+  its recommended answer in `<work>/questions.md` and go on with the safe
+  default; every synthetic capture needs leave (the capture question), and
+  without it the evaluation is skipped and reported as not done. A cyberlab
+  installed locally (`$CYBERLAB_DIR`) is used before `asm`. Skill version
+  0.4.0.
+
+- `plugin.yaml` key `plugins`: the other plugins to load with this one, a
+  parent plugin first, each a project directory or a built `.so` file
+  relative to the directory of `plugin.yaml` (#145). `mmt-plugin test`
+  builds each named project that is stale and loads them, in that order,
+  before the plugin in every harness run, so a plugin whose hook attaches it
+  under another plugin can be tested; `result.plugins` lists them. A bad
+  entry is the new code `model.bad-plugin` (exit 3).
+- A packet test's `through` can name a plugin parent, by the label of a
+  project `plugins` names (#147): `through: "parent"`, or
+  `"parent:test=<id>"`. The frame is one of that project's packet tests
+  that runs through an mmt-dpi protocol (the first, or the one `test=`
+  names), its bytes the parent's header, then the test's bytes; the plugin
+  must be classified directly above the parent's protocol where that header
+  ends (`<parent>`).
+
+### Changed
+
+- `mmt-plugin validate` reads `plugins` too (#146). `parents-exist`
+  accepts a parent that is the label of a named project (or of a project
+  one of them names), without an installed copy and with `--no-sdk`; a bad
+  entry fails it with `model.bad-plugin`. `load-order` also requires
+  `mmtp_<label>.so` to sort after the plugin file of every named plugin
+  (`model.load-order`), as mmt-dpi loads the plugins of a directory in
+  file name order: `mmtp_ocpp_example.so` loads before
+  `mmtp_websocket_example.so`.
+
+### Fixed
+
+- `mmt-plugin-agent` (#162): the result's loop and evaluation fail closed.
+  Trusted evidence comes only from executions the backend controls: a
+  shell command in the strict form (`[timeout N] mmt-plugin ARGS...` or
+  the evaluation's `pcap_eval.py`, optionally with a single trailing
+  `| tee PATH`) is not run through the shell — the backend runs this
+  installation's own `mmt_plugin` module with exactly the parsed
+  arguments, captures the process's real exit code and output, and
+  performs the tee itself. Shell loops, extra operators, redirections,
+  substitutions, echoed envelopes, shadowing or indirect executables may
+  still run but prove nothing, and the envelopes in `runs/run-<n>/` are
+  audit artifacts only. The interpreter runs in isolated mode (the eval
+  harness's too) so the model-writable work folder cannot shadow the
+  `mmt_plugin` module; a trusted record counts as a loop step's success
+  only with a parseable envelope of the same command whose exit code is
+  the process's (exit 0 alone — `--help` — proves nothing). And the
+  strict form is not enough: the arguments must bind the run. A loop
+  command is trusted only as the skill's exact shapes (`-C <project>
+  --json validate|generate --sdk <sdk>`, `build|test` with `--cc <cc>`
+  too; without an SDK `--no-sdk --sdk-profile <profile>` or
+  `--sdk-profile <profile>`), with the run's own project — its `-C`
+  resolved with every link followed, so a symlink planted at
+  `<work>/project` is never the project — SDK and compiler; another
+  project, SDK or compiler, or any further argument, is no evidence.
+  Green needs validate's `parents-exist` check `pass`, as the skill's
+  Done says. The evaluation's verdict is the backend's own executions,
+  never `manifest.json` (audit only): the strict form of the skill's
+  `scripts/pcap_eval.py`, resolved inside the read-only skills copy,
+  byte for byte the script the run started with, with the run's SDK,
+  compiler and capture, its output under the work folder, no `--help`,
+  and `--plugin` inside `<project>/build`, named `mmtp_*.so` and byte
+  for byte the `.so` the last trusted build or test
+  left there — and only after a trusted green loop of the
+  same run and before any later trusted build or test: the evaluation of
+  that build, never of a binary a rebuild replaced. Exit 0 is its PASS,
+  exit 1 its FAIL, the last verdict decides. A thread id is validated as
+  a safe
+  file-name component, two active runs of one `PluginAgent` cannot share
+  one (`agent.duplicate-thread`), and a run that ends or is released
+  deletes its thread's checkpoints. `new --pcap FILE` is the evaluation's
+  capture when `--capture` is absent. The skills tree's digest records
+  each entry's kind, executable bit and directories, the snapshot keeps
+  the executable bit, restore puts it back, and a special file is never
+  silently ignored (`agent.skills-special` in the source, removed when
+  planted). `mmt-plugin-agent eval --case` with a name that matches no
+  case is a usage error (exit 2, `agent.bad-case`), never a vacuous pass.
+- `mmt-plugin test`: a session test with an unknown key in its `session`
+  mapping (a misspelt `atributes`, which turned off the check that
+  unlisted attributes are absent) is `model.bad-packet-test` (exit 3), and
+  so is a segment whose payload does not fit one IPv4/TCP frame (more
+  than 65495 bytes), which was `internal.unexpected` (exit 1) when its
+  frames were built (#124).
+
+## [0.1.0] - 2026-11-19
+
+The first release of the Python generator, `mmt-plugin`. It replaces the
+2015 Java generator (`MMTPluginGenerator.jar`), which is no longer part of
+the repository (its sources and jar are in `legacy/` at commit 4076899).
+The work is plan epic #4, tasks T0.1 to T5.4, described in
+[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md),
+and the issues that followed on `dev` up to #148.
+
+### Compared with the Java tool
+
+The Java tool did one thing: turn a PDL model into C sources, whether or
+not they compiled, and exit 0. `mmt-plugin` covers the whole life of a
+plugin, from a new project to a plugin that mmt-dpi loads:
+
+- **Code that compiles and loads.** Only 4 of the 16 example models gave
+  Java output that compiled against mmt-dpi 1.10.2. Every example and
+  corpus model that `mmt-plugin generate` accepts compiles with
+  `-Wall -Wextra -Werror` (gcc and clang, amd64 and arm64), registers
+  every attribute and loads through `init_extraction()`; CI checks it on
+  every change.
+- **Same meaning where Java was right.** For abb, cotp, s7com and tpkt the
+  generated C means to mmt-dpi what the Java output meant (protocol,
+  attributes, reads, structs, registrations), apart from Java's
+  `register_protocol_stack` (bug 22); `tests/unit/generate/test_parity.py`
+  checks it. Every other difference, and the Java bug it fixes, is in
+  [`docs/behaviour-changes.md`](docs/behaviour-changes.md).
+- **Safe packet reads.** Each attribute is read by a generated function
+  that only touches bytes inside the captured packet, byte by byte in the
+  model's byte order; no C struct is overlaid on packet bytes.
+- **User code kept apart.** Generated files are never edited by hand: what
+  the model cannot say goes in hooks in `src/<label>_impl.c`, and a missing
+  hook is a build error, not a link failure.
+- **Errors instead of silence.** A syntax error, a taken protocol id or
+  name, or a type mmt-dpi cannot register is a model error (exit 3) with a
+  file, line and column, and nothing is written. Java recovered silently
+  and could write `null` or nothing.
+- **A versioned SDK.** Every mmt-dpi name and type comes from an SDK
+  profile (mmt-dpi 1.10.2 is bundled), checked against the real headers.
+- **A scriptable contract.** Stable exit codes, a `--json` envelope with a
+  published JSON Schema for every command, diagnostic codes that are never
+  reused, and nothing ever prompted for.
+
+### Added
+
+- `plugin.yaml`, the model format, with its JSON Schema
+  (`schemas/model/v1/plugin.json`), documented in
+  [`docs/plugin-yaml.md`](docs/plugin-yaml.md) and
+  [`docs/model-reference.md`](docs/model-reference.md). PDL v1 is still
+  read, and `import` converts it without loss.
+- Commands:
+  - `init`: a project that builds and passes its packet test unmodified.
+  - `import`: PDL v1 to `plugin.yaml`; constructs that relied on Java
+    bugs are `model.legacy-*` warnings.
+  - `validate`: schema, semantics, SDK profile, free id and name (in the
+    profile and among the installed plugins), parents and load order.
+  - `generate`: the plugin header and source and a `plugin.lock`;
+    `--check` reports stale output, a hand-edited file is not overwritten
+    without `--force`, and writes are atomic.
+  - `build`: `mmtp_<label>.so` against an SDK, with fixed hardened flags
+    and incremental rebuilds.
+  - `test`: packet tests through a generated harness that loads the plugin
+    into mmt-dpi, with each failing attribute's expected and actual value;
+    `--sanitize` (ASan, UBSan and fuzzed packets) and `--bench`.
+  - `install`, `uninstall`: a plugin and its manifest into a user prefix
+    by default, never with root; only files whose hash still matches are
+    removed.
+  - `doctor`: toolchain, SDK, the directory mmt-dpi scans, load order,
+    registry and clashes.
+  - `scaffold --from-pcap`: packet tests and a field skeleton from a pcap
+    or pcapng capture.
+  - `completion`: bash, zsh and fish completion scripts.
+- 16 example projects in [`examples/`](examples/README.md), ported from
+  the `plugins/` models, each with packet tests whose expected values come
+  from the protocol specifications; CI builds and tests every one.
+- A test corpus (`tests/corpus/`): every example model plus a model per
+  construct, with packet fixtures.
+- The `mmt-plugin-author` agent skill
+  (`skills/mmt-plugin-author/`, now
+  [`skills/mmt-plugin-generator/`](skills/mmt-plugin-generator/SKILL.md)), which
+  drafts and iterates a plugin from a spec, a capture or a PDL v1 model,
+  with scripted evals.
+- Documentation: the [user guide](docs/user-guide.md), the
+  [migration guide](docs/migration.md) from the Java tool, and
+  [releasing](docs/releasing.md).
+- The Apache License 2.0 (`LICENSE`), as for mmt-dpi: in the package
+  metadata (`License-Expression`, with `README.md` as the long
+  description) and in the image's `org.opencontainers.image.licenses`
+  label.
+- Release assets: a wheel and an sdist, a tarball of every JSON Schema,
+  `SHA256SUMS` with a provenance attestation, and the container image
+  `ghcr.io/montimage/mmt-plugin` (gcc, clang and mmt-dpi 1.10.2, amd64
+  and arm64).
+- CI: shellcheck, the corpus validator, ruff, mypy and pytest on Python
+  3.10, 3.12 and 3.14, the generated-code matrix against a real mmt-dpi,
+  a pinned build and test container, and a release dry run on every pull
+  request.
+
 - The user guide has a section "Use the plugin in mmt-security rules"
   (#108): mmt-security must be rebuilt with the plugin installed (`make
   gen_dpi` writes its protocol table, `src/dpi/mmt_dpi.h`, at build time;
@@ -192,6 +390,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
 
 ### Changed
 
+Changes made on `dev` after this entry was first drafted (2026-11-15),
+relative to that draft. None of it was released before 0.1.0.
+
 - The mmt-plugin-generator skill (0.3.0) records and crafts captures
   through the `cyberlab` skill (`montimage-projects/cyberlab`,
   `skills/cyberlab`), declared in its frontmatter `dependencies`
@@ -273,7 +474,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   built-in command has a mutually exclusive group yet; the test command
   of `tests/unit/test_completion.py` has one.
 
+### Removed
+
+- The Java generator: its sources, jars, ANTLR grammar and NetBeans
+  project (#31). The frozen Java output the parity test reads is kept in
+  `tests/java-output/`.
+
 ### Fixed
+
+Changes made on `dev` after this entry was first drafted (2026-11-15),
+relative to that draft. None of it was released before 0.1.0.
 
 - The mmt-plugin-generator skill's `scripts/pcap_eval.py` compares a
   tshark boolean field (a flag bit, which tshark 4.x prints as `True` or
@@ -434,105 +644,6 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   like a pre-release (`docs/design/cli.md`, section 9). The version comes
   from the `VERSION` macro, which a release sets to its plain number, and
   a profile too old is the safe side.
-
-## [0.1.0] - 2026-11-15
-
-The first release of the Python generator, `mmt-plugin`. It replaces the
-2015 Java generator (`MMTPluginGenerator.jar`), which is no longer part of
-the repository (its sources and jar are in `legacy/` at commit 4076899).
-The work is plan epic #4, tasks T0.1 to T5.4, described in
-[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md).
-
-### Compared with the Java tool
-
-The Java tool did one thing: turn a PDL model into C sources, whether or
-not they compiled, and exit 0. `mmt-plugin` covers the whole life of a
-plugin, from a new project to a plugin that mmt-dpi loads:
-
-- **Code that compiles and loads.** Only 4 of the 16 example models gave
-  Java output that compiled against mmt-dpi 1.10.2. Every example and
-  corpus model that `mmt-plugin generate` accepts compiles with
-  `-Wall -Wextra -Werror` (gcc and clang, amd64 and arm64), registers
-  every attribute and loads through `init_extraction()`; CI checks it on
-  every change.
-- **Same meaning where Java was right.** For abb, cotp, s7com and tpkt the
-  generated C means to mmt-dpi what the Java output meant (protocol,
-  attributes, reads, structs, registrations), apart from Java's
-  `register_protocol_stack` (bug 22); `tests/unit/generate/test_parity.py`
-  checks it. Every other difference, and the Java bug it fixes, is in
-  [`docs/behaviour-changes.md`](docs/behaviour-changes.md).
-- **Safe packet reads.** Each attribute is read by a generated function
-  that only touches bytes inside the captured packet, byte by byte in the
-  model's byte order; no C struct is overlaid on packet bytes.
-- **User code kept apart.** Generated files are never edited by hand: what
-  the model cannot say goes in hooks in `src/<label>_impl.c`, and a missing
-  hook is a build error, not a link failure.
-- **Errors instead of silence.** A syntax error, a taken protocol id or
-  name, or a type mmt-dpi cannot register is a model error (exit 3) with a
-  file, line and column, and nothing is written. Java recovered silently
-  and could write `null` or nothing.
-- **A versioned SDK.** Every mmt-dpi name and type comes from an SDK
-  profile (mmt-dpi 1.10.2 is bundled), checked against the real headers.
-- **A scriptable contract.** Stable exit codes, a `--json` envelope with a
-  published JSON Schema for every command, diagnostic codes that are never
-  reused, and nothing ever prompted for.
-
-### Added
-
-- `plugin.yaml`, the model format, with its JSON Schema
-  (`schemas/model/v1/plugin.json`), documented in
-  [`docs/plugin-yaml.md`](docs/plugin-yaml.md) and
-  [`docs/model-reference.md`](docs/model-reference.md). PDL v1 is still
-  read, and `import` converts it without loss.
-- Commands:
-  - `init`: a project that builds and passes its packet test unmodified.
-  - `import`: PDL v1 to `plugin.yaml`; constructs that relied on Java
-    bugs are `model.legacy-*` warnings.
-  - `validate`: schema, semantics, SDK profile, free id and name (in the
-    profile and among the installed plugins), parents and load order.
-  - `generate`: the plugin header and source and a `plugin.lock`;
-    `--check` reports stale output, a hand-edited file is not overwritten
-    without `--force`, and writes are atomic.
-  - `build`: `mmtp_<label>.so` against an SDK, with fixed hardened flags
-    and incremental rebuilds.
-  - `test`: packet tests through a generated harness that loads the plugin
-    into mmt-dpi, with each failing attribute's expected and actual value;
-    `--sanitize` (ASan, UBSan and fuzzed packets) and `--bench`.
-  - `install`, `uninstall`: a plugin and its manifest into a user prefix
-    by default, never with root; only files whose hash still matches are
-    removed.
-  - `doctor`: toolchain, SDK, the directory mmt-dpi scans, load order,
-    registry and clashes.
-  - `scaffold --from-pcap`: packet tests and a field skeleton from a pcap
-    or pcapng capture.
-  - `completion`: bash, zsh and fish completion scripts.
-- 16 example projects in [`examples/`](examples/README.md), ported from
-  the `plugins/` models, each with packet tests whose expected values come
-  from the protocol specifications; CI builds and tests every one.
-- A test corpus (`tests/corpus/`): every example model plus a model per
-  construct, with packet fixtures.
-- The `mmt-plugin-author` agent skill
-  (`skills/mmt-plugin-author/`, now
-  [`skills/mmt-plugin-generator/`](skills/mmt-plugin-generator/SKILL.md)), which
-  drafts and iterates a plugin from a spec, a capture or a PDL v1 model,
-  with scripted evals.
-- Documentation: the [user guide](docs/user-guide.md), the
-  [migration guide](docs/migration.md) from the Java tool, and
-  [releasing](docs/releasing.md).
-- Release assets: a wheel and an sdist, a tarball of every JSON Schema,
-  `SHA256SUMS` with a provenance attestation, and the container image
-  `ghcr.io/montimage/mmt-plugin` (gcc, clang and mmt-dpi 1.10.2, amd64
-  and arm64).
-- CI: shellcheck, the corpus validator, ruff, mypy and pytest on Python
-  3.10, 3.12 and 3.14, the generated-code matrix against a real mmt-dpi,
-  a pinned build and test container, and a release dry run on every pull
-  request.
-
-### Removed
-
-- The Java generator: its sources, jars, ANTLR grammar and NetBeans
-  project (#31). The frozen Java output the parity test reads is kept in
-  `tests/java-output/`.
 
 [Unreleased]: https://github.com/Montimage/mmt-plugin-generator/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Montimage/mmt-plugin-generator/releases/tag/v0.1.0

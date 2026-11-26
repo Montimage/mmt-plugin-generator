@@ -107,6 +107,7 @@
     "classify_next": null,
     "span": "1:1-16:2",
     "offsets": "running",
-    "parents": []
+    "parents": [],
+    "plugins": []
   }
 }

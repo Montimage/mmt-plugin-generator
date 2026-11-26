@@ -1,63 +1,20 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/logo-full-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo/logo-full.svg">
+    <img src="assets/logo/logo-full.svg" alt="MMT Plugin Generator" width="360">
+  </picture>
+</p>
+
 # MMT plugin generator
 
-`mmt-plugin` generates, builds, tests and installs protocol plugins for
-[mmt-dpi](https://github.com/Montimage/mmt-dpi), Montimage's deep packet
-inspection library. You describe a protocol in `plugin.yaml` (its fields,
-how to find the next protocol, what it runs on), write C only for what the
-model cannot say, and check the plugin on packets whose expected values come
-from the protocol's specification.
+[![CI](https://github.com/Montimage/mmt-plugin-generator/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Montimage/mmt-plugin-generator/actions/workflows/ci.yml)
 
-It replaces the 2015 Java generator (`MMTPluginGenerator.jar`), which was
-removed in #31 (its sources and jar are in `legacy/` at commit 4076899).
-Coming from the Java tool? Read the [migration guide](docs/migration.md).
-
-**Status:** 0.1.0 is the first release of the Python tool
-([changelog](CHANGELOG.md)). Until it is published (plan task T5.5, #32, in
-[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md))
-there is no PyPI package and no GitHub release: install it from a checkout
-of this repository (below). [`docs/releasing.md`](docs/releasing.md)
-describes how a release is published.
-
-## Documentation
-
-- [User guide](docs/user-guide.md): installing, a project from `init` to
-  `install`, every command, the `--json` output and exit codes.
-- [`plugin.yaml`](docs/plugin-yaml.md): the model format, with an example,
-  and the [model reference](docs/model-reference.md), generated from its
-  JSON Schema.
-- [Migration guide](docs/migration.md): from the Java tool and PDL v1, and
-  [what behaves differently](docs/behaviour-changes.md).
-- [Examples](examples/README.md): 18 complete plugin projects, the Java
-  tool's 16 examples ported, a WebSocket (RFC 6455) plugin and an OCPP
-  1.6-J plugin.
-- [Use case: WebSocket and OCPP 1.6-J](docs/use-cases/websocket-ocpp.md):
-  the workflow on two real protocols, and the two plugins against tshark
-  on public OCPP captures.
-- [CLI design](docs/design/cli.md): the command contract in full.
-- [Releasing](docs/releasing.md): the release assets, the dry run and
-  how a release is published; the [changelog](CHANGELOG.md) lists what
-  each release changed.
-- [mmt-plugin-generator](skills/mmt-plugin-generator/SKILL.md): the agent skill
-  that writes a plugin from a spec, a capture or a PDL v1 model, or updates
-  an existing plugin project, evaluates it on a capture of the protocol
-  (found, or generated when there is none), and keeps everything that made
-  it in a work folder.
-- [Contributing](CONTRIBUTING.md), and [`AGENTS.md`](AGENTS.md) for the
-  repository's layout and checks.
-
-## Requirements
-
-- Linux (amd64 or arm64) and Python 3.10 or later.
-- mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**,
-  to build, test and install plugins (generating code needs no SDK).
-  1.10.2 is the first version whose installed headers ship the public logger
-  `mmt_log.h` (Montimage/mmt-dpi#68).
-- gcc or clang.
+Describe a protocol in `plugin.yaml`, and `mmt-plugin` generates, builds, tests and installs its plugin for the [mmt-dpi](https://github.com/Montimage/mmt-dpi) packet inspection library.
 
 ## Install
 
-With [uv](https://docs.astral.sh/uv/), from the root of a checkout
-(`pipx install .` works too):
+Requires Linux and Python 3.10 or later. Not on PyPI yet: run this from the root of a checkout.
 
 <!-- doc:run install -->
 ```sh
@@ -65,24 +22,11 @@ uv tool install .
 mmt-plugin --version
 ```
 
-The [user guide](docs/user-guide.md#install-mmt-plugin) shows how to install
-a built wheel instead.
-
-Once a release is published, install it from PyPI, or from the wheel
-attached to its [GitHub release](docs/user-guide.md#from-a-release), or run
-its container image (mmt-plugin with gcc, clang and mmt-dpi):
-
-<!-- doc:skip needs a published release -->
-```sh
-uv tool install mmt-plugin
-docker run --rm ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin --version
-```
+Other methods: [pipx, a wheel, a release, the container image](#installation-options)
 
 ## Quick start
 
-Create a project, whose model `quick/plugin.yaml` pins the SDK profile and
-attaches the protocol to UDP port 4433 in generated code, then check it and
-generate its C sources (no SDK needed for these):
+Create a plugin project for a protocol on UDP port 4433, check its model and generate its C sources (no mmt-dpi needed):
 
 <!-- doc:run no-sdk -->
 ```sh
@@ -91,9 +35,34 @@ mmt-plugin -C quick validate --no-sdk
 mmt-plugin -C quick generate
 ```
 
-With mmt-dpi in a private prefix (below) and `MMT_BASE` set to it, build
-the plugin and run its packet test, then install it into a prefix of your
-own:
+`quick/` then holds the model `plugin.yaml`, your C file `src/quick_impl.c` and a packet test `tests/quick-basic.yaml`, and `generate` has written `generated/quick_mmt_plugin.h`, `generated/quick_mmt_plugin.c` and `plugin.lock`.
+
+[Usage](#usage) · [User guide](docs/user-guide.md) · [`plugin.yaml`](docs/plugin-yaml.md) · [Examples](examples/README.md) · [Changelog](CHANGELOG.md)
+
+## Features
+
+- One `plugin.yaml` describes the fields, the next-protocol rules and the parent protocol.
+- You write C only for what the model cannot say, in `src/<label>_impl.c` hooks.
+- Packet tests check decoded values against the protocol's specification.
+- `validate` and `doctor` catch id, name and load-order clashes that mmt-dpi ignores.
+- `scaffold` drafts packet tests and a field skeleton from a pcap capture.
+- `--json` output and fixed exit codes for scripts, CI and agents.
+
+## How it works
+
+```text
+plugin.yaml ──> validate ──> generate ──> build ──────────────────> test ─────────> install
+src/ hooks                   generated/   build/mmtp_<label>.so     tests/*.yaml     <prefix>/plugins/
+                             plugin.lock
+```
+
+`validate` and `generate` need no SDK. `build`, `test`, `run` and `install` compile and load the plugin against mmt-dpi, so they need it installed ([Install mmt-dpi](#install-mmt-dpi)).
+
+## Usage
+
+### Build, test and install the plugin
+
+With mmt-dpi in a private prefix ([below](#install-mmt-dpi)) and `MMT_BASE` set to it, build the plugin and run its packet test, then install it into a prefix of your own:
 
 <!-- doc:run sdk -->
 ```sh
@@ -101,11 +70,76 @@ mmt-plugin -C quick test
 mmt-plugin -C quick install --prefix "$PWD/quick-prefix"
 ```
 
-The [user guide](docs/user-guide.md) goes on from here: writing the model,
-the hooks in `src/`, packet tests, installing where mmt-dpi loads plugins,
-and drafting a model from a capture.
+The [user guide](docs/user-guide.md) goes on from here: writing the model, the hooks in `src/`, packet tests, installing where mmt-dpi loads plugins, and drafting a model from a capture.
 
-## Install mmt-dpi
+### Commands
+
+| Command | What it does |
+|---|---|
+| `init` | create a plugin project that builds and tests green |
+| `import` | convert a PDL v1 model to `plugin.yaml` |
+| `validate` | check a model: schema, semantics, SDK, ids, load order |
+| `generate` | write the generated C sources and `plugin.lock` |
+| `build` | compile `build/mmtp_<label>.so` |
+| `test` | run the packet tests (`tests/*.yaml`) against the plugin |
+| `run` | run the plugin over a pcap or pcapng capture and count what it reports |
+| `install` | copy the plugin into a prefix and record a manifest |
+| `uninstall` | remove an installed plugin by following its manifest |
+| `doctor` | report toolchain, SDK, plugin directory, load order, clashes |
+| `scaffold` | draft packet tests and a field skeleton from a pcap |
+| `completion` | print a shell completion script: bash, zsh or fish |
+
+Every option, the `--json` output and the exit codes are in the [user guide](docs/user-guide.md); the full command contract is in [`docs/design/cli.md`](docs/design/cli.md).
+
+## Configuration
+
+An option wins over an environment variable, which wins over `plugin.yaml`, which wins over the default.
+
+| Setting | Option | Environment | `plugin.yaml` | Default |
+|---|---|---|---|---|
+| SDK prefix | `--sdk` | `MMT_BASE` | | `mmt-dpi.pc`, then `/opt/mmt` |
+| SDK profile | `--sdk-profile` | `MMT_PLUGIN_SDK_PROFILE` | `sdk.profile` | the SDK's version |
+| Compiler | `--cc` | `CC` | | `gcc` |
+| Install prefix | `--prefix`, `--system` | `MMT_PLUGIN_PREFIX` | | `${XDG_DATA_HOME:-~/.local/share}/mmt` |
+
+The [user guide](docs/user-guide.md#settings-and-where-they-come-from) has the full table. At run time, mmt-dpi reads `MMT_DPI_PLUGINS_DIR` ([a plugin directory of your own](#plugin-load-order-ids-and-names)) and `MMT_DPI_LOG_LEVEL` ([plugin logging](#writing-plugin-code-for-mmt-dpi-110)).
+
+## Installation options
+
+### Requirements
+
+- Linux (amd64 or arm64) and Python 3.10 or later.
+- mmt-dpi **[1.10.2](https://github.com/Montimage/mmt-dpi/releases/tag/v1.10.2) or later**,
+  to build, test and install plugins (generating code needs no SDK).
+  1.10.2 is the first version whose installed headers ship the public logger
+  `mmt_log.h` (Montimage/mmt-dpi#68).
+- gcc or clang.
+
+### Other ways to install mmt-plugin
+
+**Status:** 0.1.0 is the first release of the Python tool
+([changelog](CHANGELOG.md)). Until it is published (plan task T5.5, #32, in
+[`docs/design/workflow-redesign.md`](docs/design/workflow-redesign.md))
+there is no PyPI package and no GitHub release: install it from a checkout
+of this repository. [`docs/releasing.md`](docs/releasing.md)
+describes how a release is published.
+
+`pipx install .` works from a checkout too. The
+[user guide](docs/user-guide.md#install-mmt-plugin) shows how to install
+a built wheel instead.
+
+Once a release is published, install the wheel attached to its
+[GitHub release](docs/user-guide.md#from-a-release) (mmt-plugin is not on
+PyPI yet), or run its container image (mmt-plugin with gcc, clang and
+mmt-dpi):
+
+<!-- doc:skip needs a published release -->
+```sh
+uv tool install https://github.com/Montimage/mmt-plugin-generator/releases/download/v0.1.0/mmt_plugin-0.1.0-py3-none-any.whl
+docker run --rm ghcr.io/montimage/mmt-plugin:0.1.0 mmt-plugin --version
+```
+
+### Install mmt-dpi
 
 mmt-dpi (the "mmt-sdk") must be installed to compile and load a plugin. From
 an mmt-dpi checkout, install it into a private prefix, without root:
@@ -137,7 +171,63 @@ install into `/opt/mmt`. CI extracts the ubuntu-24.04 one into a private
 prefix after `tests/fetch_mmt_dpi_package.sh` has verified it; the
 [user guide](docs/user-guide.md#get-mmt-dpi) and `AGENTS.md` show how.
 
-## Build and test container
+## Run the skill headless: mmt-plugin-agent
+
+`mmt-plugin-agent` runs the [mmt-plugin-generator skill](skills/mmt-plugin-generator/SKILL.md) with a LangGraph agent and any LLM provider LangChain supports (Anthropic, vLLM or another OpenAI-compatible server, Ollama), from the command line or from Python. It needs the `agent` extra and Python 3.11 or later; `mmt-plugin` alone still installs only jinja2.
+
+<!-- doc:skip needs the agent extra, an mmt-dpi SDK and a model key -->
+```sh
+uv sync --extra agent
+uv run mmt-plugin-agent new --spec spec.md --sdk "$MMT_BASE" --model anthropic:claude-sonnet-5-5 --unattended --allow-synthetic
+```
+
+Unattended runs write each question to `questions.md` and never wait for input or use `--force`; `--interactive` asks on the terminal. The agent's shell has no isolation of its own: run it in the agent container (`make agent-image`), where the skills are read-only and it is not root. [docs/agent-api.md](docs/agent-api.md) has the install, the container, the models, the run modes, the exit codes and the Python API.
+
+## Documentation
+
+- [User guide](docs/user-guide.md): installing, a project from `init` to
+  `install`, every command, the `--json` output and exit codes.
+- [`plugin.yaml`](docs/plugin-yaml.md): the model format, with an example,
+  and the [model reference](docs/model-reference.md), generated from its
+  JSON Schema.
+- [Migration guide](docs/migration.md): from the Java tool and PDL v1, and
+  [what behaves differently](docs/behaviour-changes.md).
+- [Examples](examples/README.md): 18 complete plugin projects, the Java
+  tool's 16 examples ported, a WebSocket (RFC 6455) plugin and an OCPP
+  1.6-J plugin.
+- [Use case: WebSocket and OCPP 1.6-J](docs/use-cases/websocket-ocpp.md):
+  the workflow on two real protocols, and the two plugins against tshark
+  on public OCPP captures.
+- [CLI design](docs/design/cli.md): the command contract in full.
+- [Releasing](docs/releasing.md): the release assets, the dry run and
+  how a release is published; the [changelog](CHANGELOG.md) lists what
+  each release changed.
+- [mmt-plugin-generator](skills/mmt-plugin-generator/SKILL.md): the agent skill
+  that writes a plugin from a spec, a capture or a PDL v1 model, or updates
+  an existing plugin project, evaluates it on a capture of the protocol
+  (found, or generated when there is none), and keeps everything that made
+  it in a work folder.
+- [mmt-plugin-agent](docs/agent-api.md): the skill headless, with any LLM
+  provider: the command line, the Python API, the container and the model
+  evals.
+- [Brand assets](assets/logo/): the logo SVGs, and `brand-showcase.html`
+  with the colours and type.
+
+## Coming from the Java generator
+
+`mmt-plugin` replaces the 2015 Java generator (`MMTPluginGenerator.jar`),
+which was removed in #31 (its sources and jar are in `legacy/` at commit
+4076899). The [migration guide](docs/migration.md) covers moving a PDL v1
+model to `plugin.yaml` (`mmt-plugin import`) and
+[what behaves differently](docs/behaviour-changes.md).
+
+## Development
+
+Pull requests target `dev`. [CONTRIBUTING.md](CONTRIBUTING.md) has the
+setup and the checks CI runs, and [`AGENTS.md`](AGENTS.md) the repository's
+layout and checks.
+
+### Build and test container
 
 `Dockerfile` builds an Ubuntu 24.04 image, pinned by digest, with gcc, clang,
 Python 3.12 and mmt-dpi v1.10.2 installed in `/opt/mmt` from the Release
@@ -162,7 +252,12 @@ amd64 and arm64: it is CI's NDN check. The release image is the
 `release` target of the same `Dockerfile`, this image plus mmt-plugin
 (`make release-image`, [`docs/releasing.md`](docs/releasing.md)).
 
-## Writing plugin code for mmt-dpi 1.10
+## Writing plugins by hand
+
+`mmt-plugin` handles everything below in the code it generates. Read on if
+you write or maintain a plugin's C yourself.
+
+### Writing plugin code for mmt-dpi 1.10
 
 mmt-dpi 1.10.0 made the old unprefixed `debug()`, `log_err()`, `likely()` and
 `unlikely()` macros private: a plugin that still uses them fails with
@@ -175,7 +270,7 @@ mmt-dpi 1.10.0 made the old unprefixed `debug()`, `log_err()`, `likely()` and
   `MMT_DPI_LOG_LEVEL=error|warn|info|debug`;
 - `MMT_LIKELY(x)` / `MMT_UNLIKELY(x)` from `mmt_utils.h` for branch hints.
 
-## Plugin load order, ids and names
+### Plugin load order, ids and names
 
 mmt-dpi's loader has two behaviours that fail **silently**. `mmt-plugin`
 handles both for you (the plugin file is `mmtp_<label>.so`, `validate` and
@@ -273,7 +368,7 @@ absolute path). That directory replaces `<prefix>/plugins`, so it must also
 hold the built-in plugins the new one depends on, e.g. a copy or symlink of
 `<prefix>/plugins/libmmt_tcpip.so`.
 
-## NDN example and the built-in NDN dissector
+### NDN example and the built-in NDN dissector
 
 `ndn_src/` holds a hand-written NDN (Named Data Networking) plugin, and
 `tests/corpus/models/ndn/model.pdl` its model (ported to
@@ -317,3 +412,8 @@ were removed in #78 (several did not build against mmt-dpi 1.10.x, mostly
 because they redeclare protocols that mmt-dpi now ships);
 [`examples/README.md`](examples/README.md#the-java-tools-c-sources) says
 where they are and what replaced them.
+
+## License
+
+Copyright Montimage. Licensed under the [Apache License 2.0](LICENSE), like
+mmt-dpi.

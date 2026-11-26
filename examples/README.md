@@ -536,7 +536,7 @@ regenerate them all and commit the result:
 for d in examples/*/ ocip-plugin/project/; do uv run mmt-plugin -C "$d" generate; done
 ```
 
-`ocip-plugin/project` (the OCI-P plugin of mmt-security rule 231, not an
+`ocip-plugin/project` (the OCI-P plugin of mmt-security rule 232, not an
 example) is regenerated with them, and `tests/unit/ocip/` checks it the
 same way (#138).
 

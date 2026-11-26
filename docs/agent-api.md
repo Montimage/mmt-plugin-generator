@@ -1,0 +1,444 @@
+# mmt-plugin-agent: the skill, headless
+
+`mmt-plugin-agent` runs the [mmt-plugin-generator
+skill](../skills/mmt-plugin-generator/SKILL.md) without a coding assistant:
+a [LangGraph](https://github.com/langchain-ai/langgraph) agent, built with
+[deepagents](https://github.com/langchain-ai/deepagents), reads the skill
+and drives `mmt-plugin`'s loop (`validate`, `generate`, `build`, `test`)
+from its `--json` envelopes, with any chat model LangChain supports. It has
+a command line, `mmt-plugin-agent`, and a Python API, `mmt_plugin_agent`;
+the command line calls only the API.
+
+## Install
+
+The agent is the `agent` extra of the `mmt-plugin` distribution, and needs
+Python 3.11 or newer (deepagents does). `pip install mmt-plugin` without
+the extra still installs only jinja2. On Python 3.10 the extra installs
+nothing, and `mmt-plugin-agent` says so (exit 4, `agent.needs-extra`).
+
+From a checkout:
+
+```sh
+uv sync --extra agent
+uv run mmt-plugin-agent doctor
+```
+
+From a built wheel:
+
+```sh
+pip install 'mmt_plugin-<version>-py3-none-any.whl[agent]'
+```
+
+The agent reads the skill from a skills directory: `--skills DIR` (or
+`skills_dir=`), else `MMT_PLUGIN_SKILLS`, else the checkout's `skills/`,
+else the agent image's `/opt/mmt-plugin-skills`. An installed wheel has no
+checkout: pass `--skills` or set `MMT_PLUGIN_SKILLS`.
+
+`mmt-plugin-agent doctor` lists what a run needs, each check `pass`,
+`warn` or `fail` with a hint, and exits 4 when one fails: Python and the
+extra, `mmt-plugin` on `PATH`, the SDK prefix and the compiler (through
+`mmt-plugin --json doctor`), tshark, capinfos, editcap and mergecap,
+libpcap's headers, cyberlab, Docker, the skills directory, `HOME` and the
+model. A missing tshark, Docker or cyberlab is a warning: the skill works
+around it (no drift check; synthetic captures only, with leave).
+
+## The container
+
+The `agent` stage of the `Dockerfile` is the place to run the agent: it
+holds mmt-dpi as a private prefix (`/opt/sdk`, `MMT_BASE`), gcc and clang,
+tshark, libpcap's headers, a docker CLI, mmt-plugin with the agent extra
+from `uv.lock`, and the skills, root-owned and read-only, in
+`/opt/mmt-plugin-skills`. Its default user is the unprivileged `agent`.
+
+```sh
+make agent-image
+make agent-run AGENT_ARGS='new --spec /in/skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md --unattended --allow-synthetic --model anthropic:claude-sonnet-5-5 --json'
+```
+
+`agent-run` mounts the current directory read-only at `/in` and
+`./agent-work` at `/work`, the working directory, and runs the image as
+your uid (`--user "$(id -u):$(id -g)"`, `HOME=/tmp`), so the agent can
+write `./agent-work` whatever uid the image's `agent` has, and you own
+what it writes. Neither user is root, and the skills are read-only for
+both. `/in` must hold no secret: the agent's shell can read every file
+there, and `.gitignore` does not apply to a mount. `agent-run` masks
+each `.env` and `.env.*` of the current directory with `/dev/null`
+(`-v /dev/null:/in/.env:ro`); keep any other secret out of the directory,
+or mount a folder holding only the inputs at `/in`. Run the image by hand
+with the same flags, the masks included (one `-v /dev/null:/in/<name>:ro`
+for each `.env` file the directory has; here `.env`):
+
+```sh
+mkdir -p agent-work
+docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp -e ANTHROPIC_API_KEY \
+  -v "$PWD:/in:ro" -v /dev/null:/in/.env:ro -v "$PWD/agent-work:/work" -w /work \
+  mmt-plugin-agent:local mmt-plugin-agent new --spec /in/spec.md --json
+```
+
+It passes the model's settings
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OLLAMA_HOST`,
+`MMT_PLUGIN_AGENT_MODEL`, `MMT_PLUGIN_AGENT_NUM_CTX`) from your environment by name. cyberlab is not
+in the image, and the image has no Docker socket: see [The
+sandbox](#the-sandbox).
+
+## Models
+
+A model is a `provider:model` string, which LangChain's `init_chat_model`
+resolves, or a LangChain chat model object (`model=` in the API). Without
+`--model`, `MMT_PLUGIN_AGENT_MODEL` is used. The extra installs three
+integrations:
+
+| Provider | `--model` | Settings |
+|---|---|---|
+| Anthropic | `anthropic:claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+| vLLM, or any OpenAI-compatible server | `openai:<served model name>` | `OPENAI_BASE_URL` (the server's `/v1` URL), `OPENAI_API_KEY` (any value the server accepts) |
+| Ollama | `ollama:<model>`, e.g. `ollama:qwen3-coder` | `OLLAMA_HOST` when it is not `localhost:11434`; `MMT_PLUGIN_AGENT_NUM_CTX`, the context length (`num_ctx`) in tokens, 65536 by default |
+
+The model needs tool calling. Ollama's own context length (2048 or 4096
+tokens) is shorter than the agent's system prompt and tools, and Ollama
+then drops the start of the conversation, the request with it: the agent
+passes `num_ctx` to an `ollama:` model, 65536 tokens unless
+`MMT_PLUGIN_AGENT_NUM_CTX` says otherwise (a model object is used as it
+is). Keys stay in the agent's environment: its shell's environment has no
+variable whose name ends in `_API_KEY` or `_TOKEN`, or holds `SECRET`,
+`PASSWORD` or `CREDENTIAL`, and `doctor` never prints one. The agent's
+own environment still holds them. On Linux the agent makes itself
+non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`) before its shell's first
+command, so its own `/proc/<pid>/environ` is root's and the shell, as the
+same user, cannot read it; if that fails, the run has the warning
+`agent.environ-readable` and `doctor` warns on its `environ` check.
+That hides only the agent's process: a parent process started with the
+key keeps it, readable by the shell, such as `uv` under
+`uv run mmt-plugin-agent` (uv does not exec the agent), a wrapper script
+or `make`. `doctor` warns on its `environ` check when a parent it can
+read holds a key, naming the process and the variables. On a Linux host,
+start the `mmt-plugin-agent` console script directly (from the
+environment's `bin/`), or run the agent image, where the agent is PID 1.
+Elsewhere (macOS) nothing hides it: a process of the same user can read
+another's environment (`ps eww`), and so can the agent's shell. Run the
+agent in the `agent` image there. Being non-dumpable also means no core
+dump, and that attaching a debugger or profiler (gdb, py-spy) to a process
+that runs the agent needs root.
+
+## Run modes
+
+- `--unattended` (the default): no user answers. Each question the skill
+  asks goes to `<work>/questions.md` with the recommended answer and the
+  default taken, and the run goes on; it never reads stdin and never uses
+  `--force`. A question with no safe default stops the run, `BLOCKED`.
+- `--interactive`: each question is printed on stderr and the answer read
+  from stdin; the run then resumes where it stopped (the same LangGraph
+  thread). `--force` runs only after a yes.
+
+The capture question (the skill's Step 1): when no capture is given
+(`--capture FILE`) or found, the skill asks for one, for leave to make a
+synthetic one, or for leave to skip the evaluation. The capture of the
+pcap entry (`new --pcap FILE`) is a capture of the protocol: it is the
+evaluation's capture unless `--capture` names another. `--allow-synthetic`
+answers it with a synthetic capture; unattended without it, the evaluation
+is skipped and reported as not done (status `incomplete`, exit 0, the
+warning `agent.evaluation-not-done`). With `--capture` or `--allow-synthetic`
+and an SDK, a green run whose evaluation is not done skipped the
+evaluation it had leave for: status `incomplete` with `eval_leave` set,
+`ok` false, exit 6 (`agent.evaluation-skipped`). `--no-eval` skips the
+evaluation.
+
+A `questions.md` entry:
+
+```text
+## Q1: No capture was given or found. Give a capture, allow a synthetic one, or skip?
+Recommended: a synthetic capture
+Taken: skip the evaluation; it is reported as not done
+```
+
+## The command line
+
+```sh
+mmt-plugin-agent new --spec FILE | --pcap FILE | --pdl FILE [options]
+mmt-plugin-agent update PROJECT --change FILE|TEXT [options]
+mmt-plugin-agent doctor [--sdk PREFIX] [--cc CC] [--skills DIR] [--model M]
+mmt-plugin-agent eval --model M [--model M ...] --out FILE [--case ID] [--sdk PREFIX]
+mmt-plugin-agent --version
+```
+
+The options of `new` and `update`: `--sdk PREFIX` (default `MMT_BASE`),
+`--cc` (default `CC`, else gcc), `--work DIR` (default
+`./plugin-work-<id>` for `new`, `<project>-work` next to the project for
+`update`), `--model`, `--unattended` or `--interactive`, `--capture` (default: the `--pcap`
+capture), `--allow-synthetic`, `--no-eval`, `--skills`, `--thread-id` and
+`--instructions TEXT` (more for the request, such as the label, id and
+parent to use). `--json` prints one envelope.
+
+The envelope follows `mmt-plugin`'s
+([`docs/design/cli.md`](design/cli.md), sections 5 and 6): `schema_version`
+1, `tool`, `command`, `ok`, `exit_code`, `error` (`class`, `code`,
+`message`, `hint`), `diagnostics`, `context` and `result`. Its JSON Schemas
+are in `src/mmt_plugin_agent/schemas/v1/`: `envelope.json`, and
+`result.json` for `new` and `update`. Codes are `agent.*`.
+
+| Exit | Class | When |
+|---|---|---|
+| 0 | success | Done, or green with the evaluation not done (`incomplete`) and no `--capture` or `--allow-synthetic`. |
+| 1 | internal | The model's provider failed (a bad key, a rate limit, an endpoint down) or an I/O error (`agent.unexpected`, its message without secrets), a bug, or the run returned no result. |
+| 2 | usage | Bad arguments, no model (`agent.no-model`), a model string without a provider (`agent.bad-model`). |
+| 3 | model | An input that is not there (`agent.bad-input`). |
+| 4 | sdk | The environment: no Python 3.11 or extra (`agent.needs-extra`), no skills (`agent.skills-not-found`), an SDK prefix under `/opt/mmt` (`agent.system-sdk`: extract the package into a private prefix), `doctor` with a failed check (`agent.doctor-failed`). |
+| 6 | test | Not green (`agent.not-green`), the evaluation failed (`agent.eval-failed`), green with the evaluation not done although `--capture` or `--allow-synthetic` gave leave for it (`agent.evaluation-skipped`), `BLOCKED` (`agent.blocked`), the skills were changed (`agent.skills-modified`, even when the run then failed), an eval case failed (`agent.eval-cases-failed`). |
+| 130 | interrupted | Ctrl-C. |
+
+## The Python API
+
+```python
+from mmt_plugin_agent import PluginAgent
+```
+
+`PluginAgent(model=None, *, sdk=None, cc=None, work_dir=None,
+mode="unattended", capture=None, allow_synthetic=False, no_eval=False,
+skills_dir=None, extra_skills=(), tools=(), on_question=None,
+checkpointer=None, timeout=900)` takes what the command line takes; its
+methods are:
+
+- `new(spec=|pcap=|pdl=, instructions=None, thread_id=None)` and
+  `update(project, change=, ...)` return an `AgentResult`; `anew` and
+  `aupdate` are their async forms.
+- `stream(...)` (and `astream`) takes the arguments of `new`, or
+  `project=` and `change=`, and yields `AgentEvent`s: `step` (a tool call of
+  the model), `command` (a shell command that ran or was refused),
+  `envelope` (its mmt-plugin envelope), `loop` (a loop run that ended),
+  `question` (a run waiting for an answer) and `done`, whose `result` is the
+  `AgentResult`. Every loop command gives a `step`, a `command` and an
+  `envelope` event.
+- `resume(thread_id, answer)` (and `stream_resume`) answers the question
+  a `waiting` run stopped at, in the same `PluginAgent`; `release(thread_id)`
+  forgets a `waiting` run that will not be resumed (it removes the run's
+  skills snapshot and its thread's checkpoints). A run that ends, fails,
+  is interrupted or whose events are no longer read is released on its own.
+  A caller-given `thread_id` is one safe file-name component (letters,
+  digits, dots, dashes, underscores, at most 128 characters, starting with
+  a letter or digit: it is part of the snapshot's directory name) and no
+  two active runs of one `PluginAgent` share it
+  (`agent.duplicate-thread`).
+- `doctor()` returns the `DoctorReport` of `mmt-plugin-agent doctor`.
+
+`AgentResult` has `status` (`done`, `incomplete`, `eval_failed`,
+`not_green`, `blocked`, `failed`, `waiting`), `ok`, `thread_id`, `work`,
+`project`, `loop` (the last loop run: its commands' exit codes, the test
+summary, `green(with_sdk)`), `loop_runs`, `evaluation` (`pass`, `fail`,
+`not_done`, `skipped`, the backend's own executions of the evaluation),
+`drift` (the open drifts),
+`unchecked`, `report_path`, `questions_path`, `question`,
+`skills_modified`, `commands`, `message` (the model's last reply) and
+`eval_leave` (`capture`, `synthetic` or `None`: the leave the run had for
+the evaluation; `skipped_with_leave` is an `incomplete` run that had it,
+and is not `ok`) and `environ_readable` (`None`, or why the shell could
+read the agent's own environment: see [Models](#models)); `to_json()` is
+the command line's `result`.
+
+The loop's evidence fails closed. The only evidence is what the backend
+executes itself: when a shell command is exactly the strict form —
+`[timeout N] mmt-plugin ARGS...` or the evaluation's `pcap_eval.py`,
+optionally followed by `| tee PATH`, with no other shell operators,
+substitutions or redirections — the backend does not use the shell. It
+runs this installation's own `mmt_plugin` module (never a name the PATH
+or the work folder could shadow), with exactly the parsed arguments,
+captures the process's real exit code and output, and performs the tee
+itself after validating the destination. Anything else — shell loops,
+extra operators, redirections, substitutions, envelopes printed by echo
+or heredoc, shadowing executables, indirect invocations — may still run
+for utility, but it is the model's word and proves nothing. The envelopes
+in `runs/run-<n>/` are audit artifacts, never evidence, and the test
+summary comes from the trusted output only.
+
+The strict form is not enough: the arguments must bind the run. A loop
+command is trusted only as the skill's own shapes, exactly — `mmt-plugin
+-C <project> --json validate|generate --sdk <sdk>` and `... build|test
+--sdk <sdk> --cc <cc>` (without an SDK, `validate --no-sdk --sdk-profile
+<profile>` and `generate --sdk-profile <profile>`) — with the run's own
+project, SDK and compiler. The project is the run's, its `-C` resolved
+with every link followed: a symlink planted at `<work>/project` is never
+the project, and a green loop of another project, against another SDK,
+with another compiler or with any further argument (a `--model`, a
+`--dry-run`, a packet selection) runs in the shell but proves nothing.
+Green is the skill's Done, and green is the exact sequence: within one
+loop run `validate`, `generate`, `build`, `test` — the first two without
+an SDK — one each, in that order, each exit 0. Presence is not enough:
+a `test` before its `build` measures a stale binary, a step twice
+muddies which artifact the green is of, and a step missing is not the
+loop, however green each exit code looks. A run that stopped short or
+failed is simply not green, and the honest iteration starts a new run
+with `validate`. Without an SDK the two commands must pin the *same*
+`--sdk-profile`: a model validated against one and generated for
+another was never checked as it generated. With an SDK, `test`'s
+summary has `failed` 0 and `passed` equal to `total` with `total` at
+least 1, and `validate`'s `parents-exist` check is `pass`.
+
+`manifest.json` is the model's to write: audit only. The evaluation's
+verdict is the backend's own executions — the strict form `python3
+<skill>/scripts/pcap_eval.py ...` (or the script directly), resolved
+inside the read-only skills copy and still byte for byte the script the
+run started with, so it is the skill's own script, never a copy the
+model wrote or a version it changed and changed back. The C runner next
+to it is checked the same way: the script compiles `pcap_eval.c`, so its
+bytes are as much the evidence as the script's, and a rewritten or
+missing one is never trusted. And because the script reuses a cached
+runner in the model-writable `--out` when the stamp next to it matches —
+the stamp the model can write — the backend removes `bin/pcap_eval` and
+`bin/pcap_eval.cmd` immediately before the trusted run, so the binary
+that runs is compiled there and then from the verified source; when the
+cache cannot be removed the execution is not trusted either. The
+arguments bind the run the same way: the run's SDK and compiler, no
+`--help` (it exits 0 and evaluates nothing), the output under the work
+folder, the capture
+the run was given (the configured one or a byte-for-byte copy of it
+inside the work folder, else one inside the work folder when the run
+allows a synthetic one), and `--plugin` the canonical artifact exactly:
+`<project>/build/mmtp_<label>.so`, the label as the project's
+`plugin.yaml` says it at the scan (the same file `build` reads for the
+same label), byte for byte the `.so` the last trusted build or test left
+there — a file the model rewrote afterwards, one the loop never built,
+or a `mmtp_*.so` sibling of another name is not it. `--label` is the
+project's own too: another label measures another protocol's
+classification with the plugin loaded but irrelevant. And it counts
+only after a trusted green loop of the same run and before any later
+trusted build or test: it is the evaluation *of that build*, and a
+rebuild after it is not the binary it measured. Exit 0 is the
+evaluation's PASS, exit 1 its FAIL, the last verdict decides; anything
+else never happened. What the backend trusts is those bytes, and the
+exit code of the process it ran. Otherwise the
+evaluation is not done, however green the loop.
+
+Two things the evidence cannot close, both inherent to the model running
+as the same user. A background process the model started can race the
+checks: rewrite the artifact or the runner between the byte check and
+the execution, or replant the runner cache between its removal and the
+compile. And anything the evidence names can be mutated after the run:
+the green loop's binary, the capture, the work folder itself are the
+model's to write once the backend has stopped watching. The evidence
+certifies what the backend itself executed and measured, at the moment
+it did — no more; the container is what keeps the rest honest.
+
+This example runs in CI with a scripted model
+(`tests/unit/agent/test_docs_example.py`):
+
+<!-- agent-api:run -->
+```python
+from mmt_plugin_agent import PluginAgent
+
+agent = PluginAgent(
+    "anthropic:claude-sonnet-5-5",
+    work_dir="telem-work",
+    allow_synthetic=True,
+)
+result = agent.new(spec="skills/mmt-plugin-generator/evals/cases/spec-telem/spec.md")
+print(result.status, result.work.name, result.loop_runs)
+for item in result.unchecked:
+    print("not checked:", item)
+```
+
+Questions in your own code: `on_question` gets each `Question` (`kind`
+`capture`, `force` or `other`, `text`, `recommended`) and returns the
+answer, in either mode:
+
+```python
+from mmt_plugin_agent import PluginAgent, Question
+
+
+def answer(question: Question) -> str:
+    if question.kind == "capture":
+        return "allow a synthetic capture"
+    return question.recommended
+
+
+agent = PluginAgent("ollama:qwen3-coder", on_question=answer)
+for event in agent.stream(spec="spec.md"):
+    print(event.kind, event.message)
+```
+
+Without `on_question`, an interactive run stops with status `waiting` and
+`result.question`; `agent.resume(result.thread_id, "my answer")` goes on.
+
+As a subgraph: `build_graph(model, work_dir=..., ...)` returns the compiled
+graph, whose state has `messages`; `request_text(spec=...)` writes the user
+message of a request. Give it a checkpointer for interactive questions. It
+reads the skills from a read-only copy, but only `PluginAgent` checks after
+a run that the skills were not changed.
+
+```python
+from langgraph.graph import END, START, MessagesState, StateGraph
+
+from mmt_plugin_agent import build_graph, request_text
+
+parent = StateGraph(MessagesState)
+parent.add_node("plugin", build_graph("anthropic:claude-sonnet-5-5", work_dir="work"))
+parent.add_edge(START, "plugin")
+parent.add_edge("plugin", END)
+app = parent.compile()
+app.invoke({"messages": [{"role": "user", "content": request_text(spec="spec.md")}]})
+```
+
+## Model evals
+
+`mmt-plugin-agent eval` has each `--model` draft every case of
+`skills/mmt-plugin-generator/evals/cases/` (or those `--case` names),
+unattended and without the capture evaluation, then judges it with the
+checks of `evals/run_evals.py`: each envelope of the agent's loop against
+the skill's contract, each fix at what the failed run reported, no packet
+test deleted or rewritten, the final loop, run again, green, and an
+update's label, id, profile, parents and packet tests kept. The loop runs
+are the work folder's, as for `result.loop`: each `runs/run-<n>/` with a
+`validate.json` is one run, in numeric order; its `<command>.json` are its
+loop commands, which run in order up to the first that exits non-zero (one
+before it missing is a problem), and every other envelope there (an entry
+check such as `validate-nosdk.json`) is checked as its own command. The
+project before a run is the one the eval saw at the last tool call before
+its `validate.json` was written (the file's time), and each failed run's
+fix is what changed before the next. Only when the work folder records no
+run are the runs the shell's, with the envelopes in the commands' output.
+What the agent's shell ran (command, exit codes, times) is in
+`commands.jsonl` in the case's work folder. Unlike the
+scripted evals, the loop need not stop where the case's script does. It
+writes a table per model and case to `--out` (Markdown) and the same with
+`.json`; it exits 6 when a case fails. A `--case` name that matches no
+case is a usage error (exit 2, `agent.bad-case`), never a vacuous pass. Without `--sdk` it uses `MMT_BASE`,
+as a run does. A model that puts its work folder or project elsewhere
+than the brief says fails the case with that one problem.
+
+```sh
+mmt-plugin-agent eval --model anthropic:claude-sonnet-5-5 --model ollama:qwen3-coder --sdk "$MMT_BASE" --out results.md
+```
+
+## The sandbox
+
+The agent's shell has no isolation of its own: a command it runs can do
+whatever the user running `mmt-plugin-agent` can. Its guards are defence
+in depth:
+
+- The file tools write only in the work folder, an update's project and
+  the temporary directory, never in the skills (links followed). What
+  deepagents takes out of the context (large tool results, summarized
+  history) goes to `<work>/.agent/`.
+- The shell refuses `sudo`, `--system`, any path under `/opt/mmt`, and
+  `--force` unattended (interactive: only after a yes). A refused command
+  is not run.
+- The skills the model reads are a read-only copy (files 0444, directories
+  0555, in `~/.cache/mmt-plugin-agent/`). At the end of every run the
+  source skills directory is compared with its digest at the start; a
+  change, by any route, is restored and the run fails with
+  `agent.skills-modified`.
+- The shell's environment is an allowlist (`PATH`, `HOME`, `MMT_*`,
+  `XDG_*`, proxies, `DOCKER_*`, uv's `UV_CACHE_DIR`, `UV_LOCKED`,
+  `UV_NO_CACHE`, `UV_OFFLINE`, `UV_PYTHON`, `UV_TOOL_DIR` and
+  `UV_TOOL_BIN_DIR`, not its index URLs, ...) without secrets: no
+  variable named as one (see [Models](#models)), no URL's password, and no
+  user name in a proxy or http(s) URL. On Linux the shell cannot
+  read the agent's own environment either, but it can read a parent's
+  that holds the key (`uv run`, a wrapper); elsewhere it can read both
+  (see [Models](#models)).
+
+The container is the sandbox: run the agent in the `agent` image, where it
+is not root and the skills are root-owned and read-only. The image has no
+Docker socket. Mounting the host's (`-v /var/run/docker.sock:...`) lets
+cyberlab record real captures, but gives the agent root on the host. Use
+it only when you trust the model and the inputs, or give it a separate
+Docker daemon (Docker-in-Docker). Without Docker, captures are synthetic,
+and only with leave (`--allow-synthetic`).

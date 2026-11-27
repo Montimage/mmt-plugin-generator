@@ -600,7 +600,8 @@ def test_a_harness_run_sees_only_its_own_plugin_directory(tmp_path: Path) -> Non
     run = harness.run(program, [], plugin, plugins, timeout=10, env={"PATH": "/usr/bin:/bin"})
     directory, first, second, cwd = run.lines
     assert (first, second) == (harness.TCPIP, "mmtp_x.so")
-    assert Path(directory).parent == Path(cwd).parent  # an empty run directory beside it
+    # an empty run directory beside it (resolved: pwd prints the physical path)
+    assert Path(directory).resolve().parent == Path(cwd).resolve().parent
     assert run.returncode == 0
 
 

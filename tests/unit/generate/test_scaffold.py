@@ -387,6 +387,8 @@ def test_defined_functions_reads_the_global_function_symbols(
     if proc.returncode != 0 and flags:
         pytest.skip(f"no {' '.join(flags)} support: {proc.stderr.strip()}")
     assert proc.returncode == 0, proc.stderr
+    if obj.read_bytes()[:4] != b"\x7fELF":
+        pytest.skip(f"{_cc()} does not produce ELF objects")
     found = defined_functions(obj)
     assert {"defined_hook", "weak_hook", "uses"} <= found
     assert not found & {"static_hook", "called_but_undefined", "data_symbol"}

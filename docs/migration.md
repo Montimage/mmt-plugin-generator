@@ -54,7 +54,8 @@ describes `init`'s own 4-byte header):
 <!-- doc:run no-sdk -->
 ```sh
 mv tpkt_port/plugin.imported.yaml tpkt_port/plugin.yaml
-sed -i -e 's/^  label: .*/  label: tpkt_port/' -e 's/^  id: .*/  id: 970/' tpkt_port/plugin.yaml
+sed -e 's/^  label: .*/  label: tpkt_port/' -e 's/^  id: .*/  id: 970/' tpkt_port/plugin.yaml > tpkt_port/plugin.yaml.new
+mv tpkt_port/plugin.yaml.new tpkt_port/plugin.yaml
 printf 'sdk:\n  profile: "1.10.2"\n' >> tpkt_port/plugin.yaml
 rm tpkt_port/tests/tpkt_port-basic.yaml
 mmt-plugin -C tpkt_port validate --no-sdk

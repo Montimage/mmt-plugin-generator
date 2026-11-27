@@ -652,14 +652,22 @@ def test_closed_stdout_ends_quietly(
 
 
 def test_closed_stdout_with_python_dash_m(clean_env: Callable[..., dict[str, str]]) -> None:
-    proc = subprocess.run(
-        f"'{sys.executable}' -m mmt_plugin --version | head -c0",
-        shell=True,
-        capture_output=True,
-        env=clean_env(),
-        timeout=60,
-        check=False,
-    )
+    # A pipe whose read end is closed before the command starts: it cannot
+    # write before the reader goes away (as it could with `| head -c0`).
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "mmt_plugin", "--version"],
+            stdin=subprocess.DEVNULL,
+            stdout=write_end,
+            stderr=subprocess.PIPE,
+            env=clean_env(),
+            timeout=60,
+            check=False,
+        )
+    finally:
+        os.close(write_end)
     assert proc.returncode == 0
     assert proc.stderr == b""
 

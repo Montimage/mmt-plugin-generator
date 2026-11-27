@@ -339,15 +339,35 @@ def test_human_output(work: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert out.splitlines() == [f"created\t{p}" for p in ["plugin.proposed.yaml", *TESTS]]
 
 
-def test_tagged_frames_and_a_name_that_is_not_utf8(scaffold: Run, work: Path) -> None:
-    name = os.fsdecode(b"cap\xff.pcap")
+def _tagged_capture(scaffold: Run, work: Path, name: str) -> str:
     frames = [samples.vlan(5, 0x88B5, p) for p in samples.demo_payloads()]
     (work / name).write_bytes(samples.pcap(frames))
     code, doc = scaffold("--from-pcap", name, "--parent", "ethernet:ethertype=0x88b5")
     assert code == 0, doc["error"]
     text = (work / "plugin.proposed.yaml").read_text()
     assert "classify:" not in text
-    assert "cap\\xff.pcap" in text
+    return text
+
+
+def test_tagged_frames(scaffold: Run, work: Path) -> None:
+    assert "cap.pcap" in _tagged_capture(scaffold, work, "cap.pcap")
+
+
+def _rejects_non_utf8_names(directory: Path) -> bool:
+    probe = os.path.join(os.fsencode(directory), b"probe\xff")
+    try:
+        os.close(os.open(probe, os.O_CREAT | os.O_WRONLY, 0o600))
+    except OSError:
+        return True
+    os.unlink(probe)
+    return False
+
+
+def test_tagged_frames_and_a_name_that_is_not_utf8(scaffold: Run, work: Path) -> None:
+    if _rejects_non_utf8_names(work):
+        pytest.skip("the filesystem rejects a file name that is not UTF-8")
+    name = os.fsdecode(b"cap\xff.pcap")
+    assert "cap\\xff.pcap" in _tagged_capture(scaffold, work, name)
 
 
 def test_a_websocket_capture_under_tcp_after_its_handshake(scaffold: Run, work: Path) -> None:

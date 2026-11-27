@@ -61,7 +61,9 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
   `docs/`, `skills/`, `ocip-plugin/`, `telem-agent-output/` and the C
   templates in `src/`, and a unit test fails when a tracked C source or C
-  template lies outside the directories it scans (#42).
+  template lies outside the directories it scans, or under a `build/`
+  directory, which the scan skips (#42). The build output committed under
+  `telem-agent-output/project/build/` is no longer tracked.
 
 ### Fixed
 

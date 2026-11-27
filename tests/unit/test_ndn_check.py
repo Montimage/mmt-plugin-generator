@@ -62,6 +62,10 @@ def test_every_maintained_c_file_is_under_a_scan_dir() -> None:
     assert files, "git ls-files lists no C file"
     outside = [f for f in files if PurePosixPath(f).parts[0] not in dirs]
     assert not outside, f"C files outside SCAN_DIRS {dirs}: {outside}"
+    # The scan's grep skips every build/ directory (--exclude-dir=build), so a
+    # tracked C file under one would never be scanned.
+    under_build = [f for f in files if "build" in PurePosixPath(f).parts[:-1]]
+    assert not under_build, f"C files under a build/ directory, never scanned: {under_build}"
 
 
 def test_the_scan_includes_every_c_glob() -> None:

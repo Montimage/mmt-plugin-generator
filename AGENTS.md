@@ -80,7 +80,8 @@ protocol model. A Python rewrite is planned in
   the directories of its `SCAN_DIRS` for the macros mmt-dpi 1.10.0 made
   private. Any new directory of maintained C sources or C templates
   (`*.c`, `*.h`, `*.c.j2`, `*.h.j2`) must be added to `SCAN_DIRS`;
-  `tests/unit/test_ndn_check.py` fails until it is, and also pins how CI
+  `tests/unit/test_ndn_check.py` fails until it is, and on a tracked C
+  file under a `build/` directory, which the scan skips; it also pins how CI
   runs the check (the `container` job, `make test-container`, the image's
   pkg-config check).
 - `tests/corpus/`: the test corpus (T0.4): the Java tool's 16 example

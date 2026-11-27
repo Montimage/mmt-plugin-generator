@@ -70,11 +70,16 @@ pass "compile ndn_mmt_plugin.c with -DMMT_LOG_ENABLE_DEBUG"
 #    Only the dirs that hold the repo's C sources are scanned, so generated and
 #    tool dirs (.venv, .git, caches, a private mmt-dpi prefix), whose
 #    third-party C uses these names, never are; nor is any build/ dir under
-#    them (an example's build output).
-SCAN_DIRS=(ndn_src examples tests)
+#    them (an example's build output). The C templates (*.c.j2, *.h.j2) are
+#    scanned too. Any new directory of maintained C sources or C templates
+#    must be added to SCAN_DIRS: tests/unit/test_ndn_check.py fails until
+#    every tracked *.c, *.h, *.c.j2 and *.h.j2 file lies under one of them,
+#    and fails on a tracked one under a build/ dir, which this scan skips.
+SCAN_DIRS=(docs ndn_src examples ocip-plugin skills src telem-agent-output tests)
 rc=0
 (cd "$REPO_ROOT" && grep -rnE '\b(debug|log_err|likely|unlikely)[[:space:]]*\(' \
-        --include='*.c' --include='*.h' --exclude-dir=build -- "${SCAN_DIRS[@]}") || rc=$?
+        --include='*.c' --include='*.h' --include='*.c.j2' --include='*.h.j2' \
+        --exclude-dir=build -- "${SCAN_DIRS[@]}") || rc=$?
 case "$rc" in
     0) fail "unprefixed debug()/log_err()/likely()/unlikely() found (use mmt_log_* / MMT_LIKELY)" ;;
     1) ;;

@@ -54,6 +54,16 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   (`model.load-order`), as mmt-dpi loads the plugins of a directory in
   file name order: `mmtp_ocpp_example.so` loads before
   `mmtp_websocket_example.so`.
+- The build and test container (and so the release image) installs
+  pkg-config, and its build fails unless pkg-config finds mmt-dpi at the
+  package's version, with its headers where `mmt-dpi.pc` says. CI's
+  runner-based NDN job is gone: the container job, `make test-container` on
+  amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
+  `docs/`, `skills/`, `ocip-plugin/`, `telem-agent-output/` and the C
+  templates in `src/`, and a unit test fails when a tracked C source or C
+  template lies outside the directories it scans, or under a `build/`
+  directory, which the scan skips (#42). The build output committed under
+  `telem-agent-output/project/build/` is no longer tracked.
 
 ### Fixed
 

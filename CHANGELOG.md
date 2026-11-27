@@ -59,11 +59,17 @@ uses [semantic versioning](https://semver.org/) for its command line, its
   package's version, with its headers where `mmt-dpi.pc` says. CI's
   runner-based NDN job is gone: the container job, `make test-container` on
   amd64 and arm64, is the NDN check. The NDN check's macro scan also covers
-  `docs/`, `skills/`, `ocip-plugin/`, `telem-agent-output/` and the C
-  templates in `src/`, and a unit test fails when a tracked C source or C
-  template lies outside the directories it scans, or under a `build/`
-  directory, which the scan skips (#42). The build output committed under
-  `telem-agent-output/project/build/` is no longer tracked.
+  `docs/`, `skills/`, `ocip-plugin/` and the C templates in `src/`, and a
+  unit test fails when a tracked C source or C template lies outside the
+  directories it scans, or under a `build/` directory, which the scan
+  skips (#42).
+
+### Removed
+
+- `telem-agent-output/`, a work folder of one `mmt-plugin-agent` run that
+  #161 committed by mistake: its captures, evaluation, `.so` files and
+  binaries are run output, like `make agent-run`'s `/agent-work/`, which
+  is never committed. The NDN check no longer scans it.
 
 ### Fixed
 
